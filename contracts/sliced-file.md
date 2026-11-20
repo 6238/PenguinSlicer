@@ -47,7 +47,8 @@ never needs to know the printer, filament, plate or nozzle.
 | `filament_m` | number or null | The filament used, in metres. |
 | `filament_g` | number or null | The filament used, in grams. |
 | `layer_count` | integer or null | The number of layers. |
-| `warnings` | array of strings | Orca's warnings for the plate, each as Orca wrote it; empty when there are none. |
+| `warnings` | array of strings | Orca's warnings for the plate, each as Orca wrote it; empty when there are none, and also when a timeout or the memory watchdog stopped Orca after it wrote the sliced file but before it wrote its warnings (the slice service's log says so in `stop_note`). |
+| `part_warnings` | array of objects | The slice service's own warnings about the parts, found when the plate job arrived; empty when there are none. Each has `code` (for example `slice.part_not_watertight`; the guide lists them), `message` (a sentence for the student), `where` (`part`) and `detail` (the evidence for the log). |
 
 A number Orca did not report is `null` rather than a failure: the sliced file is still
 good.
@@ -57,6 +58,12 @@ good.
 - A sliced file is returned only when Orca sliced every copy: the slice service fails with
   `slice.left_off_plate` when a copy is missing from `Metadata/plate_1.json`, because Orca
   leaves a copy that is entirely off the plate out without an error.
+- A sliced file is returned only when every entry of the archive passes its checksum: a
+  file Orca cut short or damaged anywhere fails with `slice.unreadable_output`.
+- A complete sliced file is returned even when a timeout or the memory watchdog stopped
+  Orca in the moment after it wrote the file: complete means it is under its final name,
+  opens as a zip with its directory intact, has `Metadata/plate_1.gcode` and
+  `Metadata/plate_1.json`, and every entry passes its checksum. A cancel discards it.
 - Nothing else is left in the output directory: the slice service works in a scratch
   folder inside it and removes that folder whether the slice succeeds or fails.
 

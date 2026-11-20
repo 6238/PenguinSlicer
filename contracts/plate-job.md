@@ -19,7 +19,10 @@ file is in.
 | `overrides` | object | no | Settings that replace the process profile's (see Overrides). |
 | `local_time` | string | no | The caller's local time as `YYYYMMDD-HHMM`, used in the sliced file's name. Anything else, or left out: the slice service's UTC time. |
 
-Fields not listed here are ignored.
+A field not listed here, in the plate job, a part or a copy, refuses the plate job
+(`slice.bad_plate_job`), so a misspelled `overrides` is never silently ignored. A
+`printer`, `filament` or `process` name over 200 characters (`MAX_PROFILE_NAME_CHARS`)
+refuses it too: no profile name is that long.
 
 ### Part
 
@@ -27,8 +30,8 @@ The key of a part is 1 to 64 letters, digits, `-` or `_`.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
-| `name` | string | yes | The part's name, not empty. It names the part's copies (see Copy) and the sliced file. |
-| `stl` | string | yes | The part's binary STL file, in millimetres: an absolute path, or one relative to the plate job file. |
+| `name` | string | yes | The part's name, not empty, of at most 200 characters (`MAX_PART_NAME_CHARS`; a longer one refuses the plate job, `slice.bad_plate_job`). It names the part's copies (see Copy) and the sliced file. |
+| `stl` | string | yes | The part's binary STL file, in millimetres: an absolute path, or one relative to the plate job file, of at most 1,024 characters, with no NUL character and no piece between slashes over 255 bytes. Sent to the HTTP face, it is the name of a file sent with the plate job, and nothing outside those files is read. |
 
 ### Copy
 
@@ -112,31 +115,65 @@ Each override is optional; its value must be one of the listed values, of the li
 | `MAX_COPIES` | 25 | Copies on one plate. |
 | `MAX_PART_TRIANGLES` | 150,000 | Triangles in one part's STL. |
 | `MAX_PART_BYTES` | 7,500,084 | Bytes in one part's STL: a binary STL of `MAX_PART_TRIANGLES` triangles. |
-| `MAX_JOB_TRIANGLES` | 300,000 | Triangles summed over every copy. |
+| `DEFAULT_MAX_PEAK_MB` | 900 | The memory Orca may use while it slices the plate, unless the slice service's setting says otherwise (see Memory). |
 | `MIN_PART_EXTENT_MM` | 0.1 | A part must be more than this in every direction. |
 | `MARGIN_MM` | 3 | Every footprint stays this far inside the printable area. |
 | `SPACING_MM` | 5 | The least distance between two copies' footprints. |
 | `PLATE_SLICE_TIMEOUT_S` | 240 | Seconds Orca may take to slice the plate. |
 
-No copy may be taller than the printer's printable height.
+No copy may be taller than the printer's printable height. There is no cap on the
+triangles of a whole plate: triangles cost Orca time, not memory.
+
+### Memory
+
+No plate job is refused for memory before it is sliced. While Orca slices, the slice
+service samples the memory of Orca and every process it started, with the kernel's
+high-water mark of each; when the peak passes the memory ceiling (the slice service's
+setting `PENGUIN_SLICE_MAX_PEAK_MB`, `DEFAULT_MAX_PEAK_MB` when it is not set) it stops
+Orca and the plate job fails with `slice.out_of_memory`, the measured peak in the error
+report's `detail`. The ceiling protects the server from a slice that keeps growing; it is
+not a promise that no delivered slice ever touched it: a slice Orca finishes, with a
+valid sliced file, before the next sample has stopped it is delivered even when its peak
+passed the ceiling, and the server's log line for it says so. The same code is
+reported when the kernel's out-of-memory killer stopped Orca (its count of such kills
+rose) or Orca said an allocation failed; any other kill is `slice.orca_killed`.
+
+The slice service also estimates the peak, in MB, as
+
+    (MEMORY_BASE_MB + MEMORY_PER_COPY_MB x copies + MEMORY_PER_CM3_MB x volume in cm3)
+      x MEMORY_SUPPORTS_FACTOR when supports are on
+
+with `MEMORY_BASE_MB` = 170, `MEMORY_PER_COPY_MB` = 3, `MEMORY_PER_CM3_MB` = 0.985 and
+`MEMORY_SUPPORTS_FACTOR` = 1.4, a part's volume being its mesh's when the mesh is
+watertight, else its bounding box's, summed over the copies; supports are on when the
+`supports` override says so, else when the process profile's `enable_support` is 1. The
+estimate is rough (wrong both ways by up to four times on plates outside those it was
+fitted to), so it only goes into the slice service's log; it refuses nothing.
 
 ## Checks
 
 The slice service checks a plate job in this order and refuses it at the first failure,
 before anything reaches Orca, with the [error report](error-report.md) whose code is shown:
 
-1. every part and copy has its fields as above (`slice.bad_plate_job`);
+1. the plate job, every part and every copy has its fields as above and no other
+   (`slice.bad_plate_job`);
 2. at most `MAX_COPIES` copies (`slice.too_many_copies`);
-3. every copy's `ref` names a part whose STL file exists (`slice.part_missing`), and that
-   file can be opened and is a binary STL with finite coordinates (`slice.part_unreadable`), within
-   `MAX_PART_BYTES` and `MAX_PART_TRIANGLES` (`slice.part_too_detailed`) and over
-   `MIN_PART_EXTENT_MM` (`slice.part_too_small`);
-4. at most `MAX_JOB_TRIANGLES` (`slice.job_too_detailed`);
-5. the profiles (`slice.unknown_printer`, `slice.profiles_not_offered`) and the overrides
+3. the profiles (`slice.unknown_printer`, `slice.profiles_not_offered`) and the overrides
    (`slice.bad_overrides`);
-6. the placement: every footprint inside the margin (`slice.placement_off_plate`), no copy
+4. every copy's `ref` names a part whose STL file exists (`slice.part_missing`), and that
+   file can be opened, is an STL, not empty, not cut off and with finite coordinates
+   (`slice.part_unreadable`), binary (`slice.part_not_binary`), within `MAX_PART_BYTES`
+   and `MAX_PART_TRIANGLES` (`slice.part_too_detailed`), over `MIN_PART_EXTENT_MM` in
+   every direction (`slice.part_too_small`), a surface that encloses something
+   (`slice.part_no_volume`), and able to stand on the chosen printer's plate in some
+   orientation (`slice.part_too_large`);
+5. the placement: every footprint inside the margin (`slice.placement_off_plate`), no copy
    too tall (`slice.placement_too_tall`), no two footprints closer than `SPACING_MM`
    (`slice.placement_too_close`).
+
+A part that passes but has holes in its surface (or faces laid on top of each other), a surface facing inwards, or a size that
+suggests an inch file read as millimetres is sliced, and carries a warning in the sliced
+file's summary (`part_warnings`, see [sliced-file.md](sliced-file.md)).
 
 Orca may still refuse a plate that passes these checks; the slice service's guide,
 [slice/README.md](../slice/README.md), lists every code.

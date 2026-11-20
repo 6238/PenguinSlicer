@@ -1,4 +1,4 @@
-.PHONY: install sync install-orca test test-parallel test-flakes coverage test-orca
+.PHONY: install sync install-orca test test-parallel test-flakes coverage test-orca test-upstream upgrade-orca
 
 UV ?= uv
 PYTEST = $(UV) run --project $(CURDIR) pytest
@@ -36,11 +36,19 @@ test-flakes:
 		run=$$((run + 1)); \
 	done
 
-# Branch coverage of the package under the fast suite.
+# Branch coverage of the package under the fast suite; fails under 100%.
 coverage:
 	$(UV) run --project $(CURDIR) coverage run --rcfile=$(CURDIR)/pyproject.toml -m pytest -q -p no:randomly $(CURDIR)/tests
-	$(UV) run --project $(CURDIR) coverage report --rcfile=$(CURDIR)/pyproject.toml
+	$(UV) run --project $(CURDIR) coverage report --rcfile=$(CURDIR)/pyproject.toml --fail-under=100
 
-# The tests that run the real Orca Slicer. Slow by design; install Orca first.
-test-orca:
+# The upstream check: the tests that run the real Orca Slicer, one at a time, each pinning
+# one behaviour of the pinned Orca the slice service relies on. Install Orca first.
+test-upstream:
 	$(PYTEST) -v -p no:randomly --durations=0 $(CURDIR)/tests_orca
+
+test-orca: test-upstream
+
+# Move the Orca pin: fetch and verify VERSION, regenerate the profiles, run the upstream check.
+upgrade-orca:
+	@test -n "$(VERSION)" || { echo "usage: make upgrade-orca VERSION=x.y.z"; exit 2; }
+	$(UV) run --project $(CURDIR) python $(CURDIR)/scripts/upgrade_orca.py $(VERSION)

@@ -20,6 +20,19 @@ UNKNOWN_PRINTER_MESSAGE = "The printer '{name}' is not one the slicer knows."
 CHOOSE_PROFILES_MESSAGE = "Choose a filament and print settings from the list."
 BAD_OVERRIDES_MESSAGE = "These print settings could not be read; choose them from the lists."
 
+SHOWN_CHARS = 120     # a value a caller sent, as a sentence or a detail shows it, at most
+
+
+def _shown(value, quoted=True):
+    """A value a caller sent, for a sentence or a detail: its repr (its text when not
+    `quoted`), cut to SHOWN_CHARS with "...", whatever its size or depth."""
+    try:
+        text = repr(value) if quoted or not isinstance(value, str) else value
+    except RecursionError:
+        return "a value nested too deeply"
+    return text if len(text) <= SHOWN_CHARS else text[:SHOWN_CHARS] + "..."
+
+
 # Catalog kind -> index.json list name.
 _LISTS = {'printer': 'printers', 'filament': 'filaments', 'process': 'processes'}
 
@@ -90,7 +103,7 @@ def default_names():
 def choose_profiles(printer, filament, process, catalog=None):
     """The three files for a slice. `printer` None is the default set, whose filament and
     process may be left out (None) or named. Raises ProfileError otherwise."""
-    not_offered = f"filament {filament!r} or process {process!r} is not offered"
+    not_offered = f"filament {_shown(filament)} or process {_shown(process)} is not offered"
     if printer is None:
         _printer, default_filament, default_process = default_names()
         if filament not in (None, default_filament) or process not in (None, default_process):
@@ -98,11 +111,10 @@ def choose_profiles(printer, filament, process, catalog=None):
         return DEFAULT_PROFILES
     catalog = catalog or load_catalog()
     if not catalog.has_printer(printer):
-        name = printer if isinstance(printer, str) else str(printer)
-        raise ProfileError(UNKNOWN_PRINTER_MESSAGE.format(name=name), f"printer {printer!r} is not in the catalog",
+        raise ProfileError(UNKNOWN_PRINTER_MESSAGE.format(name=_shown(printer, quoted=False)), f"printer {_shown(printer)} is not in the catalog",
                            error_code="slice.unknown_printer")
     if not (catalog.compatible('filament', filament, printer) and catalog.compatible('process', process, printer)):
-        raise ProfileError(CHOOSE_PROFILES_MESSAGE, f"{not_offered} for printer {printer!r}")
+        raise ProfileError(CHOOSE_PROFILES_MESSAGE, f"{not_offered} for printer {_shown(printer)}")
     return SliceProfiles(catalog.profile_path('printer', printer), catalog.profile_path('filament', filament),
                          catalog.profile_path('process', process))
 
@@ -130,7 +142,8 @@ def _choice(raw, key):
     for allowed in OVERRIDE_CHOICES[key]:
         if type(value) is type(allowed) and value == allowed:
             return value
-    raise OverrideError(BAD_OVERRIDES_MESSAGE, f"override {key!r} is {value!r}, not one of {OVERRIDE_CHOICES[key]}"[:300])
+    raise OverrideError(BAD_OVERRIDES_MESSAGE, f"override {key!r} is {_shown(value)}, not one of "
+                                               f"{OVERRIDE_CHOICES[key]}"[:300])
 
 
 def validate_overrides(raw):
@@ -139,7 +152,7 @@ def validate_overrides(raw):
     if raw is None:
         return {}
     if not isinstance(raw, dict):
-        raise OverrideError(BAD_OVERRIDES_MESSAGE, f"overrides is not an object: {raw!r}"[:300])
+        raise OverrideError(BAD_OVERRIDES_MESSAGE, f"overrides is not an object: {_shown(raw)}")
     unknown = [key for key in raw if key not in OVERRIDE_CHOICES]
     if unknown:
         raise OverrideError(BAD_OVERRIDES_MESSAGE, f"unknown overrides {unknown!r}, only {list(OVERRIDE_CHOICES)}"[:300])
@@ -153,6 +166,15 @@ def validate_overrides(raw):
     if 'brim' in raw:
         orca['brim_type'] = _BRIM[_choice(raw, 'brim')]
     return orca
+
+
+def supports_on(profiles, overrides):
+    """Whether the plate is sliced with supports: the override when there is one, else the
+    chosen process profile's enable_support."""
+    if 'enable_support' in overrides:
+        return overrides['enable_support'] == '1'
+    with open(profiles.process, encoding='utf-8') as fh:
+        return str(json.load(fh).get('enable_support', '0')) == '1'
 
 
 def write_process_with_overrides(process_path, overrides, out_path):

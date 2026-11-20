@@ -131,7 +131,7 @@ class TestWriter:
         parts['a']['stl_path'].write_bytes(b'solid ascii\nendsolid ascii\n')
         with pytest.raises(MeshError) as caught:
             write_plate_3mf(tmp_path / 'plate.3mf', [copy('a', 50, 50)], parts)
-        assert caught.value.message == 'The file for Bracket could not be read as a part.'
+        assert caught.value.message == 'The file for Bracket is not an STL file.'
         assert caught.value.details.startswith(f"{parts['a']['stl_path']}: ")
 
     def test_stl_gone_after_the_check_is_a_missing_part(self, tmp_path, stls):

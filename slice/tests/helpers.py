@@ -1,8 +1,12 @@
 """Builders shared by the fast suite: binary STL shapes, parts, archives and the fake Orca."""
+import fcntl
 import json
+import os
 import re
+import signal
 import stat
 import sys
+import threading
 import zipfile
 from pathlib import Path
 
@@ -17,6 +21,43 @@ REPO_ROOT = SLICE_ROOT.parent
 CONTRACTS = REPO_ROOT / "contracts"
 FAKE_ORCA = TESTS / "fake_orca.py"
 INSTALL_ORCA = SLICE_ROOT / "scripts" / "install-orca.sh"
+
+
+FAILSAFE_S = 10          # a wait on a process, a thread or an event gives up after this; reached only by a failing test
+
+
+def bounded(fn):
+    """fn() in a thread, given FAILSAFE_S to return: (returned, raised, finished). A run
+    that hangs fails its test instead of hanging the suite; the caller kills what is left
+    (kill_fake)."""
+    outcome = {}
+
+    def target():
+        try:
+            outcome["returned"] = fn()
+        except BaseException as exc:      # noqa: BLE001 - handed back to the test
+            outcome["raised"] = exc
+    thread = threading.Thread(target=target, daemon=True)
+    thread.start()
+    thread.join(FAILSAFE_S)
+    return outcome.get("returned"), outcome.get("raised"), not thread.is_alive()
+
+
+def kill_fake(out):
+    """SIGKILL the stand-in Orca whose files are in `out` if it still holds its lock (the
+    kernel drops the lock when it exits, so a pid reused by another process is never hit),
+    for a test that is failing. One that exits meanwhile is not an error."""
+    try:
+        pid = int((Path(out) / "fake-orca.pid").read_text())
+        with open(Path(out) / "fake-orca.lock", "a") as fh:
+            try:
+                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return                                   # the lock is free: it is gone
+            except BlockingIOError:
+                pass
+        os.kill(pid, signal.SIGKILL)
+    except (OSError, ValueError):
+        return
 
 
 def pinned_orca_version():
@@ -137,6 +178,33 @@ def install_fake_orca(directory, monkeypatch, mode="ok"):
     wrapper.chmod(wrapper.stat().st_mode | stat.S_IXUSR)
     monkeypatch.setenv("PENGUIN_SLICE_ORCA", str(wrapper))
     return wrapper
+
+
+class ManualTimer:
+    """A stand-in for threading.Timer that fires only when a test calls fire()."""
+
+    def __init__(self, interval, fn):
+        self.interval, self.fn, self.daemon, self.cancelled = interval, fn, False, False
+
+    def start(self):
+        pass
+
+    def cancel(self):
+        self.cancelled = True
+
+    def fire(self):
+        self.fn()
+
+
+class ManualTimers:
+    """A timer factory for slicer.run_process(timer=...): the timers it made, in order."""
+
+    def __init__(self):
+        self.made = []
+
+    def __call__(self, interval, fn):
+        self.made.append(ManualTimer(interval, fn))
+        return self.made[-1]
 
 
 def write_plate_job(directory, plate_job, stls):

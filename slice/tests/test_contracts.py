@@ -67,8 +67,14 @@ class TestPlateJobDocument:
             actual = getattr(plate, name) if actual is None else actual
             assert value == actual, name
         assert {row[0].strip("`") for row in rows} == {
-            "MAX_COPIES", "MAX_PART_TRIANGLES", "MAX_PART_BYTES", "MAX_JOB_TRIANGLES", "MIN_PART_EXTENT_MM",
+            "MAX_COPIES", "MAX_PART_TRIANGLES", "MAX_PART_BYTES", "DEFAULT_MAX_PEAK_MB", "MIN_PART_EXTENT_MM",
             "MARGIN_MM", "SPACING_MM", "PLATE_SLICE_TIMEOUT_S"}
+
+    def test_memory_model_is_stated_with_the_codes_numbers(self):
+        model = section(PLATE_JOB_DOC, "### Memory")
+        for name in ("MEMORY_BASE_MB", "MEMORY_PER_COPY_MB", "MEMORY_PER_CM3_MB", "MEMORY_SUPPORTS_FACTOR"):
+            assert f"`{name}` = {getattr(limits, name):g}" in model, name
+        assert f"`{limits.MAX_PEAK_MB_ENV}`" in model
 
     def test_every_code_named_is_a_code(self):
         named = set(re.findall(r"`(slice\.[a-z_]+)`", PLATE_JOB_DOC))

@@ -1,12 +1,14 @@
 """service.py: reading and checking a plate job, and slicing it through a fake Orca."""
 import copy as copying
 import json
+import os
 from pathlib import Path
 
 import pytest
 
 from helpers import box_stl, install_fake_orca, write_plate_job
-from penguin_slice import error_report, limits, service
+from penguin_slice import error_report, limits, service, slicer
+from penguin_slice import plate_job as plate_job_module
 from penguin_slice.mesh import MeshError
 from penguin_slice.plate_3mf import LEFT_OFF_MESSAGE
 from penguin_slice.print_config import CHOOSE_PROFILES_MESSAGE, OverrideError, ProfileError
@@ -44,6 +46,12 @@ def refused(data, base):
     return caught.value
 
 
+def refused_confined(data, base):
+    with pytest.raises(PlateJobRefused) as caught:
+        read_plate_job(data, base, confine_to=base)
+    return caught.value
+
+
 class TestRead:
     def test_good_plate_job_becomes_a_plate_job(self, base):
         job = read_plate_job(plate_job(), base)
@@ -56,11 +64,34 @@ class TestRead:
         assert job.overrides == {}
         assert job.delivered_name == "Box_plus1-20261009-1432.gcode.3mf"
 
-    def test_only_the_copy_fields_are_kept(self, base):
+    @pytest.mark.parametrize("stl", ["box.stl\u0000x", "b" * 5000, "parts/" + "c" * 256 + ".stl",
+                                     "é" * 128 + ".stl"])
+    def test_an_stl_that_is_no_usable_file_name_is_a_bad_plate_job(self, base, stl):
+        # Once "The slicer failed unexpectedly" (ValueError: embedded null byte, ENAMETOOLONG).
+        error = refused(plate_job(parts={"box": {"name": "Box", "stl": stl}}), base)
+        assert error.error_code == "slice.bad_plate_job"
+        assert error.message == "This plate job could not be read: part 'box' has an stl that is not a usable " \
+                                "file name (got " + repr(stl)[:120] + ")."
+
+    def test_a_long_stl_within_the_limits_is_only_missing(self, base):
+        error = refused(plate_job(parts={"box": {"name": "Box", "stl": "d" * 255}}), base)
+        assert error.error_code == "slice.part_missing"
+
+    @pytest.mark.parametrize("change, detail", [
+        (lambda d: d["copies"][0].update(colour="red"),
+         "copy 0 has fields this plate job format does not have: colour"),
+        (lambda d: d.update(overides={"supports": "on"}),
+         "it has fields this plate job format does not have: overides"),
+        (lambda d: d["parts"]["box"].update(units="inch"),
+         "part 'box' has fields this plate job format does not have: units"),
+    ])
+    def test_a_field_that_is_not_listed_is_refused_not_ignored(self, base, change, detail):
+        # A misspelled `overrides` once meant no overrides at all, silently.
         data = plate_job()
-        data["copies"][0]["colour"] = "red"
-        data["unknown"] = 1
-        assert set(read_plate_job(data, base).copies[0]) == {"ref", "orientation", "angle", "x", "y"}
+        change(data)
+        error = refused(data, base)
+        assert error.details == detail
+        assert error.message == f"This plate job could not be read: {detail}."
 
     def test_parts_no_copy_names_are_not_read(self, base):
         data = plate_job()
@@ -116,17 +147,99 @@ class TestRead:
         if result is not None:
             data = result
         error = refused(data, base)
-        assert error.message == BAD_JOB_MESSAGE == "This request could not be read."
+        assert error.message == BAD_JOB_MESSAGE.format(problem=error.details)
         assert error.error_code == "slice.bad_plate_job"
-        assert error.details.startswith(("the plate job is", "copies is", "copy 0 is", "copy 3 is", "parts is",
-                                          "part 'box' is", "part 'bad key' is")), error.details
+        assert error.details.startswith(("it is not", "it has no copies", "copy 0 has", "copy 3 is", "its parts",
+                                          "part 'box' has", "part 'box' is", "part key 'bad key'")), error.details
+
+    @pytest.mark.parametrize("change, detail", [
+        (lambda d: d["copies"][0].update(orientation="up"),
+         "copy 0 has an orientation that is not one of +z, -z, +x, -x, +y, -y (got 'up')"),
+        (lambda d: d["copies"][0].update(angle=360), "copy 0 has an angle that is not a whole number from 0 to 359 "
+                                                     "(got 360)"),
+        (lambda d: d["copies"][0].update(x="50"), "copy 0 has a position x that is not a finite number (got '50')"),
+        (lambda d: d["copies"][0].update(ref=None), "copy 0 has no valid ref (got None)"),
+        (lambda d: d["parts"]["box"].update(name=""), "part 'box' has no name (got '')"),
+        (lambda d: d.update(parts={"box": "box.stl"}), "part 'box' is not an object"),
+    ])
+    def test_the_refusal_says_what_is_wrong(self, base, change, detail):
+        data = plate_job()
+        change(data)
+        assert refused(data, base).details == detail
+
+    def test_a_part_name_over_the_limit_is_refused(self, base):
+        # A name of 300,000 characters was once accepted: 300 kB in each log line and in the
+        # sentence to the student.
+        data = plate_job()
+        data["parts"]["box"]["name"] = "N" * 300_000
+        error = refused(data, base)
+        assert error.error_code == "slice.bad_plate_job"
+        assert error.message == ("This plate job could not be read: part 'box' has a name of 300,000 characters, "
+                                 "longer than the 200 a part name may have.")
+
+    def test_a_part_name_at_the_limit_is_read(self, base):
+        data = plate_job()
+        data["parts"]["box"]["name"] = "N" * service.MAX_PART_NAME_CHARS
+        assert read_plate_job(data, base).parts["box"].name == "N" * 200
+
+    @pytest.mark.parametrize("field", ["printer", "filament", "process"])
+    def test_a_profile_name_over_the_limit_is_refused(self, base, field):
+        error = refused(plate_job(**{field: "P" * 300_000}), base)
+        assert error.error_code == "slice.bad_plate_job"
+        assert error.message == (f"This plate job could not be read: its {field} is a name of 300,000 characters, "
+                                 f"longer than the 200 a profile name may have.")
+
+    @pytest.mark.parametrize("printer", [["x"] * 100_000, "deep"])
+    def test_a_printer_that_is_not_a_name_gives_a_short_sentence(self, base, printer):
+        if printer == "deep":
+            printer = []
+            for _ in range(100_000):
+                printer = [printer]
+        with pytest.raises(ProfileError) as caught:
+            read_plate_job(plate_job(printer=printer), base)
+        report = error_report(caught.value)
+        assert report["code"] == "slice.unknown_printer"
+        assert len(report["message"]) < 200 and len(report["detail"]) < 400
+
+    def test_filament_and_process_that_are_not_names_give_a_short_detail(self, base):
+        with pytest.raises(ProfileError) as caught:
+            read_plate_job(plate_job(printer=P4, filament=["x"] * 100_000, process={"a": "y" * 100_000}), base)
+        assert caught.value.message == CHOOSE_PROFILES_MESSAGE and len(caught.value.details) < 400
+
+    def test_no_caller_text_makes_a_sentence_or_detail_grow_without_bound(self, base):
+        # Every text field of a plate job at a hostile length: each refusal stays short.
+        huge = "Z" * 300_000
+        cases = [lambda d: d["parts"]["box"].update(name=huge), lambda d: d["parts"]["box"].update(stl=huge),
+                 lambda d: d["parts"].update({huge: {"name": "X", "stl": "x.stl"}}),
+                 lambda d: d["copies"][0].update(ref=huge), lambda d: d["copies"][0].update(orientation=huge),
+                 lambda d: d["copies"][0].update(x=huge), lambda d: d.update({huge: 1}),
+                 lambda d: d["copies"][0].update({huge: 1}), lambda d: d["parts"]["box"].update({huge: 1}),
+                 lambda d: d.update(printer=huge), lambda d: d.update(overrides={huge: "on"}),
+                 lambda d: d.update(overrides={"supports": huge})]
+        for change in cases:
+            data = plate_job()
+            change(data)
+            with pytest.raises(Exception) as caught:      # noqa: PT011 - each is its own refusal
+                read_plate_job(data, base)
+            report = error_report(caught.value)
+            assert report["code"] != "slice.unexpected", report
+            assert len(report["message"]) < 300 and len(report["detail"]) < 2000, report["code"]
 
     def test_large_integer_coordinate_is_a_refusal_not_a_bug(self, base):
         data = plate_job()
         data["copies"][1]["x"] = 10 ** 400
         report = error_report(refused(data, base))
         assert report["code"] == "slice.bad_plate_job"
-        assert report["detail"].startswith("copy 1 is not {ref, orientation, angle, x, y} with valid values")
+        assert report["detail"].startswith("copy 1 has a position x that is not a finite number")
+
+    def test_a_value_nested_too_deeply_to_print_is_still_a_refusal(self, base):
+        data = plate_job()
+        deep = []
+        for _ in range(100_000):
+            deep = [deep]
+        data["copies"][0]["x"] = deep
+        assert refused(data, base).details == ("copy 0 has a position x that is not a finite number "
+                                               "(got a value nested too deeply)")
 
     def test_large_but_finite_integer_is_a_number(self, base):
         data = plate_job()
@@ -194,9 +307,9 @@ class TestRead:
         assert [args[1] for args in read] == ["Box"]            # Box read; Peg refused unread
 
     @pytest.mark.parametrize("data, message, detail", [
-        (b"solid peg\nendsolid peg\n", "The file for Peg could not be read as a part.",
-         "23 bytes, shorter than the 84-byte header of a binary STL"),
-        (box_stl(8, 8, 0.05), "Peg is too small to print (under 0.1 mm).",
+        (b"solid peg\nendsolid peg\n", "The file for Peg is not an STL file.",
+         "23 bytes of text, starting b'solid peg\\nendsolid peg\\n'"),
+        (box_stl(8, 8, 0.05), "Peg is flat: it is 0.05 mm thick, too thin to print.",
          "8.0 x 8.0 x 0.05 mm, every side must be over 0.1 mm"),
     ])
     def test_unusable_stl(self, base, data, message, detail):
@@ -206,15 +319,62 @@ class TestRead:
         assert caught.value.message == message
         assert caught.value.details == f"{base / 'peg.stl'}: {detail}"
 
-    def test_job_triangles_cap(self, base, monkeypatch):
-        # The three copies hold 36 triangles; the cap is lowered rather than the parts made
-        # 150,000 triangles each, which would only make the test slow.
-        monkeypatch.setattr(limits, "MAX_JOB_TRIANGLES", 35)
-        error = refused(plate_job(), base)
-        assert error.message == "These copies are too detailed to slice together; lower the quantities."
-        assert error.details == "36 triangles over 3 copies, cap 35"
-        monkeypatch.setattr(limits, "MAX_JOB_TRIANGLES", 36)
-        assert read_plate_job(plate_job(), base).triangles() == 36
+    def test_a_memory_estimate_over_the_ceiling_refuses_nothing(self, base, monkeypatch):
+        # The estimate is rough (a 100 mm solid cube: 1,158 MB estimated, 269 MB measured),
+        # so it is only logged; the watchdog guards memory while Orca runs.
+        monkeypatch.setenv(limits.MAX_PEAK_MB_ENV, "180")
+        job = read_plate_job(plate_job(), base)
+        estimate = limits.estimate_peak_mb([4000.0, 4000.0, 1920.0], False)
+        assert job.estimated_peak_mb == estimate > 180
+        assert job.memory_ceiling_mb == 180
+        assert (job.describe()["estimated_peak_mb"], job.describe()["memory_ceiling_mb"]) == (estimate, 180)
+
+    def test_a_solid_block_the_old_estimate_refused_is_read(self, base):
+        (base / "peg.stl").write_bytes(box_stl(100, 100, 100))
+        job = read_plate_job(plate_job(copies=[{"ref": "peg", "orientation": "+z", "angle": 0, "x": 170.0,
+                                                "y": 160.0}]), base)
+        assert job.estimated_peak_mb > limits.DEFAULT_MAX_PEAK_MB and job.memory_ceiling_mb == 900
+
+    def test_supports_raise_the_estimate(self, base):
+        off = read_plate_job(plate_job(overrides={"supports": "off"}), base)
+        on = read_plate_job(plate_job(overrides={"supports": "on"}), base)
+        assert (off.supports_on, on.supports_on) == (False, True)
+        assert on.estimated_peak_mb > off.estimated_peak_mb and on.expected_s > off.expected_s
+
+    def test_a_part_that_fits_no_orientation_is_refused_by_name(self, base):
+        (base / "peg.stl").write_bytes(box_stl(400, 400, 400))
+        with pytest.raises(MeshError) as caught:
+            read_plate_job(plate_job(), base)
+        assert caught.value.error_code == "slice.part_too_large"
+        assert caught.value.message == ("Peg is 400 x 400 x 400 mm, larger than the printer can print in any "
+                                        "orientation (340.0 x 320.0 x 340.0 mm).")
+
+    def test_a_long_part_that_fits_only_turned_is_not_refused_as_too_large(self, base):
+        # 400 mm long: it fits the 340 x 320 plate only on the diagonal, so the part check
+        # lets it through and the placement decides.
+        (base / "peg.stl").write_bytes(box_stl(400, 10, 10))
+        data = plate_job(copies=[{"ref": "peg", "orientation": "+z", "angle": 43, "x": 170.0, "y": 160.0}])
+        assert read_plate_job(data, base).parts["peg"].name == "Peg"
+
+    def test_stl_paths_can_be_confined_to_a_folder(self, base, tmp_path):
+        outside = tmp_path / "outside.stl"
+        outside.write_bytes(box_stl(8, 8, 30))
+        data = plate_job()
+        data["parts"]["peg"]["stl"] = "../outside.stl"
+        error = refused_confined(data, base)
+        assert (error.error_code, error.message) == (
+            "slice.part_missing", "The file for Peg is not one of the files sent with this plate job.")
+        data["parts"]["peg"]["stl"] = str(outside)
+        assert refused_confined(data, base).error_code == "slice.part_missing"
+        assert read_plate_job(plate_job(), base, confine_to=base).parts["peg"].stl_path == (base / "peg.stl").resolve()
+
+    def test_part_warnings_travel_with_the_plate_job(self, base):
+        (base / "peg.stl").write_bytes(box_stl(2, 1, 0.5))
+        job = read_plate_job(plate_job(), base)
+        assert [w["code"] for w in job.part_warnings()] == ["slice.part_maybe_inches"]
+        assert job.part_warnings()[0]["message"] == ("Peg is only 2.0 x 1.0 x 0.5 mm; if it was drawn in inches, "
+                                                     "export it again in millimetres.")
+        assert job.describe()["parts"]["peg"]["warnings"] == ["slice.part_maybe_inches"]
 
     def test_unknown_printer(self, base):
         with pytest.raises(ProfileError) as caught:
@@ -268,8 +428,10 @@ class TestSlice:
         assert sliced.path == out / "Box_plus1-20261009-1432.gcode.3mf"
         assert sliced.path.is_file()
         assert sliced.summary == {"file": "Box_plus1-20261009-1432.gcode.3mf", "copies": 3, "print_time_s": 600.0,
-                                  "filament_m": 1.5, "filament_g": 4.5, "layer_count": 42, "warnings": []}
+                                  "filament_m": 1.5, "filament_g": 4.5, "layer_count": 42, "warnings": [],
+                                  "part_warnings": []}
         assert sorted(p.name for p in out.iterdir()) == [sliced.path.name]
+        assert sliced.peak_rss_kb > 0
 
     def test_json_value_with_base_dir(self, base, tmp_path, monkeypatch):
         install_fake_orca(tmp_path, monkeypatch, "ok")
@@ -355,13 +517,13 @@ class TestSlice:
     def test_orca_gets_absolute_paths_and_no_arrange(self, base, tmp_path, monkeypatch):
         install_fake_orca(tmp_path, monkeypatch, "ok")
         seen = {}
-        real_run = __import__("subprocess").run
+        real_run = slicer.run_process
 
         def spy(cmd, **kwargs):
             seen["cmd"], seen["cwd"] = cmd, kwargs["cwd"]
             return real_run(cmd, **kwargs)
 
-        monkeypatch.setattr("penguin_slice.slicer.subprocess.run", spy)
+        monkeypatch.setattr(slicer, "run_process", spy)
         slice_plate_job(write_plate_job(base, plate_job(), {}), tmp_path / "out")
         cmd = seen["cmd"]
         assert cmd[cmd.index("--arrange") + 1] == "0" and cmd[cmd.index("--orient") + 1] == "0"
@@ -378,14 +540,103 @@ class TestSlice:
         path.write_text("{not json")
         with pytest.raises(PlateJobRefused) as caught:
             slice_plate_job(path, tmp_path / "out")
-        assert caught.value.message == BAD_JOB_MESSAGE
-        assert caught.value.details.startswith(f"{path}: Expecting property name")
+        assert caught.value.message == "This plate job could not be read: it is not a readable JSON file."
+        assert caught.value.details.startswith(f"{path}: JSONDecodeError: Expecting property name")
+
+    def test_plate_job_file_nested_too_deeply_for_python(self, tmp_path):
+        # 100,000 nested brackets make json.loads raise RecursionError: still a bad plate job.
+        path = tmp_path / "plate-job.json"
+        path.write_text("[" * 100_000 + "]" * 100_000)
+        with pytest.raises(PlateJobRefused) as caught:
+            slice_plate_job(path, tmp_path / "out")
+        report = error_report(caught.value)
+        assert report["code"] == "slice.bad_plate_job"
+        assert report["detail"].startswith(f"{path}: RecursionError")
 
     def test_missing_plate_job_file(self, tmp_path):
         with pytest.raises(PlateJobRefused) as caught:
             slice_plate_job(str(tmp_path / "nope.json"), tmp_path / "out")
-        assert caught.value.message == BAD_JOB_MESSAGE
+        assert caught.value.message == "This plate job could not be read: it is not a readable JSON file."
         assert "No such file or directory" in caught.value.details
+
+    def test_disk_full_while_the_plate_is_written(self, base, tmp_path, monkeypatch):
+        install_fake_orca(tmp_path, monkeypatch, "ok")
+
+        def full(*args, **kwargs):
+            raise OSError(28, "No space left on device")
+        monkeypatch.setattr(plate_job_module, "write_plate_3mf", full)
+        out = tmp_path / "out"
+        with pytest.raises(SliceError) as caught:
+            slice_plate_job(write_plate_job(base, plate_job(), {}), out)
+        report = error_report(caught.value)
+        assert (report["code"], report["message"]) == ("slice.scratch_unwritable",
+                                                       "The print server could not write the slicer's working files.")
+        assert report["detail"] == "OSError: [Errno 28] No space left on device"
+        assert report["retryable"] is True
+        assert list(out.iterdir()) == []
+
+    def test_cancel_and_progress_reach_orca(self, base, tmp_path, monkeypatch):
+        install_fake_orca(tmp_path, monkeypatch, "hang")
+        stop, stages = slicer.Stop(), []
+
+        def on_progress(stage, fraction, message):
+            stages.append(stage)
+            if stage == "slicing_mesh":
+                stop.set("cancel")
+        out = tmp_path / "out"
+        with pytest.raises(slicer.SliceCancelled):
+            slice_plate_job(write_plate_job(base, plate_job(), {}), out, stop=stop, on_progress=on_progress)
+        assert stages == ["building_plate", "slicing", "slicing_mesh"]
+        assert list(out.iterdir()) == []
+
+    def test_scratch_of_a_dead_process_is_removed_and_ours_kept(self, tmp_path):
+        ours = service.make_scratch(tmp_path)
+        dead = tmp_path / "slice-999999999-5-abc"
+        dead.mkdir()
+        reused = tmp_path / f"slice-{os.getpid()}-1-abc"          # our pid, another start time
+        reused.mkdir()
+        other = tmp_path / "unrelated"
+        other.mkdir()
+        (tmp_path / "slice-1-2-a-file").write_text("not a folder")
+        assert sorted(service.clean_stale_scratch(tmp_path)) == sorted([dead.name, reused.name])
+        assert ours.is_dir() and other.is_dir() and (tmp_path / "slice-1-2-a-file").exists()
+        assert service.clean_stale_scratch(tmp_path / "missing") == []
+
+    def test_min_width_of_degenerate_hulls(self):
+        assert service._min_width([]) == (0.0, 0.0)
+        assert service._min_width([[0, 0], [3, 4]]) == (0.0, 4.0)
+        least, diameter = service._min_width([[0, 0], [0, 0], [10, 0], [10, 2], [0, 2]])
+        assert least == 2.0 and diameter == pytest.approx(10.198, abs=1e-3)
+
+    def test_process_start_of_a_process_we_may_not_see(self, monkeypatch):
+        monkeypatch.setattr(Path, "read_text", lambda p, *a, **k: (_ for _ in ()).throw(PermissionError()))
+        assert service._process_start(1) is None
+
+    def test_process_start_without_proc_of_another_users_process(self, monkeypatch):
+        real_exists = Path.exists
+        monkeypatch.setattr(Path, "exists", lambda p: False if str(p) == "/proc/self/stat" else real_exists(p))
+        monkeypatch.setattr(Path, "read_text", lambda p, *a, **k: (_ for _ in ()).throw(FileNotFoundError()))
+
+        def kill(pid, sig):
+            raise PermissionError()
+        monkeypatch.setattr(service.os, "kill", kill)
+        assert service._process_start(1) == 0
+
+    def test_a_missing_catalog_is_a_server_profile_problem(self, base, monkeypatch):
+        from penguin_slice import print_config
+        monkeypatch.setattr(print_config, "load_catalog", lambda: print_config.Catalog.load(base / "no-catalog"))
+        with pytest.raises(ProfileError) as caught:
+            read_plate_job(plate_job(printer=P4, filament="Bambu PLA Basic @BBL H2S",
+                                     process="0.20mm Standard @BBL H2S"), base)
+        assert caught.value.error_code == "slice.profile_unreadable"
+        assert caught.value.details.startswith("FileNotFoundError")
+
+    def test_process_start_without_proc(self, monkeypatch):
+        real_exists = Path.exists
+        monkeypatch.setattr(Path, "exists", lambda p: False if str(p) == "/proc/self/stat" else real_exists(p))
+        monkeypatch.setattr(Path, "read_text", lambda p, *a, **k: (_ for _ in ()).throw(FileNotFoundError()))
+        assert service._process_start(os.getpid()) == 0
+        assert service._process_start(999999999) is None
 
     def test_existing_file_of_the_same_name_is_replaced(self, base, tmp_path, monkeypatch):
         install_fake_orca(tmp_path, monkeypatch, "ok")

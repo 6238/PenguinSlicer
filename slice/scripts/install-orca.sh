@@ -20,7 +20,10 @@ RELEASE_URL="https://github.com/OrcaSlicer/OrcaSlicer/releases/download/v${ORCA_
 
 # The slice/ project directory: this script sits in slice/scripts/.
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DEST="$ROOT/tools/orca"
+# PENGUIN_SLICE_ORCA_DEST installs somewhere else (a trial install, the upgrade's check);
+# PENGUIN_SLICE_ORCA_CACHE keeps each verified download there and reuses it.
+DEST="${PENGUIN_SLICE_ORCA_DEST:-$ROOT/tools/orca}"
+CACHE="${PENGUIN_SLICE_ORCA_CACHE:-}"
 
 die() { echo "install-orca: $*" >&2; exit 1; }
 
@@ -60,12 +63,21 @@ sha256_of() {
 rm -rf "$DEST"
 mkdir -p "$DEST/download"
 DL="$DEST/download/$ASSET"
-echo "install-orca: downloading $ASSET"
-curl -fL --retry 3 --retry-delay 5 -o "$DL" "$RELEASE_URL/$ASSET" || { rm -rf "$DEST"; die "download of $ASSET failed"; }
+if [ -n "$CACHE" ] && [ -f "$CACHE/$ASSET" ]; then
+    echo "install-orca: using the cached $CACHE/$ASSET"
+    cp "$CACHE/$ASSET" "$DL"
+else
+    echo "install-orca: downloading $ASSET"
+    curl -fL --retry 3 --retry-delay 5 -o "$DL" "$RELEASE_URL/$ASSET" || { rm -rf "$DEST"; die "download of $ASSET failed"; }
+fi
 ACTUAL="$(sha256_of "$DL")"
 if [ "$ACTUAL" != "$SHA" ]; then
     rm -rf "$DEST"
     die "checksum mismatch for $ASSET: expected $SHA, got $ACTUAL; download deleted"
+fi
+if [ -n "$CACHE" ] && [ ! -f "$CACHE/$ASSET" ]; then
+    mkdir -p "$CACHE"
+    cp "$DL" "$CACHE/$ASSET"
 fi
 
 write_wrapper_linux() {

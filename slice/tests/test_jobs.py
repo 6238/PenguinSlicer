@@ -1,8 +1,9 @@
-"""jobs.JobPool, with synchronous stand-ins for the executor and an injected clock.
+"""jobs.JobPool: progress reports, cancellation, abandonment, expiry, shutdown and the log.
 
-No test sleeps or waits on a timeout that is expected to run out: a wait that must
-return early is given no timeout at all, so only a notification can end it, and every
-thread join has a generous fail-safe that is never reached when the code is right.
+Synchronous stand-ins for the executor and an injected clock. No test sleeps or waits on a
+timeout that is expected to run out: a worker that must stay running blocks on an Event
+the test sets, every wait that must return early has no timeout or a fail-safe that is
+reached only when the test is failing.
 """
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -10,7 +11,9 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 from penguin_slice import jobs
-from penguin_slice.jobs import JobFailure, JobPool, QueueFull
+from penguin_slice.errors import error_report
+from penguin_slice.jobs import FINAL, STAGES, JobFailure, JobPool, QueueFull
+from penguin_slice.slicer import ORCA_STAGES, SliceCancelled, SliceError
 
 FAILSAFE_S = 10      # only reached when a test is about to fail
 
@@ -43,411 +46,622 @@ class FakeClock:
         return self.now
 
 
-class TickingClock:
-    """One second later on every reading, so every update is later than the one before."""
-    def __init__(self, start=1000.0):
-        self.now = start
-        self._lock = threading.Lock()
-
-    def __call__(self):
-        with self._lock:
-            self.now += 1.0
-            return self.now
+def good_worker(job_id, payload, context):
+    context.progress("building_plate")
+    context.progress("slicing_mesh", 0.07)
+    context.progress("slicing_mesh", 0.07)            # a repeat sends nothing
+    context.progress("generating_gcode", 0.75)
+    return {"file": "Box-20261009-1432.gcode.3mf", "summary": {"layer_count": 3}, "peak_rss_kb": 2048,
+            "orca_wall_s": 1.5}
 
 
-def good_worker(job_id, payload):
-    return {"token": "tok-" + job_id[:4], "summary": {"layer_count": 3}, "part": {"name": "sample_part"}}
+class Blocking:
+    """A worker that reports one stage, then waits until released or stopped."""
+    def __init__(self, cancellable=True, result=None):
+        self.started = threading.Event()
+        self.release = threading.Event()
+        self.cancellable = cancellable
+        self.result = result or {"file": "x.gcode.3mf"}
+
+    def __call__(self, job_id, payload, context):
+        context.progress("slicing_mesh", 0.07)
+        self.started.set()
+        if self.cancellable:
+            context.stop.listen(self.release.set)
+        assert self.release.wait(FAILSAFE_S)
+        if self.cancellable and context.stop.is_set():
+            raise SliceCancelled("stopped")
+        return self.result
 
 
-class TestSubmitAndRun:
-    def test_submit_returns_long_id_and_runs_worker_to_done(self):
-        pool = JobPool(good_worker, executor=ImmediateExecutor())
-        job_id = pool.submit()
-        assert len(job_id) >= 32
-        rec = pool.get(job_id)
-        assert rec["state"] == "done"
-        assert rec["token"] == "tok-" + job_id[:4]
-        assert rec["summary"] == {"layer_count": 3}
-        assert rec["part"] == {"name": "sample_part"}
-        assert rec["error"] is None
+def make_pool(worker=good_worker, **kwargs):
+    logs = []
+    kwargs.setdefault("executor", ImmediateExecutor())
+    kwargs.setdefault("clock", FakeClock())
+    pool = JobPool(worker, log=logs.append, error_report=error_report, **kwargs)
+    return pool, logs
 
-    def test_payload_reaches_worker(self):
+
+def threaded_pool(worker, **kwargs):
+    executor = ThreadPoolExecutor(max_workers=1)
+    pool, logs = make_pool(worker, executor=executor, **kwargs)
+    return pool, logs, executor
+
+
+def wait_final(pool, job_id):
+    report = pool.get(job_id)
+    while report["state"] not in FINAL:
+        report = pool.wait(job_id, report["sequence"], timeout=FAILSAFE_S)
+    return report
+
+
+class TestReports:
+    def test_a_job_reports_queued_running_its_stages_and_done(self):
         seen = []
+        pool, _logs = make_pool(executor=HeldExecutor())
+        job_id = pool.submit("payload", expected_s=12.5)
+        queued = pool.get(job_id)
+        assert queued == {"job": job_id, "state": "queued", "stage": "queued", "stage_label": "Waiting for the slicer",
+                          "elapsed_s": 0.0, "sequence": 1, "expected_s": 12.5}
+        original = pool._progress
 
-        def worker(job_id, payload):
-            seen.append(payload)
-            return good_worker(job_id, payload)
+        def spy(*args):
+            original(*args)
+            seen.append(pool.get(job_id))
+        pool._progress = spy
+        pool._executor.run_next()
+        final = pool.get(job_id)
+        assert [r["stage"] for r in seen] == ["building_plate", "slicing_mesh", "slicing_mesh", "generating_gcode"]
+        assert [r["sequence"] for r in seen] == [3, 4, 4, 5]
+        assert seen[1]["fraction"] == 0.07 and seen[1]["stage_label"] == "Slicing the parts into layers"
+        assert "fraction" not in seen[0]
+        assert final["state"] == "done" and final["sequence"] == 6
+        assert "stage" not in final and "fraction" not in final and "error" not in final
+        assert final["expected_s"] == 12.5
+        assert pool.result(job_id)["summary"] == {"layer_count": 3}
 
-        pool = JobPool(worker, executor=ImmediateExecutor())
-        plate = object()
-        assert pool.get(pool.submit(payload=plate))["state"] == "done"
-        pool.submit()
-        assert seen[0] is plate
-        assert seen[1] is None
+    def test_ids_are_unguessable_and_distinct(self):
+        pool, _ = make_pool()
+        ids = {pool.submit() for _ in range(20)}
+        assert len(ids) == 20 and all(len(i) == 17 and i.startswith("j") for i in ids)
 
-    def test_states_go_queued_running_done_in_order(self):
-        seen = []
-        holder = {}
-
-        def worker(job_id, payload):
-            seen.append(holder["pool"].get(job_id)["state"])
-            return good_worker(job_id, payload)
-
-        executor = HeldExecutor()
-        pool = JobPool(worker, executor=executor)
-        holder["pool"] = pool
-        job_id = pool.submit()
-        seen.append(pool.get(job_id)["state"])
-        executor.run_next()
-        seen.append(pool.get(job_id)["state"])
-        assert seen == ["queued", "running", "done"]
-
-    def test_unknown_id_is_none(self):
-        pool = JobPool(good_worker, executor=ImmediateExecutor())
-        assert pool.get("nope") is None
-        assert pool.wait("nope", 0, timeout=None) is None      # returns at once, never waits
-
-    def test_get_returns_a_copy_with_elapsed(self):
+    def test_elapsed_counts_from_the_start_of_running(self):
         clock = FakeClock()
-        pool = JobPool(good_worker, executor=HeldExecutor(), clock=clock)
+        worker = Blocking()
+        pool, _logs, executor = threaded_pool(worker, clock=clock)
         job_id = pool.submit()
-        clock.now += 12.5
-        rec = pool.get(job_id)
-        assert rec["elapsed_s"] == 12.5
-        assert (rec["created"], rec["updated"]) == (1000.0, 1000.0)
-        rec["state"] = "hacked"
-        assert pool.get(job_id)["state"] == "queued"
+        assert worker.started.wait(FAILSAFE_S)
+        clock.now += 7.25
+        assert pool.get(job_id)["elapsed_s"] == 7.25
+        worker.release.set()
+        executor.shutdown(wait=True)
+        assert pool.get(job_id)["elapsed_s"] == 7.25
 
-    def test_counts(self):
-        executor = HeldExecutor()
-        pool = JobPool(good_worker, executor=executor, max_queued=5)
-        pool.submit()
-        pool.submit()
-        fn, args = executor.pending.pop(0)
-        pool._update(args[0], state="running")
-        assert pool.counts() == {"queued": 1, "running": 1}
+    def test_unknown_stage_keeps_the_current_one(self):
+        def worker(job_id, payload, context):
+            context.progress("slicing_mesh", 0.1)
+            context.progress(None, 0.2)          # an Orca message the service does not know
+            return {}
+        pool, _ = make_pool(worker)
+        job_id = pool.submit()
+        assert pool.get(job_id)["state"] == "done"
+
+    def test_every_orca_stage_is_a_job_stage(self):
+        assert set(ORCA_STAGES.values()) <= set(STAGES)
+
+    def test_unknown_job(self):
+        pool, _ = make_pool()
+        assert pool.get("nope") is None and pool.result("nope") is None
+        assert pool.wait("nope", 0, timeout=None) is None
+        assert list(pool.follow("nope")) == []
+
+    def test_result_only_for_done_jobs(self):
+        pool, _ = make_pool(executor=HeldExecutor())
+        job_id = pool.submit()
+        assert pool.result(job_id) is None
 
 
 class TestFailure:
-    def test_job_failure_ends_failed_with_message_only_and_logs_details(self):
-        logged = []
+    def test_a_failure_carries_its_error_report(self):
+        def worker(job_id, payload, context):
+            raise SliceError("Parts are too close together; spread them out.", "detail", -101,
+                             error_code="slice.orca_too_close", reason="too close")
+        pool, logs = make_pool(worker)
+        job_id = pool.submit(describe={"copies": 2})
+        report = pool.get(job_id)
+        assert report["state"] == "failed"
+        assert report["error"]["code"] == "slice.orca_too_close"
+        assert report["error"]["detail"] == "orca code -101\ndetail"
+        failed = logs[-1]
+        assert (failed["state"], failed["error_code"], failed["orca_reason"], failed["copies"]) == \
+            ("failed", "slice.orca_too_close", "too close", 2)
 
-        def worker(job_id, payload):
-            raise JobFailure("The slicer could not process this part.", "exit code 255\nsecret details")
+    def test_a_bug_in_the_worker_keeps_its_traceback_for_the_log(self):
+        def worker(job_id, payload, context):
+            raise KeyError("plate")
+        pool, _ = make_pool(worker)
+        error = pool.get(pool.submit())["error"]
+        assert error["code"] == "slice.unexpected"
+        assert error["detail"].startswith("KeyError: 'plate'\nTraceback")
 
-        pool = JobPool(worker, executor=ImmediateExecutor(), log=logged.append)
+    def test_job_failure_keeps_its_words(self):
+        def worker(job_id, payload, context):
+            raise JobFailure("The worker gave up.", "worker said no")
+        pool, _ = make_pool(worker)
+        error = pool.get(pool.submit())["error"]
+        assert error["detail"] == "JobFailure: The worker gave up.\nworker said no"
+
+    def test_an_error_report_that_fails_falls_back(self):
+        def worker(job_id, payload, context):
+            raise ValueError("x")
+
+        def broken(exc):
+            raise RuntimeError("adapter")
+        pool = JobPool(worker, executor=ImmediateExecutor(), error_report=broken)
+        error = pool.get(pool.submit())["error"]
+        assert error["code"] == "slice.unexpected" and error["detail"].startswith("ValueError: x")
+
+    def test_default_error_report(self):
+        def worker(job_id, payload, context):
+            raise ValueError("x")
+        pool = JobPool(worker, executor=ImmediateExecutor())
+        assert pool.get(pool.submit())["error"]["code"] == "slice.unexpected"
+
+    def test_failure_wakes_a_subscriber(self):
+        worker = Blocking(cancellable=False)
+        original = worker.__call__
+
+        def failing(job_id, payload, context):
+            original(job_id, payload, context)
+            raise ValueError("boom")
+        pool, _logs, executor = threaded_pool(failing)
         job_id = pool.submit()
-        rec = pool.get(job_id)
-        assert (rec["state"], rec["error"]) == ("failed", "The slicer could not process this part.")
-        assert "secret details" not in str(rec)
-        assert logged == [f"slice job {job_id[:8]} failed: The slicer could not process this part.\n"
-                          "exit code 255\nsecret details"]
-
-    def test_unexpected_exception_ends_failed_with_generic_message_and_logs_traceback(self):
-        logged = []
-
-        def worker(job_id, payload):
-            raise RuntimeError("boom with a path /tmp/x")
-
-        pool = JobPool(worker, executor=ImmediateExecutor(), log=logged.append)
-        rec = pool.get(pool.submit())
-        assert (rec["state"], rec["error"]) == ("failed", "The slicer failed unexpectedly.")
-        assert "/tmp/x" not in str(rec)
-        assert "crashed:" in logged[0] and "RuntimeError: boom with a path /tmp/x" in logged[0]
-
-    def test_worker_returning_a_non_dict_ends_failed_without_raising(self):
-        pool = JobPool(lambda job_id, payload: None, executor=ImmediateExecutor())
-        job_id = pool.submit()          # a synchronous executor must not raise out of submit
-        assert pool.get(job_id)["error"] == "The slicer failed unexpectedly."
-
-    @pytest.mark.parametrize("failure", [JobFailure("The slicer could not process this part.", "x"),
-                                         RuntimeError("boom")])
-    def test_failure_wakes_a_subscriber_waiting_without_a_timeout(self, failure):
-        # The subscriber is inside cond.wait (no timeout: only a notification ends it) before
-        # the worker fails, so a failure that stamps nothing or notifies nobody leaves it
-        # hanging and the join's fail-safe runs out.
-        executor = HeldExecutor()
-        started, release = threading.Event(), threading.Event()
-
-        def worker(job_id, payload):
-            started.set()
-            assert release.wait(FAILSAFE_S)
-            raise failure
-
-        pool = JobPool(worker, executor=executor, clock=TickingClock())
-        job_id = pool.submit()
-        runner = threading.Thread(target=executor.run_next, daemon=True)
-        runner.start()
-        assert started.wait(FAILSAFE_S)
-        running = pool.get(job_id)
-        assert running["state"] == "running"
-
-        waiting = threading.Event()
-
-        class SignallingCondition(threading.Condition):
-            def wait(self, timeout=None):
-                waiting.set()           # still holding the lock: the worker cannot update yet
-                return super().wait(timeout)
-
-        pool._conds[job_id] = SignallingCondition(pool._lock)
-        answers = []
-        waiter = threading.Thread(target=lambda: answers.append(pool.wait(job_id, running["updated"], timeout=None)),
-                                  daemon=True)
-        waiter.start()
-        assert waiting.wait(FAILSAFE_S)
-        release.set()
-        waiter.join(FAILSAFE_S)
-        runner.join(FAILSAFE_S)
-        assert not waiter.is_alive(), "a failed job did not wake its subscriber"
-        assert answers[0]["state"] == "failed"
-        assert answers[0]["updated"] > running["updated"]
-
-    def test_default_log_swallows(self):
-        pool = JobPool(lambda job_id, payload: 1 / 0, executor=ImmediateExecutor())
-        assert pool.get(pool.submit())["state"] == "failed"
+        assert worker.started.wait(FAILSAFE_S)
+        report = pool.get(job_id)
+        worker.release.set()
+        assert wait_final(pool, job_id)["state"] == "failed"
+        executor.shutdown(wait=True)
+        assert report["state"] == "running"
 
 
-class TestQueueCap:
-    def test_third_waiting_job_is_refused(self):
-        executor = HeldExecutor()
-        pool = JobPool(good_worker, executor=executor, max_queued=2)
+class TestQueue:
+    def test_queue_full(self):
+        pool, _ = make_pool(executor=HeldExecutor(), max_queued=2)
         pool.submit()
         pool.submit()
-        assert pool.counts() == {"queued": 2, "running": 0}
         with pytest.raises(QueueFull):
             pool.submit()
-        assert len(executor.pending) == 2            # the refused job reached no executor
-        executor.run_next()
-        pool.submit()   # room again after one finished
+        assert error_report(QueueFull())["code"] == "slice.busy"
 
-    def test_running_jobs_do_not_count_as_queued_on_a_real_thread_pool(self):
-        started = threading.Event()
-        release = threading.Event()
+    def test_two_jobs_at_once_with_one_slot_run_one_after_the_other(self):
+        worker = Blocking(cancellable=False)
+        pool, _logs, executor = threaded_pool(worker)
+        first, second = pool.submit(), pool.submit()
+        assert worker.started.wait(FAILSAFE_S)
+        assert (pool.get(first)["state"], pool.get(second)["state"]) == ("running", "queued")
+        worker.release.set()
+        assert wait_final(pool, first)["state"] == "done"
+        assert wait_final(pool, second)["state"] == "done"
+        executor.shutdown(wait=True)
 
-        def slow_worker(job_id, payload):
-            started.set()
-            assert release.wait(FAILSAFE_S)
-            return good_worker(job_id, payload)
-
-        executor = ThreadPoolExecutor(max_workers=1)
-        pool = JobPool(slow_worker, executor=executor, max_queued=1)
-        try:
-            first = pool.submit()
-            assert started.wait(FAILSAFE_S)
-            assert pool.get(first)["state"] == "running"
-            second = pool.submit()   # one queued behind the running one
-            with pytest.raises(QueueFull):
-                pool.submit()
-        finally:
-            release.set()            # never leave a worker parked, even on a failed assert
-            executor.shutdown(wait=True)
-        assert pool.counts() == {"queued": 0, "running": 0}
-        assert pool.get(first)["state"] == pool.get(second)["state"] == "done"
-
-    def test_default_executor_runs_jobs_on_its_own_thread(self):
-        names = []
-        done = threading.Event()
-
-        def worker(job_id, payload):
-            names.append(threading.current_thread().name)
-            done.set()
-            return good_worker(job_id, payload)
-
-        pool = JobPool(worker)
-        try:
+    def test_running_jobs_do_not_count_as_queued(self):
+        worker = Blocking(cancellable=False)
+        pool, _logs, executor = threaded_pool(worker, max_queued=1)
+        pool.submit()
+        assert worker.started.wait(FAILSAFE_S)
+        pool.submit()                       # queued: the one waiting place
+        with pytest.raises(QueueFull):
             pool.submit()
-            assert done.wait(FAILSAFE_S)
-        finally:
-            pool._executor.shutdown(wait=True)
+        worker.release.set()
+        executor.shutdown(wait=True)
+        assert pool.counts() == {"queued": 0, "running": 0, "done": 2, "failed": 0, "cancelled": 0}
+
+    def test_default_executor_runs_on_its_own_thread(self):
+        names = []
+
+        def worker(job_id, payload, context):
+            names.append(threading.current_thread().name)
+            return {}
+        pool = JobPool(worker)
+        job_id = pool.submit()
+        wait_final(pool, job_id)
+        pool.shutdown()
         assert names[0].startswith("slice")
 
 
+class TestCancel:
+    def test_cancel_a_queued_job(self):
+        pool, logs = make_pool(executor=HeldExecutor())
+        job_id = pool.submit()
+        assert pool.cancel(job_id) == "cancelled"
+        assert pool.get(job_id)["state"] == "cancelled"
+        pool._executor.run_next()          # the worker never runs
+        assert pool.get(job_id)["state"] == "cancelled"
+        assert [entry["state"] for entry in logs] == ["queued", "cancelled"]
+
+    def test_cancel_a_running_job_reports_cancelled_only_after_the_worker_returned(self):
+        worker = Blocking()
+        pool, logs, executor = threaded_pool(worker)
+        job_id = pool.submit()
+        assert worker.started.wait(FAILSAFE_S)
+        assert pool.cancel(job_id) == "cancelling"
+        final = wait_final(pool, job_id)
+        executor.shutdown(wait=True)
+        assert final["state"] == "cancelled" and "error" not in final
+        assert [e["state"] for e in logs] == ["queued", "running", "cancelling", "cancelled"]
+        assert logs[-1]["cancel_reason"] == "cancel"
+
+    def test_cancel_twice(self):
+        worker = Blocking(cancellable=False)
+        pool, logs, executor = threaded_pool(worker)
+        job_id = pool.submit()
+        assert worker.started.wait(FAILSAFE_S)
+        assert pool.cancel(job_id) == "cancelling"
+        assert pool.cancel(job_id) == "cancelling"
+        assert [e["state"] for e in logs].count("cancelling") == 1
+        worker.release.set()
+        executor.shutdown(wait=True)
+
+    def test_cancel_at_the_instant_the_job_finishes_wins_and_discards_the_file(self):
+        discarded = []
+        worker = Blocking(cancellable=False, result={"file": "late.gcode.3mf"})
+        pool, _logs, executor = threaded_pool(worker, on_discard=discarded.append)
+        job_id = pool.submit()
+        assert worker.started.wait(FAILSAFE_S)
+        pool.cancel(job_id)                 # the worker then returns a result anyway
+        worker.release.set()
+        assert wait_final(pool, job_id)["state"] == "cancelled"
+        executor.shutdown(wait=True)
+        assert discarded == [{"file": "late.gcode.3mf"}]
+        assert pool.result(job_id) is None
+
+    def test_cancel_a_finished_job_changes_nothing(self):
+        pool, _ = make_pool()
+        job_id = pool.submit()
+        before = pool.get(job_id)
+        assert pool.cancel(job_id) == "finished"
+        assert pool.get(job_id) == before
+
+    def test_cancel_an_unknown_job(self):
+        pool, _ = make_pool()
+        assert pool.cancel("nope") == "unknown"
+
+
 class TestSubscribers:
-    def test_wait_returns_on_state_change_without_a_timeout(self):
-        executor = HeldExecutor()
-        pool = JobPool(good_worker, executor=executor, clock=TickingClock())
+    def test_late_subscriber_gets_the_latest_report_at_once(self):
+        pool, _ = make_pool()
         job_id = pool.submit()
-        since = pool.get(job_id)["updated"]
-        answers = []
-        waiter = threading.Thread(target=lambda: answers.append(pool.wait(job_id, since, timeout=None)),
-                                  daemon=True)
-        waiter.start()
-        executor.run_next()          # the change: running, then done, each notifying
-        waiter.join(FAILSAFE_S)
-        assert not waiter.is_alive(), "wait() missed the notification"
-        assert answers[0]["state"] in ("running", "done")
-        assert answers[0]["updated"] > since
+        assert [r["state"] for r in pool.follow(job_id)] == ["done"]
 
-    def test_wait_returns_at_once_when_the_record_has_moved_on(self):
-        pool = JobPool(good_worker, executor=ImmediateExecutor(), clock=TickingClock())
+    def test_follow_sees_each_report_in_order_and_ends_on_the_final_one(self):
+        worker = Blocking(cancellable=False)
+        pool, _logs, executor = threaded_pool(worker)
         job_id = pool.submit()
-        assert pool.wait(job_id, 0, timeout=None)["state"] == "done"
+        assert worker.started.wait(FAILSAFE_S)
+        stream = pool.follow(job_id, wait_s=FAILSAFE_S)
+        first = next(stream)
+        assert first["state"] == "running" and first["stage"] == "slicing_mesh"
+        worker.release.set()
+        rest = list(stream)
+        executor.shutdown(wait=True)
+        assert [r["state"] for r in rest] == ["done"]
+        assert rest[0]["sequence"] > first["sequence"]
 
-    def test_wait_with_no_change_returns_the_same_state_when_its_timeout_ends(self):
-        pool = JobPool(good_worker, executor=HeldExecutor())
+    def test_follow_repeats_on_its_cadence_when_nothing_changes(self):
+        pool, _ = make_pool(executor=HeldExecutor())
         job_id = pool.submit()
-        rec = pool.wait(job_id, pool.get(job_id)["updated"], timeout=0)
-        assert rec["state"] == "queued"
+        stream = pool.follow(job_id, wait_s=0)
+        assert next(stream)["sequence"] == next(stream)["sequence"] == 1
+        stream.close()
+        assert pool._jobs[job_id]["subscribers"] == 0
 
-    def test_follow_yields_state_then_terminal(self):
-        pool = JobPool(good_worker, executor=ImmediateExecutor())
+    def test_many_subscribers_each_see_the_end(self):
+        worker = Blocking(cancellable=False)
+        pool, _logs, executor = threaded_pool(worker)
         job_id = pool.submit()
-        events = list(pool.follow(job_id, wait_s=0))
-        assert [e for e, _ in events] == ["state", "done"]
-        assert events[-1][1]["token"] == "tok-" + job_id[:4]
+        assert worker.started.wait(FAILSAFE_S)
+        ends, ready = [], threading.Barrier(9)
 
-    def test_follow_repeats_state_on_cadence_until_change(self):
-        executor = HeldExecutor()
-        pool = JobPool(good_worker, executor=executor, clock=TickingClock())
-        gen = pool.follow(pool.submit(), wait_s=0)
-        first, second, third = next(gen), next(gen), next(gen)
-        assert [(e, r["state"]) for e, r in (first, second, third)] == [("state", "queued")] * 3
-        executor.run_next()
-        rest = list(gen)
-        assert rest[-1][0] == "done"
-        assert all(e == "state" for e, _ in rest[:-1])
+        def follow():
+            stream = pool.follow(job_id, wait_s=FAILSAFE_S)
+            next(stream)
+            ready.wait(FAILSAFE_S)
+            ends.append(list(stream)[-1]["state"])
+        threads = [threading.Thread(target=follow) for _ in range(8)]
+        for thread in threads:
+            thread.start()
+        ready.wait(FAILSAFE_S)
+        assert pool._jobs[job_id]["subscribers"] == 8
+        worker.release.set()
+        for thread in threads:
+            thread.join(FAILSAFE_S)
+        executor.shutdown(wait=True)
+        assert ends == ["done"] * 8
 
-    def test_follow_failed_job_ends_with_failed(self):
-        def worker(job_id, payload):
-            raise JobFailure("The slicer could not process this part.", "x")
+    def test_wait_returns_at_once_when_the_report_has_moved_on(self):
+        pool, _ = make_pool()
+        job_id = pool.submit()
+        assert pool.wait(job_id, 1, timeout=None)["state"] == "done"
 
-        pool = JobPool(worker, executor=ImmediateExecutor())
-        events = list(pool.follow(pool.submit(), wait_s=0))
-        assert [e for e, _ in events] == ["state", "failed"]
-        assert events[-1][1]["error"] == "The slicer could not process this part."
 
-    def test_follow_unknown_id_yields_nothing(self):
-        pool = JobPool(good_worker, executor=ImmediateExecutor())
-        assert list(pool.follow("nope", wait_s=0)) == []
+class TestAbandoned:
+    def test_a_job_nobody_follows_is_cancelled_after_the_grace_time(self):
+        clock = FakeClock()
+        worker = Blocking()
+        pool, logs, executor = threaded_pool(worker, clock=clock, abandon_grace_s=60)
+        job_id = pool.submit()
+        assert worker.started.wait(FAILSAFE_S)
+        clock.now += 59
+        assert pool.sweep() == (0, 0)
+        clock.now += 1
+        assert pool.sweep() == (1, 0)
+        assert wait_final(pool, job_id)["state"] == "cancelled"
+        executor.shutdown(wait=True)
+        assert logs[-1]["cancel_reason"] == "abandoned"
+
+    def test_a_subscriber_that_returns_resets_the_grace_time(self):
+        clock = FakeClock()
+        pool, _ = make_pool(executor=HeldExecutor(), clock=clock, abandon_grace_s=60)
+        job_id = pool.submit()
+        pool.subscribe(job_id)
+        clock.now += 100
+        assert pool.sweep() == (0, 0)             # followed: never abandoned
+        pool.unsubscribe(job_id)
+        clock.now += 30
+        pool.subscribe(job_id)                    # back within the grace time
+        pool.unsubscribe(job_id)
+        clock.now += 59
+        assert pool.sweep() == (0, 0)
+        clock.now += 1
+        assert pool.sweep() == (1, 0)
+        assert pool.get(job_id)["state"] == "cancelled"
+
+    def test_an_abandoned_job_that_finishes_as_it_is_cancelled_ends_cancelled_like_a_callers_cancel(self):
+        # Nobody is waiting for its file: it ends cancelled, the file discarded, and its log
+        # lines say it was abandoned and which file was thrown away.
+        discarded = []
+
+        def worker(job_id, payload, context):
+            pool.sweep()                               # the grace time has passed; it finishes anyway
+            return {"file": "late.gcode.3mf"}
+        clock = FakeClock()
+        pool, logs = make_pool(worker, clock=clock, abandon_grace_s=0, on_discard=discarded.append)
+        job_id = pool.submit()
+        assert pool.get(job_id)["state"] == "cancelled" and pool.result(job_id) is None
+        assert discarded == [{"file": "late.gcode.3mf"}]
+        assert [(e["state"], e.get("cancel_reason")) for e in logs] == \
+            [("queued", None), ("running", None), ("cancelling", "abandoned"), ("cancelled", "abandoned")]
+        assert logs[-1]["file_discarded"] == "late.gcode.3mf" and "file" not in logs[-1]
+
+    def test_unsubscribe_of_an_unknown_job_or_below_zero_is_harmless(self):
+        pool, _ = make_pool(executor=HeldExecutor())
+        pool.unsubscribe("nope")
+        job_id = pool.submit()
+        pool.unsubscribe(job_id)
+        assert pool._jobs[job_id]["subscribers"] == 0
+        assert pool.subscribe("nope") is False
 
 
 class TestExpiry:
-    def test_records_expire_one_hour_after_last_update_even_if_unread(self):
+    def test_a_final_record_expires_after_its_ttl_and_its_file_is_discarded(self):
         clock = FakeClock()
-        pool = JobPool(good_worker, executor=ImmediateExecutor(), clock=clock, ttl_s=3600)
-        old = pool.submit()
-        clock.now += 1800
-        young = pool.submit()
-        clock.now += 1801
-        assert pool.expire() == 1
-        assert pool.get(old) is None
-        assert pool.get(young) is not None
-        assert pool.expire(now=clock.now + 3600) == 1
-        assert pool.get(young) is None
-
-    def test_follow_stops_when_record_expires(self):
-        clock = FakeClock()
-        pool = JobPool(good_worker, executor=HeldExecutor(), clock=clock, ttl_s=10)
-        gen = pool.follow(pool.submit(), wait_s=0)
-        next(gen)
-        clock.now += 11
-        pool.expire()
-        assert list(gen) == []
-
-    def test_expire_wakes_a_waiter(self):
-        clock = FakeClock()
-        pool = JobPool(good_worker, executor=HeldExecutor(), clock=clock, ttl_s=10)
+        discarded = []
+        pool, logs = make_pool(clock=clock, ttl_s=3600, on_discard=discarded.append)
         job_id = pool.submit()
-        answers = []
-        entered = threading.Event()
-
-        def wait():
-            entered.set()
-            answers.append(pool.wait(job_id, clock.now, timeout=None))
-
-        waiter = threading.Thread(target=wait, daemon=True)
-        waiter.start()
-        assert entered.wait(FAILSAFE_S)
-        # The waiter may not be inside cond.wait yet; if it is not, wait() finds the record
-        # gone and returns None at once. Either way the answer is None.
-        clock.now += 11
-        pool.expire()
-        waiter.join(FAILSAFE_S)
-        assert not waiter.is_alive(), "expire() did not wake the waiter"
-        assert answers == [None]
-
-    def test_job_that_expired_while_running_finishes_quietly(self):
-        clock = FakeClock()
-        executor = HeldExecutor()
-        pool = JobPool(good_worker, executor=executor, clock=clock, ttl_s=10)
-        job_id = pool.submit()
-        clock.now += 11
-        pool.expire()
-        executor.run_next()
+        clock.now += 3599
+        assert pool.sweep() == (0, 0)
+        clock.now += 1
+        assert pool.sweep() == (0, 1)
         assert pool.get(job_id) is None
+        assert [d["file"] for d in discarded] == ["Box-20261009-1432.gcode.3mf"]
+        assert logs[-1]["state"] == "expired"
 
-
-class StopSweeper(BaseException):
-    """Raised by a fake sleep to end the sweeper's endless loop; the thread then ends with it,
-    which pytest reports as an unhandled thread exception, so the two tests ignore that."""
-
-
-SWEEPER_ENDS = pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
-
-
-class TestSweeper:
-    @SWEEPER_ENDS
-    def test_sweeper_expires_on_its_cadence(self):
+    def test_a_running_job_never_expires_and_finishes_normally(self):
         clock = FakeClock()
-        pool = JobPool(good_worker, executor=ImmediateExecutor(), clock=clock, ttl_s=10)
-        old = pool.submit()
-        clock.now += 11
-        intervals, swept, stop = [], threading.Event(), threading.Event()
+        worker = Blocking(cancellable=False)
+        pool, _logs, executor = threaded_pool(worker, clock=clock, ttl_s=10, abandon_grace_s=10 ** 9)
+        job_id = pool.submit()
+        assert worker.started.wait(FAILSAFE_S)
+        clock.now += 10 ** 6
+        assert pool.sweep() == (0, 0)
+        worker.release.set()
+        assert wait_final(pool, job_id)["state"] == "done"
+        executor.shutdown(wait=True)
 
-        def fake_sleep(seconds):
-            intervals.append(seconds)
-            if len(intervals) == 2:          # the first sweep has run
-                swept.set()
-                stop.wait(FAILSAFE_S)
-                raise StopSweeper
+    def test_a_job_whose_record_is_gone_when_it_finishes_discards_its_file(self):
+        discarded = []
+        worker = Blocking(cancellable=False, result={"file": "orphan"})
+        pool, _logs, executor = threaded_pool(worker, on_discard=discarded.append)
+        job_id = pool.submit()
+        assert worker.started.wait(FAILSAFE_S)
+        with pool._lock:
+            del pool._jobs[job_id]
+        worker.release.set()
+        executor.shutdown(wait=True)
+        assert discarded == [{"file": "orphan"}]
 
-        thread = pool.start_sweeper(interval_s=600, sleep=fake_sleep)
-        try:
-            assert swept.wait(FAILSAFE_S)
-            assert pool.get(old) is None
-            assert thread.daemon and thread.name == "slice-jobs-sweeper"
-        finally:
-            stop.set()
-            thread.join(FAILSAFE_S)
-        assert intervals == [600, 600]
+    def test_expiry_wakes_a_waiter(self):
+        clock = FakeClock()
+        pool, _ = make_pool(clock=clock, ttl_s=1)
+        job_id = pool.submit()
+        clock.now += 1
+        pool.sweep()
+        assert pool.wait(job_id, 99, timeout=None) is None
 
-    @SWEEPER_ENDS
-    def test_sweeper_survives_a_failing_expire(self, monkeypatch):
-        logged = []
-        pool = JobPool(good_worker, executor=ImmediateExecutor(), log=logged.append)
+
+class TestSweeperAndShutdown:
+    def test_sweeper_runs_until_shutdown(self):
+        swept = threading.Event()
+        pool, _ = make_pool()
+        pool.sweep = lambda: swept.set()
+        thread = pool.start_sweeper(interval_s=0)
+        assert swept.wait(FAILSAFE_S)
+        pool.shutdown()
+        thread.join(FAILSAFE_S)
+        assert not thread.is_alive()
+
+    def test_sweeper_survives_a_failing_sweep(self):
         calls = []
+        pool, logs = make_pool()
 
-        def flaky_expire(now=None):
-            calls.append(now)
+        def sweep():
+            calls.append(1)
             if len(calls) == 1:
-                raise OSError("disk went away")
-            return 0
+                raise RuntimeError("disk")
+            pool._closing.set()
+        pool.sweep = sweep
+        thread = pool.start_sweeper(interval_s=0)
+        thread.join(FAILSAFE_S)
+        assert len(calls) == 2 and logs[-1]["event"] == "slice_sweeper_error"
 
-        monkeypatch.setattr(pool, "expire", flaky_expire)
-        slept, swept, stop = [], threading.Event(), threading.Event()
+    def test_shutdown_cancels_every_job_and_waits_for_the_workers(self):
+        worker = Blocking()
+        pool, logs, _executor = threaded_pool(worker)
+        running, queued = pool.submit(), pool.submit()
+        assert worker.started.wait(FAILSAFE_S)
+        pool.shutdown()
+        assert (pool.get(running)["state"], pool.get(queued)["state"]) == ("cancelled", "cancelled")
+        assert {e["cancel_reason"] for e in logs if e["state"] == "cancelled"} == {"shutdown"}
+        with pytest.raises(QueueFull):
+            pool.submit()
 
-        def fake_sleep(seconds):
-            slept.append(seconds)
-            if len(slept) == 3:              # two sweeps have run, the first one failed
-                swept.set()
-                stop.wait(FAILSAFE_S)
-                raise StopSweeper
 
-        thread = pool.start_sweeper(sleep=fake_sleep)
-        try:
-            assert swept.wait(FAILSAFE_S)
-        finally:
-            stop.set()
-            thread.join(FAILSAFE_S)
-        assert len(calls) == 2
-        assert "OSError: disk went away" in logged[0]
-        assert slept == [jobs.SWEEP_INTERVAL_S] * 3
+class TestLog:
+    def test_one_line_per_transition_with_what_support_needs(self):
+        clock = FakeClock()
+        pool, logs = make_pool(clock=clock)
+        describe = {"printer": None, "overrides": {"enable_support": "1"}, "parts": {"box": {"triangles": 12}},
+                    "copies": [{"name": "Box #1", "x": 50.0}]}
+        job_id = pool.submit(describe=describe)
+        assert [e["state"] for e in logs] == ["queued", "running", "done"]
+        done = logs[-1]
+        assert done["event"] == "slice_job" and done["job"] == job_id
+        assert done["overrides"] == {"enable_support": "1"} and done["copies"][0]["name"] == "Box #1"
+        assert (done["peak_rss_kb"], done["orca_wall_s"], done["wall_s"]) == (2048, 1.5, 0.0)
+
+    def test_the_log_never_carries_the_payload(self):
+        pool, logs = make_pool()
+        pool.submit({"secret": "s3cr3t-value"})
+        assert "s3cr3t-value" not in repr(logs)
+
+    def test_a_stop_note_travels_in_the_done_line(self):
+        def worker(job_id, payload, context):
+            return {"file": "x.gcode.3mf", "stop_note": "stopped by the slice service (timeout) ..."}
+        pool, logs = make_pool(worker)
+        pool.submit()
+        assert logs[-1]["stop_note"] == "stopped by the slice service (timeout) ..."
+
+
+class BrokenLog:
+    """A log sink that raises (a closed or broken stderr) on the calls it is told to."""
+
+    def __init__(self, failing=lambda n, entry: True):
+        self.calls, self.failing = [], failing
+
+    def __call__(self, entry):
+        self.calls.append(entry)
+        if self.failing(len(self.calls), entry):
+            raise BrokenPipeError(32, "Broken pipe")
+
+
+class TestALogThatFails:
+    """A log sink that raises never changes what the pool does; the failures are swallowed
+    in one place (jobs.SafeLog) and counted. One that raised on arrival once left a queued
+    record nothing would run, so the queue filled for ever."""
+
+    def test_jobs_still_queue_run_and_finish(self):
+        log = BrokenLog()
+        pool = JobPool(good_worker, executor=ImmediateExecutor(), log=log, max_queued=2, clock=FakeClock())
+        ids = [pool.submit() for _ in range(5)]
+        assert [pool.get(job_id)["state"] for job_id in ids] == ["done"] * 5
+        assert pool.counts()["queued"] == 0
+        assert pool.log_failures() == len(log.calls) == 15          # queued, running, done, five times
+
+    def test_a_failed_job_is_still_cleaned_up(self):
+        cleaned = []
+
+        def worker(job_id, payload, context):
+            raise ValueError("x")
+        pool = JobPool(worker, executor=ImmediateExecutor(), log=BrokenLog(), cleanup=cleaned.append)
+        job_id = pool.submit("files")
+        assert pool.get(job_id)["state"] == "failed" and cleaned == ["files"]
+
+    def test_a_cancel_and_a_sweep_still_work(self):
+        clock = FakeClock()
+        pool = JobPool(good_worker, executor=HeldExecutor(), log=BrokenLog(), clock=clock, ttl_s=1,
+                       abandon_grace_s=1)
+        queued, abandoned = pool.submit(), pool.submit()
+        assert pool.cancel(queued) == "cancelled"
+        clock.now += 1
+        assert pool.sweep() == (1, 1)
+        assert pool.get(abandoned)["state"] == "cancelled" and pool.get(queued) is None
+
+    def test_the_sweeper_survives_a_log_that_fails_while_it_reports_a_failing_sweep(self):
+        calls = []
+        pool = JobPool(good_worker, executor=ImmediateExecutor(), log=BrokenLog())
+
+        def sweep():
+            calls.append(1)
+            if len(calls) == 1:
+                raise RuntimeError("disk")
+            pool._closing.set()
+        pool.sweep = sweep
+        pool.start_sweeper(interval_s=0).join(FAILSAFE_S)
+        assert len(calls) == 2 and pool.log_failures() == 1
+
+    def test_a_healthy_log_counts_nothing(self):
+        pool, logs = make_pool()
+        pool.submit()
+        assert pool.log_failures() == 0 and len(logs) == 3
+
+    def test_a_safe_log_is_not_wrapped_twice(self):
+        log = jobs.SafeLog(BrokenLog())
+        pool = JobPool(good_worker, executor=ImmediateExecutor(), log=log)
+        pool.submit()
+        assert pool.log_failures() == log.failures == 3
+
+
+class TestEdges:
+    def test_follow_ends_when_the_record_goes_while_it_waits(self):
+        pool, _ = make_pool(executor=HeldExecutor())
+        job_id = pool.submit()
+        stream = pool.follow(job_id, wait_s=0)
+        next(stream)
+        with pool._lock:
+            del pool._jobs[job_id]
+        assert list(stream) == []
+
+    def test_a_failed_job_that_expires_is_cleaned_up_without_a_result(self):
+        clock = FakeClock()
+        cleaned, discarded = [], []
+
+        def worker(job_id, payload, context):
+            raise ValueError("x")
+        pool, _ = make_pool(worker, clock=clock, ttl_s=1, cleanup=cleaned.append, on_discard=discarded.append)
+        pool.submit("files")
+        assert cleaned == ["files"]           # at once, on failure
+        clock.now += 1
+        pool.sweep()
+        assert cleaned == ["files", "files"] and discarded == []
+
+    def test_progress_after_the_end_changes_nothing(self):
+        pool, _ = make_pool()
+        job_id = pool.submit()
+        before = pool.get(job_id)
+        pool._progress(job_id, "slicing_mesh", 0.5)
+        pool._progress("nope", "slicing_mesh", 0.5)
+        assert pool.get(job_id) == before
+
+    def test_a_cleanup_that_fails_is_logged_not_raised(self):
+        def worker(job_id, payload, context):
+            raise ValueError("x")
+
+        def cleanup(payload):
+            raise OSError("busy")
+        pool, logs = make_pool(worker, cleanup=cleanup)
+        pool.submit()
+        assert logs[-1]["event"] == "slice_cleanup_error" and "OSError: busy" in logs[-1]["traceback"]
 
 
 def test_constants_are_the_documented_defaults():
-    assert jobs.MAX_RUNNING == 1
-    assert jobs.MAX_QUEUED == 2
-    assert jobs.RECORD_TTL_S == 3600
-    assert jobs.WAIT_S == 5.0
-    assert jobs.SWEEP_INTERVAL_S == 600
-    assert jobs.TERMINAL == ("done", "failed")
+    assert (jobs.MAX_RUNNING, jobs.MAX_QUEUED, jobs.RECORD_TTL_S, jobs.ABANDON_GRACE_S) == (1, 2, 3600, 120)

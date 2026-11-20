@@ -59,7 +59,8 @@ def test_names_match_passes_with_the_jobs_own_process_file(job, scratch):
     model, profiles, output_dir, args, kwargs = calls[0]
     assert model == scratch / 'plate.3mf' and model.is_file()
     assert output_dir == scratch / 'slice'
-    assert (args, kwargs) == ((), {})         # slice_plate's own timeout, PLATE_SLICE_TIMEOUT_S
+    # slice_plate's own timeout, PLATE_SLICE_TIMEOUT_S; no stop and no progress callback given
+    assert (args, kwargs) == ((), {"stop": None, "on_progress": None, "memory_ceiling_mb": None})
     # The process file is the job's own, written in scratch with the overrides merged.
     assert (profiles.printer, profiles.filament) == (DEFAULT_PROFILES.printer, DEFAULT_PROFILES.filament)
     assert profiles.process == scratch / 'process.json'
