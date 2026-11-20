@@ -1,7 +1,7 @@
 [project]
 name = "penguin-slice"
 version = "0.1.0"
-description = "The slice service: takes a plate job, runs Orca Slicer headless, returns a sliced file."
+description = "The slice service: takes a plate configuration, runs Orca Slicer headless, returns a sliced file."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

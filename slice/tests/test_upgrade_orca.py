@@ -145,7 +145,9 @@ def test_a_failed_download_changes_nothing(tree):
 def test_a_failed_check_after_the_swap_says_how_to_go_back(tree, step):
     root, install = tree
     with pytest.raises(UpgradeError, match=rf"{step} failed \(exit 1\)\. Orca 2.5.1 is installed and pinned; 2.4.2 "
-                                           r"is kept at .*orca.previous\. To go back: make upgrade-orca "
+                                           r"is kept at .*orca.previous\. Each failing test of the upstream check "
+                                           r"names.*what to fix \(for Orca's debug log: slicer.LOG_WARNING_RE and "
+                                           r"tests/fake_orca.py's LOG_WARNING\)\. To go back: make upgrade-orca "
                                            r"VERSION=2.4.2"):
         run_upgrade(tree, Installs(fail=step))
     assert (root / "tools" / "orca.previous" / "VERSION").read_text() == "2.4.2"

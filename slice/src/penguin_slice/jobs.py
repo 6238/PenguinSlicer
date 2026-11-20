@@ -11,7 +11,8 @@ one of the final states done, failed or cancelled, and sends nothing after it.
 
 Cancellation (cancel): a queued job is cancelled at once; a running one is asked to stop
 (its worker's Stop), and is reported cancelled only once the worker has returned, which
-for a slice means Orca and every child it started are gone. A cancel that arrives before
+for a slice means Orca and every child it started are gone (a slice still writing its
+plate 3MF stops at the next object and never starts Orca). A cancel that arrives before
 the final report wins over a slice that finishes at the same instant: the job is
 cancelled and its sliced file discarded. Cancelling a finished job changes nothing.
 
@@ -25,7 +26,7 @@ sliced file through `on_discard`, go RECORD_TTL_S after its final report. shutdo
 cancels every job and waits for every worker.
 
 One structured log line (a dict passed to `log`) per job transition: the job id, the
-state, the plate job's description (profiles, overrides, parts, copies), the outcome, the
+state, the plate configuration's description (profiles, overrides, parts, instances), the outcome, the
 error code and Orca's reason, Orca's peak memory (with the worker's memory_note when a
 delivered slice's peak passed the ceiling, and its stop_note when a stop reached Orca after
 its sliced file was complete) and the wall time. The log sink is called through SafeLog:

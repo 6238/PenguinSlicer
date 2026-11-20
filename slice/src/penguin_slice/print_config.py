@@ -1,8 +1,8 @@
-"""The profile choice and the four setting overrides of a plate job, read against the
-profile catalog.
+"""The profile choice and the four setting overrides of a plate configuration, read against
+the profile catalog.
 
-A plate job names its printer, filament and process by Orca's own profile names
-(profiles/catalog/index.json lists them). A plate job with no printer prints with the
+A plate configuration names its printer, filament and process by Orca's own profile names
+(profiles/catalog/index.json lists them). A plate configuration with no printer prints with the
 default set in profiles/. A printer name the catalog does not know fails closed: no
 fallback. A filament or process the catalog does not know, or that does not fit the
 printer, is refused.
@@ -147,7 +147,7 @@ def _choice(raw, key):
 
 
 def validate_overrides(raw):
-    """A plate job's overrides as Orca process keys. Only the four keys and their listed
+    """A plate configuration's overrides as Orca process keys. Only the four keys and their listed
     values."""
     if raw is None:
         return {}

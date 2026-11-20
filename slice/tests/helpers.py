@@ -207,12 +207,55 @@ class ManualTimers:
         return self.made[-1]
 
 
-def write_plate_job(directory, plate_job, stls):
-    """Write `stls` ({file name: bytes}) and the plate job JSON into `directory`; its path."""
+def write_plate_configuration(directory, plate_configuration, stls):
+    """Write `stls` ({file name: bytes}) and the plate configuration JSON into `directory`; its path."""
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     for name, data in stls.items():
         (directory / name).write_bytes(data)
-    path = directory / "plate-job.json"
-    path.write_text(json.dumps(plate_job))
+    path = directory / "plate-configuration.json"
+    path.write_text(json.dumps(plate_configuration))
     return path
+
+
+INCH_MM = 25.4
+
+
+def spacer_stl(outside=5 / 8 * INCH_MM, hex_flats=3 / 8 * INCH_MM, thickness=1 / 8 * INCH_MM, segments=48):
+    """The reference plate's part: a hex shaft spacer for a 3/8 inch hex shaft, 1/8 inch
+    thick, round outside and 5/8 inch across. A closed binary STL of 216 triangles: the
+    top and bottom annuli are zipped between the outer circle (`segments` points) and the
+    hexagon (corners at 0, 60, ... degrees), then the outer and inner walls."""
+    r_out = outside / 2
+    r_hex = hex_flats / 2 / np.cos(np.pi / 6)
+    outer = [(r_out * np.cos(2 * np.pi * k / segments), r_out * np.sin(2 * np.pi * k / segments))
+             for k in range(segments)]
+    inner = [(r_hex * np.cos(2 * np.pi * j / 6), r_hex * np.sin(2 * np.pi * j / 6)) for j in range(6)]
+    n_o, n_i = len(outer), len(inner)
+    vertices = [(x, y, 0.0) for x, y in outer + inner] + [(x, y, thickness) for x, y in outer + inner]
+    top = n_o + n_i                                   # the index of the first top vertex
+    ring = []                                         # the annulus, as (outer or inner, index) triples
+    i = j = 0
+    while i < n_o or j < n_i:
+        if i < n_o and (i + 1) / n_o <= (j + 1) / n_i + 1e-12:
+            ring.append((i % n_o, (i + 1) % n_o, n_o + j % n_i))
+            i += 1
+        else:
+            ring.append((i % n_o, n_o + (j + 1) % n_i, n_o + j % n_i))
+            j += 1
+    faces = [(a + top, b + top, c + top) for a, b, c in ring] + [(a, c, b) for a, b, c in ring]
+    for k in range(n_o):
+        k2 = (k + 1) % n_o
+        faces += [(k, k2, top + k2), (k, top + k2, top + k)]
+    for k in range(n_i):
+        a, b = n_o + k, n_o + (k + 1) % n_i
+        faces += [(a, top + b, b), (a, top + a, top + b)]
+    return mesh_stl(vertices, faces)
+
+
+def spacer_grid(count=100, side=10, pitch_mm=22.0, centre=(170.0, 160.0), ref="spacer"):
+    """The reference plate's instances: `count` spacers in rows of `side`, `pitch_mm` apart,
+    centred on the default printer's plate."""
+    return [{"ref": ref, "orientation": "+z", "angle": 0,
+             "x": centre[0] + (k % side - (side - 1) / 2) * pitch_mm,
+             "y": centre[1] + (k // side - (side - 1) / 2) * pitch_mm} for k in range(count)]

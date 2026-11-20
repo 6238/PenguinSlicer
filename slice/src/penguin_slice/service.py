@@ -1,16 +1,18 @@
-"""The slice service's entry point: a plate job in, a sliced file out.
+"""The slice service's core: a plate configuration in, a sliced file out.
 
-read_plate_job checks a plate job (contracts/plate-job.md) in a fixed order and refuses it
-at the first failure, before anything reaches Orca:
+The HTTP interface (web.py) is the slice service's one interface; this module is the code
+it, and the tests, call. read_plate_configuration checks a plate configuration
+(contracts/plate-configuration.md) in a fixed order and refuses it at the first failure,
+before anything reaches Orca:
 
-1. the fields of the plate job, every part and every copy, and no field that is not
-   listed (BAD_JOB_MESSAGE);
-2. at most MAX_COPIES copies;
+1. the fields of the plate configuration, every part and every instance, and no field that
+   is not listed (BAD_CONFIGURATION_MESSAGE);
+2. at most MAX_INSTANCES instances, using at most MAX_PARTS different parts;
 3. the profiles and the overrides (print_config.py);
-4. every copy's `ref` names a part of the plate job whose STL file exists (inside
-   `confine_to` when one is given), and every such STL file reads as a part (mesh.py:
-   binary, finite, not too detailed, not too small, a surface that encloses something),
-   and fits the chosen printer in some orientation;
+4. every instance's `ref` names a part of the plate configuration whose STL file exists
+   (inside `confine_to` when one is given), and every such STL file reads as a part
+   (mesh.py: binary, finite, not too detailed, not too small, a surface that encloses
+   something), and fits the chosen printer in some orientation;
 5. the placement against the chosen printer's plate (plate.check_placement).
 
 The memory model's estimate (limits.estimate_peak_mb) refuses nothing: it goes into the
@@ -20,10 +22,10 @@ A part that passes with a finding that does not stop the slice (holes in its sur
 surface facing inwards, a size that looks like inches) carries a warning, which travels in
 the sliced file's summary as part_warnings.
 
-slice_plate_job then slices it in a scratch directory inside the output directory, renames
-the sliced file (contracts/sliced-file.md) to `<out>/<delivered name>`, and removes the
-scratch directory whatever happens. Scratch directories are named after the process that
-made them, so clean_stale_scratch can remove those of a process that died.
+slice_plate_configuration then slices it in a scratch directory inside the output
+directory, renames the sliced file (contracts/sliced-file.md) to `<out>/<delivered name>`,
+and removes the scratch directory whatever happens. Scratch directories are named after the
+process that made them, so clean_stale_scratch can remove those of a process that died.
 """
 import json
 import math
@@ -38,19 +40,19 @@ import numpy as np
 
 from . import limits
 from .mesh import MeshError, orientation_footprints, part_size_mm, part_warnings, read_binary_stl
-from .plate import ORIENTATIONS, check_placement, copy_labels, plate_from_printer
+from .plate import ORIENTATIONS, check_placement, instance_labels, plate_from_printer
 from .plate_3mf import delivered_file_name
-from .plate_job import JobPart, PlateJob, run_plate_job
+from .plate_configuration import CheckedPart, PlateConfiguration, run_plate_configuration
 from .print_config import ProfileError, choose_profiles, printer_profile, supports_on, validate_overrides
 from .slicer import SliceError
 
-# The plate job's fields, as contracts/plate-job.md lists them. tests/test_contracts.py
-# compares these with the document's tables.
-PLATE_JOB_FIELDS = ("parts", "copies", "printer", "filament", "process", "overrides", "local_time")
+# The plate configuration's fields, as contracts/plate-configuration.md lists them.
+# tests/test_contracts.py compares these with the document's tables.
+PLATE_CONFIGURATION_FIELDS = ("parts", "instances", "printer", "filament", "process", "overrides", "local_time")
 PART_FIELDS = ("name", "stl")
-COPY_FIELDS = ("ref", "orientation", "angle", "x", "y")
+INSTANCE_FIELDS = ("ref", "orientation", "angle", "x", "y")
 # The sliced file's summary, as contracts/sliced-file.md lists it.
-SUMMARY_FIELDS = ("file", "copies", "print_time_s", "filament_m", "filament_g", "layer_count", "warnings",
+SUMMARY_FIELDS = ("file", "instances", "print_time_s", "filament_m", "filament_g", "layer_count", "warnings",
                   "part_warnings")
 
 PART_KEY_RE = re.compile(r'^[A-Za-z0-9_-]{1,64}\Z')        # \Z: no trailing newline, unlike $
@@ -61,28 +63,31 @@ MAX_FILE_NAME_BYTES = 255     # each piece of that path (Linux NAME_MAX)
 MAX_PART_NAME_CHARS = 200
 MAX_PROFILE_NAME_CHARS = 200
 PROFILE_FIELDS = ("printer", "filament", "process")
+# The placement problems a refusal's detail lists, at most: 100 instances on one spot are
+# 4,950 pairs too close, and no detail or log line grows with what a caller sends.
+MAX_LISTED_PROBLEMS = 20
 SCRATCH_PREFIX = "slice-"
 _SCRATCH_RE = re.compile(r'^slice-(\d+)-(\d+)-')
 
-# The sentences of a refused plate job. The limits' sentences come from limits.py.
-BAD_JOB_MESSAGE = "This plate job could not be read: {problem}."
-PART_NOT_LISTED_MESSAGE = "A copy on the plate names a part this plate job does not include."
+# The sentences of a refused plate configuration. The limits' sentences come from limits.py.
+BAD_CONFIGURATION_MESSAGE = "This plate configuration could not be read: {problem}."
+PART_NOT_LISTED_MESSAGE = "An instance on the plate names a part this plate configuration does not include."
 PART_FILE_MISSING_MESSAGE = "The file for {name} is missing."
 PART_FILE_UNOPENABLE_MESSAGE = "The file for {name} could not be opened."
-PART_FILE_OUTSIDE_MESSAGE = "The file for {name} is not one of the files sent with this plate job."
+PART_FILE_OUTSIDE_MESSAGE = "The file for {name} is not one of the files sent with this plate configuration."
 OUTPUT_UNWRITABLE_MESSAGE = "The print server could not save the sliced file."
 PROFILE_UNREADABLE_MESSAGE = "The print server's settings for this printer could not be read."
 PLACEMENT_CODES = {"off_plate": "slice.placement_off_plate", "too_tall": "slice.placement_too_tall",
                    "too_close": "slice.placement_too_close"}
 
 
-class PlateJobRefused(Exception):
-    """A plate job refused before slicing. `message` is one sentence for the student,
-    `details` the evidence for the log, `rule` the placement rule (off_plate, too_tall,
-    too_close) when the placement failed, `where` the part and copy when known,
-    `error_code` the error report's code."""
+class PlateConfigurationRefused(Exception):
+    """A plate configuration refused before slicing. `message` is one sentence for the
+    student, `details` the evidence for the log, `rule` the placement rule (off_plate,
+    too_tall, too_close) when the placement failed, `where` the part and instance when
+    known, `error_code` the error report's code."""
 
-    def __init__(self, message, details="", rule=None, where=None, error_code="slice.bad_plate_job"):
+    def __init__(self, message, details="", rule=None, where=None, error_code="slice.bad_plate_configuration"):
         super().__init__(message)
         self.message = message
         self.details = details
@@ -117,24 +122,26 @@ def _short(value):
         return "a value nested too deeply"
 
 
-def _copy_problem(i, copy):
-    if not isinstance(copy, dict):
-        return f"copy {i} is not an object"
-    unknown = sorted(set(copy) - set(COPY_FIELDS))
+def _instance_problem(i, instance):
+    if not isinstance(instance, dict):
+        return f"instance {i} is not an object"
+    unknown = sorted(set(instance) - set(INSTANCE_FIELDS))
     if unknown:
-        return f"copy {i} has fields this plate job format does not have: {', '.join(map(str, unknown))[:120]}"
-    ref = copy.get("ref")
+        return f"instance {i} has fields this plate configuration format does not have: " \
+               f"{', '.join(map(str, unknown))[:120]}"
+    ref = instance.get("ref")
     if not (isinstance(ref, str) and PART_KEY_RE.fullmatch(ref)):
-        return f"copy {i} has no valid ref (got {_short(ref)})"
-    if copy.get("orientation") not in ORIENTATIONS:
-        return f"copy {i} has an orientation that is not one of {', '.join(ORIENTATIONS)} " \
-               f"(got {_short(copy.get('orientation'))})"
-    angle = copy.get("angle")
+        return f"instance {i} has no valid ref (got {_short(ref)})"
+    if instance.get("orientation") not in ORIENTATIONS:
+        return f"instance {i} has an orientation that is not one of {', '.join(ORIENTATIONS)} " \
+               f"(got {_short(instance.get('orientation'))})"
+    angle = instance.get("angle")
     if not (isinstance(angle, int) and not isinstance(angle, bool) and 0 <= angle <= 359):
-        return f"copy {i} has an angle that is not a whole number from 0 to 359 (got {_short(angle)})"
+        return f"instance {i} has an angle that is not a whole number from 0 to 359 (got {_short(angle)})"
     for axis in ("x", "y"):
-        if not _is_number(copy.get(axis)):
-            return f"copy {i} has a position {axis} that is not a finite number (got {_short(copy.get(axis))})"
+        if not _is_number(instance.get(axis)):
+            return f"instance {i} has a position {axis} that is not a finite number " \
+                   f"(got {_short(instance.get(axis))})"
     return None
 
 
@@ -145,7 +152,8 @@ def _part_problem(key, part):
         return f"part {key!r} is not an object"
     unknown = sorted(set(part) - set(PART_FIELDS))
     if unknown:
-        return f"part {key!r} has fields this plate job format does not have: {', '.join(map(str, unknown))[:120]}"
+        return f"part {key!r} has fields this plate configuration format does not have: " \
+               f"{', '.join(map(str, unknown))[:120]}"
     for name in PART_FIELDS:
         if not (isinstance(part.get(name), str) and part[name] != ""):
             return f"part {key!r} has no {name} (got {_short(part.get(name))})"
@@ -163,19 +171,19 @@ def _refuse_fields(data):
     """Step 1: what is wrong with the fields, in words a student can act on, or None."""
     if not isinstance(data, dict):
         return "it is not a JSON object"
-    unknown = sorted(set(data) - set(PLATE_JOB_FIELDS))
+    unknown = sorted(set(data) - set(PLATE_CONFIGURATION_FIELDS))
     if unknown:
-        return f"it has fields this plate job format does not have: {', '.join(map(str, unknown))[:120]}"
+        return f"it has fields this plate configuration format does not have: {', '.join(map(str, unknown))[:120]}"
     for name in PROFILE_FIELDS:
         value = data.get(name)
         if isinstance(value, str) and len(value) > MAX_PROFILE_NAME_CHARS:
             return f"its {name} is a name of {len(value):,} characters, longer than the {MAX_PROFILE_NAME_CHARS} " \
                    f"a profile name may have"
-    copies, parts = data.get("copies"), data.get("parts")
-    if not isinstance(copies, list) or not copies:
-        return "it has no copies"
-    for i, copy in enumerate(copies):
-        problem = _copy_problem(i, copy)
+    instances, parts = data.get("instances"), data.get("parts")
+    if not isinstance(instances, list) or not instances:
+        return "it has no instances"
+    for i, instance in enumerate(instances):
+        problem = _instance_problem(i, instance)
         if problem:
             return problem
     if not isinstance(parts, dict):
@@ -226,20 +234,21 @@ def _stl_path(key, part, base_dir, confine_to):
         root = Path(confine_to).resolve()
         resolved = path.resolve()
         if resolved != root and root not in resolved.parents:
-            raise PlateJobRefused(PART_FILE_OUTSIDE_MESSAGE.format(name=name),
-                                  f"part {key!r}: {part['stl']!r} resolves outside {root}",
-                                  where={"part": name}, error_code="slice.part_missing")
+            raise PlateConfigurationRefused(PART_FILE_OUTSIDE_MESSAGE.format(name=name),
+                                            f"part {key!r}: {part['stl']!r} resolves outside {root}",
+                                            where={"part": name}, error_code="slice.part_missing")
         path = resolved
     return path
 
 
 def _read_part(key, part, base_dir, plate, confine_to=None):
-    """Step 4 for one part: its JobPart, or a refusal."""
+    """Step 4 for one part: its CheckedPart, or a refusal."""
     name = part["name"]
     path = _stl_path(key, part, base_dir, confine_to)
     if not path.is_file():
-        raise PlateJobRefused(PART_FILE_MISSING_MESSAGE.format(name=name), f"part {key!r}: no STL file at {path}",
-                              where={"part": name}, error_code="slice.part_missing")
+        raise PlateConfigurationRefused(PART_FILE_MISSING_MESSAGE.format(name=name),
+                                        f"part {key!r}: no STL file at {path}",
+                                        where={"part": name}, error_code="slice.part_missing")
     try:
         size = path.stat().st_size
         if size > limits.MAX_PART_BYTES:
@@ -248,8 +257,8 @@ def _read_part(key, part, base_dir, plate, confine_to=None):
                             {"part": name})
         data = path.read_bytes()
     except OSError as exc:
-        raise PlateJobRefused(PART_FILE_UNOPENABLE_MESSAGE.format(name=name), f"part {key!r}: {exc}",
-                              where={"part": name}, error_code="slice.part_unreadable") from None
+        raise PlateConfigurationRefused(PART_FILE_UNOPENABLE_MESSAGE.format(name=name), f"part {key!r}: {exc}",
+                                        where={"part": name}, error_code="slice.part_unreadable") from None
     mesh = read_binary_stl(data, name, source=str(path))
     footprints = orientation_footprints(mesh)
     if not _fits_somewhere(footprints, plate):
@@ -260,7 +269,7 @@ def _read_part(key, part, base_dir, plate, confine_to=None):
                                                              z=_g(size_mm["z"])),
                         f"{path}: {size_mm} mm on printer {plate.get('printer')!r}", "slice.part_too_large",
                         {"part": name})
-    return JobPart(name=name, stl_path=path, footprints=footprints, triangles=mesh.triangles, health=mesh.health,
+    return CheckedPart(name=name, stl_path=path, footprints=footprints, triangles=mesh.triangles, health=mesh.health,
                    warnings=part_warnings(mesh, name))
 
 
@@ -268,18 +277,32 @@ def _g(value):
     return f"{value:.4g}" if abs(value) < 1e6 else f"{value:.3g}"
 
 
-def read_plate_job(data, base_dir, confine_to=None, environ=None):
-    """The PlateJob for a plate job's JSON value; relative STL paths are read against
-    `base_dir`, and must stay inside `confine_to` when it is given. Raises
-    PlateJobRefused, MeshError, ProfileError or OverrideError."""
+def _listed(problems):
+    """The placement problems' sentences for a refusal's detail: at most MAX_LISTED_PROBLEMS."""
+    listed = "; ".join(p["message"] for p in problems[:MAX_LISTED_PROBLEMS])
+    if len(problems) > MAX_LISTED_PROBLEMS:
+        listed += f"; and {len(problems) - MAX_LISTED_PROBLEMS:,} more"
+    return listed
+
+
+def read_plate_configuration(data, base_dir, confine_to=None, environ=None):
+    """The PlateConfiguration for a plate configuration's JSON value; relative STL paths are
+    read against `base_dir`, and must stay inside `confine_to` when it is given. Raises
+    PlateConfigurationRefused, MeshError, ProfileError or OverrideError."""
     problem = _refuse_fields(data)
     if problem:
-        raise PlateJobRefused(BAD_JOB_MESSAGE.format(problem=problem), problem)
-    copies = data["copies"]
-    if len(copies) > limits.MAX_COPIES:
-        raise PlateJobRefused(limits.TOO_MANY_COPIES_MESSAGE, f"{len(copies)} copies, cap {limits.MAX_COPIES}",
-                              error_code="slice.too_many_copies")
-    copies = [{key: c[key] for key in COPY_FIELDS} for c in copies]
+        raise PlateConfigurationRefused(BAD_CONFIGURATION_MESSAGE.format(problem=problem), problem)
+    instances = data["instances"]
+    if len(instances) > limits.MAX_INSTANCES:
+        raise PlateConfigurationRefused(limits.TOO_MANY_INSTANCES_MESSAGE.format(count=len(instances)),
+                                        f"{len(instances)} instances, cap {limits.MAX_INSTANCES}",
+                                        error_code="slice.too_many_instances")
+    used = list(dict.fromkeys(instance["ref"] for instance in instances))
+    if len(used) > limits.MAX_PARTS:
+        raise PlateConfigurationRefused(limits.TOO_MANY_PARTS_MESSAGE.format(count=len(used)),
+                                        f"{len(used)} different parts, cap {limits.MAX_PARTS}",
+                                        error_code="slice.too_many_parts")
+    instances = [{key: c[key] for key in INSTANCE_FIELDS} for c in instances]
     filament, process = data.get("filament"), data.get("process")
     overrides = validate_overrides(data.get("overrides"))
     try:
@@ -294,44 +317,47 @@ def read_plate_job(data, base_dir, confine_to=None, environ=None):
                            error_code="slice.profile_unreadable") from None
     parts = data["parts"]
     entries = {}
-    for i, c in enumerate(copies):
+    for i, c in enumerate(instances):
         if c["ref"] in entries:
             continue
         if c["ref"] not in parts:
-            raise PlateJobRefused(PART_NOT_LISTED_MESSAGE, f"copy {i} names part {c['ref']!r}, which parts does not list",
-                                  error_code="slice.part_missing")
+            raise PlateConfigurationRefused(PART_NOT_LISTED_MESSAGE,
+                                            f"instance {i} names part {c['ref']!r}, which parts does not list",
+                                            error_code="slice.part_missing")
         entries[c["ref"]] = _read_part(c["ref"], parts[c["ref"]], base_dir, plate, confine_to)
-    volumes = [entries[c["ref"]].health["volume_mm3"] for c in copies]
+    volumes = [entries[c["ref"]].health["volume_mm3"] for c in instances]
     placed = {ref: {"name": e.name, "footprints": e.footprints} for ref, e in entries.items()}
-    problems = check_placement(copies, placed, plate)
-    labels = copy_labels([placed[c["ref"]]["name"] for c in copies])
+    problems = check_placement(instances, placed, plate)
+    labels = instance_labels([placed[c["ref"]]["name"] for c in instances])
     if problems:
         first = problems[0]
-        index = first["copies"][0]
-        raise PlateJobRefused(first["message"], "; ".join(p["message"] for p in problems), rule=first["rule"],
-                              where={"part": placed[copies[index]["ref"]]["name"], "copy": labels[index]},
-                              error_code=PLACEMENT_CODES[first["rule"]])
-    return PlateJob(copies=copies, parts=entries, profiles=profiles, overrides=overrides,
-                    filament=filament, process=process, printer=data.get("printer"), labels=labels,
-                    supports_on=supports, estimated_peak_mb=limits.estimate_peak_mb(volumes, supports),
-                    memory_ceiling_mb=limits.max_peak_mb(environ),
-                    expected_s=limits.estimate_seconds(volumes, supports),
-                    delivered_name=delivered_file_name([e.name for e in entries.values()], data.get("local_time")))
+        index = first["instances"][0]
+        raise PlateConfigurationRefused(first["message"], _listed(problems), rule=first["rule"],
+                                        where={"part": placed[instances[index]["ref"]]["name"],
+                                               "instance": labels[index]},
+                                        error_code=PLACEMENT_CODES[first["rule"]])
+    return PlateConfiguration(instances=instances, parts=entries, profiles=profiles, overrides=overrides,
+                              filament=filament, process=process, printer=data.get("printer"), labels=labels,
+                              supports_on=supports, estimated_peak_mb=limits.estimate_peak_mb(volumes, supports),
+                              memory_ceiling_mb=limits.max_peak_mb(environ),
+                              expected_s=limits.estimate_seconds(volumes, supports),
+                              delivered_name=delivered_file_name([e.name for e in entries.values()],
+                                                                 data.get("local_time")))
 
 
-def load_plate_job(plate_job, base_dir=None):
-    """(JSON value, base directory) for a path to a plate job file or a JSON value."""
-    if isinstance(plate_job, (str, Path)):
-        path = Path(plate_job)
+def load_plate_configuration(plate_configuration, base_dir=None):
+    """(JSON value, base directory) for a path to a plate configuration file or a JSON value."""
+    if isinstance(plate_configuration, (str, Path)):
+        path = Path(plate_configuration)
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError, RecursionError) as exc:
             # RecursionError: JSON nested more deeply than Python's parser can follow.
             problem = "it is not a readable JSON file"
-            raise PlateJobRefused(BAD_JOB_MESSAGE.format(problem=problem),
-                                  f"{path}: {type(exc).__name__}: {exc}"[:500]) from None
+            raise PlateConfigurationRefused(BAD_CONFIGURATION_MESSAGE.format(problem=problem),
+                                            f"{path}: {type(exc).__name__}: {exc}"[:500]) from None
         return data, Path(base_dir) if base_dir is not None else path.resolve().parent
-    return plate_job, Path(base_dir) if base_dir is not None else Path.cwd()
+    return plate_configuration, Path(base_dir) if base_dir is not None else Path.cwd()
 
 
 def _unwritable(exc):
@@ -384,20 +410,23 @@ def clean_stale_scratch(root):
     return removed
 
 
-def slice_plate_job(plate_job, out_dir, *, base_dir=None, job=None, stop=None, on_progress=None):
-    """Slice a plate job and return its SlicedFile: the sliced file at
-    `<out_dir>/<delivered name>` and its summary.
+def slice_plate_configuration(plate_configuration, out_dir, *, base_dir=None, configuration=None, stop=None,
+                              on_progress=None):
+    """Slice a plate configuration and return its SlicedFile: the sliced file at
+    `<out_dir>/<delivered name>` and its summary. The HTTP interface's worker calls it.
 
-    `plate_job` is a path to a plate job file, whose STL paths are read against the file's
-    own directory, or the plate job's JSON value, whose STL paths are read against
-    `base_dir` (default: the current directory). `job`, when given, is the PlateJob
-    read_plate_job already made for it. `stop` and `on_progress` reach the Orca run
-    (slicer.run_process). Raises PlateJobRefused, MeshError, ProfileError, OverrideError,
-    SliceError, SliceCancelled, or RuntimeError when Orca is not installed;
-    errors.error_report turns any of them into an error report."""
-    if job is None:
-        data, base = load_plate_job(plate_job, base_dir)
-        job = read_plate_job(data, base)
+    `plate_configuration` is a path to a plate configuration file, whose STL paths are read
+    against the file's own directory, or the plate configuration's JSON value, whose STL
+    paths are read against `base_dir` (default: the current directory). `configuration`,
+    when given, is the PlateConfiguration read_plate_configuration already made for it.
+    `stop` reaches the plate write (plate_3mf.write_plate_3mf) and the Orca run
+    (slicer.run_process), `on_progress` the Orca run. Raises
+    PlateConfigurationRefused, MeshError, ProfileError, OverrideError, SliceError,
+    SliceCancelled, or RuntimeError when Orca is not installed; errors.error_report turns
+    any of them into an error report."""
+    if configuration is None:
+        data, base = load_plate_configuration(plate_configuration, base_dir)
+        configuration = read_plate_configuration(data, base)
     out_dir = Path(out_dir).resolve()
     try:
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -405,9 +434,9 @@ def slice_plate_job(plate_job, out_dir, *, base_dir=None, job=None, stop=None, o
         scratch = make_scratch(out_dir)
     except OSError as exc:
         raise _unwritable(exc) from None
-    final = out_dir / job.delivered_name
+    final = out_dir / configuration.delivered_name
     try:
-        result = run_plate_job(job, scratch, stop=stop, on_progress=on_progress)
+        result = run_plate_configuration(configuration, scratch, stop=stop, on_progress=on_progress)
         try:
             # The scratch folder is inside out_dir, so this is a rename on one file system:
             # it replaces a file of the same name and fails on a folder of that name, so
@@ -417,7 +446,7 @@ def slice_plate_job(plate_job, out_dir, *, base_dir=None, job=None, stop=None, o
             raise _unwritable(exc) from None
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
-    summary = {"file": job.delivered_name, "copies": len(job.copies), **result.summary(),
-               "part_warnings": job.part_warnings()}
+    summary = {"file": configuration.delivered_name, "instances": len(configuration.instances), **result.summary(),
+               "part_warnings": configuration.part_warnings()}
     return SlicedFile(path=final, summary=summary, peak_rss_kb=result.peak_rss_kb, wall_s=result.wall_s,
                       memory_note=result.memory_note, stop_note=result.stop_note)

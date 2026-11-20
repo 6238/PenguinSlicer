@@ -1,8 +1,9 @@
-"""web.py, the HTTP face, through Flask's test client and the fake Orca: submit a plate job,
+"""web.py, the HTTP interface, through Flask's test client and the fake Orca: submit a plate configuration,
 follow its progress reports, cancel it, fetch the sliced file; every error answer is an
 error report."""
 import io
 import json
+import os
 import tempfile
 import threading
 from pathlib import Path
@@ -10,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from helpers import box_stl, install_fake_orca
-from penguin_slice import error_report
+from penguin_slice.errors import error_report
 from penguin_slice.jobs import FINAL, JobPool
 from penguin_slice.web import create_app, remove_job_files, slice_worker
 
@@ -34,16 +35,16 @@ class HeldExecutor:
         fn(*args)
 
 
-def plate_job(**changes):
+def plate_configuration(**changes):
     job = {"parts": {"box": {"name": "Box", "stl": "box.stl"}},
-           "copies": [{"ref": "box", "orientation": "+z", "angle": 0, "x": 50.0, "y": 50.0}],
+           "instances": [{"ref": "box", "orientation": "+z", "angle": 0, "x": 50.0, "y": 50.0}],
            "local_time": "20261009-1432"}
     job.update(changes)
     return job
 
 
 def form(job=None, files=None):
-    data = {"plate_job": json.dumps(job or plate_job())}
+    data = {"plate_configuration": json.dumps(job or plate_configuration())}
     for name, content in (files if files is not None else {"box.stl": box_stl(20, 20, 10)}).items():
         data[name] = (io.BytesIO(content), name)
     return data
@@ -68,7 +69,7 @@ def assert_error_report(body, code):
 
 
 class TestSubmit:
-    def test_a_plate_job_is_sliced_and_its_file_fetched(self, tmp_path, monkeypatch, work):
+    def test_a_plate_configuration_is_sliced_and_its_file_fetched(self, tmp_path, monkeypatch, work):
         install_fake_orca(tmp_path, monkeypatch, "ok")
         client, _pool, logs = app_with(work)
         answer = client.post("/slices", data=form())
@@ -79,10 +80,81 @@ class TestSubmit:
         assert fetched.status_code == 200
         assert fetched.data[:2] == b"PK"
         assert "Box-20261009-1432.gcode.3mf" in fetched.headers["Content-Disposition"]
-        assert json.loads(fetched.headers["X-Slice-Summary"])["layer_count"] == 42
+        assert not [h for h in fetched.headers.keys() if h.lower().startswith("x-slice")]   # the file, and only it
         fetched.close()
+        summary = client.get(f"/slices/{body['job']}/summary")
+        assert summary.status_code == 200 and summary.mimetype == "application/json"
+        assert summary.get_json() == {"file": "Box-20261009-1432.gcode.3mf", "instances": 1, "print_time_s": 600.0,
+                                      "filament_m": 1.5, "filament_g": 4.5, "layer_count": 42, "warnings": [],
+                                      "part_warnings": []}
+        from penguin_slice.service import SUMMARY_FIELDS
+        assert list(json.loads(summary.data)) == list(SUMMARY_FIELDS)              # the contract's order
         assert [e["state"] for e in logs] == ["queued", "running", "done"]
         assert logs[-1]["parts"]["box"]["triangles"] == 12
+
+    def test_the_summary_of_25_warned_parts_is_a_body_not_a_header(self, tmp_path, monkeypatch, work):
+        # The summary once travelled in X-Slice-Summary: 8 to 17 kB for 25 warned parts, more
+        # than many proxies accept in a header.
+        install_fake_orca(tmp_path, monkeypatch, "ok")
+        client, _pool, _logs = app_with(work)
+        parts = {f"p{i}": {"name": f"Inch-drawn spacer number {i:02d} " + "x" * 150, "stl": f"p{i}.stl"}
+                 for i in range(25)}
+        instances = [{"ref": f"p{i}", "orientation": "+z", "angle": 0, "x": 20.0 + 30 * (i % 10),
+                      "y": 20.0 + 30 * (i // 10)} for i in range(25)]
+        files = {f"p{i}.stl": box_stl(2, 1, 0.5) for i in range(25)}          # each warns: inches?
+        job_id = client.post("/slices", data=form(plate_configuration(parts=parts, instances=instances),
+                                                  files)).get_json()["job"]
+        fetched = client.get(f"/slices/{job_id}/file")
+        assert fetched.status_code == 200 and sum(len(k) + len(v) for k, v in fetched.headers.items()) < 1000
+        fetched.close()
+        summary = client.get(f"/slices/{job_id}/summary").get_json()
+        assert len(summary["part_warnings"]) == 25 and summary["instances"] == 25
+
+    def test_the_summary_answers_as_the_file_does_for_a_slice_job_without_one(self, tmp_path, monkeypatch, work):
+        install_fake_orca(tmp_path, monkeypatch, "segv")
+        client, pool, _logs = app_with(work, executor=HeldExecutor())
+        unknown = [client.get(f"/slices/j0000/{route}") for route in ("file", "summary")]
+        assert [(a.status_code, a.get_json()["code"]) for a in unknown] == [(404, "slice.unknown_job")] * 2
+        job_id = client.post("/slices", data=form()).get_json()["job"]
+        queued = [client.get(f"/slices/{job_id}/{route}") for route in ("file", "summary")]
+        assert [(a.status_code, a.get_json()["code"]) for a in queued] == [(409, "slice.not_ready")] * 2
+        pool._executor.run_next()
+        failed = [client.get(f"/slices/{job_id}/{route}") for route in ("file", "summary")]
+        assert [(a.status_code, a.get_json()["code"]) for a in failed] == [(409, "slice.orca_crashed")] * 2
+        assert failed[0].get_json() == failed[1].get_json()
+        cancelled_id = client.post("/slices", data=form()).get_json()["job"]
+        client.delete(f"/slices/{cancelled_id}")
+        cancelled = [client.get(f"/slices/{cancelled_id}/{route}") for route in ("file", "summary")]
+        assert [(a.status_code, a.get_json()["code"]) for a in cancelled] == [(409, "slice.cancelled")] * 2
+
+    def test_the_summary_of_a_sliced_file_gone_from_the_disk_is_gone_too(self, tmp_path, monkeypatch, work):
+        install_fake_orca(tmp_path, monkeypatch, "ok")
+        client, pool, _logs = app_with(work)
+        job_id = client.post("/slices", data=form()).get_json()["job"]
+        Path(pool.result(job_id)["path"]).unlink()
+        gone = [client.get(f"/slices/{job_id}/{route}") for route in ("file", "summary")]
+        assert [(a.status_code, a.get_json()["code"]) for a in gone] == [(410, "slice.file_gone")] * 2
+
+    def test_the_reference_plate_of_100_spacers_is_accepted(self, tmp_path, monkeypatch, work):
+        # 100 instances of one part: one STL file is sent, and the slice job is queued.
+        from helpers import spacer_grid, spacer_stl
+        install_fake_orca(tmp_path, monkeypatch, "ok")
+        client, _pool, _logs = app_with(work, executor=HeldExecutor())
+        job = plate_configuration(parts={"spacer": {"name": "Spacer", "stl": "spacer.stl"}},
+                                  instances=spacer_grid(100))
+        answer = client.post("/slices", data=form(job, {"spacer.stl": spacer_stl()}))
+        assert answer.status_code == 202, answer.get_json()
+
+    def test_the_upload_bound_follows_the_parts_not_the_instances(self):
+        from penguin_slice import limits
+        from penguin_slice.web import MAX_UPLOAD_BYTES
+        assert MAX_UPLOAD_BYTES == limits.MAX_PARTS * limits.MAX_PART_BYTES + 1024 * 1024 < 200 * 1024 * 1024
+
+    def test_a_bad_memory_ceiling_stops_the_app_at_start(self, work):
+        from penguin_slice.limits import SettingError
+        with pytest.raises(SettingError, match="PENGUIN_SLICE_MAX_PEAK_MB"):
+            create_app(work, start_sweeper=False, environ={"PENGUIN_SLICE_MAX_PEAK_MB": "²"})
+        assert not work.exists()
 
     def test_progress_and_events(self, tmp_path, monkeypatch, work):
         install_fake_orca(tmp_path, monkeypatch, "ok")
@@ -134,20 +206,20 @@ class TestSubmit:
 
 
 class TestRefusals:
-    def test_no_plate_job_field(self, work):
+    def test_no_plate_configuration_field(self, work):
         client, _pool, _logs = app_with(work)
         answer = client.post("/slices", data={})
         assert answer.status_code == 400
-        assert_error_report(answer.get_json(), "slice.bad_plate_job")
+        assert_error_report(answer.get_json(), "slice.bad_plate_configuration")
 
     @pytest.mark.parametrize("raw", ["{not json", "[" * 100_000])
-    def test_plate_job_that_is_not_json(self, work, raw):
+    def test_plate_configuration_that_is_not_json(self, work, raw):
         client, _pool, _logs = app_with(work)
-        answer = client.post("/slices", data={"plate_job": raw})
+        answer = client.post("/slices", data={"plate_configuration": raw})
         assert answer.status_code == 400
-        assert answer.get_json()["message"] == "This plate job could not be read: its plate_job field is not JSON."
+        assert answer.get_json()["message"] == "This plate configuration could not be read: its plate_configuration field is not JSON."
 
-    def test_a_refused_plate_job_is_422_and_leaves_nothing(self, work):
+    def test_a_refused_plate_configuration_is_422_and_leaves_nothing(self, work):
         client, _pool, _logs = app_with(work)
         answer = client.post("/slices", data=form(files={"box.stl": b""}))
         assert answer.status_code == 422
@@ -164,10 +236,10 @@ class TestRefusals:
         (tmp_path / "secret.stl").write_bytes(box_stl())
         client, _pool, _logs = app_with(work)
         for stl in ("../../secret.stl", str(tmp_path / "secret.stl")):
-            job = plate_job(parts={"box": {"name": "Box", "stl": stl}})
+            job = plate_configuration(parts={"box": {"name": "Box", "stl": stl}})
             body = client.post("/slices", data=form(job)).get_json()
             assert body["code"] == "slice.part_missing"
-            assert body["message"] == "The file for Box is not one of the files sent with this plate job."
+            assert body["message"] == "The file for Box is not one of the files sent with this plate configuration."
 
     def test_an_upload_name_that_is_a_path_is_refused(self, work):
         client, _pool, _logs = app_with(work)
@@ -187,15 +259,15 @@ class TestRefusals:
         client.application.config["MAX_CONTENT_LENGTH"] = 1000
         answer = client.post("/slices", data=form(files={"box.stl": box_stl() * 3}))
         assert answer.status_code == 413
-        assert answer.get_json()["message"] == "This plate job is too large to receive."
+        assert answer.get_json()["message"] == "This plate configuration is too large to receive."
 
 
 def full_disk(storage, destination, *args, **kwargs):
     raise OSError(28, "No space left on device")
 
 
-class TestEveryPlateJobIsLogged:
-    """Every plate job that reaches POST /slices leaves one log line with its outcome: the
+class TestEveryPlateConfigurationIsLogged:
+    """Every plate configuration that reaches POST /slices leaves one log line with its outcome: the
     queued ones through the pool, every other one as a refusal with its error code, its
     detail, the parts it named and the sizes of the files it sent. Refusals were once
     answered and never logged."""
@@ -225,16 +297,16 @@ class TestEveryPlateJobIsLogged:
         line = self.refusal(work, monkeypatch, form(files={"box.stl": b""}), 422, "slice.part_unreadable")
         assert line["uploads"] == {"box.stl": 0}
 
-    def test_a_plate_job_that_is_not_json(self, work, monkeypatch):
-        line = self.refusal(work, monkeypatch, {"plate_job": "{not json", "box.stl": (io.BytesIO(b"x" * 7), "box.stl")},
-                            400, "slice.bad_plate_job")
+    def test_a_plate_configuration_that_is_not_json(self, work, monkeypatch):
+        line = self.refusal(work, monkeypatch, {"plate_configuration": "{not json", "box.stl": (io.BytesIO(b"x" * 7), "box.stl")},
+                            400, "slice.bad_plate_configuration")
         assert line["parts"] is None and line["uploads"] == {"box.stl": 7}
 
-    def test_no_plate_job_field(self, work, monkeypatch):
-        self.refusal(work, monkeypatch, {}, 400, "slice.bad_plate_job")
+    def test_no_plate_configuration_field(self, work, monkeypatch):
+        self.refusal(work, monkeypatch, {}, 400, "slice.bad_plate_configuration")
 
     def test_an_upload_name_that_is_a_path(self, work, monkeypatch):
-        self.refusal(work, monkeypatch, form(files={"../x.stl": box_stl()}), 400, "slice.bad_plate_job")
+        self.refusal(work, monkeypatch, form(files={"../x.stl": box_stl()}), 400, "slice.bad_plate_configuration")
 
     def test_the_queue_full(self, work, monkeypatch):
         client, _pool, logs = app_with(work, executor=HeldExecutor(), max_queued=1)
@@ -246,7 +318,7 @@ class TestEveryPlateJobIsLogged:
     def test_an_upload_too_large(self, work, monkeypatch):
         def small(client, _monkeypatch):
             client.application.config["MAX_CONTENT_LENGTH"] = 1000
-        line = self.refusal(work, monkeypatch, form(files={"box.stl": box_stl() * 3}), 413, "slice.bad_plate_job",
+        line = self.refusal(work, monkeypatch, form(files={"box.stl": box_stl() * 3}), 413, "slice.bad_plate_configuration",
                             setup=small)
         assert line["uploads"] is None                 # the body was never read
 
@@ -270,19 +342,19 @@ class TestEveryPlateJobIsLogged:
         assert "No space left on device" in line["error_detail"] and "box.stl" in line["error_detail"]
         assert list(work.iterdir()) == []
 
-    def test_a_bug_while_a_plate_job_arrives(self, work, monkeypatch):
+    def test_a_bug_while_a_plate_configuration_arrives(self, work, monkeypatch):
         def bug(client, monkeypatch):
-            monkeypatch.setattr("penguin_slice.web.read_plate_job", lambda *a, **k: 1 / 0)
+            monkeypatch.setattr("penguin_slice.web.read_plate_configuration", lambda *a, **k: 1 / 0)
         self.refusal(work, monkeypatch, form(), 500, "slice.unexpected", setup=bug)
 
-    def test_a_bug_outside_the_plate_job_code_is_logged_too(self, work, monkeypatch):
+    def test_a_bug_outside_the_plate_configuration_code_is_logged_too(self, work, monkeypatch):
         client, _pool, logs = app_with(work)
         monkeypatch.setattr("penguin_slice.web.json.loads", lambda raw: 1 / 0)    # not caught by submit
         assert client.post("/slices", data=form()).status_code == 500
         assert [(e["state"], e["error_code"]) for e in logs] == [("refused", "slice.unexpected")]
         assert "ZeroDivisionError" in logs[0]["traceback"]
 
-    def test_an_http_error_while_a_plate_job_arrives_is_logged_too(self, work, monkeypatch):
+    def test_an_http_error_while_a_plate_configuration_arrives_is_logged_too(self, work, monkeypatch):
         from werkzeug.exceptions import BadRequest
         client, _pool, logs = app_with(work)
 
@@ -294,7 +366,10 @@ class TestEveryPlateJobIsLogged:
             [("refused", "slice.bad_request", 400)]
 
     def test_a_delivered_slice_over_the_ceiling_is_noted_in_its_result_and_log(self, tmp_path, monkeypatch, work):
-        # The stand-in's own ru_maxrss passes a 1 MB ceiling after the watchdog's last sample.
+        # The watchdog's one reading, taken as the stand-in exits, passes a 1 MB ceiling.
+        from penguin_slice import slicer
+        monkeypatch.setattr(slicer, "MEMORY_READER", lambda pgid: (
+            os.waitid(os.P_PID, pgid, os.WEXITED | os.WNOWAIT), (0, 2048))[1])
         install_fake_orca(tmp_path, monkeypatch, "ok")
         logs = []
         pool = JobPool(slice_worker, executor=ImmediateExecutor(), error_report=error_report,
@@ -306,7 +381,7 @@ class TestEveryPlateJobIsLogged:
         note = pool.result(job_id)["memory_note"]
         assert "over the ceiling of 1,024 kB" in note and note.endswith("the sliced file is delivered")
         assert (logs[-1]["state"], logs[-1]["memory_note"]) == ("done", note)
-        assert logs[-1]["peak_rss_kb"] > 1024
+        assert logs[-1]["peak_rss_kb"] == 2048
 
     def test_a_log_that_fails_changes_no_answer_and_no_job(self, tmp_path, monkeypatch, work):
         install_fake_orca(tmp_path, monkeypatch, "ok")
@@ -316,8 +391,8 @@ class TestEveryPlateJobIsLogged:
         app = create_app(work, start_sweeper=False, log=broken)
         app.extensions["penguin_slice_pool"]._executor = ImmediateExecutor()
         client = app.test_client()
-        refused = client.post("/slices", data={"plate_job": "not json"})
-        assert refused.status_code == 400 and refused.get_json()["code"] == "slice.bad_plate_job"
+        refused = client.post("/slices", data={"plate_configuration": "not json"})
+        assert refused.status_code == 400 and refused.get_json()["code"] == "slice.bad_plate_configuration"
         job_id = client.post("/slices", data=form()).get_json()["job"]
         assert client.get(f"/slices/{job_id}").get_json()["state"] == "done"
         assert client.get(f"/slices/{job_id}/file").status_code == 200
@@ -392,6 +467,71 @@ class TestJobs:
         pool.sweep()
         assert list(work.iterdir()) == []
         assert client.get(f"/slices/{job_id}").status_code == 404
+
+
+class TestStopDuringThePlateWrite:
+    """A cancel, an abandonment and a shutdown that come while the plate is being written:
+    the write ends at the next object, Orca is never started, every file is removed. The
+    stop is set from inside the write, after the first part's mesh, so nothing waits."""
+
+    PARTS = {ref: {"name": name, "stl": f"{ref}.stl"} for ref, name in (("a", "Arm"), ("b", "Bolt"), ("c", "Cap"))}
+
+    def run(self, tmp_path, monkeypatch, work, stop_with):
+        """Submit three parts, interleaved; `stop_with(pool, job_id, clock)` runs during the
+        write. (the POST's answer, the meshes built, the Orca runs, the log lines)"""
+        from penguin_slice import plate_3mf, slicer
+        install_fake_orca(tmp_path, monkeypatch, "ok")
+        clock, seen, built, orca_runs, logs = [1000.0], [], [], [], []
+        real_mesh_xml = plate_3mf._mesh_xml
+
+        def worker(job_id, configuration, context):
+            seen.append(job_id)
+            return slice_worker(job_id, configuration, context)
+
+        def mesh_xml(stl_path, name):
+            built.append(name)
+            if len(built) == 1:
+                stop_with(pool, seen[0], clock)
+            return real_mesh_xml(stl_path, name)
+
+        monkeypatch.setattr(plate_3mf, "_mesh_xml", mesh_xml)
+        monkeypatch.setattr(slicer, "run_process", lambda *args, **kwargs: orca_runs.append(args))
+        pool = JobPool(worker, executor=ImmediateExecutor(), error_report=error_report, cleanup=remove_job_files,
+                       log=logs.append, clock=lambda: clock[0], abandon_grace_s=120)
+        client = create_app(work, pool, start_sweeper=False, log=logs.append).test_client()
+        instances = [{"ref": ref, "orientation": "+z", "angle": 0, "x": 30.0 + 30 * n, "y": 50.0}
+                     for n, ref in enumerate("abcabc")]
+        files = {f"{ref}.stl": box_stl(10, 10, 5) for ref in "abc"}
+        answer = client.post("/slices", data=form(plate_configuration(parts=self.PARTS, instances=instances), files))
+        return client, answer, built, orca_runs, logs
+
+    def assert_stopped_in_the_write(self, client, answer, built, orca_runs, logs, work, reason):
+        assert answer.status_code == 202
+        job_id = answer.get_json()["job"]
+        assert answer.get_json()["progress"]["state"] == "cancelled"
+        assert built == ["Arm"]                      # the write ended before the next part's mesh
+        assert orca_runs == []                       # Orca was never started
+        assert list(work.iterdir()) == []            # every file removed
+        last = logs[-1]
+        assert (last["state"], last["cancel_reason"]) == ("cancelled", reason)
+        assert_error_report(client.get(f"/slices/{job_id}/file").get_json(), "slice.cancelled")
+
+    def test_a_cancel_during_the_write(self, tmp_path, monkeypatch, work):
+        answers = []
+        outcome = self.run(tmp_path, monkeypatch, work,
+                           lambda pool, job_id, clock: answers.append(pool.cancel(job_id)))
+        assert answers == ["cancelling"]
+        self.assert_stopped_in_the_write(*outcome, work, "cancel")
+
+    def test_an_abandonment_during_the_write(self, tmp_path, monkeypatch, work):
+        def abandon(pool, job_id, clock):
+            clock[0] += 120                          # nobody has followed the slice job for the grace time
+            assert pool.sweep() == (1, 0)
+        self.assert_stopped_in_the_write(*self.run(tmp_path, monkeypatch, work, abandon), work, "abandoned")
+
+    def test_a_shutdown_during_the_write(self, tmp_path, monkeypatch, work):
+        outcome = self.run(tmp_path, monkeypatch, work, lambda pool, job_id, clock: pool.shutdown())
+        self.assert_stopped_in_the_write(*outcome, work, "shutdown")
 
 
 class TestEveryAnswerIsAnErrorReport:

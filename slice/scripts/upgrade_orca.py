@@ -5,7 +5,7 @@
    each of the three assets scripts/install-orca.sh installs (Linux x86_64, Linux aarch64,
    macOS); a release missing an asset or a digest stops here, nothing changed.
 2. Stops when patches/orca/ holds a patch: patching Orca means building it from source,
-   which this command does not do (patches/orca/README.md).
+   which this command does not do, and a patch to Orca is the owner's decision.
 3. Installs that release beside the installed one, in tools/orca.next, with a staged copy
    of scripts/install-orca.sh holding the new pin (it verifies the download against it); a
    failure here changes nothing.
@@ -84,7 +84,8 @@ def check_patches(directory=PATCHES):
     patches = sorted(directory.glob("*.patch")) if directory.is_dir() else []
     if patches:
         raise UpgradeError(f"{len(patches)} patch(es) in {directory}: patching Orca needs a source build, which "
-                           f"this command does not do; see {directory / 'README.md'}")
+                           f"this command does not do, and a patch to Orca is the owner's decision (slice/README.md, "
+                           f"\"Taking a new upstream version\")")
 
 
 def repin(text, version, shas):
@@ -149,7 +150,10 @@ def upgrade(version, *, token=None, opener=urllib.request.urlopen, runner=run, i
         runner("upstream check", ["make", "-C", str(SLICE_ROOT), "test-upstream"])
     except UpgradeError as exc:
         raise UpgradeError(f"{exc}. Orca {version} is installed and pinned; {old_version} is kept at {previous}. "
-                           f"To go back: make upgrade-orca VERSION={old_version}") from None
+                           f"Each failing test of the upstream check names, in its \"Protects:\" line and its "
+                           f"message, the assumption that broke and what to fix (for Orca's debug log: "
+                           f"slicer.LOG_WARNING_RE and tests/fake_orca.py's LOG_WARNING). To go back: make "
+                           f"upgrade-orca VERSION={old_version}") from None
     shutil.rmtree(previous, ignore_errors=True)
     print(f"upgrade-orca: Orca {version} pinned, installed, regenerated and checked; review the diff of "
           f"src/penguin_slice/profiles/ before committing")

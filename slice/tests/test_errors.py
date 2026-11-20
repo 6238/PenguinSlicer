@@ -13,22 +13,23 @@ from unittest import mock
 
 import pytest
 
-from helpers import CONTRACTS, FAILSAFE_S, FIXTURES, bounded, box_stl, install_fake_orca, kill_fake, write_plate_job
-from penguin_slice import error_report, limits, plate_job as plate_job_module, service as service_module, slicer
+from helpers import CONTRACTS, FAILSAFE_S, FIXTURES, bounded, box_stl, install_fake_orca, kill_fake, write_plate_configuration
+from penguin_slice import limits, plate_configuration as plate_configuration_module, service as service_module, slicer
+from penguin_slice.errors import error_report
 from penguin_slice.errors import CODES
 from penguin_slice.jobs import JobFailure, JobPool, QueueFull
-from penguin_slice.service import read_plate_job, slice_plate_job
+from penguin_slice.service import read_plate_configuration, slice_plate_configuration
 from penguin_slice.slicer import OrcaExit
 
 REQUIRED = {"code": str, "message": str, "remedy": str, "retryable": bool, "detail": str}
 OPTIONAL = {"where": dict, "action": str}
-WHERE_KEYS = {"part", "copy", "height_mm", "stage"}
+WHERE_KEYS = {"part", "instance", "height_mm", "stage"}
 STAGES = {"checking", "queued", "building", "slicing", "saving", "fetching"}
 
 
-def plate_job(**changes):
+def plate_configuration(**changes):
     job = {"parts": {"box": {"name": "Box", "stl": "box.stl"}},
-           "copies": [{"ref": "box", "orientation": "+z", "angle": 0, "x": 50.0, "y": 50.0}]}
+           "instances": [{"ref": "box", "orientation": "+z", "angle": 0, "x": 50.0, "y": 50.0}]}
     job.update(changes)
     return job
 
@@ -44,10 +45,10 @@ class Scene:
         (self.base / "box.stl").write_bytes(box_stl(20, 20, 10))
 
     def read(self, data):
-        return read_plate_job(data, self.base)
+        return read_plate_configuration(data, self.base)
 
     def slice(self, data=None, **kwargs):
-        return slice_plate_job(write_plate_job(self.base, data or plate_job(), {}), self.out, **kwargs)
+        return slice_plate_configuration(write_plate_configuration(self.base, data or plate_configuration(), {}), self.out, **kwargs)
 
     def orca_exit(self, returncode, return_code=None, archive=None):
         """Orca replaced at slicer.run_process: it writes result.json and the archive."""
@@ -76,13 +77,13 @@ def busy(scene):
 
 def stl(scene, data):
     (scene.base / "box.stl").write_bytes(data)
-    scene.read(plate_job())
+    scene.read(plate_configuration())
 
 
 def oversize(scene):
     with open(scene.base / "box.stl", "r+b") as fh:
         fh.truncate(limits.MAX_PART_BYTES + 1)
-    scene.read(plate_job())
+    scene.read(plate_configuration())
 
 
 def profile_unreadable(scene):
@@ -91,17 +92,17 @@ def profile_unreadable(scene):
     broken.write_text("{not a profile")
     scene.monkeypatch.setattr(service_module, "printer_profile",
                               lambda profiles: __import__("json").loads(broken.read_text()))
-    scene.read(plate_job())
+    scene.read(plate_configuration())
 
 
-def over_the_memory_ceiling(copies):
+def over_the_memory_ceiling(instances):
     """The memory watchdog stops a stand-in Orca whose processes read 950 MB. Bounded: with
     the watchdog's stop removed this fails in FAILSAFE_S and kills the stand-in."""
     def produce(scene):
         scene.monkeypatch.setattr(slicer, "MEMORY_READER", lambda pgid: (950 * 1024, 950 * 1024))
         install_fake_orca(scene.tmp, scene.monkeypatch, "hang")
         try:
-            _returned, raised, finished = bounded(lambda: scene.slice(plate_job(copies=copies)))
+            _returned, raised, finished = bounded(lambda: scene.slice(plate_configuration(instances=instances)))
         finally:
             for out in scene.out.rglob("fake-orca.pid"):
                 kill_fake(out.parent)
@@ -120,13 +121,13 @@ def fake_orca(mode, **slice_kwargs):
 
 def with_supports(scene):
     install_fake_orca(scene.tmp, scene.monkeypatch, "empty_layers")
-    scene.slice(plate_job(overrides={"supports": "on"}))
+    scene.slice(plate_configuration(overrides={"supports": "on"}))
 
 
 def timeout(scene):
     timers = slicer.TIMER
     install_fake_orca(scene.tmp, scene.monkeypatch, "hang")
-    scene.slice(on_progress=lambda stage, fraction, message: stage == "slicing_mesh" and timers.made[-1].fire())
+    scene.slice(plate_configuration(instances=SPACED), on_progress=lambda stage, fraction, message: stage == "slicing_mesh" and timers.made[-1].fire())
 
 
 def cancelled(scene):
@@ -148,25 +149,25 @@ def output_is_a_file(scene):
 def disk_full(scene):
     def full(*args, **kwargs):
         raise OSError(28, "No space left on device")
-    scene.monkeypatch.setattr(plate_job_module, "write_plate_3mf", full)
+    scene.monkeypatch.setattr(plate_configuration_module, "write_plate_3mf", full)
     scene.slice()
 
 
 def through_the_web(path):
-    """A report the HTTP face answers with: an unknown job, or the file of a queued one."""
+    """A report the HTTP interface answers with: an unknown job, or the file of a queued one."""
     def produce(scene):
         from penguin_slice.web import create_app, slice_worker
         pool = JobPool(slice_worker, executor=mock.Mock(), error_report=error_report)
         client = create_app(scene.tmp / "work", pool, start_sweeper=False).test_client()
         if path == "file":
-            form = {"plate_job": json.dumps(plate_job()),
+            form = {"plate_configuration": json.dumps(plate_configuration()),
                     "box.stl": (io.BytesIO((scene.base / "box.stl").read_bytes()), "box.stl")}
             job_id = client.post("/slices", data=form).get_json()["job"]
             return client.get(f"/slices/{job_id}/file").get_json()
         if path == "gone":
             install_fake_orca(scene.tmp, scene.monkeypatch, "ok")
             pool._executor = ImmediateExecutor()
-            form = {"plate_job": json.dumps(plate_job()),
+            form = {"plate_configuration": json.dumps(plate_configuration()),
                     "box.stl": (io.BytesIO((scene.base / "box.stl").read_bytes()), "box.stl")}
             job_id = client.post("/slices", data=form).get_json()["job"]
             Path(pool.result(job_id)["path"]).unlink()          # the sliced file left the disk
@@ -186,7 +187,7 @@ def bug_in_the_pipeline(scene):
     # A defect in the slice service's own code, reached through the entry point.
     def broken(*args, **kwargs):
         return 1 / 0
-    scene.monkeypatch.setattr(plate_job_module, "write_plate_3mf", broken)
+    scene.monkeypatch.setattr(plate_configuration_module, "write_plate_3mf", broken)
     scene.slice()
 
 
@@ -208,24 +209,32 @@ class Expected:
 
 
 EXPECTED = {
-    "slice.bad_plate_job": Expected(
-        lambda s: s.read(plate_job(copies=[])), "This plate job could not be read: it has no copies.", "checking",
-        False, None, "Lay out the plate again and send a new slice.", "it has no copies"),
-    "slice.too_many_copies": Expected(
-        lambda s: s.read(plate_job(copies=TWO * 13)), "Up to 25 copies per plate; print the rest in a second job.",
-        "checking", False, "lower_quantities", "Lower the quantities and print the rest in a second job.",
-        "26 copies, cap 25"),
+    "slice.bad_plate_configuration": Expected(
+        lambda s: s.read(plate_configuration(instances=[])), "This plate configuration could not be read: it has no instances.", "checking",
+        False, None, "Lay out the plate again and send a new slice.", "it has no instances"),
+    "slice.too_many_instances": Expected(
+        lambda s: s.read(plate_configuration(instances=[TWO[0]] * 151)),
+        "This plate has 151 instances; the slicer takes up to 150 on one plate, so print the rest on a second plate.",
+        "checking", False, "lower_quantities", "Lower the quantities and print the rest on a second plate.",
+        "151 instances, cap 150"),
+    "slice.too_many_parts": Expected(
+        lambda s: s.read(plate_configuration(parts={f"p{i}": {"name": "Box", "stl": "box.stl"} for i in range(26)},
+                                             instances=[dict(TWO[0], ref=f"p{i}") for i in range(26)])),
+        "This plate uses 26 different parts; the slicer takes up to 25 on one plate, so print the rest on a second "
+        "plate.", "checking", False, None, "Use fewer different parts on this plate and print the rest on a second "
+        "plate.",
+        "26 different parts, cap 25"),
     "slice.unknown_printer": Expected(
-        lambda s: s.read(plate_job(printer="Nope")), "The printer 'Nope' is not one the slicer knows.", "checking",
+        lambda s: s.read(plate_configuration(printer="Nope")), "The printer 'Nope' is not one the slicer knows.", "checking",
         False, None, "Choose a printer from the list, or ask a mentor to add this one.",
         "printer 'Nope' is not in the catalog"),
     "slice.profiles_not_offered": Expected(
-        lambda s: s.read(plate_job(filament="Bambu PLA Basic @BBL H2S")),
+        lambda s: s.read(plate_configuration(filament="Bambu PLA Basic @BBL H2S")),
         "Choose a filament and print settings from the list.", "checking", False, "choose_profiles",
         "Choose a filament and print settings from the lists and slice again.",
         "filament 'Bambu PLA Basic @BBL H2S' or process None is not offered with the default set"),
     "slice.bad_overrides": Expected(
-        lambda s: s.read(plate_job(overrides={"walls": 5})),
+        lambda s: s.read(plate_configuration(overrides={"walls": 5})),
         "These print settings could not be read; choose them from the lists.", "checking", False, "choose_profiles",
         "Choose the print settings from the lists and slice again.", "override 'walls' is 5, not one of [2, 3, 4, 6]"),
     "slice.profile_unreadable": Expected(
@@ -233,9 +242,9 @@ EXPECTED = {
         None, "Ask a mentor to check the print server's profiles; `make upgrade-orca` with the pinned version writes "
               "them again.", "JSONDecodeError"),
     "slice.part_missing": Expected(
-        lambda s: s.read(plate_job(parts={})), "A copy on the plate names a part this plate job does not include.",
+        lambda s: s.read(plate_configuration(parts={})), "An instance on the plate names a part this plate configuration does not include.",
         "checking", False, "refresh_parts", "Load the parts again and send a new slice.",
-        "copy 0 names part 'box', which parts does not list"),
+        "instance 0 names part 'box', which parts does not list"),
     "slice.part_unreadable": Expected(
         lambda s: stl(s, b""), "The file for Box is empty.", "checking", False, "refresh_parts",
         "Export the part again and send a new slice.", "box.stl: 0 bytes"),
@@ -260,16 +269,16 @@ EXPECTED = {
         "checking", False, None,
         "Check the part's units, or split the part in CAD so each piece fits, and slice again.", "box.stl"),
     "slice.placement_off_plate": Expected(
-        lambda s: s.read(plate_job(copies=[dict(TWO[0], x=1.0)])), "Box #1 is not fully on the plate.", "checking",
-        False, "arrange", "Move the copy fully onto the plate, or press Arrange, and slice again.",
+        lambda s: s.read(plate_configuration(instances=[dict(TWO[0], x=1.0)])), "Box #1 is not fully on the plate.", "checking",
+        False, "arrange", "Move the instance fully onto the plate, or press Arrange, and slice again.",
         "Box #1 is not fully on the plate."),
     "slice.placement_too_tall": Expected(
         lambda s: stl(s, box_stl(20, 20, 341)), "Box #1 is taller than the printer can print (340 mm).", "checking",
         False, "choose_orientation", "Lay the part on another face so it is lower, and slice again.",
         "Box #1 is taller than the printer can print (340 mm)."),
     "slice.placement_too_close": Expected(
-        lambda s: s.read(plate_job(copies=TWO)), "Box #1 and Box #2 are closer than 5 mm.", "checking", False,
-        "arrange", "Move the copies further apart, or press Arrange, and slice again.",
+        lambda s: s.read(plate_configuration(instances=TWO)), "Box #1 and Box #2 are closer than 5 mm.", "checking", False,
+        "arrange", "Move the instances further apart, or press Arrange, and slice again.",
         "Box #1 and Box #2 are closer than 5 mm."),
     "slice.busy": Expected(
         busy, "The slicer is busy, try again in a minute.", "queued", True, None, "Wait a minute and slice again.",
@@ -286,15 +295,15 @@ EXPECTED = {
         "Ask a mentor to check the print server; the slicer will not start on it.", "Permission denied"),
     "slice.timeout": Expected(
         timeout, "The slicer took too long on this plate.", "slicing", True, "lower_quantities",
-        "Try again, or slice fewer copies at once.", "orca code timeout\nstopped by the slice service (timeout)"),
+        "Try again, or slice fewer instances at once.", "orca code timeout\nstopped by the slice service (timeout)"),
     "slice.cancelled": Expected(
         cancelled, "The slice was cancelled.", "slicing", True, None, "Send the slice again when you want it.",
         "stopped by the slice service (cancel) with SIGTERM"),
     "slice.out_of_memory": Expected(
         over_the_memory_ceiling(SPACED), "This plate is too large to slice: the slicer needed more than the 900 MB "
                                          "of memory the print server allows.", "slicing", False,
-        "lower_quantities", "Remove some copies or the largest part and print them in a second job.",
-        "Orca's processes reached a peak of 972,800 kB (the watchdog's high-water reading 972,800 kB"),
+        "lower_quantities", "Remove some instances or the largest part and print them on a second plate.",
+        "Orca's processes reached a peak of 972,800 kB (the watchdog's high-water reading of Orca's processes)"),
     "slice.orca_crashed": Expected(
         fake_orca("segv"), "The slicer crashed while slicing this plate.", "slicing", False, None,
         "Try another orientation or other print settings; if it crashes again, ask a mentor to check the part.",
@@ -304,11 +313,11 @@ EXPECTED = {
         True, None, SERVER, "ended by signal 15 (SIGTERM), not sent by the slice service"),
     "slice.orca_too_close": Expected(
         fake_orca("refuse"), "Parts are too close together; spread them out.", "slicing", False, "arrange",
-        "Move the copies further apart, or press Arrange, and slice again.",
+        "Move the instances further apart, or press Arrange, and slice again.",
         "orca code -101\nexit code 155\norca error_string: too close\nSome objects are too close together"),
     "slice.crosses_edge": Expected(
         lambda s: s.orca_exit(204, -52), "A part crosses the edge of the plate.", "slicing", False, "arrange",
-        "Move the copy fully onto the plate, or press Arrange, and slice again.",
+        "Move the instance fully onto the plate, or press Arrange, and slice again.",
         "orca code -52\nexit code 204\norca output line"),
     "slice.empty_layers": Expected(
         fake_orca("empty_layers"), EMPTY_LAYERS, "slicing", False, "enable_supports",
@@ -330,7 +339,7 @@ EXPECTED = {
         "orca said: The print is empty. The model is not printable with current print settings."),
     "slice.nothing_on_plate": Expected(
         lambda s: s.orca_exit(206, -50), "No part is fully on the plate.", "slicing", False, "arrange",
-        "Move the copies onto the plate, or press Arrange, and slice again.", "orca code -50\nexit code 206"),
+        "Move the instances onto the plate, or press Arrange, and slice again.", "orca code -50\nexit code 206"),
     "slice.orca_failed": Expected(
         fake_orca("general"), "The slicer could not slice this plate.", "slicing", False, None,
         "Try another orientation or other print settings, and slice again.",
@@ -346,7 +355,7 @@ EXPECTED = {
         True, None, SERVER, "archive entries:\nMetadata/slice_info.config"),
     "slice.left_off_plate": Expected(
         fake_orca("drop"), "A part was left off the plate.", "slicing", False, "arrange",
-        "Move every copy fully onto the plate, or press Arrange, and slice again.",
+        "Move every instance fully onto the plate, or press Arrange, and slice again.",
         "expected 1 objects, found 0; missing ['Box #1']; unexpected []"),
     "slice.output_unwritable": Expected(
         output_is_a_file, "The print server could not save the sliced file.", "saving", False, None,
@@ -373,7 +382,7 @@ EXPECTED = {
 
 def produce(code, tmp_path, monkeypatch):
     """The error report for `code`: from the exception its producer raises, or the report
-    a producer that goes through the HTTP face returns."""
+    a producer that goes through the HTTP interface returns."""
     try:
         returned = EXPECTED[code].producer(Scene(tmp_path, monkeypatch))
     except Exception as exc:
@@ -428,9 +437,9 @@ def test_orca_refusal_detail_leads_with_orca_code(tmp_path, monkeypatch):
     assert report["detail"].splitlines()[:3] == ["orca code -52", "exit code 204", "orca output line"]
 
 
-def test_empty_layers_name_the_copy_and_the_height(tmp_path, monkeypatch):
+def test_empty_layers_name_the_instance_and_the_height(tmp_path, monkeypatch):
     _exc, report = produce("slice.empty_layers", tmp_path, monkeypatch)
-    assert report["where"] == {"copy": "Box #1", "height_mm": 9.9, "stage": "slicing"}
+    assert report["where"] == {"instance": "Box #1", "height_mm": 9.9, "stage": "slicing"}
 
 
 def test_with_supports_on_no_action_is_offered_that_cannot_help(tmp_path, monkeypatch):
@@ -438,14 +447,14 @@ def test_with_supports_on_no_action_is_offered_that_cannot_help(tmp_path, monkey
     assert "action" not in report and "Supports" not in report["remedy"]
 
 
-def test_out_of_memory_on_a_plate_of_one_copy_does_not_say_remove_copies(tmp_path, monkeypatch):
+def test_out_of_memory_on_a_plate_of_one_instance_does_not_say_remove_instances(tmp_path, monkeypatch):
     scene = Scene(tmp_path, monkeypatch)
     with pytest.raises(slicer.SliceError) as caught:
-        over_the_memory_ceiling(plate_job()["copies"])(scene)
+        over_the_memory_ceiling(plate_configuration()["instances"])(scene)
     report = error_report(caught.value)
     assert report["code"] == "slice.out_of_memory"
     assert report["remedy"] == "Split the part in CAD into smaller pieces, or simplify it, and slice again."
-    assert "action" not in report and "copies" not in report["remedy"]
+    assert "action" not in report and "instances" not in report["remedy"]
 
 
 @pytest.mark.parametrize("code", ["slice.no_layers", "slice.print_empty"])
@@ -458,8 +467,8 @@ def test_with_two_parts_orcas_reason_names_none(tmp_path, monkeypatch):
     scene = Scene(tmp_path, monkeypatch)
     (scene.base / "peg.stl").write_bytes(box_stl(8, 8, 8))
     install_fake_orca(tmp_path, monkeypatch, "no_layers")
-    job = plate_job(parts={"box": {"name": "Box", "stl": "box.stl"}, "peg": {"name": "Peg", "stl": "peg.stl"}},
-                    copies=[TWO[0], dict(TWO[1], ref="peg", x=90.0)])
+    job = plate_configuration(parts={"box": {"name": "Box", "stl": "box.stl"}, "peg": {"name": "Peg", "stl": "peg.stl"}},
+                    instances=[TWO[0], dict(TWO[1], ref="peg", x=90.0)])
     with pytest.raises(slicer.SliceError) as caught:
         scene.slice(job)
     assert error_report(caught.value)["where"] == {"stage": "slicing"}
@@ -470,11 +479,11 @@ def test_with_two_parts_orcas_reason_names_none(tmp_path, monkeypatch):
     ("slice.part_unreadable", {"part": "Box"}), ("slice.part_too_small", {"part": "Box"}),
     ("slice.part_too_detailed", {"part": "Box"}), ("slice.part_too_large", {"part": "Box"}),
     ("slice.part_no_volume", {"part": "Box"}), ("slice.part_not_binary", {"part": "Box"}),
-    ("slice.placement_too_close", {"part": "Box", "copy": "Box #1"}),
-    ("slice.placement_too_tall", {"part": "Box", "copy": "Box #1"}),
-    ("slice.left_off_plate", {"copy": "Box #1"}),
+    ("slice.placement_too_close", {"part": "Box", "instance": "Box #1"}),
+    ("slice.placement_too_tall", {"part": "Box", "instance": "Box #1"}),
+    ("slice.left_off_plate", {"instance": "Box #1"}),
 ])
-def test_where_names_the_part_and_copy(code, where, tmp_path, monkeypatch):
+def test_where_names_the_part_and_instance(code, where, tmp_path, monkeypatch):
     _exc, report = produce(code, tmp_path, monkeypatch)
     assert {k: v for k, v in report["where"].items() if k != "stage"} == where
 
@@ -533,7 +542,7 @@ def test_reports_never_carry_the_environment(tmp_path, monkeypatch):
 def test_contract_example_is_a_report_the_service_produces(tmp_path, monkeypatch):
     """contracts/examples/error-report.json is what the real Orca's empty-layer refusal
     gave for the corpus' slivers_and_lattice part (tests_orca checks it); here every field
-    but the message's copy name, the where and the detail must be what the code gives."""
+    but the message's instance name, the where and the detail must be what the code gives."""
     example = json.loads((CONTRACTS / "examples" / "error-report.json").read_text())
     assert_report_shape(example)
     _exc, report = produce(example["code"], tmp_path, monkeypatch)

@@ -37,7 +37,7 @@ def fake_run_factory(returncode=0, write_archive=True, write_result_json=True, s
             (outdir / "result.json").write_text(result if isinstance(result, str) else json.dumps(result))
         elif write_result_json:
             shutil.copy(FIXTURES / "result.json", outdir / "result.json")
-        return OrcaExit(returncode, stdout, stopped=stopped, peak_rss_kb=1234, wall_s=0.5)
+        return OrcaExit(returncode, stdout, stopped=stopped, memory_peak_kb=1234, wall_s=0.5)
 
     fake_run.calls = calls
     return fake_run
@@ -101,6 +101,7 @@ class TestSampleCommand:
         cmd = build_command(slicer.SAMPLE_STL, out)
         assert cmd == [
             str(placeholder_orca),
+            "--debug", "3", "--logfile", str(out / "orca.log"),
             "--datadir", str(out / "datadir"),
             "--load-settings", f"{slicer.PROFILE_DIR / 'printer.json'};{slicer.PROFILE_DIR / 'process.json'}",
             "--load-filaments", str(slicer.PROFILE_DIR / "filament.json"),
@@ -263,6 +264,24 @@ class TestReadSummary:
                                                                    "The sliced file the slicer wrote is damaged.")
         assert caught.value.details.startswith("x.gcode.3mf: ")
 
+    def test_a_directory_entry_asking_for_an_unknown_zip_version_is_damage_worth_retrying(self, out):
+        # zipfile raises NotImplementedError ("zip file version 23.5") for such an entry: it
+        # was once "The slicer failed unexpectedly.", slice.unexpected, not worth retrying.
+        from penguin_slice.errors import error_report
+        out.mkdir()
+        archive = out / "x.gcode.3mf"
+        make_archive(archive)
+        raw = bytearray(archive.read_bytes())
+        directory = raw.index(b"PK\x01\x02")                 # the first central directory entry
+        raw[directory + 6] = 235                             # its "version needed to extract": 23.5
+        archive.write_bytes(bytes(raw))
+        with pytest.raises(SliceError) as caught:
+            read_summary(archive, out)
+        report = error_report(caught.value)
+        assert (report["code"], report["message"], report["retryable"]) == (
+            "slice.unreadable_output", "The sliced file the slicer wrote is damaged.", True)
+        assert "NotImplementedError" in report["detail"] and "23.5" in report["detail"]
+
     def test_archive_without_gcode_entry_names_contents(self, out):
         out.mkdir()
         make_archive(out / "p.gcode.3mf", gcode_header=False)
@@ -362,6 +381,7 @@ class TestPlateSlice:
         cmd = slicer.build_plate_command(model, profiles, out)
         assert cmd == [
             str(placeholder_orca),
+            "--debug", "3", "--logfile", str(out / "orca.log"),
             "--datadir", str(out / "datadir"),
             "--load-settings", f"{(tmp_path / 'p.json').resolve()};{(tmp_path / 'q.json').resolve()}",
             "--load-filaments", str((tmp_path / "f.json").resolve()),
@@ -387,6 +407,16 @@ class TestPlateSlice:
         assert fake.calls[0][1]["env"]["LC_ALL"] == "C"
         assert result.output_path == out / "plate.gcode.3mf"
         assert result.layer_count == 50
+
+    @pytest.mark.parametrize("reason", ["cancel", "abandoned", "shutdown"])
+    def test_a_stop_set_before_orca_starts_never_starts_it(self, out, model, executable_orca, reason):
+        fake, stop = fake_run_factory(), slicer.Stop()
+        stop.set(reason)
+        with patched(fake), pytest.raises(SliceCancelled) as caught:
+            slicer.slice_plate(model, slicer.DEFAULT_PROFILES, out, stop=stop)
+        assert fake.calls == []
+        assert caught.value.details == f"stopped by the slice service ({reason}) before Orca was started"
+        assert not (out / slicer.PLATE_ARCHIVE).exists()
 
     @pytest.mark.parametrize("code, error_code, message", [
         (-101, "slice.orca_too_close", "Parts are too close together; spread them out."),
@@ -422,7 +452,7 @@ class TestPlateSlice:
         assert caught.value.reason == "x\nToo thin here"
 
     @pytest.mark.parametrize("enable, error_code", [("0", "slice.empty_layers"), ("1", "slice.empty_layers_with_supports")])
-    def test_empty_layers_name_the_copy_and_the_height(self, tmp_path, out, model, executable_orca, enable,
+    def test_empty_layers_name_the_instance_and_the_height(self, tmp_path, out, model, executable_orca, enable,
                                                        error_code):
         with patched(fake_result_run(156, -100, error_string="Failed slicing the model.", warning=EMPTY)):
             with pytest.raises(SliceError) as caught:
@@ -430,7 +460,7 @@ class TestPlateSlice:
         assert caught.value.error_code == error_code
         assert caught.value.message == ("Gap #1 has nothing to print between 9.9 and 11.34 mm high, so the layers "
                                         "above would start in mid-air.")
-        assert caught.value.where == {"copy": "Gap #1", "height_mm": 9.9}
+        assert caught.value.where == {"instance": "Gap #1", "height_mm": 9.9}
 
     def test_empty_layers_without_an_object_name(self, out, model, executable_orca):
         warning = "Object can't be printed for empty layer between 1.5 and 2.0."

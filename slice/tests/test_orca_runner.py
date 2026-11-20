@@ -7,6 +7,7 @@ of a process is awaited on its pidfd with a fail-safe that is reached only when 
 failing.
 """
 import fcntl
+import json
 import os
 import signal
 import subprocess
@@ -18,7 +19,8 @@ from pathlib import Path
 import pytest
 
 from helpers import FAILSAFE_S, TESTS, bounded, install_fake_orca, kill_fake, make_part
-from penguin_slice import error_report, slicer
+from penguin_slice import slicer
+from penguin_slice.errors import error_report
 from penguin_slice.plate_3mf import write_plate_3mf
 from penguin_slice.slicer import OrcaExit, SliceCancelled, SliceError, Stop
 
@@ -142,7 +144,7 @@ class TestSignals:
         _exc, report = failure(tmp_path, monkeypatch, plate, "sigkill")
         assert report["code"] == "slice.out_of_memory"
         assert report["message"] == "This plate is too large to slice: the slicer ran out of memory."
-        assert report["remedy"] == "Remove some copies or the largest part and print them in a second job."
+        assert report["remedy"] == "Remove some instances or the largest part and print them on a second plate."
         assert report["retryable"] is False and report["action"] == "lower_quantities"
         assert report["detail"].startswith("ended by signal 9 (SIGKILL), not sent by the slice service; the "
                                            "kernel's oom_kill count rose by 1")
@@ -231,6 +233,21 @@ class TestCancelAndTimeout:
         assert "fake orca: slicing" in report["detail"]
         assert not alive(int((tmp_path / "out" / "fake-orca.pid").read_text()))
 
+    def test_the_deadline_exists_before_any_message_of_orcas_is_read(self, tmp_path, monkeypatch, plate, timers):
+        # Once made after the thread that reads Orca's messages had started: a message read
+        # first found no timer (a test firing the timeout at it failed about once in 20 runs).
+        pump_running_when_made, earlier = [], set(threading.enumerate())
+
+        def make(interval, fn):
+            pump_running_when_made.append(any(t.name == "orca-output" and t not in earlier
+                                              for t in threading.enumerate()))
+            return timers(interval, fn)
+        monkeypatch.setattr(slicer, "TIMER", make)
+        exc, report = failure(tmp_path, monkeypatch, plate, "hang",
+                              on_progress=lambda stage, *args: stage == "slicing_mesh" and timers.made[-1].fire())
+        assert pump_running_when_made == [False]
+        assert report["code"] == "slice.timeout"
+
     def test_timeout_of_an_orca_that_ignores_sigterm(self, tmp_path, monkeypatch, plate, timers):
         monkeypatch.setattr(slicer, "STOP_GRACE_S", 0)
         install_fake_orca(tmp_path, monkeypatch, "hang_hard")
@@ -296,8 +313,9 @@ class TestMemoryWatchdog:
                                      "memory the print server allows.")
         assert report["retryable"] is False and report["action"] == "lower_quantities"
         assert report["detail"].startswith("stopped by the slice service (memory) with SIGTERM after ")
-        assert ("Orca's processes reached a peak of 950,000 kB (the watchdog's high-water reading 950,000 kB, "
-                "Orca's ru_maxrss at exit ") in report["detail"]
+        assert ("Orca's processes reached a peak of 950,000 kB (the watchdog's high-water reading of Orca's "
+                "processes), over") in report["detail"]
+        assert "ru_maxrss" not in report["detail"]
         assert "over the ceiling of 921,600 kB (PENGUIN_SLICE_MAX_PEAK_MB=900)" in report["detail"]
         assert len(seen) == 3 and len(set(seen)) == 1               # three samples of one process group
         assert exc.peak_rss_kb == 950_000 and exc.reason == "stopped at the memory ceiling"
@@ -328,27 +346,64 @@ class TestMemoryWatchdog:
         run = slicer.run_process(cmd, cwd=out, env=slicer.orca_env(out), timeout_s=60, memory_ceiling_kb=8192)
         assert (run.returncode, run.stopped, run.memory_peak_kb, run.memory_ceiling_kb) == (0, None, 4096, 8192)
 
-    def test_a_peak_over_the_ceiling_after_the_last_sample_is_delivered_with_a_note(self, tmp_path, monkeypatch,
-                                                                                     plate):
-        # The watchdog reads 1 MB (conftest) and never stops Orca; Orca's own ru_maxrss, read
-        # at exit, is over a 1 MB ceiling. Orca finished first: the sliced file is delivered,
-        # and the result says the peak passed the ceiling.
+    def test_a_peak_over_the_ceiling_read_as_orca_exits_is_delivered_with_a_note(self, tmp_path, monkeypatch,
+                                                                                  plate):
+        # The watchdog's one sample returns only once the stand-in has exited, with a peak
+        # over the 1 MB ceiling: Orca finished before the stop could be sent, so the sliced
+        # file is delivered and the result says the peak passed the ceiling.
+        monkeypatch.setattr(slicer, "MEMORY_READER", lambda pgid: (
+            os.waitid(os.P_PID, pgid, os.WEXITED | os.WNOWAIT), (0, 2048))[1])
         result = slice_with(tmp_path, monkeypatch, plate, "ok", memory_ceiling_mb=1)
         assert result.output_path.is_file() and result.layer_count == 42
-        assert result.peak_rss_kb > 1024
-        assert result.memory_note.startswith(f"Orca's processes reached a peak of {result.peak_rss_kb:,} kB (the "
-                                             f"watchdog's high-water reading 1,024 kB, Orca's ru_maxrss at exit ")
-        assert result.memory_note.endswith("over the ceiling of 1,024 kB (PENGUIN_SLICE_MAX_PEAK_MB=1), and Orca "
-                                           "finished before the watchdog stopped it: the sliced file is delivered")
+        assert result.peak_rss_kb == 2048
+        assert result.memory_note == ("Orca's processes reached a peak of 2,048 kB (the watchdog's high-water "
+                                      "reading of Orca's processes), over the ceiling of 1,024 kB "
+                                      "(PENGUIN_SLICE_MAX_PEAK_MB=1), and Orca finished before the watchdog stopped "
+                                      "it: the sliced file is delivered")
 
     def test_a_slice_under_the_ceiling_has_no_note(self, tmp_path, monkeypatch, plate):
         assert slice_with(tmp_path, monkeypatch, plate, "ok", memory_ceiling_mb=100_000).memory_note is None
 
-    @pytest.mark.parametrize("rss, watchdog, peak", [(500, 400, 500), (400, 500, 500), (None, 300, 300),
-                                                     (300, None, 300), (None, None, None)])
-    def test_the_peak_reported_is_never_under_either_reading(self, rss, watchdog, peak):
-        # The watchdog's reading was once reported as the peak, 9 to 25 % under the real one.
+    @pytest.mark.parametrize("rss, watchdog, peak", [(500, 400, 400), (400, 500, 500), (None, 300, 300),
+                                                     (300, None, None), (None, None, None)])
+    def test_the_peak_reported_is_the_watchdogs_reading_of_orca_alone(self, rss, watchdog, peak):
+        # ru_maxrss counts the slice service's own memory at the fork (it survives exec): run
+        # from a service holding 400 MB, /bin/true once reported a peak of 440,216 kB.
         assert OrcaExit(0, "", peak_rss_kb=rss, memory_peak_kb=watchdog).peak_kb == peak
+
+    def test_the_kernels_figure_never_reaches_the_peak_of_a_real_child(self, tmp_path, monkeypatch, plate):
+        # This process holds 64 MB more than the stand-in ever does: the kernel's ru_maxrss
+        # of the child counts it, the reported peak does not.
+        ballast = bytearray(64 * 1024 * 1024)
+        ballast[::4096] = b"x" * len(ballast[::4096])                      # resident, not just reserved
+        monkeypatch.setattr(slicer, "MEMORY_READER", lambda pgid: (1000, 1500))
+        install_fake_orca(tmp_path, monkeypatch, "ok")
+        out = tmp_path / "out"
+        out.mkdir()
+        cmd = slicer.build_plate_command(plate, slicer.DEFAULT_PROFILES, out)
+        run = slicer.run_process(cmd, cwd=out, env=slicer.orca_env(out), timeout_s=60, memory_ceiling_kb=1 << 30)
+        assert run.peak_rss_kb > 64 * 1024 and run.peak_kb == 1500
+        del ballast
+
+    def test_the_watchdog_samples_after_orcas_last_message(self, tmp_path, monkeypatch, plate):
+        # Orca's peak comes as it writes the sliced file, just before "All done, Success": a
+        # sample follows that message, whatever the cadence (here longer than any test).
+        # The stand-in writes its file, says "All done, Success" and waits: the reading after
+        # that message passes the ceiling and the watchdog stops it, the file delivered.
+        done = threading.Event()
+        monkeypatch.setattr(slicer, "MEMORY_READER", lambda pgid: (0, 5000 if done.is_set() else 10))
+        monkeypatch.setattr(slicer, "MEMORY_SAMPLE_S", 10 * FAILSAFE_S)
+        install_fake_orca(tmp_path, monkeypatch, "written_then_hang")
+        try:
+            result, raised, finished = bounded(lambda: slicer.slice_plate(
+                plate, slicer.DEFAULT_PROFILES, tmp_path / "out", memory_ceiling_mb=1,
+                on_progress=lambda stage, fraction, message: message == "All done, Success" and done.set()))
+        finally:
+            kill_fake(tmp_path / "out")
+        assert finished and raised is None, raised
+        assert result.peak_rss_kb == 5000 and result.stop_note.startswith("stopped by the slice service (memory)")
+        assert result.memory_note.endswith("the watchdog stopped Orca only after it had written the complete "
+                                           "sliced file: the sliced file is delivered")
 
     def test_without_a_process_table_the_watchdog_reads_nothing_and_stops_nothing(self, tmp_path, monkeypatch,
                                                                                    plate):
@@ -504,7 +559,7 @@ class TestSettle:
     @pytest.mark.parametrize("stopped", ["timeout", "memory", "cancel"])
     def test_orca_that_finished_after_a_stop_was_sent_delivers_its_file(self, tmp_path, stopped):
         archive, out = self.archive(tmp_path)
-        result = slicer.settle(OrcaExit(0, "", stopped=stopped, memory_ceiling_kb=1024, peak_rss_kb=10),
+        result = slicer.settle(OrcaExit(0, "", stopped=stopped, memory_ceiling_kb=1024, memory_peak_kb=10),
                                archive, out)
         assert result.output_path == archive and result.memory_note is None
 
@@ -512,7 +567,7 @@ class TestSettle:
                                                  ("cancel", SliceCancelled)])
     def test_a_stop_with_no_finished_file_is_the_stop(self, tmp_path, stopped, raised):
         with pytest.raises(raised) as caught:
-            slicer.settle(OrcaExit(0, "", stopped=stopped, memory_ceiling_kb=1024, peak_rss_kb=10),
+            slicer.settle(OrcaExit(0, "", stopped=stopped, memory_ceiling_kb=1024, memory_peak_kb=10),
                           tmp_path / "none.gcode.3mf", tmp_path)
         assert "stopped by the slice service" in caught.value.details
 
@@ -546,7 +601,7 @@ class TestSettle:
 
     def test_a_watchdog_stop_after_the_file_says_so_in_the_memory_note(self, tmp_path):
         archive, out = self.archive(tmp_path)
-        result = slicer.settle(OrcaExit(-15, "", stopped="memory", memory_ceiling_kb=1024, peak_rss_kb=2048,
+        result = slicer.settle(OrcaExit(-15, "", stopped="memory", memory_ceiling_kb=1024, memory_peak_kb=2048,
                                         wall_s=1.0), archive, out)
         assert result.memory_note.endswith("over the ceiling of 1,024 kB (PENGUIN_SLICE_MAX_PEAK_MB=1), and the "
                                            "watchdog stopped Orca only after it had written the complete sliced "
@@ -568,7 +623,7 @@ class TestSettle:
             corrupt_entry(archive, slicer.GCODE_ENTRY, "; total layer number: 3\n" * 50,
                           others=((slicer.PLATE_JSON_ENTRY, '{"bbox_objects": []}'),))
         with pytest.raises(SliceError) as caught:
-            slicer.settle(OrcaExit(-15, "", stopped=stopped, memory_ceiling_kb=1024, peak_rss_kb=10), archive, out,
+            slicer.settle(OrcaExit(-15, "", stopped=stopped, memory_ceiling_kb=1024, memory_peak_kb=10), archive, out,
                           entries=slicer.PLATE_ENTRIES)
         assert caught.value.error_code == code
         assert caught.value.details.startswith(f"stopped by the slice service ({stopped}) with SIGTERM")
@@ -886,7 +941,7 @@ class TestOrcaExits:
         _exc, report = failure(tmp_path, monkeypatch, plate, "empty_layers")
         assert report["message"] == ("Box #1 has nothing to print between 9.9 and 11.34 mm high, so the layers "
                                      "above would start in mid-air.")
-        assert report["where"] == {"copy": "Box #1", "height_mm": 9.9, "stage": "slicing"}
+        assert report["where"] == {"instance": "Box #1", "height_mm": 9.9, "stage": "slicing"}
         assert report["action"] == "enable_supports"
 
     @pytest.mark.parametrize("mode, message, reason", [
@@ -914,7 +969,162 @@ class TestOrcaExits:
         _exc, report = failure(tmp_path, monkeypatch, plate, "general")
         assert report["message"] == "The slicer could not slice this plate."
         assert "flat" not in report["message"] and "action" not in report
+        assert "debug log" not in report["detail"]                # the stand-in wrote no log: nothing said
 
+
+class TestOrcasDebugLog:
+    """Orca's reason for a general failure, from its debug log (--debug 3 --logfile): the
+    warnings it reported while slicing reach that log only. The stand-in writes the real
+    log's line (tests_orca pins it to the pinned Orca's)."""
+
+    WARNING = "It seems object Box #1 has floating regions. Please re-orient the object or enable support generation."
+
+    def test_a_general_failure_adds_the_logged_warning_labelled_as_maybe_unrelated(self, tmp_path, monkeypatch,
+                                                                                    plate):
+        # The log cannot tell which warning, if any, made the slice fail: a sound part beside a
+        # failing one warns too (real Orca: a mushroom's "floating cantilever" beside a needle).
+        exc, report = failure(tmp_path, monkeypatch, plate, "general_warned")
+        assert report["code"] == "slice.orca_failed"
+        assert report["message"] == ("The slicer could not slice this plate. It also warned, though this may not be "
+                                     f"why it failed: {self.WARNING}")
+        assert report["remedy"] == "Try another orientation or other print settings, and slice again."
+        lines = report["detail"].splitlines()
+        assert lines[:3] == ["orca code -100", "exit code 156", f"orca debug log warning: {self.WARNING}"]
+        assert report["detail"].count("orca debug log warning") == 1                  # each warning once
+        assert self.WARNING in exc.reason
+
+    def test_every_logged_warning_is_listed_and_none_is_presented_as_the_reason(self, tmp_path):
+        out = tmp_path / "out"
+        out.mkdir()
+        line = "cli_status_callback: percent=-1, warning_step=7, message={}, message_type=2, flag=32\n"
+        mushroom = ("It seems object Mushroom #1 has floating cantilever. Please re-orient the object or enable "
+                    "support generation.")
+        (out / slicer.ORCA_LOG).write_text(line.format(mushroom) + line.format(self.WARNING) + line.format(mushroom))
+        exc = slicer.orca_failure(OrcaExit(156, "run found error, return -100, exit..."), out)
+        assert exc.error_code == "slice.orca_failed"
+        assert exc.message == ("The slicer could not slice this plate. It also warned, though this may not be why it "
+                               f"failed: {mushroom} {self.WARNING}")
+        assert "It warned:" not in exc.message
+
+    @pytest.mark.parametrize("code", sorted(c for c in slicer.ORCA_RETURN_CODES if c != -100))
+    def test_a_failure_orca_names_by_its_return_code_ignores_the_log(self, tmp_path, code):
+        # Only the general failure (-100) reads the log; -101, -52 and -50 keep their own sentence.
+        out = tmp_path / "out"
+        out.mkdir()
+        (out / slicer.ORCA_LOG).write_text(fake_orca_log_line())
+        exc = slicer.orca_failure(OrcaExit(256 + code, f"run found error, return {code}, exit..."), out)
+        assert (exc.error_code, exc.message) == slicer.ORCA_RETURN_CODES[code]
+        assert "debug log" not in exc.details and "floating" not in exc.reason
+
+    def test_orca_is_asked_for_its_log_in_the_slices_own_folder(self, tmp_path, monkeypatch, plate):
+        slice_with(tmp_path, monkeypatch, plate, "ok")
+        argv = json.loads((tmp_path / "out" / "fake-orca-argv.json").read_text())
+        assert argv[argv.index("--debug") + 1] == "3"
+        assert argv[argv.index("--logfile") + 1] == str((tmp_path / "out" / "orca.log").resolve())
+
+    @pytest.mark.parametrize("log", [None, "dir", b"", b"no warning here\nfound slicing or export error\n",
+                                     b"cli_status_callback: percent=-1, warning_step=7, message=, message_type=2, "
+                                     b"flag=32\n", b"\xff\xfe garbage \x00\n" * 50])
+    def test_a_log_missing_unreadable_or_without_a_warning_keeps_the_general_sentence(self, tmp_path, log):
+        out = tmp_path / "out"
+        out.mkdir()
+        if log == "dir":
+            (out / slicer.ORCA_LOG).mkdir()
+        elif log is not None:
+            (out / slicer.ORCA_LOG).write_bytes(log)
+        assert slicer.orca_log_warnings(out) == []
+        exc = slicer.orca_failure(OrcaExit(156, "run found error, return -100, exit..."), out)
+        assert (exc.error_code, exc.message) == ("slice.orca_failed", "The slicer could not slice this plate.")
+
+    def test_the_log_is_read_within_bounds(self, tmp_path, monkeypatch):
+        out = tmp_path / "out"
+        out.mkdir()
+        line = "cli_status_callback: percent=-1, warning_step=7, message={}, message_type=2, flag=32\n"
+        text = "".join(line.format(f"warning {i} " + "w" * 400) for i in range(8))
+        (out / slicer.ORCA_LOG).write_text("x" * 10_000 + "\n" + text)
+        found = slicer.orca_log_warnings(out)
+        assert len(found) == slicer.MAX_LOG_WARNINGS == 5
+        assert all(len(w) == slicer.MAX_WARNING_CHARS for w in found) and found[0].startswith("warning 0 ")
+        monkeypatch.setattr(slicer, "MAX_LOG_BYTES", 10_000)          # the warnings lie past the bound
+        assert slicer.orca_log_warnings(out) == []
+
+    def test_a_reason_orca_gives_elsewhere_wins_over_the_log(self, tmp_path):
+        out = tmp_path / "out"
+        out.mkdir()
+        (out / slicer.ORCA_LOG).write_text(fake_orca_log_line())
+        exc = slicer.orca_failure(OrcaExit(156, "No layers were detected. You might want to repair your STL."), out)
+        assert exc.error_code == "slice.no_layers"
+        (out / slicer.RESULT_JSON).write_text(json.dumps({"return_code": -101, "error_string": "too close"}))
+        assert slicer.orca_failure(OrcaExit(155, ""), out).error_code == "slice.orca_too_close"
+
+
+def fake_orca_log_line():
+    import fake_orca
+    return fake_orca.LOG_WARNING.format(name="Box #1") + "\n"
+
+
+class TestAReusedOutputFolder:
+    """slicer.slice_plate and slice_stl remove what an earlier run left in their output
+    folder before Orca starts: a run stopped before Orca writes anything was once handed the
+    old sliced file, with a stop_note."""
+
+    def old_run(self, out):
+        from helpers import write_names_archive
+        out.mkdir(parents=True)
+        write_names_archive(out / slicer.PLATE_ARCHIVE, ["Box #1"])
+        with zipfile.ZipFile(out / slicer.PLATE_ARCHIVE, "a") as zf:
+            zf.writestr(slicer.GCODE_ENTRY, "; total layer number: 7\n")
+        (out / (slicer.PLATE_ARCHIVE + ".tmp")).write_bytes(b"old")
+        (out / slicer.RESULT_JSON).write_text('{"return_code": 0}')
+        (out / slicer.ORCA_LOG).write_text(fake_orca_log_line())
+
+    def test_a_timeout_before_orca_writes_is_the_timeout_not_the_old_file(self, tmp_path, monkeypatch, plate):
+        out = tmp_path / "out"
+        self.old_run(out)
+        timers = slicer.TIMER
+        install_fake_orca(tmp_path, monkeypatch, "hang")
+        try:
+            _r, raised, finished = bounded(lambda: slicer.slice_plate(
+                plate, slicer.DEFAULT_PROFILES, out,
+                on_progress=lambda stage, *a: stage == "slicing_mesh" and timers.made[-1].fire()))
+        finally:
+            kill_fake(out)
+        assert finished and isinstance(raised, SliceError) and raised.error_code == "slice.timeout"
+        assert not (out / slicer.PLATE_ARCHIVE).exists() and not (out / slicer.RESULT_JSON).exists()
+
+    def test_a_general_failure_does_not_read_an_old_log(self, tmp_path, monkeypatch, plate):
+        out = tmp_path / "out"
+        self.old_run(out)
+        install_fake_orca(tmp_path, monkeypatch, "general")
+        with pytest.raises(SliceError) as caught:
+            slicer.slice_plate(plate, slicer.DEFAULT_PROFILES, out)
+        assert caught.value.message == "The slicer could not slice this plate."
+
+    def test_slice_stl_clears_its_own_archive_too(self, tmp_path, monkeypatch):
+        out = tmp_path / "out"
+        out.mkdir()
+        (out / "sample_part.gcode.3mf").write_bytes(b"an old sliced file")
+        monkeypatch.setenv(slicer.ORCA_ENV, str(slicer.SAMPLE_STL))                  # a file that exists
+        seen = []
+
+        def orca_writes_nothing(cmd, **kwargs):
+            seen.append((out / "sample_part.gcode.3mf").exists())
+            return OrcaExit(0, "")
+        monkeypatch.setattr(slicer, "run_process", orca_writes_nothing)
+        with pytest.raises(SliceError) as caught:
+            slicer.slice_stl(slicer.SAMPLE_STL, out)
+        assert seen == [False] and caught.value.error_code == "slice.no_output"
+
+    def test_a_folder_where_the_old_file_was_is_the_scratch_folders_fault(self, tmp_path, monkeypatch, plate):
+        out = tmp_path / "out"
+        (out / slicer.PLATE_ARCHIVE).mkdir(parents=True)
+        install_fake_orca(tmp_path, monkeypatch, "ok")
+        with pytest.raises(SliceError) as caught:
+            slicer.slice_plate(plate, slicer.DEFAULT_PROFILES, out)
+        assert caught.value.error_code == "slice.scratch_unwritable"
+
+
+class TestOrcaThatWillNotStart:
     def test_missing_binary(self, tmp_path, monkeypatch, plate):
         monkeypatch.setenv(slicer.ORCA_ENV, str(tmp_path / "nowhere"))
         with pytest.raises(RuntimeError):

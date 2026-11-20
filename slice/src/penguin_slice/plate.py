@@ -1,9 +1,9 @@
-"""The plate: orientations, copy placement and the rules a placement must pass.
+"""The plate: orientations, instance placement and the rules a placement must pass.
 
 Each orientation is named by the part axis that ends up pointing up. The matrices are
 row-major rotations applied to the part's vertices (v' = M v).
 
-This is the authority on placement: the slice service checks every plate job here before
+This is the authority on placement: the slice service checks every plate configuration here before
 slicing. A user interface that checks placement while the student drags keeps its own
 twin of this geometry and tests it against tests/fixtures/plate_cases.json, the same
 cases tests/test_plate.py reads.
@@ -44,8 +44,8 @@ def _cos_sin(angle):
     return math.cos(radians), math.sin(radians)
 
 
-def copy_matrix(orientation, angle, offset, x, y):
-    """The copy's 3x4 [M | t]: M = Rz(angle) R_o, t = (x, y, 0) - Rz(angle) offset, so that
+def instance_matrix(orientation, angle, offset, x, y):
+    """The instance's 3x4 [M | t]: M = Rz(angle) R_o, t = (x, y, 0) - Rz(angle) offset, so that
     p_plate = M p_part + t puts the footprint's centre at (x, y) and its lowest point at z 0."""
     c, s = _cos_sin(angle)
     rz = ((c, -s, 0), (s, c, 0), (0, 0, 1))
@@ -65,10 +65,10 @@ def plate_from_printer(printer):
             'printer': printer.get('name')}
 
 
-def copy_hull(copy, footprint):
-    """The footprint's hull turned by the copy's angle and moved to its (x, y)."""
-    c, s = _cos_sin(copy['angle'])
-    return [[c * px - s * py + copy['x'], s * px + c * py + copy['y']] for px, py in footprint['hull']]
+def instance_hull(instance, footprint):
+    """The footprint's hull turned by the instance's angle and moved to its (x, y)."""
+    c, s = _cos_sin(instance['angle'])
+    return [[c * px - s * py + instance['x'], s * px + c * py + instance['y']] for px, py in footprint['hull']]
 
 
 def sanitize_part_name(name):
@@ -77,8 +77,8 @@ def sanitize_part_name(name):
     return _NOT_NAME_CHAR.sub('_', name)[:PART_NAME_MAX_CHARS] or 'part'
 
 
-def copy_labels(names):
-    """`<sanitized name> #<n>` per copy, n counting each sanitized name in list order."""
+def instance_labels(names):
+    """`<sanitized name> #<n>` per instance, n counting each sanitized name in list order."""
     counts, labels = {}, []
     for name in names:
         clean = sanitize_part_name(name)
@@ -87,28 +87,28 @@ def copy_labels(names):
     return labels
 
 
-def check_placement(copies, parts, plate):
+def check_placement(instances, parts, plate):
     """The placement's problems: every off_plate, then every too_tall, then every too_close
-    pair (i, j), i < j. Each is {'rule', 'copies', 'message'}; an empty list passes."""
-    labels = copy_labels([parts[copy['ref']]['name'] for copy in copies])
-    footprints = [parts[copy['ref']]['footprints'][copy['orientation']] for copy in copies]
-    hulls = [copy_hull(copy, footprint) for copy, footprint in zip(copies, footprints)]
+    pair (i, j), i < j. Each is {'rule', 'instances', 'message'}; an empty list passes."""
+    labels = instance_labels([parts[instance['ref']]['name'] for instance in instances])
+    footprints = [parts[instance['ref']]['footprints'][instance['orientation']] for instance in instances]
+    hulls = [instance_hull(instance, footprint) for instance, footprint in zip(instances, footprints)]
     lo = [plate['min'][i] + plate['margin'] - EPS_MM for i in (0, 1)]
     hi = [plate['max'][i] - plate['margin'] + EPS_MM for i in (0, 1)]
     problems = []
     for i, hull in enumerate(hulls):
         if any(not lo[k] <= point[k] <= hi[k] for point in hull for k in (0, 1)):
-            problems.append({'rule': 'off_plate', 'copies': [i],
+            problems.append({'rule': 'off_plate', 'instances': [i],
                              'message': OFF_PLATE_MESSAGE.format(label=labels[i])})
     for i, footprint in enumerate(footprints):
         if footprint['height'] > plate['height'] + EPS_MM:
-            problems.append({'rule': 'too_tall', 'copies': [i],
+            problems.append({'rule': 'too_tall', 'instances': [i],
                              'message': TOO_TALL_MESSAGE.format(label=labels[i], height=plate['height'])})
     polygons = [Polygon(hull) for hull in hulls]
     for i in range(len(polygons)):
         for j in range(i + 1, len(polygons)):
             if polygons[i].distance(polygons[j]) < plate['spacing'] - EPS_MM:
-                problems.append({'rule': 'too_close', 'copies': [i, j],
+                problems.append({'rule': 'too_close', 'instances': [i, j],
                                  'message': TOO_CLOSE_MESSAGE.format(label=labels[i], label2=labels[j],
                                                                      spacing=plate['spacing'])})
     return problems

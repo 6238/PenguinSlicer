@@ -1,5 +1,5 @@
 """The corpus of bad part files (fixtures/bad_stls/, written by fixtures/make_bad_stls.py)
-through the plate job checks: each file gets a true error report or a documented warning,
+through the plate configuration checks: each file gets a true error report or a documented warning,
 never a crash or a hang. Then random bytes and randomly damaged good files thrown at the
 reader (Hypothesis, derandomized: the same examples on every run, no example database).
 """
@@ -11,9 +11,10 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from helpers import FIXTURES, box_stl
-from penguin_slice import error_report, limits
+from penguin_slice import limits
+from penguin_slice.errors import error_report
 from penguin_slice.mesh import Mesh, MeshError, read_binary_stl
-from penguin_slice.service import read_plate_job
+from penguin_slice.service import read_plate_configuration
 
 CORPUS = FIXTURES / "bad_stls"
 FUZZ = settings(derandomize=True, database=None, max_examples=300, deadline=None,
@@ -29,16 +30,16 @@ def make_bad_stls():
 
 
 def check(tmp_path, data, orientation="+z", angle=0):
-    """read_plate_job on a plate job of one copy of `data` at the plate's centre: its
+    """read_plate_configuration on a plate configuration of one instance of `data` at the plate's centre: its
     error report, or its part warnings' codes."""
     (tmp_path / "part.stl").write_bytes(data)
     job = {"parts": {"p": {"name": "Part", "stl": "part.stl"}},
-           "copies": [{"ref": "p", "orientation": orientation, "angle": angle, "x": 170.0, "y": 160.0}]}
+           "instances": [{"ref": "p", "orientation": orientation, "angle": angle, "x": 170.0, "y": 160.0}]}
     try:
-        plate_job = read_plate_job(job, tmp_path)
+        plate_configuration = read_plate_configuration(job, tmp_path)
     except Exception as exc:
         return error_report(exc)
-    return [w["code"] for w in plate_job.part_warnings()]
+    return [w["code"] for w in plate_configuration.part_warnings()]
 
 
 # file -> (error code, the sentence) for a refusal, or the list of warning codes.
