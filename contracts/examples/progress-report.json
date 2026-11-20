@@ -1,0 +1,10 @@
+{
+  "job": "j4f2a91c0",
+  "state": "running",
+  "stage": "generating_supports",
+  "stage_label": "Generating supports",
+  "fraction": 0.42,
+  "elapsed_s": 31.5,
+  "expected_s": 75,
+  "sequence": 17
+}

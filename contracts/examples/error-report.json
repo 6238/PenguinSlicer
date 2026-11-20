@@ -1,0 +1,9 @@
+{
+  "code": "slice.empty_layers",
+  "message": "Bracket #2 has gaps between about 105 mm and 106 mm, so nothing would hold up the layers above them.",
+  "where": {"part": "Bracket", "copy": "Bracket #2", "height_mm": 105.4, "stage": "slicing"},
+  "remedy": "Turn Supports on and slice again.",
+  "action": "enable_supports",
+  "retryable": false,
+  "detail": "orca return_code -100: Object can't be printed for empty layer between 105.42 and 106.14"
+}
