@@ -5,7 +5,8 @@
 #   make test-repeat     the fast suite ten times in a row, each in a new random order
 #   make slowest         the fast suite with its ten slowest tests listed
 #   make coverage        branch coverage per module under the fast suite
-#   make test-sim        the daemon against the simulated printer, over loopback sockets
+#   make test-properties the random sequences (Hypothesis), before a commit and by reviewers
+#   make test-sim       the daemon against the simulated printer, over loopback sockets
 #   make test-upstream   the upstream check: the installed printer library, and test-sim
 #   make upgrade-printer-library VERSION=x.y.z   move the one pin, re-lock, run the check
 #   make test-together   the together run on real threads (in-process and over loopback)
@@ -13,11 +14,12 @@
 #   make daemon-tarball  the daemon alone, as one archive, in dist/
 #   make hardware-smoke  starts a REAL print on a REAL printer; see daemon/tests/hardware_smoke.py
 
-.PHONY: install test test-parallel test-repeat slowest coverage test-sim test-upstream \
-        upgrade-printer-library test-together together daemon-tarball hardware-smoke
+.PHONY: install test test-parallel test-repeat slowest coverage test-properties test-sim \
+        test-upstream upgrade-printer-library test-together together daemon-tarball \
+        hardware-smoke
 
 UV := uv run --project $(CURDIR)
-FAST := -m "not real_time and not simulator"
+FAST := -m "not real_time and not simulator and not properties"
 REPEATS ?= 10
 
 install:
@@ -42,6 +44,12 @@ coverage:
 	$(UV) coverage erase
 	$(UV) coverage run -m pytest -q $(FAST) -p no:randomly
 	$(UV) coverage report
+
+# Three tests of 60 to 120 random sequences each, on two workers, in a few seconds. A
+# failing sequence is reported as found, never shrunk, so a real bug fails the target
+# within the per-test limit (30 s, pyproject.toml) plus one more run of that sequence.
+test-properties:
+	$(UV) pytest -q -m properties -n 2 -p no:randomly
 
 # One worker: each test starts its own simulated printer on ports the system picks.
 test-sim:

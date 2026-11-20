@@ -875,7 +875,7 @@ class TestStartGateAndCancel:
         report = shop.report(job_id)
         assert report['error']['code'] == 'delivery.job_not_confirmed'
         assert report['error']['message'] == (
-            'The computer next to the printer collected the print and was then not heard '
+            "The daemon's computer collected the print and was then not heard "
             'from for 15 minutes, so the print was given up before it started.')
         assert shop.start(job_id).status_code == 404          # the gate is shut for good
 

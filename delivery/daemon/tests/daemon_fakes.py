@@ -228,7 +228,7 @@ class FakePrinter:
 
     def delete(self, remote_name):
         self.deleted.append(remote_name)
-        return True
+        return pr.REMOVED, '250 Delete operation successful.'
 
     def start(self, remote_name):
         self.starts.append(remote_name)
@@ -270,6 +270,9 @@ class _FakeFtpClient:
     def list_directory(self, path=None):
         if self._printer.list_fails:
             return None
+        if self._printer.list_lines != 'files':       # a listing in a format of its own
+            lines = self._printer.list_lines
+            return '226 Transfer complete.', None if lines is None else list(lines)
         lines = [f'-rw-rw-rw- 1 root root {len(data)} Nov 19 18:00 {name}'
                  for name, data in sorted(self._printer.files.items())]
         return '226 Transfer complete.', lines
@@ -293,14 +296,34 @@ class FakeBambuPrinter:
         self.short_by = 0                   # the reply says 226 but bytes are missing
         self.upload_raises = None           # a refused connection or login
         self.list_fails = False
-        self.files = {}                     # what the printer's FTP server lists
+        self.list_lines = 'files'           # or the LIST lines answered instead (or None)
+        self.files = {}                    # what the printer's FTP server lists
         self.deleted = []
+        self.delete_failure = None          # the reply the library logs and swallows ('' logs none)
+        self.delete_reply = None            # a reply of its own answered for the delete
+        self.delete_raises = None           # a refused connection or login
         self.report_after_start = None
         self.ftp_client = _FakeFtpClient(self)
 
     def delete_file(self, file_path):
+        """Like the library: the FTP server's reply on success; a failure is logged and
+        swallowed (None), the way its connect_and_run does with ftplib's error for a 5xx
+        or 4xx reply; a refused connection or login raises."""
+        import logging
+        logger = logging.getLogger('bambulabs_api')
+        if self.delete_raises is not None:
+            raise self.delete_raises
+        logger.info(f'Deleting file: {file_path}')
         self.deleted.append(file_path)
-        self.files.pop(file_path, None)
+        if self.delete_failure is not None:
+            if self.delete_failure:
+                logger.error(f'Failed to execute function: {self.delete_failure}')
+            return None
+        if self.delete_reply is not None:
+            return self.delete_reply
+        if self.files.pop(file_path, None) is None:
+            logger.error('Failed to execute function: 550 No such file.')
+            return None
         return '250 Delete operation successful.'
 
     def mqtt_start(self):
@@ -309,7 +332,7 @@ class FakeBambuPrinter:
     def mqtt_stop(self):
         self.mqtt_running = False
 
-    def camera_start(self):          # must never be called: Pillow frames on a small Pi
+    def camera_start(self):          # never called: Pillow frames cost the daemon's computer
         raise AssertionError('the daemon must not start the camera')
 
     def mqtt_client_connected(self):

@@ -508,8 +508,119 @@ class TestPrinterLink(TempDirTestCase):
         with self.assertRaises(pr.UploadCancelled):
             link.upload(path, 'x.gcode.3mf', cancelled=cancelled)
         self.assertEqual(len(link._printer.files['x.gcode.3mf']), 65536)   # partial
-        self.assertTrue(link.delete('x.gcode.3mf'))
+        self.assertEqual(link.delete('x.gcode.3mf'),
+                         (pr.REMOVED, '250 Delete operation successful.'))
         self.assertEqual(link._printer.deleted, ['x.gcode.3mf'])
+
+    def forwarding_link(self, printer_factory=FakeBambuPrinter):
+        forwarded = []
+        link = pr.PrinterLink('10.0.0.42', '01P00A', '12345678',
+                              printer_factory=printer_factory, log=forwarded.append)
+        link.connect()
+        return link, forwarded
+
+    def test_a_delete_the_printer_confirms_is_removed(self):
+        link, forwarded = self.forwarding_link()
+        link._printer.files['x.gcode.3mf'] = b'x'
+        self.assertEqual(link.delete('x.gcode.3mf'),
+                         (pr.REMOVED, '250 Delete operation successful.'))
+        self.assertEqual((link._printer.deleted, link._printer.files, forwarded),
+                         (['x.gcode.3mf'], {}, []))
+
+    def test_a_file_the_printer_does_not_have_is_said_so_from_its_answer(self):
+        """Review 6, defect 6, and delivery review 2, defects 1 and 2: the delete is always
+        sent, and NOT_ON_PRINTER comes from the printer's own answer that there is no such
+        file. The library logs that answer as a failure; it is kept off the daemon's log,
+        so nothing there looks like an error."""
+        link, forwarded = self.forwarding_link()
+        link._printer.files['other.gcode.3mf'] = b'x'
+        self.assertEqual(link.delete('x.gcode.3mf'), (pr.NOT_ON_PRINTER, '550 No such file.'))
+        self.assertEqual((link._printer.deleted, forwarded), (['x.gcode.3mf'], []))
+
+    def test_the_answer_decides_and_no_listing_is_asked(self):
+        """Delivery review 2, defects 1 and 2: a listing is never taken as proof either way.
+        The file is on the printer though no listing shows it under the name sent, or no
+        listing can be had at all: the delete is sent and the printer's answer decides."""
+        listings = [['-rw-rw-rw- 1 root root 9 Nov 19 18:00 X.GCODE.3MF'],   # spelled otherwise
+                    [], None, 'fails']
+        for lines in listings:
+            with self.subTest(lines=lines):
+                link = self.link()
+                link.connect()
+                link._printer.files['x.gcode.3mf'] = b'x'
+                if lines == 'fails':
+                    link._printer.list_fails = True
+                else:
+                    link._printer.list_lines = lines
+                self.assertEqual(link.delete('x.gcode.3mf')[0], pr.REMOVED)
+                self.assertEqual(link._printer.deleted, ['x.gcode.3mf'])
+
+    def test_a_file_never_there_is_not_said_removed_whatever_the_listing(self):
+        """Delivery review 2, defect 2: the first listing failed and a second one lacked the
+        name, and the file that was never there was said to be removed."""
+        for list_fails in (True, False):
+            with self.subTest(list_fails=list_fails):
+                link = self.link()
+                link.connect()
+                link._printer.list_fails = list_fails
+                self.assertEqual(link.delete('x.gcode.3mf')[0], pr.NOT_ON_PRINTER)
+
+    def test_any_other_answer_is_a_delete_that_could_not_be_confirmed(self):
+        """Only "there is no such file" is NOT_ON_PRINTER: a 550 that says something else,
+        a 4xx, a reply ftplib would not take as success, no answer at all, or no
+        connection, is UNCONFIRMED with the printer's answer, and none of it reaches the
+        daemon's log as a library error."""
+        cases = [
+            ('delete_failure', '550 Permission denied.', '550 Permission denied.'),
+            ('delete_failure', '550 Delete operation failed.', '550 Delete operation failed.'),
+            ('delete_failure', '421 Timeout.', '421 Timeout.'),
+            ('delete_failure', '', 'no answer'),
+            ('delete_reply', '226 Odd.', '226 Odd.'),
+            ('delete_raises', ConnectionRefusedError('[Errno 111] Connection refused'),
+             'no connection: [Errno 111] Connection refused'),
+            # Delivery review 3, defect 1: the library logs the error that ended the
+            # delete, and a timeout or a reset is no answer from the printer.
+            ('delete_failure', 'timed out', 'no answer: timed out'),
+            ('delete_failure', '[Errno 104] Connection reset by peer',
+             'no answer: [Errno 104] Connection reset by peer'),
+        ]
+        for field, value, answer in cases:
+            with self.subTest(field=field, value=value):
+                link, forwarded = self.forwarding_link()
+                link._printer.files['x.gcode.3mf'] = b'x'
+                setattr(link._printer, field, value)
+                self.assertEqual(link.delete('x.gcode.3mf'), (pr.UNCONFIRMED, answer))
+                self.assertEqual(forwarded, [])
+
+    def test_a_connection_dropped_during_the_delete_is_said_so(self):
+        """Delivery review 3, defect 1: a connection dropped during the DELE is ftplib's
+        EOFError, whose text is empty, so the library logs the failure with nothing after
+        it. That is no answer, and the answer says the connection dropped."""
+
+        class Dropping(FakeBambuPrinter):
+            def delete_file(self, file_path):
+                import logging
+                self.deleted.append(file_path)
+                logging.getLogger('bambulabs_api').error('Failed to execute function: ')
+                return None
+
+        link, forwarded = self.forwarding_link(Dropping)
+        self.assertEqual(link.delete('x.gcode.3mf'),
+                         (pr.UNCONFIRMED, 'no answer: the connection dropped'))
+        self.assertEqual(forwarded, [])
+
+    def test_only_a_three_digit_reply_is_the_printers_answer(self):
+        for answer, is_reply in [('550 Permission denied.', True), ('226 Odd.', True),
+                                 ('no answer', False), ('no answer: timed out', False),
+                                 ('no connection: gone', False), ('', False)]:
+            with self.subTest(answer=answer):
+                self.assertIs(pr.is_printer_reply(answer), is_reply)
+
+    def test_a_200_is_a_confirmed_delete_as_ftplib_takes_it(self):
+        link = self.link()
+        link.connect()
+        link._printer.delete_reply = '200 OK.'
+        self.assertEqual(link.delete('x.gcode.3mf'), (pr.REMOVED, '200 OK.'))
 
     def test_delete_never_raises(self):
         class Refusing(FakeBambuPrinter):
@@ -519,7 +630,24 @@ class TestPrinterLink(TempDirTestCase):
         link = self.link(Refusing)
         link.connect()
         link._printer.files['x.gcode.3mf'] = b'x'
-        self.assertFalse(link.delete('x.gcode.3mf'))
+        self.assertEqual(link.delete('x.gcode.3mf'), (pr.UNCONFIRMED, 'no connection: gone'))
+
+    def test_a_delete_with_no_printer_never_raises(self):
+        link = self.link()
+        self.assertEqual(link.delete('x.gcode.3mf')[0], pr.UNCONFIRMED)
+
+    def test_the_size_check_skips_a_line_it_cannot_read(self):
+        link = self.link()
+        link.connect()
+        link._printer.list_lines = ['drwxrwxrwx 1 root root cache',
+                                    '-rw-rw-rw- 1 root root 9 Nov 19 18:00 x.gcode.3mf']
+        self.assertEqual(link.remote_size('x.gcode.3mf'), 9)
+
+    def test_the_size_check_with_no_list_of_lines_lists_nothing(self):
+        link = self.link()
+        link.connect()
+        link._printer.list_lines = None
+        self.assertIsNone(link.remote_size('x.gcode.3mf'))
 
     def test_the_library_log_is_kept_off_the_console_and_warnings_become_one_plain_line(self):
         import logging

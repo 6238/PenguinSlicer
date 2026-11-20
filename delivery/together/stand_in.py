@@ -56,10 +56,14 @@ class StandInPrinter:
         return f'the printer has all {len(data)} bytes'
 
     def delete(self, remote_name):
+        """PrinterLink.delete's answer: (outcome, the printer's answer), the outcomes spelled
+        as penguin_delivery_daemon.printer's REMOVED and NOT_ON_PRINTER."""
         with self._lock:
-            self.received.pop(remote_name, None)
+            existed = self.received.pop(remote_name, None) is not None
             self.deleted.append(remote_name)
-        return True
+        if existed:
+            return 'removed', '250 Deleted.'
+        return 'not_on_printer', '550 No such file.'
 
     def start(self, remote_name):
         with self._lock:

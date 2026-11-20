@@ -7,7 +7,7 @@ crashes and never busy-loops, a sliced file is started on the printer at most on
 delivery job ends in the right state (here, done: every injected fault is one a job can
 recover from), and the caller's progress reports tell the truth throughout."""
 import pytest
-from hypothesis import HealthCheck, given, settings
+from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from penguin_delivery_daemon import run_loop as rl
@@ -17,7 +17,7 @@ from penguin_delivery_daemon import printer as pr
 from penguin_delivery_relay import deliveries as dl
 
 from link_faults import BASE, CONTENT, DOWNLOAD_FAULTS, EXCHANGES, FAULTS, Canned, DaemonDied, Shop
-from link_faults import check_start_path
+from link_faults import PROPERTY_SETTINGS, check_start_path
 
 # Generous for any honest backoff, far below a tight loop (which makes one a tick).
 MAX_REQUESTS_PER_SECOND = 1.5
@@ -182,7 +182,7 @@ def test_the_daemons_failure_sentences_carry_their_figures(tmp_path):
     assert shop.drive(1200, lambda: shop.final(job_id))
     error = shop.report(job_id)['error']
     assert error['code'] == 'delivery.printer_unreachable_at_start'
-    assert error['message'] == ('The computer next to the printer could not reach the '
+    assert error['message'] == ("The daemon's computer could not reach the "
                                 'printer for 10 minutes.')
 
 
@@ -433,9 +433,8 @@ def assert_started_only_on_fresh_word_of_a_free_printer(shop):
         assert evidence['report_age_s'] <= rl.FRESH_REPORT_SECONDS, evidence
 
 
-@settings(max_examples=60, deadline=None, derandomize=True, database=None,
-          suppress_health_check=[HealthCheck.function_scoped_fixture,
-                                 HealthCheck.too_slow])
+@pytest.mark.properties
+@settings(PROPERTY_SETTINGS, max_examples=60)
 @given(faults=fault_lists, outages=printer_off,
        down=st.one_of(st.integers(0, 60), st.integers(0, 400)),
        restart_daemon_at=st.one_of(st.none(), st.integers(1, 600)),
@@ -470,9 +469,20 @@ def test_random_faults_never_print_twice_and_always_tell_the_truth(
     command; the start command may raise before or after it reaches the printer; and
     someone may start a print at the printer while it is off the network, just as the
     job arrives."""
+    faults_case(tmp_path_factory.mktemp('shop'), faults=faults, outages=outages, down=down,
+                restart_daemon_at=restart_daemon_at, jitter=jitter, after_start=after_start,
+                quiet=quiet, whole_after=whole_after, quiet_from_upload=quiet_from_upload,
+                cancel_at=cancel_at, death=death, start_fault=start_fault, someone=someone)
+
+
+def faults_case(tmp_path, *, faults=None, outages=(), down=0, restart_daemon_at=None,
+                jitter=0.0, after_start=None, quiet=(), whole_after=0, quiet_from_upload=None,
+                cancel_at=None, death=None, start_fault=None, someone=None):
+    """One sequence of test_random_faults_never_print_twice_and_always_tell_the_truth."""
     from link_faults import die
-    shop = Shop(tmp_path_factory.mktemp('shop'), rand=lambda: jitter, linked=True,
-                whole_after=whole_after)
+    faults = faults or {}
+    outages, quiet = list(outages), list(quiet)
+    shop = Shop(tmp_path, rand=lambda: jitter, linked=True, whole_after=whole_after)
     shop.online(seconds=600)
     if someone is not None:
         shop.printer.outage(shop, someone, 20)
@@ -720,11 +730,11 @@ def test_a_printer_off_for_a_day_shows_its_true_age_then_ends_with_the_outcome_u
 
 
 def test_the_caller_stops_following_a_job_whose_daemon_is_gone(tmp_path):
-    """The reviewer's case D: the start command went out and the shop computer was never
+    """The reviewer's case D: the start command went out and the daemon's computer was never
     heard from again. The caller stops following; the job slot is free."""
     shop = Shop(tmp_path)
     shop.online()
-    # The shop computer's link is gone for good the moment the start command went out.
+    # The daemon's computer's link is gone for good the moment the start command went out.
     shop.printer.after_start = lambda: setattr(shop.link, 'down_until', shop() + 10 ** 9)
     job_id = shop.send()
     shop.drive(300, lambda: shop.printer.started)

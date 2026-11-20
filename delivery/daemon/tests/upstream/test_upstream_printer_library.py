@@ -13,6 +13,7 @@ import inspect
 import io
 import json
 import logging
+import socket
 
 import pytest
 
@@ -291,3 +292,63 @@ def test_the_listing_is_returned_as_reply_and_lines():
     link = pr.PrinterLink('192.0.2.1', 'S', 'c')
     link._printer = type('P', (), {'ftp_client': ftp_with(Listing())})()
     assert link.remote_size('p-j8f3a2c1.gcode.3mf') == 9
+
+
+def test_a_delete_returns_the_reply_or_logs_and_swallows_the_printers_answer():
+    """PROTECTS: PrinterLink.delete words its outcome from the printer's answer: the
+    library's delete_file returns the server's reply when ftplib takes it as success (250
+    or 200), and for a 5xx or 4xx logs 'Failed to execute function: <the reply>' and
+    returns None. ftplib's own delete is used here, with only the socket taken out."""
+
+    class Answering(library_ftp.ImplicitFTP_TLS):
+        def __init__(self, answer):
+            super().__init__()
+            self.answer, self.sent = answer, []
+
+        def connect(self, host, port):
+            pass
+
+        def login(self, user, password):
+            pass
+
+        def prot_p(self):
+            return '200 PROT now Private.'
+
+        def putcmd(self, line):
+            self.sent.append(line)
+
+        def getmultiline(self):
+            return self.answer
+
+        def close(self):
+            pass
+
+    pr.take_over_library_log(None)
+    for answer, outcome in [('250 Delete operation successful.', pr.REMOVED),
+                            ('550 No such file.', pr.NOT_ON_PRINTER),
+                            ('550 Permission denied.', pr.UNCONFIRMED),
+                            ('421 Timeout.', pr.UNCONFIRMED)]:
+        client = ftp_with(Answering(answer))
+        link = pr.PrinterLink('192.0.2.1', 'S', 'c')
+        link._printer = type('P', (), {'delete_file': staticmethod(client.delete_file)})()
+        assert link.delete('p-j8f3a2c1.gcode.3mf') == (outcome, answer)
+        assert client.ftps.sent == ['DELE p-j8f3a2c1.gcode.3mf']
+
+    # Delivery review 3, defect 1: when the printer gives no answer, the library logs the
+    # error that ended the delete (a timeout's text, or nothing for ftplib's EOFError on a
+    # dropped connection), and PrinterLink.delete says there was no answer.
+    class Silent(Answering):
+        def __init__(self, error):
+            super().__init__(None)
+            self.error = error
+
+        def getmultiline(self):
+            raise self.error
+
+    for error, answer in [(socket.timeout('timed out'), 'no answer: timed out'),
+                          (EOFError(), 'no answer: the connection dropped')]:
+        client = ftp_with(Silent(error))
+        link = pr.PrinterLink('192.0.2.1', 'S', 'c')
+        link._printer = type('P', (), {'delete_file': staticmethod(client.delete_file)})()
+        assert link.delete('p-j8f3a2c1.gcode.3mf') == (pr.UNCONFIRMED, answer)
+        assert client.ftps.sent == ['DELE p-j8f3a2c1.gcode.3mf']

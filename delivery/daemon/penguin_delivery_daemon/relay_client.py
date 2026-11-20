@@ -1,5 +1,6 @@
 """The daemon's side of the relay protocol. Outbound HTTPS only; no ports are opened on the
-Pi and nothing on the school network has to be reachable from outside.
+daemon's computer and nothing on the school network has to be reachable from
+outside.
 
 Every method translates an HTTP answer into one of four outcomes the run loop knows how to
 handle: a value, TokenRejected (re-exchange), RateLimited (honour Retry-After), or a plain
@@ -33,8 +34,8 @@ class Cancelled(Exception):
 class TokenRejected(RelayError):
     """The backend answered 401 with {"error": "repair"}: blank the token and re-exchange.
 
-    Happens after the relay restarts with a different secret key, or when a Pi's code was
-    retired.
+    Happens after the relay restarts with a different secret key, or when the code of a daemon's
+    computer was retired.
     """
 
 
@@ -76,9 +77,9 @@ def _reason(error):
 class RelayClient:
     """One long-lived HTTP session to the backend.
 
-    `backend_url` comes from the Pi's config file, and the daemon joins it with the path a
-    job carries, so a development server reached as localhost by the browser and by a LAN
-    address from the Pi works with no extra configuration."""
+    `backend_url` comes from the daemon's config file, and the daemon joins it with the path
+    a job carries, so a development server reached as localhost by the browser and by a LAN
+    address from the daemon's computer works with no extra configuration."""
 
     def __init__(self, backend_url, token=None, *, session=None, timeout=20.0):
         self.backend_url = (backend_url or '').rstrip('/')
@@ -118,7 +119,7 @@ class RelayClient:
             raise ChallengeDetected(
                 f"expected JSON from the relay, got {content_type or 'no content type'} "
                 f"({body!r}). A web page here is usually a captive portal, a proxy or a "
-                f"bot challenge between this computer and the relay.")
+                f"bot challenge between the daemon's computer and the relay.")
         try:
             payload = response.json()
         except ValueError as e:
@@ -177,7 +178,7 @@ class RelayClient:
 
     def exchange(self, pairing_code):
         """Trade the pairing code for a signed token. None means "not yet" -- no session has
-        presented this code since the relay started, or another Pi holds it."""
+        presented this code since the relay started, or another daemon's computer holds it."""
         response = self._request('POST', '/printer/daemon/pair', authorized=False,
                                  json={'code': pairing_code})
         self._check(response, 'pair', handled=(404,))

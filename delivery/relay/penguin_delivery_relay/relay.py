@@ -2,7 +2,8 @@
 
 Keyed by the team's eight-character pairing code, which is the ONLY identity the relay
 trusts: a caller can claim any team number it likes, but the pairing code is
-forty random bits that live only with the team and on the team's Pi. Nothing here is
+forty random bits that live only with the team and on the daemon's computer.
+Nothing here is
 written to disk -- a restart empties the relay, and the daemon recovers by syncing again.
 
 Deliberately free of Flask imports, so it unit-tests without an app and a caller can drive it
@@ -23,7 +24,7 @@ from . import deliveries as dl
 from . import errors
 
 # Crockford base32 without I, L, O and U, so no two symbols look alike when a mentor reads
-# the code off a Pi's console and types it into a YAML file.
+# the code off the daemon's console and types it into a YAML file.
 ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 CODE_LENGTH = 8
 
@@ -177,7 +178,7 @@ def _serializer(secret_key):
 def issue_token(code, secret_key, *, issued_at=None):
     """Sign a daemon credential carrying the code and the issue time.
 
-    No expiry: retiring a Pi means the caller no longer presents its code, after which no
+    No expiry: retiring a daemon's computer means the caller no longer presents its code, after which no
     fresh send names it. The issue time is for logging only and is never compared with
     any clock."""
     payload = {'code': code, 'iat': float(issued_at if issued_at is not None else time.time())}
@@ -437,7 +438,7 @@ class PrinterRelay:
         """The pairing exchange, atomically: True (and the caller mints a token) only when
         a session has presented this code and no daemon has been heard for two minutes.
 
-        Marking daemon_seen_at here is what refuses a SECOND Pi carrying a copied config
+        Marking daemon_seen_at here is what refuses a SECOND computer carrying a copied config
         file while the first one is alive."""
         code = normalize_code(code)
         if code is None:
@@ -464,7 +465,7 @@ class PrinterRelay:
         """Everything a caller's status line needs, computed from the relay's own clock.
 
         The snapshot carries no timestamp: `age_seconds` is measured from when the sync
-        arrived here, so a Pi with a wrong clock changes nothing."""
+        arrived here, so a daemon's computer with a wrong clock changes nothing."""
         code = normalize_code(code)
         if code is None:
             return dict(self.UNPAIRED)
@@ -520,8 +521,8 @@ class PrinterRelay:
         The text is what a caller shows, so it reads as a sentence to a student."""
         now = self._clock()
         if record.daemon_seen_at is None:
-            return ('The Pi has not reported since the service started; '
-                    'check the setup guide.')
+            return ("The daemon's computer has not reported since the service "
+                    'started; check the setup guide.')
         if record.status_received_at is None:
             return 'No printer reporting yet; try again in a moment.'
         if not self._is_fresh(record, now):
@@ -539,7 +540,7 @@ class PrinterRelay:
             paused_name = strip_job_suffix(status.get('file')) or 'a file'
             return f'Paused, {paused_name}'
         if state == 'unreachable':
-            return 'Printer unreachable from the Pi'
+            return "Printer unreachable from the daemon's computer"
         if state not in FREE_STATES:
             # The daemon's own word that it cannot read the printer (`unrecognised`), or a
             # state this relay does not know: nobody can tell whether a print is going on.

@@ -190,13 +190,14 @@ class TestWholePrint(SimTestCase):
     def test_the_printers_listing_reports_the_uploaded_size(self):
         self.run_job()
         self.assertEqual(self.link.remote_size(SUFFIXED), len(CONTENT))
-        self.assertTrue(self.link.delete(SUFFIXED))
+        self.assertEqual(self.link.delete(SUFFIXED), (pr.REMOVED, '250 Deleted.'))
         self.assertNotIn(SUFFIXED, self.sim.files)
+        self.assertEqual(self.link.delete(SUFFIXED), (pr.NOT_ON_PRINTER, '550 No such file.'))
 
-    def test_any_certificate_is_accepted_which_is_the_librarys_policy(self):
-        """A printer certificate the daemon does not expect is NOT detected: the library
-        connects with verification off on both protocols. Pinned here so a change upstream
-        is noticed; the policy is an open point in the guide."""
+    def test_any_certificate_is_accepted(self):
+        """The daemon accepts any certificate the printer presents (the guide's Upstream
+        section): the library connects with verification off on both protocols. Pinned
+        here so a change upstream is noticed."""
         self.assertEqual(self.link.snapshot()['state'], pr.IDLE)
 
 
@@ -238,6 +239,18 @@ class TestUploadRefused(SimTestCase):
         (ok, reason), code = self.run_job()
         self.assertEqual((ok, code), (False, 'delivery.upload_failed'))
         self.assertEqual(self.sim.started, [])
+
+    def test_a_file_that_never_arrived_is_said_so_from_the_printers_answer(self):
+        """Review 6, defect 6, and delivery review 2, defects 1 and 2, through the real
+        library: the delete is sent, the printer answers "550 No such file", the library's
+        failure line for it is kept off the daemon's log, and the log says the file was not
+        on the printer, not that it was removed."""
+        self.run_job()
+        self.assertTrue(any(f'{SUFFIXED} was not on the printer' in line
+                            for line in self.logged), self.logged)
+        self.assertEqual([line for line in self.logged
+                          if '550' in line or f'removed {SUFFIXED}' in line
+                          or 'could not confirm' in line], [])
 
 
 class TestStartIgnored(SimTestCase):

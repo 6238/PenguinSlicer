@@ -4,8 +4,8 @@ Written as a tick() that does at most one network thing and returns, with every 
 measured on the monotonic clock through an injected `clock`, every wait through an
 injected `sleep`, and every jitter drawn from an injected `rand`. That is what makes the
 exchange, the sync, the start wait and the backoff testable without sleeping -- and it is
-also why a computer with no network time source, or one whose clock is hours wrong, behaves
-exactly like any other: the relay never sees the daemon's wall clock.
+also why a daemon's computer with no network time source, or one whose clock is
+hours wrong, behaves exactly like any other: the relay never sees the daemon's wall clock.
 
 One delivery job runs at a time, on a one-worker executor, so syncs keep going during an
 upload and the printer never looks offline while a file is on its way. The job thread
@@ -190,10 +190,19 @@ class StartHold:
             return True
         return self.unwatched and age >= START_SETTLE_SECONDS
 
-    def watch(self, snapshot, now, fresh):
+    def watch(self, snapshot, now, fresh, asked_s=0.0):
         """Take one picture into account. Returns the outcome (None while unsettled); a
-        settled hold is dropped by its owner, so it is never watched again."""
+        settled hold is dropped by its owner, so it is never watched again.
+
+        The time since the last look counts only when that look is recent: a gap longer
+        than FRESH_REPORT_SECONDS is time nobody watched the printer (between two delivery
+        jobs, say), so the printer may have been silent all through it. `asked_s` is the
+        time the start wait itself spent since the last look asking the relay whether it
+        still holds the job (up to the client's timeout): the wait was watching all
+        through it, so that time does not make the gap too long."""
         dt = 0.0 if self._last_at is None else max(0.0, now - self._last_at)
+        if dt > FRESH_REPORT_SECONDS + max(0.0, asked_s):
+            dt = 0.0
         if self._last_at is None:
             self._first_watch_at = now
         self._last_at = now
@@ -682,11 +691,19 @@ class RunLoop:
         delete = getattr(self.printer, 'delete', None)
         if delete is None:
             return
-        if delete(remote_name):
+        # The line is worded from the printer's answer to the delete, never from a listing.
+        outcome, answer = delete(remote_name)
+        if outcome == printer_module.REMOVED:
             self.log(f"job {job_id}: removed {remote_name} from the printer")
+        elif outcome == printer_module.NOT_ON_PRINTER:
+            self.log(f"job {job_id}: {remote_name} was not on the printer")
         else:
-            self.log(f"job {job_id}: could not confirm {remote_name} was removed from the "
-                     "printer; it is harmless there, but can be deleted on its screen")
+            # "it answered" only for a reply; otherwise the answer says what happened.
+            said = (f"it answered: {answer}" if printer_module.is_printer_reply(answer)
+                    else answer)
+            self.log(f"job {job_id}: warning: could not confirm that {remote_name} was "
+                     f"removed from the printer ({said}); it is harmless "
+                     "there, but can be deleted on its screen")
 
     def _wait(self, job_id, seconds):
         """Wait in the job thread, a second at a time, ending early on a cancel."""
@@ -716,7 +733,11 @@ class RunLoop:
         # 2. A start was granted before (to an earlier run of this daemon, or to another
         #    daemon with the same pairing): whatever happened, never start it again. The
         #    hold is rebuilt from the gate's age, as the relay measured it. The note in the
-        #    daemon's home naming this job means the same, whatever the relay says.
+        #    daemon's home naming this job means the same, whatever the relay says. A job
+        #    with a start granted and no `previous_start` is the relay's last start on this
+        #    printer, so a damaged or out-of-date note gives way to it.
+        if job.get('start_granted') and not isinstance(job.get('previous_start'), dict):
+            self._note_overtaken(job_id, remote_name, job.get('start_granted_age_s'))
         if job.get('start_granted') or (self.hold is not None
                                         and self.hold.job_id == job_id):
             self.log(f"job {job_id}: the start was already granted, so it is never started "
@@ -767,7 +788,11 @@ class RunLoop:
                 or previous_id in self.acked_job_ids
                 or not isinstance(previous.get('filename'), str)):
             return
+        name = printer_module.suffixed_name(
+            printer_module.safe_file_name(previous['filename']), previous_id)
         if self.hold is not None:
+            if self._note_overtaken(previous_id, name, previous.get('age_s')):
+                return
             # The note already holds the printer for that start: take the gate's age.
             age = previous.get('age_s')
             if (self.hold.job_id == previous_id and not self.hold.sent_here
@@ -775,12 +800,32 @@ class RunLoop:
                     and age >= 0):
                 self.hold.take_age(float(age), self.clock())
             return
-        name = printer_module.suffixed_name(
-            printer_module.safe_file_name(previous['filename']), previous_id)
         self.hold = self._rebuilt_hold(previous_id, name, previous.get('age_s'))
         self.log(f"job {job.get('id')}: the printer was sent {name} (job {previous_id}) "
                  "before this process started; no other print starts until the printer "
                  "shows what became of it")
+
+    def _note_overtaken(self, job_id, remote_name, age_s):
+        """The relay names `job_id` as the printer's last start granted. A hold from a note
+        that is damaged, or that names another job, gives way to it: a note is written only
+        after its own grant, so the relay's last grant is the note's start or a later one,
+        and a later one was granted only once the note's start had settled. The printer
+        stays held, now by the start the relay names, whose own evidence settles it; the
+        note is removed when it does. True when the hold was replaced."""
+        hold = self.hold
+        if (hold is None or not hold.recorded or hold.sent_here
+                or (hold.remote_name is not None and hold.job_id == job_id)):
+            return False
+        replaced = self._rebuilt_hold(job_id, remote_name, age_s)
+        replaced.recorded = True
+        self.hold = replaced
+        self.log("the note of the last start command "
+                 + ('could not be read' if hold.remote_name is None
+                    else f'names an earlier start ({hold.remote_name}, job {hold.job_id})')
+                 + f"; the relay's last start on this printer is {remote_name} (job "
+                 f"{job_id}), so the printer is held for that one until it shows what became "
+                 "of it")
+        return True
 
     def _watch_foreign_hold(self, job_id, snapshot):
         """Feed a picture to a hold left by another delivery job. True while it holds."""
@@ -849,9 +894,11 @@ class RunLoop:
                 self._stage(job_id, 'waiting_for_earlier_print')
                 if last_log is None or now - last_log >= LOG_EVERY:
                     last_log = now
+                    what = (f"{self.hold.remote_name}, sent before this one"
+                            if self.hold.remote_name is not None
+                            else "the start command named in an unreadable note")
                     self.log(f"job {job_id}: waiting for the printer to show what became of "
-                             f"{self.hold.remote_name}, sent before this one ({int(waited)}s "
-                             "so far)")
+                             f"{what} ({int(waited)}s so far)")
                 self._wait(job_id, PRINTER_POLL_SECONDS)
                 continue
             self._stage(job_id, 'waiting_for_printer')
@@ -1149,18 +1196,22 @@ class RunLoop:
         last_log = None
         last_slow_log = None
         last_hold_check = self.clock()
+        asked_s = 0.0
         while True:
             self._check_stop()
             snapshot = self.printer.snapshot()
             now = self.clock()
             fresh = self._fresh(snapshot)
-            outcome = hold.watch(snapshot, now, fresh)
+            outcome = hold.watch(snapshot, now, fresh, asked_s=asked_s)
+            asked_s = 0.0
             if outcome is not None:
                 self._drop_hold(hold)
                 self._settled(job_id, remote_name, hold)
             if now - last_hold_check >= HOLD_CHECK_SECONDS:
                 last_hold_check = now
-                if not self._relay_still_holds(job_id):
+                still_holds = self._relay_still_holds(job_id)
+                asked_s = self.clock() - now      # the ask may take the client's timeout
+                if not still_holds:
                     # The caller stopped following it, or the relay dropped it: nobody
                     # waits for this answer any more. The file is left where it is (it may
                     # be printing). The hold stays: the next delivery job waits for it to
@@ -1277,7 +1328,7 @@ class RunLoop:
 
     @staticmethod
     def _discard(path):
-        """The sliced file is the relay's copy, not this computer's: it goes as soon as the
+        """The sliced file is the relay's copy, not the daemon's computer's: it goes as soon as the
         printer has it, so a small disk cannot fill up with old prints."""
         try:
             os.unlink(path)

@@ -1,11 +1,10 @@
 """The relay's HTTP routes.
 
-Three audiences:
+Two audiences:
   * the caller, through `GET /printer/status`, `POST /printer/jobs` and the delivery job
     routes under `/printer/jobs/<id>`, identified by the caller's `identify` function;
   * the daemon, through /printer/daemon/* gated on a signed bearer token, and
-    /printer/download/<token> for the sliced file;
-  * the installer fetch, /install-printer.sh, when the caller gives an installer path.
+    /printer/download/<token> for the sliced file.
 
 All relay state lives in relay.py (no Flask there, no printer protocol here). Every failure
 a caller can meet carries an error report: refusals beside their one line of text, a caller
@@ -46,7 +45,6 @@ JOBS_LIMIT = Limit(10, 60.0)
 DAEMON_LIMIT = Limit(60, 60.0)
 SYNC_LIMIT = Limit(120, 60.0)          # a sync a second while an upload moves, and room
 EXCHANGE_LIMIT = Limit(60, 60.0)       # service-wide; 40 bits is out of reach at that rate
-INSTALLER_LIMIT = Limit(30, 60.0)
 DOWNLOAD_LIMIT = Limit(30, 60.0)       # what the original download route allowed
 
 DOWNLOAD_PREFIX = '/printer/download/'
@@ -69,7 +67,6 @@ class RelayContext:
     on_event: Optional[Callable] = None
     dev: bool = False
     dev_pairing_code: Optional[str] = None
-    installer_path: Optional[str] = None
     # `stream_wait(code, job_id, after_sequence, timeout)` -> the latest report: how a
     # progress stream waits for news. The relay's own condition by default; tests inject a
     # scripted one so a stream runs without any waiting.
@@ -118,14 +115,11 @@ def register_routes(app, ctx):
 
     # --- helpers ---------------------------------------------------------------------
 
-    def require_https(*, plain_text=False):
+    def require_https():
         """403 unless the request arrived over HTTPS, judged after ProxyFix, or the relay
-        runs in development mode. `plain_text` is for the installer, whose caller is
-        `curl ... | bash`: a comment line is inert in a shell, JSON is noise."""
+        runs in development mode."""
         if request.is_secure or ctx.dev:
             return None
-        if plain_text:
-            return '# HTTPS required\n', 403, {'Content-Type': 'text/plain; charset=utf-8'}
         return jsonify({'error': 'HTTPS required'}), 403
 
     def maybe_seed_dev_code():
@@ -663,24 +657,3 @@ def register_routes(app, ctx):
         request_line('download', 200, held.code, job=held.job_id, bytes=held.size)
         return send_file(held.path, mimetype='application/octet-stream',
                          as_attachment=True, download_name=held.filename)
-
-    # --- the installer ---------------------------------------------------------------
-
-    if ctx.installer_path:
-        installer_dir, installer_name = os.path.split(os.path.abspath(ctx.installer_path))
-
-        @app.route('/install-printer.sh')
-        def install_printer_sh():
-            """A convenience alias for the installer. The documented command fetches the
-            script from GitHub pinned to a commit instead, because a challenge page piped
-            into bash fails confusingly."""
-            refusal = limited('installer', address_key(), INSTALLER_LIMIT)
-            if refusal is not None:
-                request_line('installer', 429, error='rate_limited')
-                return refusal
-            refusal = require_https(plain_text=True)
-            if refusal:
-                request_line('installer', 403, error='https_required')
-                return refusal
-            return send_file(os.path.join(installer_dir, installer_name),
-                             mimetype='text/x-shellscript')

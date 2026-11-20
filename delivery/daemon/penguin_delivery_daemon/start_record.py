@@ -8,8 +8,8 @@ without help from the relay, which may have restarted too.
 
 What it holds: which printer (its serial), which file (the job id and the name on the
 printer), whether the command is known to have gone (`phase`), and when it was written by
-this computer's clock. That time is for a person reading the file only: the computer's
-clock may be hours wrong or jump, so no wait is ever measured from it.
+the clock of the daemon's computer. That time is for a person reading the file
+only: the daemon's computer's clock may be hours wrong or jump, so no wait is ever measured from it.
 
 Writing is safe against a crash mid-write: the note is written whole to a temporary file,
 flushed to the disk, and renamed over the old one (`os.replace`, which replaces an existing

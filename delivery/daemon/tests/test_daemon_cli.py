@@ -1,6 +1,5 @@
-"""The three commands. Everything that touches a network, a printer, a clock, systemd or
-the ownership of a file is injected, so the whole suite runs in milliseconds and never
-touches /etc.
+"""The commands. Everything that touches a network, a printer or a clock is injected, so
+the whole suite runs in milliseconds.
 
 Ported from the original daemon's test_main.py. Rewritten: `run` and `status` were driven
 with mock.Mock relay clients, so "posts no snapshot" was an assertion about a mock; they now
@@ -10,9 +9,9 @@ an older install, and status for a printer link that raises."""
 import io
 import os
 import shutil
+import signal
 import stat
 import tempfile
-import types
 import unittest
 from unittest import mock
 
@@ -26,7 +25,7 @@ from daemon_fakes import FakeClock, FakeRelay
 
 class TestCodeGeneration(unittest.TestCase):
     def test_the_alphabet_is_crockford_without_lookalikes(self):
-        """The daemon must not import the relay (it is not installed on the Pi), so the
+        """The daemon must not import the relay (it is not installed beside it), so the
         alphabet lives in two places; delivery/tests pins the two copies together."""
         self.assertEqual(main_mod.ALPHABET, '0123456789ABCDEFGHJKMNPQRSTVWXYZ')
 
@@ -98,18 +97,12 @@ class PairTestCase(unittest.TestCase):
         self.path = os.path.join(self.dir, 'config.toml')
         self.out = io.StringIO()
         self.clock = FakeClock()
-        self.restarts = []
-        self.handovers = []
 
     def run_pair(self, answers, argv=None, discovered=(), link=FakePrinterLink):
         argv = list(argv or []) + ['--config', self.path]
         args = main_mod.build_parser().parse_args(['pair'] + argv)
         with mock.patch.object(main_mod, 'PrinterLink', link), \
-             mock.patch.object(main_mod, 'discover', lambda **kw: list(discovered)), \
-             mock.patch.object(main_mod, 'hand_to_service_user',
-                               lambda path, log: self.handovers.append(path)), \
-             mock.patch.object(main_mod, 'restart_service',
-                               lambda log: self.restarts.append(True)):
+             mock.patch.object(main_mod, 'discover', lambda **kw: list(discovered)):
             return main_mod.cmd_pair(args, ask=iter(answers).__next__, out=self.out,
                                      clock=self.clock, sleep=self.clock.sleep)
 
@@ -196,24 +189,12 @@ class TestPair(PairTestCase):
         self.run_pair(['10.0.0.42', '01P00A', '12345678'])
         self.assertNotIn('12345678', self.out.getvalue())
 
-    def test_a_home_the_person_chose_touches_no_service_user_and_no_service(self):
+    def test_pair_says_how_to_run_the_daemon_by_hand(self):
         """The daemon runs by hand on any platform: pair writes the file and says how to
         run the daemon, and that is all."""
         self.run_pair(['10.0.0.42', '01P00A', '12345678'])
-        self.assertEqual((self.handovers, self.restarts), ([], []))
         self.assertIn(f'python -m penguin_delivery_daemon run --home {self.dir}',
                       self.out.getvalue())
-
-    def test_an_install_made_by_the_earlier_installer_is_handed_over_and_restarted(self):
-        with mock.patch.object(main_mod.paths, 'is_service_install', lambda path: True):
-            self.run_pair(['10.0.0.42', '01P00A', '12345678'])
-        self.assertEqual(self.handovers, [self.path])
-        self.assertEqual(self.restarts, [True])
-
-    def test_nothing_is_handed_over_when_pairing_failed(self):
-        self.run_pair(['10.0.0.42', '01P00A', '12345678'], link=SilentPrinterLink)
-        self.assertEqual(self.handovers, [])
-        self.assertEqual(self.restarts, [])
 
 
 class TestPairPrompting(PairTestCase):
@@ -280,9 +261,7 @@ class TestPairPrompting(PairTestCase):
         args = main_mod.build_parser().parse_args(['pair', '--config', self.path])
         answers = iter(['10.0.0.42', '01P00A', '12345678'])
         with mock.patch.object(main_mod, 'PrinterLink', FakePrinterLink), \
-             mock.patch.object(main_mod, 'discover', refuse), \
-             mock.patch.object(main_mod, 'hand_to_service_user', lambda path, log: None), \
-             mock.patch.object(main_mod, 'restart_service', lambda log: None):
+             mock.patch.object(main_mod, 'discover', refuse):
             rc = main_mod.cmd_pair(args, ask=answers.__next__, out=self.out,
                                    clock=self.clock, sleep=self.clock.sleep)
         self.assertEqual(rc, 0)
@@ -301,71 +280,6 @@ class TestPairPrompting(PairTestCase):
         rc = self.run_pair([], argv=['--backend', 'penguins'])
         self.assertEqual(rc, 2)
         self.assertIn('is not a backend URL', self.out.getvalue())
-
-
-class TestHandover(unittest.TestCase):
-    """`pair` runs as root under sudo; `run` runs as the penguincam user and must be able to
-    rewrite the file to store its token."""
-
-    def setUp(self):
-        self.path = '/etc/penguincam-printer/config.toml'
-        self.said = []
-        self.chowns = []
-        self.entry = types.SimpleNamespace(pw_uid=1234, pw_gid=5678)
-
-    def test_the_directory_and_the_file_both_change_owner(self):
-        ok = main_mod.hand_to_service_user(
-            self.path, self.said.append, lookup=lambda name: self.entry,
-            chown=lambda p, u, g: self.chowns.append((p, u, g)))
-        self.assertTrue(ok)
-        self.assertEqual(self.chowns, [('/etc/penguincam-printer', 1234, 5678),
-                                       (self.path, 1234, 5678)])
-
-    def test_a_custom_config_path_does_not_give_away_its_directory(self):
-        """`pair --config /etc/config.toml` must not chown /etc."""
-        ok = main_mod.hand_to_service_user(
-            '/etc/config.toml', self.said.append, lookup=lambda name: self.entry,
-            chown=lambda p, u, g: self.chowns.append((p, u, g)))
-        self.assertTrue(ok)
-        self.assertEqual(self.chowns, [('/etc/config.toml', 1234, 5678)])
-
-    def test_a_machine_without_the_user_only_warns(self):
-        def missing(name):
-            raise KeyError(name)
-
-        ok = main_mod.hand_to_service_user(
-            self.path, self.said.append, lookup=missing,
-            chown=lambda p, u, g: self.chowns.append((p, u, g)))
-        self.assertFalse(ok)
-        self.assertEqual(self.chowns, [])
-        self.assertIn(main_mod.SERVICE_USER, ' '.join(self.said))
-
-    def test_a_chown_that_is_not_permitted_only_warns(self):
-        def refuse(path, uid, gid):
-            raise PermissionError('not permitted')
-
-        ok = main_mod.hand_to_service_user(self.path, self.said.append,
-                                           lookup=lambda name: self.entry, chown=refuse)
-        self.assertFalse(ok)
-        self.assertIn('not permitted', ' '.join(self.said))
-
-
-class TestRestartService(unittest.TestCase):
-    def test_it_restarts_the_unit(self):
-        calls = []
-        main_mod.restart_service(lambda m: None,
-                                 run=lambda cmd, **kw: calls.append((cmd, kw)))
-        self.assertEqual(calls[0][0],
-                         ['systemctl', 'restart', main_mod.SERVICE_NAME])
-
-    def test_a_machine_without_systemctl_only_warns(self):
-        said = []
-
-        def missing(cmd, **kw):
-            raise FileNotFoundError('systemctl')
-
-        main_mod.restart_service(said.append, run=missing)
-        self.assertIn(main_mod.SERVICE_NAME, ' '.join(said))
 
 
 class RecordingExecutor(rl.InlineExecutor):
@@ -432,6 +346,42 @@ class TestRun(RunTestCase):
         self.assertEqual(FakePrinterLink.instances[-1].disconnects, 1)
         self.assertIn('stopping', self.out.getvalue())
 
+    def test_several_interrupts_at_once_stop_it_quietly(self):
+        """Review 6, defect 7: Ctrl-C sent to the program and to its wrappers at once is
+        several SIGINTs in a row. The first stops the daemon; the rest, arriving while it
+        logs "stopping" and shuts down, change nothing and raise nothing."""
+        def interrupt(*_args, **_kwargs):
+            os.kill(os.getpid(), signal.SIGINT)
+
+        self.addCleanup(signal.signal, signal.SIGINT, signal.getsignal(signal.SIGINT))
+        self._stop = interrupt
+        executor_shutdown = self.executor.shutdown
+
+        def shutdown(wait=True):
+            interrupt()
+            interrupt()
+            executor_shutdown(wait)
+
+        self.executor.shutdown = shutdown
+        self.write_config()
+        with mock.patch.object(FakePrinterLink, 'disconnect', interrupt, create=True):
+            self.assertEqual(self.run_run(), 0)
+        self.assertEqual(self.executor.shutdowns, 1)
+        self.assertTrue(self.out.getvalue().rstrip().endswith('stopping'))
+
+    def test_off_the_main_thread_the_interrupts_are_left_alone(self):
+        """Only the main thread may take SIGINT; elsewhere the handler is not installed and
+        nothing is put back."""
+        import threading
+        before = signal.getsignal(signal.SIGINT)
+        interrupts = main_mod._InterruptOnce()
+        worker = threading.Thread(target=lambda: (interrupts.install(),
+                                                  interrupts.uninstall()))
+        worker.start()
+        worker.join(5)
+        self.assertFalse(interrupts.installed)
+        self.assertIs(signal.getsignal(signal.SIGINT), before)
+
     def test_the_note_of_a_start_lives_in_the_daemons_home(self):
         """Review 5, defect 3: `run` keeps the note of a start command beside its
         configuration, so the next run finds it."""
@@ -490,7 +440,7 @@ class TestRun(RunTestCase):
         self.assertIn('http://192.168.1.5:6238', text)
 
     def test_the_download_directory_is_created_and_private(self):
-        """/tmp may be RAM-backed on a Pi, so the sliced file lands on the card."""
+        """In the daemon's home, readable only by the user who runs it."""
         self.write_config()
         self.run_run()
         self.assertTrue(os.path.isdir(self.downloads))
@@ -504,12 +454,8 @@ class TestRun(RunTestCase):
         self.run_run()
         self.assertEqual(stat.S_IMODE(os.stat(self.downloads).st_mode), 0o700)
 
-    def test_the_default_download_directory_is_not_tmp(self):
-        self.assertEqual(main_mod.DOWNLOAD_DIR, '/var/tmp/penguincam-printer')
-
     def test_a_config_with_no_pairing_code_is_waited_for_not_exited_on(self):
-        """An unpaired config cannot exchange anything, and exiting would only become a
-        systemd restart loop that buries the message."""
+        """An unpaired config cannot exchange anything; waiting, it says why."""
         self.write_config(pairing_code='')
 
         def fix_it_after_two_waits(seconds):
@@ -546,7 +492,7 @@ class TestRun(RunTestCase):
             self.assertFalse(main_mod.is_pairing_code(bad), bad)
 
     def test_a_missing_config_file_is_waited_for(self):
-        """systemd enables the unit at install time, so `run` can start before `pair`."""
+        """`run` can be started before `pair`."""
         waited = []
         config = cfg.DaemonConfig(backend_url='https://example.test',
                                   printer_ip='10.0.0.42', printer_serial='01P00A',

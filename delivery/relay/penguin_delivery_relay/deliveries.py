@@ -30,11 +30,11 @@ QUEUED, RUNNING, DONE, FAILED, CANCELLED = 'queued', 'running', 'done', 'failed'
 FINAL = frozenset({DONE, FAILED, CANCELLED})
 
 STAGES = (
-    ('waiting_for_daemon', 'Waiting for the computer next to the printer'),
+    ('waiting_for_daemon', "Waiting for the daemon's computer"),
     ('waiting_for_printer', 'Waiting for the printer to answer'),
     ('waiting_for_earlier_print',
-     'Waiting to see whether the print sent before this one has started'),
-    ('downloading', 'The computer next to the printer is fetching the file'),
+     'Waiting for the printer to show that no earlier print is about to start'),
+    ('downloading', "The daemon's computer is fetching the file"),
     ('uploading', 'Sending the file to the printer'),
     ('starting', 'Starting the print'),
     ('start_not_shown', 'The printer has the file and has not shown the print yet'),

@@ -30,6 +30,7 @@ import json as json_module
 from urllib.parse import urlsplit
 
 import requests
+from hypothesis import HealthCheck, Phase, settings
 
 from penguin_delivery_daemon.config import DaemonConfig
 from penguin_delivery_daemon.relay_client import RelayClient
@@ -42,6 +43,17 @@ from together.stand_in import StandInPrinter
 from together.transport import InProcessResponse
 
 BASE = 'https://relay.test'
+
+#: The settings of the random sequences (`make test-properties`, marker `properties`).
+#: The same examples every run (`derandomize`, no example database). No shrinking: a
+#: failing example is reported as it was found, at once. Hypothesis takes pytest-timeout's
+#: failure for a failing example too, so with shrinking on, one slow failing example could
+#: be shrunk for five minutes past the per-test limit; without it a test ends within that
+#: limit (30 s, pyproject.toml) plus one more run of the example that failed.
+PROPERTY_SETTINGS = settings(
+    deadline=None, derandomize=True, database=None, report_multiple_bugs=False,
+    phases=(Phase.explicit, Phase.generate),
+    suppress_health_check=[HealthCheck.function_scoped_fixture, HealthCheck.too_slow])
 CONTENT = b'sliced bytes for the stand-in printer' * 10
 
 FAULTS = ('timeout', 'late', 'reset_before', 'reset_after', 'dns', 'tls', '500', '502',

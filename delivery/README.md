@@ -5,8 +5,8 @@ Lab printer, reporting how the print goes. It has two halves:
 
 - **The relay** runs on the server. It holds each team's delivery jobs and the printer's
   last status in memory, pairs with a daemon, and answers the caller.
-- **The daemon** runs on a computer in the shop, on the printer's network. It connects
-  outward to the relay, downloads the sliced file, uploads it to the printer and starts
+- **The daemon** runs on **the daemon's computer** (the computer next to the printer, on
+  the printer's network, that runs the daemon). It connects outward to the relay, downloads the sliced file, uploads it to the printer and starts
   it. It opens no port. It is a plain Python program that runs on Windows, macOS or Linux.
 
 The **caller** is the application that runs the relay and asks it to deliver sliced files:
@@ -42,7 +42,7 @@ the relay state module imports no Flask.
 
 ## Running the daemon
 
-On the computer next to the printer (Windows, macOS or Linux, on the printer's network):
+On the daemon's computer (Windows, macOS or Linux, on the printer's network):
 
 1. Install Python 3.11 or newer from python.org (on Windows, tick "Add python.exe to
    PATH").
@@ -69,12 +69,8 @@ elsewhere (`daemon/penguin_delivery_daemon/paths.py` decides). It holds `config.
 one JSON line each, in `recordings/`, until Ctrl-C (`--seconds N` stops it sooner; `--out
 FILE` names the file). Run it while a print goes from start to finish.
 
-Not in this version: installers, running as a service or at start-up, and protection of
-the stored token and access code by the operating system. The earlier installer,
-`daemon/install.sh`, and the service unit it writes are **not maintained in this
-version**: they are left as they were ported. Only for an install it made (the
-configuration at `/etc/penguincam-printer/config.toml` on Linux) does `pair` still hand
-the file to the service user and restart the service.
+The daemon is started by hand. Not in this version: running it as a service or at
+start-up, and protection of the stored token and access code by the operating system.
 
 ## Try it on one machine
 
@@ -124,12 +120,16 @@ only. The home directory below is a scratch folder; any empty one will do.
    curl -sN http://127.0.0.1:8787/printer/jobs/<job_id>/events
    ```
 
-   The reports go from `waiting_for_daemon` through `waiting_for_printer`, `uploading`,
-   `starting` and `printing` (with the printer's stage and percent: heating the bed,
-   levelling it, 25 and 75 percent) to `done` within about thirty seconds; the simulated
-   printer shows the upload, the start command and each status document. On one machine
-   the download takes a moment too short for a report of its own, so `downloading` is
-   seldom seen.
+   The reports go from `waiting_for_daemon` through `starting` and `printing` (with the
+   printer's stage and percent: heating the bed, levelling it, 25 and 75 percent) to
+   `done` within about thirty seconds; the simulated printer shows the upload, the start
+   command and each status document. The stages between are not on the stream: the
+   daemon sends its stage at most once a second (`PROGRESS_SYNC_SECONDS`), and on one
+   machine the download and upload of the sample's 323 bytes end within that second, so
+   the next report the relay records is `starting`, which it sets itself when the daemon
+   asks its start gate. `downloading` and `uploading` show only for a file large or slow
+   enough to take longer than a second, and `waiting_for_printer` only when the daemon has
+   no fresh report from the printer and waits for one (step 7 shows it).
 6. **Cancel one at once.** Send again and cancel at once, in one line, while the job still
    waits for the daemon; the answer is `"outcome":"cancelled"`, and the job's report says
    `cancelled`:
@@ -153,8 +153,9 @@ only. The home directory below is a scratch folder; any empty one will do.
    fifteen seconds. Send, wait five seconds (the daemon has taken the job, or takes it at
    its next sync), then cancel. The answer is `202` with `"outcome":"cancelling"`; a few
    seconds later the
-   job's report says `cancelled`, and the daemon's log says it removed the file from the
-   printer and that the file was never started:
+   job's report says `cancelled` (its stage `waiting_for_printer` or `uploading`), and the
+   daemon's log says the file was not on the printer (the printer answered the delete
+   that there is no such file) and that it was never started:
 
    ```
    JOB=$(curl -s -X POST -H 'Content-Type: application/json' -d '{"token": "sample"}' http://127.0.0.1:8787/printer/jobs | python3 -c 'import sys, json; print(json.load(sys.stdin)["job_id"])'); sleep 5; curl -s -X POST http://127.0.0.1:8787/printer/jobs/$JOB/cancel
@@ -426,7 +427,12 @@ cannot know whether the command went never says it did, so the relay keeps answe
    attempts (`DOWNLOAD_ATTEMPTS`) with backoff.
 5. Upload, judged by the size the printer lists for the file afterwards, not by the FTP
    reply. Three attempts (`UPLOAD_ATTEMPTS`) with backoff, waiting for the printer between
-   them; a failed upload's file is removed from the printer.
+   them; a failed upload's file is removed from the printer. A removal always sends the
+   delete for the name uploaded, and the log line comes from the printer's answer to it,
+   never from a listing: "removed" when it confirmed the delete, "was not on the printer"
+   when it answered that there is no such file, and otherwise a warning that the removal
+   could not be confirmed, with the answer ("it answered: …"), or, when the printer gave
+   no answer, with what happened ("no answer: timed out", "no connection: …").
 6. Wait for a free printer once more, as in step 3 (still cancellable), ask the printer
    for a whole report, and ask the start gate; before every further ask of the gate the
    wait is made again, and after ten minutes (`GATE_WAIT_SECONDS`) of a gate that cannot
@@ -495,7 +501,14 @@ printer until the evidence settles what became of the first:
   `delivery.start_other_file` when the printer was printing another file;
 - or a proven end of ours (below).
 
-Time without a whole, fresh picture is not counted. A printer that is slow to show the
+Time without a whole, fresh picture is not counted, and neither is time nobody watched
+the printer: a hold counts the time between two looks only when they are at most
+`FRESH_REPORT_SECONDS` apart, so the gap between one delivery job that stopped waiting
+(its caller stopped following it) and the next is never counted, whatever the printer
+did meanwhile. The time the start wait spends asking the relay whether it still holds
+the job (every `HOLD_CHECK_SECONDS`, up to the relay client's 20 s timeout) is watched
+time: it is left out of that 15 s limit, so a slow relay does not slow the count. A
+printer that is slow to show the
 print gets, after `START_SLOW_SECONDS`, the non-final stage `start_not_shown` ("The
 printer has the file and has not shown the print yet") with `waited_s`. A delivery job
 that arrives while an earlier start still holds the printer waits in
@@ -513,16 +526,28 @@ outlives the daemon and the relay, alone or together:
   note, so a crash mid-write leaves the old note or none, never half of one. A daemon that
   starts and finds a note holds the printer, with no help from the relay, until the
   evidence settles it; its time counts from the first picture it watches after the
-  restart (never from the note's own clock time, because the computer's clock may be
+  restart (never from the note's own clock time, because the daemon's computer's clock may be
   wrong), unless the relay gives the gate's age. A note that is there but cannot be read
   or understood holds the printer too, until `START_SETTLE_SECONDS` of whole, fresh
-  pictures show no print going on, or a print going settles it; it never frees the
-  printer. A note about another printer (the daemon was paired again since) is set aside.
-  A note that cannot be written means no start command: the file is removed and the job
-  ends `delivery.start_not_recorded`.
+  pictures show no print going on, or a print going settles it, unless the relay names
+  the start (below). A note about another printer (the daemon was paired again since) is
+  set aside. A note that cannot be written means no start command: the file is removed
+  and the job ends `delivery.start_not_recorded`.
 - **The relay.** Every job document names the printer's last start granted
-  (`previous_start`: its job id, file name and age), so a daemon restarted while the
-  relay ran rebuilds the hold from it, its time counted from the gate.
+  (`previous_start`: its job id, file name and age; or the job itself, offered again with
+  `start_granted` and `start_granted_age_s`), so a daemon restarted while the relay ran
+  rebuilds the hold from it, its time counted from the gate. A note is written only after
+  its own grant, so the relay's last start is the note's or a later one, and a later one
+  was granted only once the note's had settled. So when the note cannot be read, or names
+  an earlier job than the relay's last start, the hold becomes the relay's last start: the
+  printer stays held, by the start the relay names, and that start's own evidence settles
+  it (seen going, a proven end, or the settle time counted from its gate) and removes the
+  note. A whole note naming the relay's last start is that start, and keeps the printer
+  held as above. With both restarted, the relay names nothing and the note alone decides.
+
+While a job waits for an earlier start, its stage is `waiting_for_earlier_print`, "Waiting
+for the printer to show that no earlier print is about to start": true of a start known to
+have gone, of one that may have gone, and of the start an unreadable note stood for.
 
 A daemon that died between the gate and the command cannot know whether the command went:
 the note says `sending`, or there is none (it died before writing it) and only the relay's
@@ -556,9 +581,10 @@ daemon's acknowledgement.
 
 #### Two limits that wait for the real printer
 
-Both rules above use time to decide something the printer's pictures do not show. Each
-fails in one case, and whether that case can happen depends on how the real H2S behaves,
-which nobody has recorded yet. Both are left as they are until the owner decides.
+Both rules above use time to decide something the printer's pictures do not show. The
+timed rule is the rule: it stays as built. It fails in one case for each limit below, and
+whether that case can happen depends on how the real H2S behaves, which the session at the
+real printer measures.
 
 1. **A daemon that could not watch takes a left-over end, shown long enough, for this
    print's end.** A daemon restarted just after the start command, or one that had no
@@ -574,23 +600,14 @@ which nobody has recorded yet. Both are left as they are until the owner decides
    says to look at the printer first, because the part may be printing), the printer
    counts as free, and a resend sends a second start command while the first is pending.
 
-The hardware checklist's lines on the documents between the start command and the first
-`PREPARE` or `RUNNING`, and on the seconds from the command to the first document naming
-the file, settle both: if the H2S shows a print within seconds and drops the previous end
-at once, neither case can happen at these settings.
-
-**The alternative, which needs no timing of the printer** (review 5). When the settle time
-passes without proof (our print never seen going, no end proven ours), end the delivery
-job as outcome unknown ("the printer has the file and never showed the print; look at the
-printer") and keep the printer held until either a picture proves it moved on (another
-file going or ended, or the printer reconnecting with a whole `IDLE` picture that names no
-file) or a person says it is clear (a flag on the resend, or a small route). No clock then
-ever frees a printer for a second start command. The costs: one confirmation by a person
-after every start the printer truly ignored, and, for a daemon that could not watch, never
-`done` from a left-over-looking end: such a job ends "outcome unknown" unless a recording
-shows a field that tells the two ends apart (the layer total, perhaps). That conflicts
-with the rule that a restarted daemon finds a real end, so it changes what a person must
-do and is the owner's choice.
+The session at the real printer measures, through the hardware checklist's lines, the
+documents between the start command and the first `PREPARE` or `RUNNING`, and the seconds
+from the command to the first document naming the file. If the H2S shows a print within
+seconds and drops the previous end at once, neither case can happen at these settings.
+Only if the measurements show the H2S slow to show a print, or keeping an old end under
+the new name, would a rule that needs no timing be considered: ending such a delivery job
+as outcome unknown and keeping the printer held until a picture or a person shows it is
+clear.
 
 #### The settings
 
@@ -632,12 +649,14 @@ asks for the measurements that set them. Every other time limit of printer deliv
 | `SWEEP_EVERY_SECONDS` | `relay.py` | 1 min | The most often the sweep of old records runs |
 | `SLICE_MAX_AGE_SECONDS` | `routes.py` | 40 min | The oldest sliced file a send accepts |
 | `STREAM_HEARTBEAT_SECONDS` | `routes.py` | 15 s | A comment line on a quiet progress stream |
-| `STATUS_LIMIT`, `JOBS_LIMIT`, `SYNC_LIMIT`, `DAEMON_LIMIT`, `EXCHANGE_LIMIT`, `DOWNLOAD_LIMIT`, `INSTALLER_LIMIT` | `routes.py` | 120, 10, 120, 60, 60, 30, 30 a minute | The rate limits |
+| `STATUS_LIMIT`, `JOBS_LIMIT`, `SYNC_LIMIT`, `DAEMON_LIMIT`, `EXCHANGE_LIMIT`, `DOWNLOAD_LIMIT` | `routes.py` | 120, 10, 120, 60, 60, 30 a minute | The rate limits |
 
 **Stopping.** Ctrl-C ends every wait of the run loop and of the job thread at once. A job
 in flight ends at its next wait, unacknowledged, and its file is never started by that
 run: a partial upload is removed, and the next run takes the job up from what the relay
-and the printer say.
+and the printer say. The first interrupt stops the daemon and any more are ignored, so
+Ctrl-C pressed several times, or sent at once to the daemon and to whatever started it,
+ends its log with `stopping` all the same.
 
 Every wait after a failure doubles from 5 s (`BACKOFF_START`) to a cap of 60 s
 (`BACKOFF_CAP`), shortened by up to a quarter (`JITTER`) drawn from an injected random
@@ -914,7 +933,6 @@ was made; a send more than forty minutes (`SLICE_MAX_AGE_SECONDS`) later is refu
 | `POST /printer/daemon/jobs/<id>/ack` `{ok, error, code, detail}` | `{ok: true}`, or `404` (final for the daemon) |
 | `GET /printer/daemon/ping` | `{ok, waiting, online}`. Stores nothing |
 | `GET /printer/download/<token>` | The sliced file while the relay holds the job |
-| `GET /install-printer.sh` | `install.sh`, when `installer_path` is given |
 
 `on_event(kind, team_number=, user=, metadata=)` receives `printer_send` and
 `printer_ack` (with the daemon's `code`; `metadata.expired` on an expiry).
@@ -976,6 +994,7 @@ make -C delivery test             # the fast suite: no socket, no real waiting
 make -C delivery test-parallel    # on two workers, the most a shared machine should run
 make -C delivery test-repeat      # ten runs in a row, each in a new random order
 make -C delivery coverage         # branch coverage per module
+make -C delivery test-properties  # the random sequences: before a commit, and by reviewers
 make -C delivery test-sim         # the daemon against the simulated printer
 make -C delivery test-upstream    # the upstream check (the library, and test-sim)
 make -C delivery test-together    # the together run on real threads, both ways
@@ -995,8 +1014,26 @@ the same path: the reviewer's sequences one by one, a restart of the daemon, of 
 and of both at each point between the gate and the settling, then random sequences; it
 scales the settings of that section down so each sequence runs in milliseconds.
 
-The three property tests (the two random ones there and the random faults of
-`test_link_faults.py`) hear the printer through the real `PrinterLink`, over
+**The property tests are not in the fast suite.** The three of them (the two random ones
+of `test_start_decided.py` and the random faults of `test_link_faults.py`, marker
+`properties`) run 260 random sequences in about 5 s, more than the rest of the fast suite
+together, so `make -C delivery test-properties` runs them, before a commit and in every
+review. The fast suite keeps, in `tests/test_fixed_sequences.py`, one sequence written out by
+hand for each of nine known faults (its docstring names them), run through the same
+functions with the same invariants. Seven of the nine (G2, G9, G12, G13, N1, N3, N7) are
+caught by the random sequences as well. Two are caught only by the fixed sequences: G4
+(no wait for a free printer before the start gate is asked) and N2 (the note written only
+after the start command): the random sequences no longer reach them, so with either fault
+put back `make -C delivery test-properties` passes and only the fast suite fails.
+
+**A real bug fails the properties target within about a minute.** A failing sequence is
+reported as it was found, never shrunk (`PROPERTY_SETTINGS` in `tests/link_faults.py`):
+Hypothesis takes pytest-timeout's failure for a failing example too, and shrinking it could
+run for five minutes past the limit. So each property test ends within the per-test limit
+of 30 s (`timeout` in `pyproject.toml`) plus one more run of the sequence that failed, a
+few seconds at most, and the target, three tests on two workers, within about a minute.
+
+The three property tests hear the printer through the real `PrinterLink`, over
 `ShopLibrary` in `tests/link_faults.py`: a stand-in for the printer library that merges
 status documents, keeps the last connection's picture over a reconnect and sends only
 partial documents until the printer's whole one arrives. Their faults: a printer slow to
@@ -1099,10 +1136,13 @@ H2S, with `record` running, settles these:
       `PRINT_ERROR_0500400E`).
 - [ ] The TLS version on port 990, and whether a whole file arrives.
 - [ ] The format of the `LIST` lines and the size listed for an uploaded file.
+- [ ] The H2S's answer to a delete for a file it does not have. The daemon takes a `550`
+      that says there is no such file ("No such file", "not found", "does not exist") as
+      that answer and logs that the file was not on the printer; any other answer, such as
+      `550 Delete operation failed.`, is logged as a warning that the removal could not be
+      confirmed, with the answer.
 - [ ] A print shows its stages in order and `remaining_min` is minutes.
 - [ ] A cancel during the upload removes the partial file from the printer's list.
-- [ ] The printer's certificate: decide whether to pin it at `pair` (the library accepts
-      any).
 
 ## The two faults of the first hardware test
 
@@ -1142,20 +1182,19 @@ printer's suite, which drives the same library over sockets.
 **Patches.** None. Two gaps were closed from outside, in `printer.py`: the library's
 misleading log lines are taken over, and paho's callback exceptions (a status document
 that is not JSON would otherwise end the library's network thread) are suppressed on the
-library's client. The library's acceptance of any printer certificate (verification off
-on both protocols) is a policy question, not patched; see the
-[hardware checklist](#before-trusting-it-at-the-h2s-what-a-hardware-session-must-confirm).
+library's client. The daemon accepts any certificate the printer presents, on MQTT and on
+FTPS alike.
 
 ### Taking a new upstream version
 
 1. `make -C delivery upgrade-printer-library VERSION=x.y.z`. It moves the library's pin in
    `daemon/pyproject.toml`, frees the pins of what the library pulls in (`paho-mqtt`,
-   Pillow), re-locks, pins those two to what the lock resolved (pip on the shop computer
+   Pillow), re-locks, pins those two to what the lock resolved (pip on the daemon's computer
    reads `pyproject.toml`, not `uv.lock`, so it installs exactly the set the check runs
    on), installs, prints what changed in `uv.lock`, stops if any patch is kept, and runs
    the upstream check.
-2. Read the diff of `daemon/pyproject.toml` and `uv.lock` for a new dependency the shop
-   computer would have to install.
+2. Read the diff of `daemon/pyproject.toml` and `uv.lock` for a new dependency the
+   daemon's computer would have to install.
 3. When the check fails, the first line of each failing test names the assumption. Fix
    it in `printer.py` alone, bring `FakeBambuPrinter` in `daemon/tests/daemon_fakes.py`
    and the fixtures in line, and run `make test`. If the library now reports an error or

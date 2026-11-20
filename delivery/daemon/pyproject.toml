@@ -3,12 +3,12 @@ name = "penguin-delivery-daemon"
 version = "1.0.0"
 description = "Printer delivery's daemon: runs in the shop, fetches jobs from the relay and starts them on a Bambu Lab printer"
 requires-python = ">=3.11"
-# THE one place the daemon's upstream versions are stated. install.sh reads this list on a
-# Raspberry Pi, the workspace installs it for development, and uv.lock records what it
-# resolves to. A test checks that no other file of the daemon names a version.
+# THE one place the daemon's upstream versions are stated. `pip install` reads this list on
+# the daemon's computer, the workspace installs it for development, and uv.lock
+# records what it resolves to. A test checks that no other file of the daemon names a version.
 #
 # paho-mqtt and pillow are the printer library's own dependencies, pinned here to the
-# versions the upstream check ran on: the shop computer installs with pip, not from
+# versions the upstream check ran on: the daemon's computer installs with pip, not from
 # uv.lock, and printer.py reaches into the library's paho client. The upgrade command
 # (scripts/upgrade_printer_library.py) moves all three together.
 dependencies = [

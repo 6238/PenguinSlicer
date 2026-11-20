@@ -61,18 +61,16 @@ CODES = {
         'This sliced file is too old to send to the printer.',
         'Slice the plate again and send the new file.', False, 'send', 'slice_again'),
     'delivery.daemon_never_reported': Code(
-        'The computer next to the printer has not checked in since the printer service '
-        'started.',
-        'Ask a mentor to check that the printer computer is switched on and online.',
+        'The daemon\'s computer has not checked in since the printer service started.',
+        'Ask a mentor to check that the daemon\'s computer is switched on and online.',
         True, 'send'),
     'delivery.no_printer_status': Code(
         'The printer has not reported its status yet.',
         'Wait a moment, then send the print again.', True, 'send'),
     'delivery.daemon_silent': Code(
-        'The computer next to the printer was last heard from[ {minutes} minutes ago| a '
-        'while ago].',
-        'Check that the computer next to the printer is switched on and online, then send '
-        'the print again.', True, 'send'),
+        'The daemon\'s computer was last heard from[ {minutes} minutes ago| a while ago].',
+        'Check that the daemon\'s computer is switched on and online, then send the print '
+        'again.', True, 'send'),
     'delivery.printer_busy': Code(
         'The printer is busy printing[ {name}| a file][, {percent} percent done].',
         'Wait for that print to finish, then send this one.', True, 'send'),
@@ -81,7 +79,7 @@ CODES = {
         'Ask someone at the printer to resume or cancel the paused print, then send this '
         'one.', True, 'send'),
     'delivery.printer_unreachable': Code(
-        'The computer next to the printer cannot reach the printer.',
+        'The daemon\'s computer cannot reach the printer.',
         'Check that the printer is switched on and on the shop network, then send the '
         'print again.', True, 'send'),
     'delivery.printer_state_unrecognised': Code(
@@ -107,7 +105,7 @@ CODES = {
         'Stop the print on the printer\'s own screen if it should not go on.', False,
         'starting'),
     'delivery.start_being_sent': Code(
-        'The computer next to the printer has been told to start this print and may already '
+        'The daemon\'s computer has been told to start this print and may already '
         'have sent the start command, so it can no longer be cancelled from here.',
         'Look at the printer: if this print starts, stop it on the printer\'s own screen; if '
         'it does not, wait for this print\'s report to end before sending it again.', False,
@@ -130,30 +128,29 @@ CODES = {
         'following.',
         'Cancel the print instead if it should not go ahead.', False, None, 'cancel'),
     'delivery.start_without_instance': Code(
-        'The computer next to the printer asked to start a print without naming itself, so '
+        'The daemon\'s computer asked to start a print without naming itself, so '
         'the printer service did not let it start.',
-        'Ask a mentor to update the printer computer\'s software to the current version.',
+        'Ask a mentor to update the daemon\'s computer\'s software to the current version.',
         False, 'starting'),
     'delivery.request_too_large': Code(
         'The request was too large for the printer service.',
-        'Tell a mentor: the computer next to the printer or the page sent far more than it '
+        'Tell a mentor: the daemon\'s computer or the page sent far more than it '
         'should.', False),
     # -- a delivery job that ended before the print started -----------------------------
     'delivery.job_not_picked_up': Code(
-        'The computer next to the printer did not collect the print in time.',
-        'Check that the printer computer is switched on and online, then send the print '
+        'The daemon\'s computer did not collect the print in time.',
+        'Check that the daemon\'s computer is switched on and online, then send the print '
         'again.', True, 'waiting_for_daemon'),
     'delivery.job_not_confirmed': Code(
-        'The computer next to the printer collected the print and was then not heard from '
+        'The daemon\'s computer collected the print and was then not heard from '
         '[for {minutes} minutes|for too long], so the print was given up before it started.',
-        'Check that the printer computer is switched on and online, then send the print '
+        'Check that the daemon\'s computer is switched on and online, then send the print '
         'again.', True),
     'delivery.cancelled': Code(
         'The print was cancelled before it started.',
         'Send the print again when you are ready.', True),
     'delivery.printer_unreachable_at_start': Code(
-        'The computer next to the printer could not reach the printer[ for {minutes} '
-        'minutes].',
+        'The daemon\'s computer could not reach the printer[ for {minutes} minutes].',
         'Check that the printer is switched on and on the shop network, then send the '
         'print again.', True, 'waiting_for_printer'),
     'delivery.printer_busy_at_start': Code(
@@ -172,9 +169,9 @@ CODES = {
         'Look at the printer, then send this print again.', True,
         'waiting_for_earlier_print'),
     'delivery.start_not_recorded': Code(
-        'The computer next to the printer could not save its note of the start on its own '
+        'The daemon\'s computer could not save its note of the start on its own '
         'disk, so it did not start the print.',
-        'Ask a mentor to check that the printer computer\'s disk has space and its '
+        'Ask a mentor to check that the daemon\'s computer\'s disk has space and its '
         'printer delivery folder can be written, then send the print again.', True,
         'starting'),
     'delivery.printer_error_at_start': Code(
@@ -182,12 +179,12 @@ CODES = {
         'Ask someone at the printer to clear the error on its screen, then send the print '
         'again.', True, 'starting'),
     'delivery.download_failed': Code(
-        'The computer next to the printer could not fetch the sliced file.',
-        'Send the print again, and ask a mentor to check the printer computer\'s network '
+        'The daemon\'s computer could not fetch the sliced file.',
+        'Send the print again, and ask a mentor to check the daemon\'s computer\'s network '
         'if it fails twice.', True, 'downloading'),
     'delivery.download_corrupt': Code(
-        'The sliced file arrived damaged at the computer next to the printer.',
-        'Send the print again, and ask a mentor to check the printer computer\'s network '
+        'The sliced file arrived damaged at the daemon\'s computer.',
+        'Send the print again, and ask a mentor to check the daemon\'s computer\'s network '
         'if it fails twice.', True, 'downloading'),
     'delivery.upload_failed': Code(
         'The file could not be sent to the printer.',
@@ -207,8 +204,8 @@ CODES = {
         'Look at the printer: stop the other print if nobody meant to start it, then send '
         'this one again.', False, 'starting'),
     'delivery.job_failed': Code(
-        'The printer computer could not pass the print on to the printer.',
-        'Send the print again, and ask a mentor to check the printer computer if it fails '
+        'The daemon\'s computer could not pass the print on to the printer.',
+        'Send the print again, and ask a mentor to check the daemon\'s computer if it fails '
         'twice.', True),
     # -- a print that started -----------------------------------------------------------
     'delivery.print_failed': Code(
@@ -240,13 +237,14 @@ RULES = (
     ('delivery.sliced_file_missing', r'File not found or expired'),
     ('delivery.sliced_file_too_old', r'slice again'),
     ('delivery.daemon_never_reported',
-     r'The Pi has not reported since the service started; check the setup guide\.'),
+     r"The daemon's computer has not reported since the service started; "
+     r'check the setup guide\.'),
     ('delivery.no_printer_status', r'No printer reporting yet; try again in a moment\.'),
     ('delivery.daemon_silent', r'Printer offline, last seen (?P<minutes>\d+) min ago'),
     ('delivery.printer_busy',
      r'Printer busy, printing (?P<name>.*?)(?: at (?P<percent>\d+) percent)?'),
     ('delivery.printer_paused', r'Paused, (?P<name>.*)'),
-    ('delivery.printer_unreachable', r'Printer unreachable from the Pi'),
+    ('delivery.printer_unreachable', r"Printer unreachable from the daemon's computer"),
     ('delivery.printer_state_unrecognised', r'Printer state not recognised: (?P<value>.*)'),
     ('delivery.job_in_flight', r'A job is already on its way to the printer'),
     ('delivery.rate_limited', r'Too Many Requests: .*'),

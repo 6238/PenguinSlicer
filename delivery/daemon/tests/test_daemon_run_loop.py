@@ -449,7 +449,7 @@ class TestJobSlotAndAcknowledgement(RunLoopTestCase):
 
 class TestUntrustedJobFields(RunLoopTestCase):
     """The filename and the download path come from the relay, so neither may reach the
-    Pi's filesystem or a status line unexamined."""
+    daemon's filesystem or a status line unexamined."""
 
     def test_a_filename_with_a_path_cannot_escape_the_download_directory(self):
         self.printer.starts_running = True
@@ -1210,6 +1210,75 @@ class TestHowAStartIsDecided(RunLoopTestCase):
             hold = loop._rebuilt_hold('j8f3a2c1', SUFFIXED, age)
             self.assertEqual((hold.sent_at, hold.required, hold.sent_here),
                              (self.clock.now, rl.START_SETTLE_SECONDS, False))
+
+    def test_the_wait_for_a_start_keeps_a_hold_another_job_left(self):
+        """A job waiting for its own start never takes the place of a hold an earlier job
+        left: settling its own start leaves the other hold in place."""
+        loop = self.make_paired()
+        other = rl.StartHold('j00000001', 'other-j00000001.gcode.3mf', self.clock.now,
+                             sent_here=False, now=self.clock.now)
+        loop.hold = other
+        self.printer.set(running(SUFFIXED))
+        with self.assertRaises(rl._JobEnded):
+            loop._await_start('j8f3a2c1', SUFFIXED)
+        self.assertIs(loop.hold, other)
+        self.assertEqual(self.relay.acks, [('j8f3a2c1', True, None)])
+
+    def test_a_hold_counts_only_the_time_between_looks_close_together(self):
+        """Time since the last look counts while the looks come within
+        FRESH_REPORT_SECONDS of one another; a longer gap is time nobody watched (between
+        two delivery jobs), so it is not counted, whatever the next picture says."""
+        hold = rl.StartHold('j00000001', 'other-j00000001.gcode.3mf', 0.0, sent_here=True,
+                            before_state=pr.IDLE)
+        idle = dict(IDLE)
+        hold.watch(idle, 0.0, True)
+        hold.watch(idle, rl.FRESH_REPORT_SECONDS, True)
+        self.assertEqual(hold.counted, rl.FRESH_REPORT_SECONDS)
+        hold.watch(idle, rl.FRESH_REPORT_SECONDS + 200.0, True)
+        self.assertEqual(hold.counted, rl.FRESH_REPORT_SECONDS)
+        self.assertIsNone(hold.outcome)
+        hold.watch(idle, rl.FRESH_REPORT_SECONDS + 205.0, True)
+        self.assertEqual(hold.counted, rl.FRESH_REPORT_SECONDS + 5.0)
+        # The start wait's own ask of the relay (20 s here) is watched time ...
+        hold.watch(idle, rl.FRESH_REPORT_SECONDS + 227.0, True, asked_s=20.0)
+        self.assertEqual(hold.counted, rl.FRESH_REPORT_SECONDS + 27.0)
+        # ... but it excuses no more than itself.
+        hold.watch(idle, 2 * rl.FRESH_REPORT_SECONDS + 249.0, True, asked_s=20.0)
+        self.assertEqual(hold.counted, rl.FRESH_REPORT_SECONDS + 27.0)
+
+    def test_a_slow_hold_check_does_not_stop_the_holds_count(self):
+        """Delivery review 1, defect 3: every HOLD_CHECK_SECONDS the start wait asks the
+        relay whether it still holds the job, and that ask may take the client's whole
+        timeout (20 s, over FRESH_REPORT_SECONDS). The daemon's own wait was watching all
+        through it, so the time counts: a start the printer ignored on a fresh, idle
+        printer ends delivery.start_timeout after START_SETTLE_SECONDS of the hold's count,
+        not after about 17 minutes. Time nobody watched is still not counted
+        (test_a_hold_counts_only_the_time_between_looks_close_together)."""
+        original_gate = self.relay.start_gate
+        asks = {'n': 0}
+
+        def gate(job_id, instance):
+            asks['n'] += 1
+            if asks['n'] > 1:                     # the hold checks, after the gate itself
+                self.clock.advance(20.0)
+                raise RelayError('timed out')
+            return original_gate(job_id, instance)
+
+        self.relay.start_gate = gate
+        loop = self.make_paired()
+        started = []
+        original_start = self.printer.start
+
+        def start(name):
+            started.append(self.clock.now)
+            return original_start(name)
+
+        self.printer.start = start
+        self.deliver(loop)
+        self.assertEqual(self.relay.ack_codes, ['delivery.start_timeout'])
+        self.assertGreater(asks['n'], 2)
+        self.assertLessEqual(self.clock.now - started[0],
+                             rl.START_SETTLE_SECONDS + rl.HOLD_CHECK_SECONDS)
 
     def test_the_wait_is_made_again_before_a_second_ask_of_the_gate(self):
         """The gate does not answer; while the daemon waits to ask again the printer goes

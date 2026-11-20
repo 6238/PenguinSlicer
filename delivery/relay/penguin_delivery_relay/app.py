@@ -22,7 +22,7 @@ EXTENSION = 'penguin_delivery_relay'
 
 def create_app(*, secret_key, identify, find_sliced_file, clock=time.time, log=None,
                on_event=None, dev=False, dev_pairing_code=None, trusted_proxy_hops=1,
-               installer_path=None, spool_dir=None, stream_wait=None):
+               spool_dir=None, stream_wait=None):
     """Build the relay's application.
 
     secret_key        Signs the daemon's token. Must be the same across restarts: a new key
@@ -42,8 +42,6 @@ def create_app(*, secret_key, identify, find_sliced_file, clock=time.time, log=N
                       caller has used the relay. Ignored unless dev is set.
     trusted_proxy_hops  How many proxies in front of the relay to trust for the client's
                       address, scheme and host (werkzeug's ProxyFix). 0 trusts none.
-    installer_path    The daemon's install.sh, served at /install-printer.sh. None leaves the
-                      route out.
     spool_dir         Where the relay keeps its copy of a sliced file that arrived as a
                       stream. None makes a private temporary directory on first use. It
                       belongs to this one relay process: at start, every copy a previous
@@ -61,8 +59,7 @@ def create_app(*, secret_key, identify, find_sliced_file, clock=time.time, log=N
                        limiter=RateLimiter(clock), secret_key=secret_key,
                        identify=identify, find_sliced_file=find_sliced_file, clock=clock,
                        log=log, on_event=on_event, dev=bool(dev),
-                       dev_pairing_code=dev_pairing_code, installer_path=installer_path,
-                       stream_wait=stream_wait)
+                       dev_pairing_code=dev_pairing_code, stream_wait=stream_wait)
     app.extensions[EXTENSION] = ctx
     register_routes(app, ctx)
     if trusted_proxy_hops:

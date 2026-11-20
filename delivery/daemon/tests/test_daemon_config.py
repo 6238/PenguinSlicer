@@ -1,7 +1,6 @@
-"""The Pi's config file: /etc/penguincam-printer/config.toml.
+"""The daemon's config file, `config.toml` in its home.
 
-`pair` writes the whole file as root; `run` rewrites the whole file as the penguincam user
-to change only the token. The file carries no comments, so a full rewrite loses nothing.
+`pair` writes the whole file; `run` rewrites the whole file to change only the token. The file carries no comments, so a full rewrite loses nothing.
 
 Ported from the original daemon's test_config.py. Changed: each test's temporary directory
 is now removed after it (the original left one behind per test)."""
@@ -179,7 +178,7 @@ class TestWaitForConfig(ConfigTempFile):
         self.assertEqual(got.pairing_code, '7K3MQ9XW')
 
     def test_waits_and_logs_once_a_minute_instead_of_exiting(self):
-        """`run` starting before `pair` must not die into a systemd restart loop."""
+        """`run` started before `pair` waits rather than dying."""
         ticks = {'n': 0}
         logged = []
 

@@ -49,6 +49,7 @@ markers = [
     "real_time: runs the together run on real threads and real (sped-up) time; not in the fast suite",
     "upstream: pins a behaviour of the installed printer library the daemon relies on (make test-upstream)",
     "simulator: drives the daemon against the simulated printer over loopback sockets (make test-sim)",
+    "properties: random sequences of faults, a few seconds each (make test-properties); the fast suite runs one written-out sequence for each fault they are known to catch",
 ]
 
 [tool.coverage.run]
