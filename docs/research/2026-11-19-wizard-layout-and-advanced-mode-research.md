@@ -4,18 +4,20 @@ Research for the next round of changes to the
 [print wizard mockup](../mockups/print-wizard/index.html), answering the four questions of
 [the brief](../orchestration/penguin-slicer/briefs/wizard-research.md) as the owner widened
 them on Thu 11-19. Terms follow the mockup's [decisions file](../mockups/print-wizard/DECISIONS.md)
-(part, copy, plate, Layout step, Preview step, advanced mode, layer preview), plus these:
+(part, instance, plate, Layout step, Preview step, advanced mode, layer preview), plus these.
+An **instance** is one placement of a part on the plate; a part printed once has one
+instance.
 
 | Term | Meaning |
 |---|---|
-| **resting position** | One way a copy can lie on the plate: one face of the part's 3D convex hull down, stable (its centre of mass above that face). |
-| **auto-orient** | Choosing a copy's resting position by a score, with no student input. |
-| **Arrange** | Placing every copy on the plate automatically (the mockup's existing button). |
+| **resting position** | One way an instance can lie on the plate: one face of the part's 3D convex hull down, stable (its centre of mass above that face). |
+| **auto-orient** | Choosing an instance's resting position by a score, with no student input. |
+| **Arrange** | Placing every instance on the plate automatically (the mockup's existing button). |
 | **rotation handle** | The mockup's existing round handle that turns the selection about the vertical axis. |
 | **resting-position strip** | A row of small pictures under the 3D view, one per resting position of the selected part. |
-| **face markers** | Dots drawn on the selected copy's candidate faces; one click lays it on that face. |
-| **tip handle** | A second handle beside the rotation handle that steps the copy to its next resting position. |
-| **box tumbler** | A box drawn around the selected copy whose sides are clicked to put that side down. |
+| **face markers** | Dots drawn on the selected instance's candidate faces; one click lays it on that face. |
+| **tip handle** | A second handle beside the rotation handle that steps the instance to its next resting position. |
+| **box tumbler** | A box drawn around the selected instance whose sides are clicked to put that side down. |
 | **Scheme O, Scheme S, Scheme T** | The three complete interaction schemes in section D: Onshape's mouse, slicer's mouse, top-down first. |
 
 ## Short answer
@@ -29,12 +31,12 @@ them on Thu 11-19. Terms follow the mockup's [decisions file](../mockups/print-w
   candidates from the faces of the part's 3D convex hull, score by bed contact, overhang
   area and height, keep stable ones. About 110 ms for 100,000 triangles in node; it lays the
   hood rib flat (8 mm tall instead of 353 mm). Do it when a part arrives.
-- **C.** Arrange after auto-orient, on convex hulls, with each copy tried at its
+- **C.** Arrange after auto-orient, on convex hulls, with each instance tried at its
   smallest-rectangle angle and at +90, +180 and +270 degrees, in a pile around the plate's
-  middle; run it beside the mockup's current packer and keep whichever parks fewer copies.
+  middle; run it beside the mockup's current packer and keep whichever parks fewer instances.
   No library is needed. It fails where the convex hull wastes space (curved parts).
-- **D.** Recommend Scheme O: left button on a copy moves it, right drag orbits as in Onshape,
-  wheel or pinch zooms, middle drag or Shift drag pans; lay a copy down from the
+- **D.** Recommend Scheme O: left button on an instance moves it, right drag orbits as in Onshape,
+  wheel or pinch zooms, middle drag or Shift drag pans; lay an instance down from the
   resting-position strip (double-click on a face stays as a shortcut). No tool modes remain.
   Take Orca's per-line-type time in the Preview legend, with click-to-hide; leave the rest.
 
@@ -175,7 +177,7 @@ AGPL code into MIT PenguinCAM; write our own small score instead.
   10,744 mm², no overhang, 8 mm tall. As modelled: contact on an edge (1 mm²), 240 mm² of
   overhang, 353 mm tall, cost 226 against 0.08.
 - **Where to run it:** once per part when it arrives on the Layout step, in a Web Worker if
-  parts are large; the result is the part's default resting position for every copy.
+  parts are large; the result is the part's default resting position for every instance.
 
 ### Where the simple score goes wrong
 
@@ -191,7 +193,7 @@ AGPL code into MIT PenguinCAM; write our own small score instead.
   standoff) would be weakened by the default; only the student knows. This is why the
   student must be able to pick another resting position easily (section D).
 - **Appearance faces:** Orca weights overhang on outer faces; we have no such marking.
-- **Lying flat can make a copy too wide for the plate:** the rib's chord is 353 mm and the
+- **Lying flat can make an instance too wide for the plate:** the rib's chord is 353 mm and the
   plate is 340 x 320 mm, so the flat rib fits only turned diagonally. Arrange must try
   turns (section C).
 
@@ -222,7 +224,7 @@ first-fit selection (`Arrange.cpp:8-9`, `366-367`).
 
 | Option | Licence | Fit for this |
 |---|---|---|
-| SVGnest (`Jack000/SVGnest`) | MIT | Browser NFP nesting with a genetic search that runs until stopped; built to minimise sheet length, not a centred pile. Too much for 25 copies. |
+| SVGnest (`Jack000/SVGnest`) | MIT | Browser NFP nesting with a genetic search that runs until stopped; built to minimise sheet length, not a centred pile. Too much for 25 instances. |
 | Deepnest (`Jack000/Deepnest`, `deepnest-next/deepnest`) | none stated / not asserted | A desktop (Electron) relative of SVGnest. Licence unclear; do not use. |
 | potpack (`mapbox/potpack`) | ISC | Rectangles into a near-square, no bin limit, no rotations. Wastes the corners of L shapes and triangles. |
 | maxrects-packer (`soimy/maxrects-packer`) | MIT | Rectangles into fixed bins with 90-degree turns. Bounding rectangles only. |
@@ -231,7 +233,7 @@ first-fit selection (`Arrange.cpp:8-9`, `366-367`).
 ### Experiment
 
 `arrange_bench.js` (scratchpad, not committed) ran the mockup's `MockPlate.arrange` and a
-"pile" arrange on the mockup's own parts in node: largest first; each copy at its
+"pile" arrange on the mockup's own parts in node: largest first; each instance at its
 smallest-rectangle angle and +90, +180, +270 degrees (45-degree turns only if none fits);
 every free spot on a 5 mm grid scored by the pile's bounding box (√(w·l) + 0.3·longest side)
 plus a pull toward the plate's middle, then refined at 1 mm; the pile centred at the end.
@@ -250,10 +252,10 @@ plate with triangles.
 
 ### Recommendation
 
-Arrange as: auto-orient every copy first (section B), then run the pile arrange and the
-mockup's current packer, and keep the result that parks fewer copies, the smaller pile
+Arrange as: auto-orient every instance first (section B), then run the pile arrange and the
+mockup's current packer, and keep the result that parks fewer instances, the smaller pile
 breaking a tie. It costs about one more function of 80 lines in `plate.js`, no library, under
-2 s for 25 copies, and it belongs in a Web Worker in the product. Keep the convex-hull rule
+2 s for 25 instances, and it belongs in a Web Worker in the product. Keep the convex-hull rule
 (decision 44) as Orca does.
 
 **When it fails:** curved and L-shaped parts, because their hulls include the hollow side:
@@ -268,10 +270,10 @@ gussets), which is why both run.
 
 | Operation | Orca | Kind |
 |---|---|---|
-| Select a copy | Left click; Esc deselects all (`KBShortcutsDialog.cpp:239`) | action |
+| Select an instance | Left click; Esc deselects all (`KBShortcutsDialog.cpp:239`) | action |
 | Add to or remove from selection | Ctrl + left click; Shift + left drag draws a selection rectangle (`KBShortcutsDialog.cpp:232-233`) | action |
-| Move a copy | Left drag on the object moves it with no tool on (`GLCanvas3D.cpp:4439-4452`); arrows 10 mm, Shift+arrows 1 mm; Move tool (M) for exact values | drag, plus a tool |
-| Turn a copy | Rotate tool (R): rings on the selection | tool that stays on |
+| Move an instance | Left drag on the object moves it with no tool on (`GLCanvas3D.cpp:4439-4452`); arrows 10 mm, Shift+arrows 1 mm; Move tool (M) for exact values | drag, plus a tool |
+| Turn an instance | Rotate tool (R): rings on the selection | tool that stays on |
 | Lay on face | "Lay on face" tool (F, `GLGizmoFlatten.cpp:72`): marks the hull's faces of at least 5 mm², up to 254 (`GLGizmoFlatten.cpp:152-340`); a click on one lays the object down (`GLGizmoFlatten.cpp:22-35`) | tool that stays on |
 | Auto-orient | Q / Shift+Q, toolbar button with an options popup | action |
 | Arrange | A / Shift+A, toolbar button with an options popup | action |
@@ -323,7 +325,7 @@ the time, or hides supports to see the part). **Not worth it:** the two-thumb ra
 thumb is enough), the horizontal slider, the other colour schemes, the G-code window, and
 slider ticks (pauses for inserts would need G-code editing the panel does not offer).
 
-### Ways to lay a copy on a face without a mode
+### Ways to lay an instance on a face without a mode
 
 All five use the same candidate set as section B (stable hull faces of at least 25 mm²),
 so curved surfaces and many small faces are already reduced to a short list; each list is
@@ -332,10 +334,10 @@ sorted by the auto-orient score and capped at 6.
 | Option | How it works (mouse / touch) | At 320 px | Many small faces, curves | With moving and orbiting | Build cost |
 |---|---|---|---|---|---|
 | **1. Tip handle** | A second small handle beside the rotation handle; a click steps to the next resting position, Shift-click the previous. Touch: tap. | One more 24 px target; fine. | Blind: the student cannot see the next position before it happens; 6 steps to cycle. | Its own hit target, as the rotation handle; no conflict. | Low |
-| **2. Box tumbler** | A box around the selected copy; a click on a side puts that side down; dragging a corner rolls it 90 degrees. Touch: tap a side. Read by eye: the side under the pointer is shaded and its outline dropped onto the plate, no axis letters. | Box lines cross neighbours and the part; cluttered for small copies. | Only six axis-aligned positions: misses slanted faces (a gusset's long edge), works for the rib. This is the old "Lay flat in six orientations". | A click inside the box but on the part is ambiguous: move or tumble. Needs a drag threshold and box sides only at the edges. | Medium |
-| **3. Face markers** | On the selected copy only, a dot on each candidate face's centre; hover shows the face; one click lays the copy there. Touch: tap a dot (28 px hit area). | Dots crowd on a copy 40 px across; faces on the far side need an orbit first. | Six dots at most; curved parts get few or none, which is honest. | Dots are their own targets; a drag starting on a dot still moves the copy after 4 px. | Low to medium (the mockup already finds faces and draws patches) |
-| **4. Resting-position strip** | Under the view, while one part's copies are selected: up to 6 pictures of the part in each resting position, the auto-orient choice first and marked "Best", the current one outlined, a line under each ("8 mm tall", "needs supports"). Click or tap applies to every selected copy of that part. | Five 52 px pictures fit one row; legible whatever the zoom. | Same short list; each picture shows the whole part, so no aiming at faces. | Outside the 3D view: no conflict at all. | Medium (an off-screen three.js render per position, cached per part) |
-| **5. Free rotation ball** | Drag a ring or ball on the selected copy to turn it freely; on release it snaps to the nearest resting position. Touch: one-finger drag on the ring. | Too small to control well; a 3D drag in a 320 px view is fiddly. | Snap handles curves, but the student steers blind between positions. | Competes with orbiting; needs exact hit testing on the ring. | High |
+| **2. Box tumbler** | A box around the selected instance; a click on a side puts that side down; dragging a corner rolls it 90 degrees. Touch: tap a side. Read by eye: the side under the pointer is shaded and its outline dropped onto the plate, no axis letters. | Box lines cross neighbours and the part; cluttered for small instances. | Only six axis-aligned positions: misses slanted faces (a gusset's long edge), works for the rib. This is the old "Lay flat in six orientations". | A click inside the box but on the part is ambiguous: move or tumble. Needs a drag threshold and box sides only at the edges. | Medium |
+| **3. Face markers** | On the selected instance only, a dot on each candidate face's centre; hover shows the face; one click lays the instance there. Touch: tap a dot (28 px hit area). | Dots crowd on an instance 40 px across; faces on the far side need an orbit first. | Six dots at most; curved parts get few or none, which is honest. | Dots are their own targets; a drag starting on a dot still moves the instance after 4 px. | Low to medium (the mockup already finds faces and draws patches) |
+| **4. Resting-position strip** | Under the view, while one part's instances are selected: up to 6 pictures of the part in each resting position, the auto-orient choice first and marked "Best", the current one outlined, a line under each ("8 mm tall", "needs supports"). Click or tap applies to every selected instance of that part. | Five 52 px pictures fit one row; legible whatever the zoom. | Same short list; each picture shows the whole part, so no aiming at faces. | Outside the 3D view: no conflict at all. | Medium (an off-screen three.js render per position, cached per part) |
+| **5. Free rotation ball** | Drag a ring or ball on the selected instance to turn it freely; on release it snaps to the nearest resting position. Touch: one-finger drag on the ring. | Too small to control well; a 3D drag in a 320 px view is fiddly. | Snap handles curves, but the student steers blind between positions. | Competes with orbiting; needs exact hit testing on the ring. | High |
 
 Also seen: a right-click (long-press) menu on a face, "Lay on this face" (no mode, but
 hidden, and long-press fights the drag); the current double-click on a flat face (no mode,
@@ -346,12 +348,12 @@ a shortcut and the Lay on face tool removed. It needs no aiming in a small view,
 same with a mouse, a trackpad and a finger, shows the auto-orient result and its
 alternatives as one thing, carries the "needs supports" warning, and cannot collide with
 moving or orbiting. **If the owner wants it on the part itself, option 3** is the next best:
-it keeps the action where the student looks, at the cost of crowding on small copies.
+it keeps the action where the student looks, at the cost of crowding on small instances.
 Option 1 is the cheapest fallback.
 
 ### Three complete schemes
 
-Every scheme has: no tool modes; the rotation handle on the selected copy (it stays, as in
+Every scheme has: no tool modes; the rotation handle on the selected instance (it stays, as in
 the CNC wizard); the strip for resting positions; Duplicate and Delete beside the selection's
 name (decision 39); Arrange and Auto-orient as buttons; the red bar and sentences for broken
 rules (decision 42). The schemes differ in how buttons and gestures are shared.
@@ -360,21 +362,21 @@ rules (decision 42). The schemes differ in how buttons and gestures are shared.
 
 | Operation | Mouse | Trackpad | Touch | Competing gestures and how it settles |
 |---|---|---|---|---|
-| Select one copy | Left click on it | Click | Tap | — |
+| Select one instance | Left click on it | Click | Tap | — |
 | Add or remove from selection | Shift- or Ctrl-click | Shift-click | Long-press adds | Both keys accepted: Shift is the CNC wizard's, Ctrl is Orca's. |
 | Select nothing | Click empty plate; Esc | Click empty | Tap empty | A click is a press and release under 4 px of travel. |
 | Several at once | Move, turn, lay down and Delete act on the whole selection | same | same | — |
-| Move a copy | Left drag that starts on a copy | Drag on a copy | One-finger drag on a copy | Starts on a copy (its outline, decision 34) = move. |
-| Turn about vertical | Drag the rotation handle | same | same | Handle wins over the copy under it. |
+| Move an instance | Left drag that starts on an instance | Drag on an instance | One-finger drag on an instance | Starts on an instance (its outline, decision 34) = move. |
+| Turn about vertical | Drag the rotation handle | same | same | Handle wins over the instance under it. |
 | Lay on a face | Strip under the view; double-click a flat face | same | Tap in the strip | Double-click needs no press-hold, so it does not fight a drag. |
 | Orbit | Right drag anywhere; left drag on empty plate | Drag on empty plate | One-finger drag on empty | Right drag is Onshape's; left drag on empty is for trackpads and touch. |
 | Pan | Middle drag, Ctrl + right drag, or Shift + left drag on empty | Shift + drag on empty | Two-finger drag | Ctrl + right is Onshape's. |
 | Zoom | Wheel, toward the pointer | Two-finger scroll or pinch | Pinch | The wheel over the view does not scroll the panel; the student scrolls the panel beside the view. |
-| Fit view | "Zoom to copies" and "Whole plate" buttons; F | same | Buttons | F is Onshape's zoom to fit. |
+| Fit view | "Zoom to instances" and "Whole plate" buttons; F | same | Buttons | F is Onshape's zoom to fit. |
 | Top-down view | A "Top" button beside the fit buttons; Ctrl+1 as in Orca | same | Button | — |
-| Duplicate, delete | Buttons by the name; Del; Ctrl+D duplicates | same | Buttons | Orca's Ctrl+D deletes all; not copied. |
+| Duplicate, delete | Buttons by the name; Del; Ctrl+D duplicates | same | Buttons | Orca's Ctrl+D deletes all; not imitated. |
 | Arrange | Button | same | same | Auto-orients first (section C). |
-| Auto-orient | "Best" in the strip; a button for all copies | same | same | — |
+| Auto-orient | "Best" in the strip; a button for all instances | same | same | — |
 | Undo, redo | Ctrl/Cmd+Z, Ctrl+Y or Shift+Cmd+Z; ↶ ↷ buttons | same | Buttons | New; Orca has it, the mockup does not. |
 | Why is it red | Red bar at the top of the view, sentences below with Arrange or a resting position as the fix | same | same | Unchanged (decision 42). |
 
@@ -385,14 +387,14 @@ orbits, so a student's hand does the wrong thing half the time.
 
 **Scheme T (top-down first).** The view opens looking straight down, orthographic, like the
 CNC wizard: left drag on empty pans, wheel or pinch zooms, and a "3D" button (or right
-drag) tilts the camera; how a copy lies is chosen in the strip, so orbiting is rarely
-needed. Moving and turning copies are exact in plan view and every copy is large. It loses
+drag) tilts the camera; how an instance lies is chosen in the strip, so orbiting is rarely
+needed. Moving and turning instances are exact in plan view and every instance is large. It loses
 the sense of height and of which way a part stands that the 3D view gives at a glance, and
 the "3D" button is close to a view mode.
 
 | Operation | Scheme S | Scheme T |
 |---|---|---|
-| Move | Left drag on a copy | Left drag on a copy |
+| Move | Left drag on an instance | Left drag on an instance |
 | Turn | Rotation handle | Rotation handle |
 | Lay on a face | Strip; double-click a face | Strip only |
 | Orbit | Left drag on empty | Right drag, or the 3D button then left drag on empty |
@@ -400,7 +402,7 @@ the "3D" button is close to a view mode.
 | Zoom | Wheel, pinch | Wheel, pinch |
 | Select, add, deselect, fit, undo, arrange, duplicate, delete | As Scheme O | As Scheme O |
 
-**What a student must be told (Scheme O):** one line under the view, "Drag a copy to move
+**What a student must be told (Scheme O):** one line under the view, "Drag an instance to move
 it, drag the round handle to turn it, pick how it lies below. Right-drag to look around."
 **What they discover unaided:** selecting, dragging, the wheel, the strip (it is visible),
 the handle (it appears on selection), and orbiting and panning, which match Onshape.
@@ -413,9 +415,9 @@ pan.
 2. Add the resting-position strip under the 3D view for the selected part, best first, current outlined, with the height and "needs supports" under each picture.
 3. Remove the Lay on face tool and its mode; keep double-click on a flat face.
 4. Switch the pointer map to Scheme O: right drag orbits, middle or Ctrl + right or Shift + left drag on empty pans, left drag on empty also orbits.
-5. Make Arrange auto-orient first, try each copy at its smallest-rectangle angle and at +90, +180, +270 degrees in a pile around the plate's middle, run beside the current packer, and keep the result that parks fewer copies.
+5. Make Arrange auto-orient first, try each instance at its smallest-rectangle angle and at +90, +180, +270 degrees in a pile around the plate's middle, run beside the current packer, and keep the result that parks fewer instances.
 6. Add undo and redo (buttons and keys) for every Layout step change.
-7. Add a "Top" view button beside "Zoom to copies" and "Whole plate", and F for zoom to fit.
+7. Add a "Top" view button beside "Zoom to instances" and "Whole plate", and F for zoom to fit.
 8. Give advanced mode a "Common / All settings" switch, collapsible subgroup headings, and an undo arrow on each changed setting.
 9. Add a drag handle on the mock panel's left edge, with a mockup note that the real limits are unknown, and lay advanced mode out with a left tab rail above about 480 px, by `ResizeObserver`.
 10. In the Preview step's legend, show each line type's time and percent and hide a line type when its row is clicked.
