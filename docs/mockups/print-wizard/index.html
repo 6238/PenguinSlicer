@@ -1,12 +1,12 @@
 <!doctype html>
-<!-- Penguin Slicer: a click-through requirements mockup of the 3D printing wizard.
+<!-- PenguinSlicer: a click-through requirements mockup of the 3D printing wizard.
      Everything is faked in this page: no server, no slicing, no Onshape, no printer.
      The yellow scenario strip at the top is a mockup control, not part of the product. -->
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Penguin Slicer mockup</title>
+  <title>PenguinSlicer mockup</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="css/frame.css">
   <link rel="stylesheet" href="css/panel.css">
@@ -37,9 +37,9 @@
           <option value="not_watertight">2. Part is not watertight (warning)</option>
         </optgroup>
         <optgroup label="Layout step">
-          <option value="too_close">3a. Copies too close</option>
-          <option value="off_plate">3b. Copy off the plate</option>
-          <option value="too_tall">3c. Copy too tall</option>
+          <option value="too_close">3a. Instances too close</option>
+          <option value="off_plate">3b. Instance off the plate</option>
+          <option value="too_tall">3c. Instance too tall</option>
         </optgroup>
         <optgroup label="Preview step: slicing">
           <option value="empty_layers">4. Empty layers (fails while Supports is off)</option>
@@ -90,7 +90,7 @@
     </label>
     <p class="sc-how" id="sc-how"><strong>How to use this mockup.</strong> The dark panel on the right is the wizard; go through it with Next.
       On its Parts step, click parts in the list or the picture on the left, as you would in Onshape. Nothing is real: no slicing, no Onshape, no printer.
-      <strong>To compare this round:</strong> on the Layout step, select a copy, then switch <em>Lay on face</em>, <em>Mouse</em> and <em>Parts arrive</em> in this yellow strip; each works at once on the plate in front of you.
+      <strong>To compare this round:</strong> on the Layout step, select an instance, then switch <em>Lay on face</em>, <em>Mouse</em> and <em>Parts arrive</em> in this yellow strip; each works at once on the plate in front of you.
       Open Advanced mode from the Setup step at each <em>Panel width</em>, or drag the panel's left edge (the real panel can probably be dragged wider in Onshape; that is not confirmed).
       The strip also makes an error happen (choose one, press Arm, carry on) and switches to an Assembly or the standalone page. It is not part of the product.
       <button type="button" id="sc-how-hide">Hide</button></p>
@@ -121,10 +121,10 @@
       </section>
       <aside id="os-right" aria-label="Right panel">
         <div id="os-right-grip" title="Drag to make the panel wider or narrower (mockup: Onshape's real limits are not known)"></div>
-        <div id="os-right-head">Penguin Slicer</div>
+        <div id="os-right-head">PenguinSlicer</div>
         <div id="panel-slot"></div>
       </aside>
-      <nav id="os-strip" aria-label="Applications"><span class="app" title="Penguin Slicer">P</span></nav>
+      <nav id="os-strip" aria-label="Applications"><span class="app" title="PenguinSlicer">P</span></nav>
     </div>
     <footer id="os-tabs"><span class="tab" id="os-tab">Part Studio 1</span></footer>
   </div>
@@ -135,10 +135,10 @@
     <div id="sa-page"><div id="sa-slot"></div></div>
   </div>
 
-  <!-- ===================== the panel: Penguin Slicer ===================== -->
+  <!-- ===================== the panel: PenguinSlicer ===================== -->
   <div id="wizard">
     <header id="wiz-header">
-      <div class="brand">Penguin Slicer</div>
+      <div class="brand">PenguinSlicer</div>
       <div class="config-info" id="config-info"></div>
       <ol id="stepbar" aria-label="Steps">
         <li data-step="setup" data-num="1" class="active" role="button" tabindex="0">Setup</li>
@@ -202,8 +202,8 @@
       <section class="step" data-step="layout" hidden>
         <h2>Layout</h2>
         <div id="layout-toolbar">
-          <button type="button" class="btn small" id="btn-arrange" title="Place every copy on the plate automatically">Arrange</button>
-          <button type="button" class="btn small" id="btn-orient" title="Lay the selected copies, or every copy when none is selected, the best way">Auto-orient</button>
+          <button type="button" class="btn small" id="btn-arrange" title="Place every instance on the plate automatically">Arrange</button>
+          <button type="button" class="btn small" id="btn-orient" title="Lay the selected instances, or every instance when none is selected, the best way">Auto-orient</button>
           <span class="spacer"></span>
           <button type="button" class="btn small icon" id="btn-undo" title="Undo (Ctrl+Z)" aria-label="Undo" disabled>&#8630;</button>
           <button type="button" class="btn small icon" id="btn-redo" title="Redo (Ctrl+Y)" aria-label="Redo" disabled>&#8631;</button>
@@ -211,7 +211,7 @@
         <button type="button" id="layout-alert" class="layout-alert ok" disabled></button>
         <div id="layout-view" class="gl-view">
           <div class="view-btns" aria-label="View">
-            <button type="button" id="btn-view" title="Zoom to the copies (F)">Zoom to copies</button>
+            <button type="button" id="btn-view" title="Zoom to the instances (F)">Zoom to instances</button>
             <button type="button" id="btn-view-plate" title="Show the whole plate">Whole plate</button>
             <button type="button" id="btn-top" title="Look straight down (Ctrl+1)">Top</button>
             <button type="button" id="btn-tilt" title="Tilt the view, or look straight down again" hidden>3D</button>

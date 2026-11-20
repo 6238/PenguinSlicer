@@ -1,4 +1,4 @@
-/* Penguin Slicer mockup: the stand-in Onshape tab (Parts list, graphics area) and the
+/* PenguinSlicer mockup: the stand-in Onshape tab (Parts list, graphics area) and the
  * scenario strip. Clicking a part here is what a click in Onshape would send the panel. */
 (function () {
   'use strict';
@@ -142,8 +142,8 @@
     else selected = [key];
     renderList(); gfx.paint();
     var took = window.Wizard.onOnshapeSelect(key);
-    $('#os-hint').textContent = took ? 'Selected ' + P.byKey[key].name + '; Penguin Slicer received it.'
-                                     : 'Selected ' + P.byKey[key].name + '. Penguin Slicer adds parts only on its Parts step.';
+    $('#os-hint').textContent = took ? 'Selected ' + P.byKey[key].name + '; PenguinSlicer received it.'
+                                     : 'Selected ' + P.byKey[key].name + '. PenguinSlicer adds parts only on its Parts step.';
   }
 
   /* ------------------------------------------------------------ scenario strip */

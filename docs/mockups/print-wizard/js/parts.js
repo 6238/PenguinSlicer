@@ -1,6 +1,6 @@
-/* Penguin Slicer mockup: the mock document's parts, generated as three.js geometry in
+/* PenguinSlicer mockup: the mock document's parts, generated as three.js geometry in
  * millimetres (Z up, as Onshape exports). No STL files. Each part is built once, centred on
- * its bounding box, and analysed for flat faces (to lay a copy on), volume, size and the
+ * its bounding box, and analysed for flat faces (to lay an instance on), volume, size and the
  * resting positions it can be given automatically (auto-orient). */
 (function () {
   'use strict';
@@ -145,7 +145,7 @@
   }
 
   /* ------------------------------------------------------------ analysis */
-  // Group triangles into planar faces; a face is "flat" (a copy can be laid on it) when it is on the
+  // Group triangles into planar faces; a face is "flat" (an instance can be laid on it) when it is on the
   // part's convex hull (nothing sticks out past it) and has a usable area.
   function analyse(g) {
     var p = g.attributes.position.array, nTri = p.length / 9;
@@ -298,7 +298,7 @@
     def.rest = { list: list, modelled: modelled, modelledListed: list.some(function (r) { return r.modelled || r.modelledTwin; }), ms: performance.now() - t0 };
     return def.rest;
   }
-  // Which resting position a copy is in now (index in the list, a twin counting as its
+  // Which resting position an instance is in now (index in the list, a twin counting as its
   // position), -1 for none of them.
   function restIndex(key, q) {
     var local = DOWN.clone().applyQuaternion(q.clone().invert()), list = resting(key).list;

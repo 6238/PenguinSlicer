@@ -171,7 +171,7 @@
 .rs-item .rs-line.bad { color: #ff9b95; }
 .rs-item .rs-best { position: absolute; top: 2px; left: 2px; font-size: 9px; font-weight: 700; padding: 0 3px; border-radius: 3px; background: var(--ok); color: #06210f; }
 /* The plate's state in one line just above the picture, always there and always one line
-   tall, so it never covers a copy or a handle and the picture never jumps under a drag. */
+   tall, so it never covers an instance or a handle and the picture never jumps under a drag. */
 .layout-alert { display: flex; gap: 6px; width: 100%; height: 24px; margin: 0 0 4px; font: inherit; font-size: 11.5px; line-height: 16px; text-align: left;
                 background: rgba(61, 20, 19, 0.93); border: 1px solid #a5413d; border-radius: 6px; padding: 3px 8px; color: #ffd1cd; cursor: pointer; }
 .layout-alert .first { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

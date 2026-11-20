@@ -90,7 +90,11 @@ Delete this file once the changes are made.
   ruling R3 loses its command-line half; S4 is no longer about a supported way in; S8
   (one process per service) matters more once several instances are planned.
 
-## Still to do when the rewrite starts
+## Scope the owner gave before leaving (Fri 2026-11-20)
 
-- The workspace `CLAUDE.md` and the memory note say the repository is local only.
-- The local folder is `penguin-slicer`; the repository is `PenguinSlicer`.
+Go ahead: record the decisions, update the relevant documents, the plan and the session
+summary, and make the code fixes discussed. The owner has reviewed only the terms,
+section 2.1, section 3 and section 4.1; the rest of section 4 and the mockup are still to
+review, and no other change may start until that review is finished.
+
+The owner writes the name as **PenguinSlicer**, one word.

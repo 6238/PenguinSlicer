@@ -1,4 +1,4 @@
-/* Penguin Slicer mockup: the wizard in the panel. Four steps in the CNC wizard's order
+/* PenguinSlicer mockup: the wizard in the panel. Four steps in the CNC wizard's order
  * (Setup, Parts, Layout, Preview), advanced mode, mocked export, slicing progress, layer
  * preview and print progress, and every armed error from the scenario strip.
  * Everything here is fake: no request leaves the page. */
@@ -7,11 +7,11 @@
   var T = THREE, P = MockParts, ST = MockSettings, PL = MockPlate;
   var PLATE = ST.PRINTER.plate;
   var ORDER = ['setup', 'parts', 'layout', 'preview'];
-  var MAX_COPIES = 25;                                    // print/limits.py MAX_COPIES
+  var MAX_INSTANCES = 100;                                   // print/limits.py MAX_INSTANCES
   var PLATE_VOLUME_CAP_CM3 = 600;                         // invented: a volume cap from the memory model
   var SLICE_TIMEOUT_S = 240;                              // print/limits.py PLATE_SLICE_TIMEOUT_S
-  var TOO_MANY_COPIES_MESSAGE = 'Up to ' + MAX_COPIES + ' copies per plate; print the rest in a second job.';
-  var ONE_PLATE_MESSAGE = 'Not every copy fits on one plate; lower the quantities and print the rest in a second job.';
+  var TOO_MANY_INSTANCES_MESSAGE = 'Up to ' + MAX_INSTANCES + ' instances per plate; print the rest in a second job.';
+  var ONE_PLATE_MESSAGE = 'Not every instance fits on one plate; lower the quantities and print the rest in a second job.';
   var PAGE_ID = 'K7Q2-9XMD';
 
   function $(s) { return document.querySelector(s); }
@@ -37,13 +37,13 @@
   /* ------------------------------------------------------------------ state */
   var S;
   function fresh(ctx) {
-    return { ctx: ctx, step: 'setup', filament: 'petg', profile: 'structural', changes: {}, parts: [], copies: [],
+    return { ctx: ctx, step: 'setup', filament: 'petg', profile: 'structural', changes: {}, parts: [], instances: [],
              selected: [], nextId: 1, laidOut: false, problems: [], job: null, result: null, resultSig: null,
              print: null, action: 'print', layer: 0, advTab: 'Quality', advSearch: '', advOnlyChanged: false, advTier: 'common', advOpen: {},
              followPrint: true, layoutNotes: [], previewMsg: null, undo: [], redo: [], hiddenTypes: {} };
   }
   // The choices made in the scenario strip; they outlast Reset, since they are the owner's,
-  // not the student's: how a copy is laid on a face, the mouse scheme, how parts arrive.
+  // not the student's: how an instance is laid on a face, the mouse scheme, how parts arrive.
   var Opt = { lay: 'strip', scheme: 'O', arrival: 'auto' };
   function profileObj() { return ST.PROFILES.filter(function (p) { return p.id === S.profile; })[0]; }
   function filamentObj() { return ST.FILAMENTS.filter(function (f) { return f.id === S.filament; })[0]; }
@@ -59,13 +59,13 @@
   }
   function changeCount() { return Object.keys(S.changes).length; }
   function partById(id) { return S.parts.filter(function (p) { return p.id === id; })[0]; }
-  function copyById(id) { return S.copies.filter(function (c) { return c.id === id; })[0]; }
-  function copyLabel(c) {
+  function instanceById(id) { return S.instances.filter(function (c) { return c.id === id; })[0]; }
+  function instanceLabel(c) {
     var n = 0, name = partById(c.partId) ? partById(c.partId).name : P.byKey[c.partKey].name;
-    for (var i = 0; i < S.copies.length; i++) { if (S.copies[i].partId === c.partId) n++; if (S.copies[i] === c) break; }
+    for (var i = 0; i < S.instances.length; i++) { if (S.instances[i].partId === c.partId) n++; if (S.instances[i] === c) break; }
     return name + ' #' + n;
   }
-  function totalCopies() { return S.parts.reduce(function (a, p) { return a + (p.status === 'ready' ? p.qty : 0); }, 0); }
+  function totalInstances() { return S.parts.reduce(function (a, p) { return a + (p.status === 'ready' ? p.qty : 0); }, 0); }
   function docName() { return S.ctx === 'standalone' ? 'Upload' : P.PART_STUDIO.name; }
   function fileName() { return docName().replace(/\s+/g, '_') + '_plate_1.gcode.3mf'; }
 
@@ -160,9 +160,9 @@
     if (step === 'parts') {
       var ready = S.parts.filter(function (p) { return p.status === 'ready'; }).length;
       var busy = S.parts.some(function (p) { return p.status !== 'ready'; });
-      return ready > 0 && !busy && totalCopies() <= MAX_COPIES;
+      return ready > 0 && !busy && totalInstances() <= MAX_INSTANCES;
     }
-    if (step === 'layout') return S.copies.length > 0 && S.problems.length === 0;
+    if (step === 'layout') return S.instances.length > 0 && S.problems.length === 0;
     return true;
   }
   function navigateTo(name) {
@@ -210,11 +210,11 @@
     var n = changeCount(); if (n) chip('+' + n + ' change' + (n > 1 ? 's' : ''), 'adv');
     if (idx >= 2) {
       var parts = S.parts.filter(function (p) { return p.status === 'ready'; }).length;
-      chip(parts + ' part' + (parts === 1 ? '' : 's') + ' · ' + totalCopies() + ' cop' + (totalCopies() === 1 ? 'y' : 'ies'));
+      chip(parts + ' part' + (parts === 1 ? '' : 's') + ' · ' + totalInstances() + ' instance' + (totalInstances() === 1 ? '' : 's'));
     }
-    if (idx >= 3 && S.copies.length) {
+    if (idx >= 3 && S.instances.length) {
       var b = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
-      S.copies.forEach(function (c) { var h = PL.bbox(PL.worldHull(c)); b.minX = Math.min(b.minX, h.minX); b.maxX = Math.max(b.maxX, h.maxX); b.minY = Math.min(b.minY, h.minY); b.maxY = Math.max(b.maxY, h.maxY); });
+      S.instances.forEach(function (c) { var h = PL.bbox(PL.worldHull(c)); b.minX = Math.min(b.minX, h.minX); b.maxX = Math.max(b.maxX, h.maxX); b.minY = Math.min(b.minY, h.minY); b.maxY = Math.max(b.maxY, h.maxY); });
       chip(Math.round(b.maxX - b.minX) + ' × ' + Math.round(b.maxY - b.minY) + ' mm of plate');
     }
   }
@@ -468,7 +468,7 @@
       if (li) { li.classList.remove('flash'); void li.offsetWidth; li.classList.add('flash'); }
       return existing;
     }
-    if (existing && o.qty) { existing.qty = Math.min(MAX_COPIES, Math.max(existing.qty, o.qty)); renderParts(); return existing; }
+    if (existing && o.qty) { existing.qty = Math.min(MAX_INSTANCES, Math.max(existing.qty, o.qty)); renderParts(); return existing; }
     var part = { id: 'p' + (S.nextId++), key: key, name: o.fileName ? o.fileName.replace(/\.(stl|3mf)$/i, '') : def.name,
                  file: o.fileName || null, qty: o.qty || 1, status: 'exporting', warn: null, error: null };
     S.parts.push(part);
@@ -530,17 +530,17 @@
         rf.addEventListener('click', function () { p.warn = null; partsNote = null; exportPart(p, {}); renderParts(); });
         row.appendChild(rf);
       }
-      var qty = el('input', 'part-qty'); qty.type = 'number'; qty.min = '1'; qty.max = String(MAX_COPIES); qty.step = '1';
-      qty.value = String(p.qty); qty.disabled = p.status !== 'ready'; qty.setAttribute('aria-label', 'Copies of ' + p.name);
+      var qty = el('input', 'part-qty'); qty.type = 'number'; qty.min = '1'; qty.max = String(MAX_INSTANCES); qty.step = '1';
+      qty.value = String(p.qty); qty.disabled = p.status !== 'ready'; qty.setAttribute('aria-label', 'Instances of ' + p.name);
       qty.addEventListener('change', function () {
-        var n = Math.round(Number(qty.value)); if (!(n >= 1)) n = 1; if (n > MAX_COPIES) n = MAX_COPIES;
+        var n = Math.round(Number(qty.value)); if (!(n >= 1)) n = 1; if (n > MAX_INSTANCES) n = MAX_INSTANCES;
         p.qty = n; qty.value = String(n); renderPartsTotal(); updateNext(); updateSummary();
       });
       row.appendChild(qty);
       var rm = el('button', 'remove', '×'); rm.type = 'button'; rm.setAttribute('aria-label', 'Remove ' + p.name); rm.title = 'Remove ' + p.name;
       rm.addEventListener('click', function () {
         S.parts = S.parts.filter(function (q) { return q !== p; });
-        S.copies = S.copies.filter(function (c) { return c.partId !== p.id; });
+        S.instances = S.instances.filter(function (c) { return c.partId !== p.id; });
         partsNote = null; renderParts(); updateNext(); updateSummary();
       });
       row.appendChild(rm);
@@ -565,11 +565,11 @@
     if (S.step === 'parts') updateNext();
   }
   function renderPartsTotal() {
-    var box = $('#parts-total'), n = totalCopies(), parts = S.parts.length;
+    var box = $('#parts-total'), n = totalInstances(), parts = S.parts.length;
     box.innerHTML = '';
     if (!parts) { box.textContent = 'No parts yet.'; return; }
-    box.textContent = parts + ' part' + (parts > 1 ? 's' : '') + ', ' + n + ' cop' + (n === 1 ? 'y' : 'ies') + ' on one plate (up to ' + MAX_COPIES + ').';
-    if (n > MAX_COPIES) box.appendChild(msg('error', 'This plate would hold ' + n + ' copies.', TOO_MANY_COPIES_MESSAGE));
+    box.textContent = parts + ' part' + (parts > 1 ? 's' : '') + ', ' + n + ' instance' + (n === 1 ? '' : 's') + ' on one plate (up to ' + MAX_INSTANCES + ').';
+    if (n > MAX_INSTANCES) box.appendChild(msg('error', 'This plate would hold ' + n + ' instances.', TOO_MANY_INSTANCES_MESSAGE));
     var failed = S.parts.filter(function (p) { return p.status === 'failed'; });
     if (failed.length) box.appendChild(el('div', 'hint', 'Next waits until ' + failed.map(function (p) { return p.name; }).join(', ') + ' is added or removed.'));
   }
@@ -619,9 +619,9 @@
 
   /* ================================================================== Layout step */
   var editor = null;
-  // A new copy lies the way auto-orient chose for its part (unless the scenario strip says
-  // parts arrive as modelled); copy.auto says the choice was automatic, so the panel can say so.
-  function newCopy(part) {
+  // A new instance lies the way auto-orient chose for its part (unless the scenario strip says
+  // parts arrive as modelled); instance.auto says the choice was automatic, so the panel can say so.
+  function newInstance(part) {
     var c = { id: 'c' + (S.nextId++), partId: part.id, partKey: part.key, q: new T.Quaternion(), x: 0, y: 0, auto: false };
     if (Opt.arrival === 'auto') {
       var best = P.resting(part.key).list[0];
@@ -632,48 +632,48 @@
   function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
   function arrangeNote(res, offer) {
     if (!res.parked) return [];
-    // Arrange keeps how each copy lies. `offer`, when given, is a plate Arrange also tried
-    // with every copy laid its best way, and which left fewer copies over: one button takes it.
+    // Arrange keeps how each instance lies. `offer`, when given, is a plate Arrange also tried
+    // with every instance laid its best way, and which left fewer instances over: one button takes it.
     var acts = [['Back to Parts', function () { gotoStep('parts'); }]];
     if (offer) acts.unshift(['Lay them the best way: ' + (offer.parked ? (res.parked - offer.parked) + ' more fit' : 'all fit'), function () {
       // done afresh on the plate as it is now, in case it changed since Arrange was pressed
       pushUndo();
       var n = 0;
-      S.copies.forEach(function (c) { var best = P.resting(c.partKey).list[0]; if (best && P.restIndex(c.partKey, c.q) !== 0 && turnToRest(c, best)) { c.auto = true; n++; } });
-      var now = PL.bestArrange(S.copies, PLATE);
+      S.instances.forEach(function (c) { var best = P.resting(c.partKey).list[0]; if (best && P.restIndex(c.partKey, c.q) !== 0 && turnToRest(c, best)) { c.auto = true; n++; } });
+      var now = PL.bestArrange(S.instances, PLATE);
       S.layoutNotes = arrangeNote(now);
-      layHint = msg('ok', 'Laid ' + plural(n, 'copy', 'copies') + ' the best way and arranged again: ' + (now.parked ? plural(now.placed, 'copy fits', 'copies fit') + ' now.' : 'every copy now fits.'), null);
+      layHint = msg('ok', 'Laid ' + plural(n, 'instance', 'instances') + ' the best way and arranged again: ' + (now.parked ? plural(now.placed, 'instance fits', 'instances fit') + ' now.' : 'every instance now fits.'), null);
       recheck(); editor.resetHandle(); editor.sync(); editor.resetView(); scheduleLayoutRender();
     }]);
-    return [msg('error', 'Arrange placed ' + res.placed + ' of ' + (res.placed + res.parked) + ' copies' + (res.turned ? ', turning ' + res.turned : '') + '; ' + plural(res.parked, 'copy does', 'copies do') + ' not fit and ' + (res.parked === 1 ? 'waits' : 'wait') + ' beside the plate.',
-      offer ? 'Arrange keeps how each copy lies. With ' + plural(offer.changed, 'copy', 'copies') + ' laid the best way, ' + (offer.parked ? 'more would fit' : 'everything would fit') + '. Or lower the quantities and print the rest in a second job.'
-            : 'Lower the quantities and print the rest in a second job, or lay copies another way to make room.', acts)];
+    return [msg('error', 'Arrange placed ' + res.placed + ' of ' + (res.placed + res.parked) + ' instances' + (res.turned ? ', turning ' + res.turned : '') + '; ' + plural(res.parked, 'instance does', 'instances do') + ' not fit and ' + (res.parked === 1 ? 'waits' : 'wait') + ' beside the plate.',
+      offer ? 'Arrange keeps how each instance lies. With ' + plural(offer.changed, 'instance', 'instances') + ' laid the best way, ' + (offer.parked ? 'more would fit' : 'everything would fit') + '. Or lower the quantities and print the rest in a second job.'
+            : 'Lower the quantities and print the rest in a second job, or lay instances another way to make room.', acts)];
   }
-  // Arrange keeps how each copy lies. When that leaves copies over and some do not lie
-  // their best way, it also tries the plate with every copy laid its best way; only when
+  // Arrange keeps how each instance lies. When that leaves instances over and some do not lie
+  // their best way, it also tries the plate with every instance laid its best way; only when
   // that leaves fewer over is it offered. Returns { snap, parked, changed } or null, and
   // leaves the plate as Arrange made it.
   function tryBestWay(res) {
-    var notBest = S.copies.filter(function (c) { return P.resting(c.partKey).list[0] && P.restIndex(c.partKey, c.q) !== 0; });
+    var notBest = S.instances.filter(function (c) { return P.resting(c.partKey).list[0] && P.restIndex(c.partKey, c.q) !== 0; });
     if (!res.parked || !notBest.length) return null;
-    var keep = S.copies.map(function (c) { return { c: c, x: c.x, y: c.y, q: c.q.clone(), auto: c.auto }; });
+    var keep = S.instances.map(function (c) { return { c: c, x: c.x, y: c.y, q: c.q.clone(), auto: c.auto }; });
     notBest.forEach(function (c) { if (turnToRest(c, P.resting(c.partKey).list[0])) c.auto = true; });
-    var res2 = PL.bestArrange(S.copies, PLATE), offer = res2.parked < res.parked ? { parked: res2.parked, changed: notBest.length } : null;
+    var res2 = PL.bestArrange(S.instances, PLATE), offer = res2.parked < res.parked ? { parked: res2.parked, changed: notBest.length } : null;
     keep.forEach(function (k) { k.c.x = k.x; k.c.y = k.y; k.c.q = k.q; k.c.auto = k.auto; k.c.d = null; });
     return offer;
   }
-  // Copies follow the Parts step's quantities.
+  // Instances follow the Parts step's quantities.
   function enterLayoutData() {
-    var fresh = [], before = S.copies.length;
-    S.copies = S.copies.filter(function (c) { var p = partById(c.partId); return p && p.status === 'ready'; });
+    var fresh = [], before = S.instances.length;
+    S.instances = S.instances.filter(function (c) { var p = partById(c.partId); return p && p.status === 'ready'; });
     S.parts.forEach(function (p) {
       if (p.status !== 'ready') return;
-      var have = S.copies.filter(function (c) { return c.partId === p.id; });
-      while (have.length > p.qty) { var gone = have.pop(); S.copies.splice(S.copies.indexOf(gone), 1); }
-      while (have.length < p.qty) { var c = newCopy(p); S.copies.push(c); have.push(c); fresh.push(c); }
+      var have = S.instances.filter(function (c) { return c.partId === p.id; });
+      while (have.length > p.qty) { var gone = have.pop(); S.instances.splice(S.instances.indexOf(gone), 1); }
+      while (have.length < p.qty) { var c = newInstance(p); S.instances.push(c); have.push(c); fresh.push(c); }
     });
     // Undo works within the Layout step; a change made on the Parts step starts afresh.
-    if (fresh.length || S.copies.length !== before + fresh.length) { S.undo = []; S.redo = []; }
+    if (fresh.length || S.instances.length !== before + fresh.length) { S.undo = []; S.redo = []; }
     // say once per part that it was laid down automatically, and how much lower it now stands
     var told = [];
     fresh.forEach(function (c) {
@@ -683,36 +683,36 @@
       told.push(p.name + ' (' + Math.round(PL.derive(c).height) + ' mm tall instead of ' + Math.round(P.resting(c.partKey).modelled.height) + ' mm)');
     });
     if (told.length) layHint = msg('ok', 'Laid down automatically: ' + told.join(', ') + '.',
-      'Chosen by how much touches the plate, how much hangs over air and how tall it stands. Select a copy to see the other ways it can lie, or to put it back as modelled.');
-    if (!S.laidOut || fresh.length === S.copies.length) {
-      var res = PL.bestArrange(S.copies, PLATE); S.laidOut = true;
+      'Chosen by how much touches the plate, how much hangs over air and how tall it stands. Select an instance to see the other ways it can lie, or to put it back as modelled.');
+    if (!S.laidOut || fresh.length === S.instances.length) {
+      var res = PL.bestArrange(S.instances, PLATE); S.laidOut = true;
       S.layoutNotes = arrangeNote(res);
     } else {
-      // copies added to a plate the student already laid out join the group: each takes the
-      // free spot nearest the middle of the copies already there, turned if that is what it
+      // instances added to a plate the student already laid out join the group: each takes the
+      // free spot nearest the middle of the instances already there, turned if that is what it
       // takes, and nothing else moves
       fresh.forEach(function (c) {
-        var others = S.copies.filter(function (o) { return o !== c && fresh.indexOf(o) < 0 || (fresh.indexOf(o) >= 0 && fresh.indexOf(o) < fresh.indexOf(c)); });
+        var others = S.instances.filter(function (o) { return o !== c && fresh.indexOf(o) < 0 || (fresh.indexOf(o) >= 0 && fresh.indexOf(o) < fresh.indexOf(c)); });
         var mid = PL.centre(others, PLATE), q0 = c.q.clone(), turns = [0, 90, 45, 90], ok = false;
         for (var t = 0; t < turns.length && !ok; t++) { if (turns[t]) PL.yaw(c, turns[t]); ok = PL.placeNear(c, others, PLATE, mid[0], mid[1], turns[t] ? 3 : 4); }
         if (!ok) { c.q = q0; c.d = null; PL.place(c, others, PLATE); }
       });
     }
     if (fresh.length) needFit = true;
-    S.selected = S.selected.filter(function (id) { return !!copyById(id); });
+    S.selected = S.selected.filter(function (id) { return !!instanceById(id); });
     recheck();
   }
 
   /* ---------------------------------------------------------------- undo and redo */
-  // Every change on the Layout step can be undone: a snapshot of the copies (and of the
+  // Every change on the Layout step can be undone: a snapshot of the instances (and of the
   // parts' quantities, which Duplicate and Delete change) is taken before it.
   var pendingSnap = null;
   function snapshot() {
-    return { copies: S.copies.map(function (c) { return { id: c.id, partId: c.partId, partKey: c.partKey, q: c.q.clone(), x: c.x, y: c.y, auto: c.auto }; }),
+    return { instances: S.instances.map(function (c) { return { id: c.id, partId: c.partId, partKey: c.partKey, q: c.q.clone(), x: c.x, y: c.y, auto: c.auto }; }),
              parts: S.parts.map(function (p) { return { ref: p, qty: p.qty }; }), selected: S.selected.slice(), notes: S.layoutNotes };
   }
   function restoreSnap(s) {
-    S.copies = s.copies.map(function (c) { return { id: c.id, partId: c.partId, partKey: c.partKey, q: c.q.clone(), x: c.x, y: c.y, auto: c.auto }; });
+    S.instances = s.instances.map(function (c) { return { id: c.id, partId: c.partId, partKey: c.partKey, q: c.q.clone(), x: c.x, y: c.y, auto: c.auto }; });
     S.parts = s.parts.map(function (p) { p.ref.qty = p.qty; return p.ref; });
     S.selected = s.selected.slice(); S.layoutNotes = s.notes;
     layHint = null; recheck(); editor.resetHandle(); scheduleLayoutRender(); updateSummary();
@@ -721,8 +721,8 @@
   function undo() { if (!S.undo.length) return; S.redo.push(snapshot()); restoreSnap(S.undo.pop()); }
   function redo() { if (!S.redo.length) return; S.undo.push(snapshot()); restoreSnap(S.redo.pop()); }
 
-  /* ---------------------------------------------------------------- laying copies down */
-  // Turn a copy so that a resting position's face is down, keeping its turn on the plate.
+  /* ---------------------------------------------------------------- laying instances down */
+  // Turn an instance so that a resting position's face is down, keeping its turn on the plate.
   function turnToRest(c, cand) {
     if (cand.modelled) { if (P.isModelled(c.q)) return false; c.q = new T.Quaternion(); c.d = null; return true; }
     var wn = cand.n.clone().applyQuaternion(c.q);
@@ -730,49 +730,49 @@
     c.q = new T.Quaternion().setFromUnitVectors(wn.normalize(), P.DOWN).multiply(c.q); c.d = null;
     return true;
   }
-  // After copies were laid another way: find each a free spot if it needs one, then one
+  // After instances were laid another way: find each a free spot if it needs one, then one
   // sentence on what happened.
-  function afterLay(copies, what) {
-    var how = copies.map(function (c) { recheck(); return settle(c); });
-    var c0 = copies[0], h = Math.round(PL.derive(c0).height);
-    var head = copies.length === 1 ? copyLabel(c0) + ' now lies ' + what + ': ' + h + ' mm tall.'
-                                   : copies.length + ' copies of ' + partById(c0.partId).name + ' now lie ' + what + ': ' + h + ' mm tall.';
+  function afterLay(instances, what) {
+    var how = instances.map(function (c) { recheck(); return settle(c); });
+    var c0 = instances[0], h = Math.round(PL.derive(c0).height);
+    var head = instances.length === 1 ? instanceLabel(c0) + ' now lies ' + what + ': ' + h + ' mm tall.'
+                                   : instances.length + ' instances of ' + partById(c0.partId).name + ' now lie ' + what + ': ' + h + ' mm tall.';
     var arranged = how.indexOf('arranged') >= 0, moved = how.filter(Boolean).length;
     layHint = msg('ok', head, arranged ? 'It needs more room lying this way, so the whole plate was arranged again.'
-      : moved ? (copies.length === 1 ? 'It no longer fitted where it stood, so it was moved' + (how[0] === 'turned' ? ' and turned' : '') + ' to the nearest free spot.' : moved + ' no longer fitted where they stood and moved to the nearest free spots.') : null);
+      : moved ? (instances.length === 1 ? 'It no longer fitted where it stood, so it was moved' + (how[0] === 'turned' ? ' and turned' : '') + ' to the nearest free spot.' : moved + ' no longer fitted where they stood and moved to the nearest free spots.') : null);
     if (arranged) needRefit = true;
     recheck(); scheduleLayoutRender();
   }
   // The resting-position strip, the "As modelled" link and Auto-orient all end here.
-  function layCopies(copies, pick, what) {
+  function layInstances(instances, pick, what) {
     var snap = snapshot(), changed = [];
-    copies.forEach(function (c) {
+    instances.forEach(function (c) {
       var cand = pick(c);
       if (cand && turnToRest(c, cand)) changed.push(c);
       if (cand) c.auto = what === 'auto';
     });
-    if (!changed.length) { layHint = msg('info', (copies.length === 1 ? copyLabel(copies[0]) + ' already lies' : 'They already lie') + ' that way.', null); scheduleLayoutRender(); return; }
+    if (!changed.length) { layHint = msg('info', (instances.length === 1 ? instanceLabel(instances[0]) + ' already lies' : 'They already lie') + ' that way.', null); scheduleLayoutRender(); return; }
     pushUndo(snap);
     afterLay(changed, what === 'auto' ? 'its best way' : what === 'modelled' ? 'as modelled' : 'that way');
   }
-  // Auto-orient: the selection, or every copy when nothing is selected. When every copy
+  // Auto-orient: the selection, or every instance when nothing is selected. When every instance
   // changes at once, the plate is arranged again after (as Orca's Q then A).
   function autoOrient(ids) {
-    var list = (ids && ids.length ? ids : S.copies.map(function (c) { return c.id; })).map(copyById).filter(Boolean);
+    var list = (ids && ids.length ? ids : S.instances.map(function (c) { return c.id; })).map(instanceById).filter(Boolean);
     var whole = !(ids && ids.length);
-    if (!whole) return layCopies(list, function (c) { return P.resting(c.partKey).list[0]; }, 'auto');
+    if (!whole) return layInstances(list, function (c) { return P.resting(c.partKey).list[0]; }, 'auto');
     var snap = snapshot(), changed = 0;
     list.forEach(function (c) { var best = P.resting(c.partKey).list[0]; if (best && turnToRest(c, best)) changed++; if (best) c.auto = true; });
-    if (!changed) { layHint = msg('info', 'Every copy already lies its best way.', null); scheduleLayoutRender(); return; }
+    if (!changed) { layHint = msg('info', 'Every instance already lies its best way.', null); scheduleLayoutRender(); return; }
     pushUndo(snap); recheck();
     var res = null;
-    if (S.problems.some(function (p) { return p.rule !== 'too_tall'; })) { res = PL.bestArrange(S.copies, PLATE); S.layoutNotes = arrangeNote(res); needRefit = true; }
-    layHint = msg('ok', 'Auto-orient laid ' + plural(changed, 'copy', 'copies') + (changed === 1 ? ' its' : ' their') + ' best way' + (res ? ', then arranged the plate to make room.' : '.'), null);
+    if (S.problems.some(function (p) { return p.rule !== 'too_tall'; })) { res = PL.bestArrange(S.instances, PLATE); S.layoutNotes = arrangeNote(res); needRefit = true; }
+    layHint = msg('ok', 'Auto-orient laid ' + plural(changed, 'instance', 'instances') + (changed === 1 ? ' its' : ' their') + ' best way' + (res ? ', then arranged the plate to make room.' : '.'), null);
     recheck(); scheduleLayoutRender();
   }
-  // The tip handle: each selected copy steps to its next resting position (Shift: the one before).
+  // The tip handle: each selected instance steps to its next resting position (Shift: the one before).
   function tipSelected(back) {
-    var list = S.selected.map(copyById).filter(Boolean);
+    var list = S.selected.map(instanceById).filter(Boolean);
     if (!list.length) return;
     var snap = snapshot(), changed = [];
     list.forEach(function (c) {
@@ -781,49 +781,49 @@
       var next = i < 0 ? (back ? n - 1 : 0) : (i + (back ? n - 1 : 1)) % n;
       if (next !== i && turnToRest(c, R[next])) { c.auto = false; changed.push(c); }
     });
-    if (!changed.length) { layHint = msg('info', copyLabel(list[0]) + ' has only one way to lie flat.', null); scheduleLayoutRender(); return; }
+    if (!changed.length) { layHint = msg('info', instanceLabel(list[0]) + ' has only one way to lie flat.', null); scheduleLayoutRender(); return; }
     pushUndo(snap);
     var c0 = changed[0], k = P.restIndex(c0.partKey, c0.q), n0 = P.resting(c0.partKey).list.length;
     afterLay(changed, 'on its ' + ordinal(k + 1) + ' of ' + n0 + ' sides' + (k === 0 ? ' (the best)' : ''));
   }
   function ordinal(n) { return ['first', 'second', 'third', 'fourth', 'fifth', 'sixth'][n - 1] || n + 'th'; }
-  // One sentence per copy that is too close to two or more others.
+  // One sentence per instance that is too close to two or more others.
   function recheck() {
-    var raw = PL.check(S.copies, PLATE, copyLabel), close = raw.filter(function (p) { return p.rule === 'too_close'; });
+    var raw = PL.check(S.instances, PLATE, instanceLabel), close = raw.filter(function (p) { return p.rule === 'too_close'; });
     var count = {};
-    close.forEach(function (p) { p.copies.forEach(function (id) { count[id] = (count[id] || 0) + 1; }); });
+    close.forEach(function (p) { p.instances.forEach(function (id) { count[id] = (count[id] || 0) + 1; }); });
     var hubs = Object.keys(count).filter(function (id) { return count[id] >= 2; }).sort(function (a, b) { return count[b] - count[a]; });
     var used = {}, merged = [];
     hubs.forEach(function (id) {
-      var mine = close.filter(function (p) { return !used[p.copies.join()] && p.copies.indexOf(id) >= 0; });
+      var mine = close.filter(function (p) { return !used[p.instances.join()] && p.instances.indexOf(id) >= 0; });
       if (mine.length < 2) return;
-      mine.forEach(function (p) { used[p.copies.join()] = 1; });
-      var others = mine.map(function (p) { return copyLabel(copyById(p.copies[0] === id ? p.copies[1] : p.copies[0])); });
+      mine.forEach(function (p) { used[p.instances.join()] = 1; });
+      var others = mine.map(function (p) { return instanceLabel(instanceById(p.instances[0] === id ? p.instances[1] : p.instances[0])); });
       var list = others.length > 1 ? others.slice(0, -1).join(', ') + ' and ' + others[others.length - 1] : others[0];
-      merged.push({ rule: 'too_close', copies: [id].concat(mine.map(function (p) { return p.copies[0] === id ? p.copies[1] : p.copies[0]; })),
-                    message: copyLabel(copyById(id)) + ' overlaps or is closer than ' + PLATE.spacing + ' mm to ' + list + '. Drag it to a clear spot, or press Arrange.' });
+      merged.push({ rule: 'too_close', instances: [id].concat(mine.map(function (p) { return p.instances[0] === id ? p.instances[1] : p.instances[0]; })),
+                    message: instanceLabel(instanceById(id)) + ' overlaps or is closer than ' + PLATE.spacing + ' mm to ' + list + '. Drag it to a clear spot, or press Arrange.' });
     });
-    S.problems = raw.filter(function (p) { return p.rule !== 'too_close' || !used[p.copies.join()]; }).concat(merged);
+    S.problems = raw.filter(function (p) { return p.rule !== 'too_close' || !used[p.instances.join()]; }).concat(merged);
   }
-  function isBad(id) { return S.problems.some(function (p) { return p.copies.indexOf(id) >= 0; }); }
-  // A copy that was just laid down has a new footprint. If it now overlaps a neighbour or
+  function isBad(id) { return S.problems.some(function (p) { return p.instances.indexOf(id) >= 0; }); }
+  // An instance that was just laid down has a new footprint. If it now overlaps a neighbour or
   // crosses the plate edge, find it a free spot, turning it if that is what it takes.
   // It takes the free spot nearest to where it stood, so it stays beside its neighbours.
   // When no spot is free with the others where they are (a long part laid flat among small
   // ones), the whole plate is arranged again, which is what the student would press next.
   // Returns 'moved', 'turned', 'arranged', or null when it was fine or nothing fits at all.
-  function settle(copy) {
-    function placeProblem() { return S.problems.some(function (p) { return p.rule !== 'too_tall' && p.copies.indexOf(copy.id) >= 0; }); }
+  function settle(instance) {
+    function placeProblem() { return S.problems.some(function (p) { return p.rule !== 'too_tall' && p.instances.indexOf(instance.id) >= 0; }); }
     if (!placeProblem()) return null;
-    var keep = { x: copy.x, y: copy.y, q: copy.q.clone() }, others = S.copies.filter(function (o) { return o !== copy; });
+    var keep = { x: instance.x, y: instance.y, q: instance.q.clone() }, others = S.instances.filter(function (o) { return o !== instance; });
     var turns = [0, 90, 45, 90], how = 'moved';
     for (var t = 0; t < turns.length; t++) {
-      if (turns[t]) { PL.yaw(copy, turns[t]); how = 'turned'; }
-      if (PL.placeNear(copy, others, PLATE, keep.x, keep.y, turns[t] ? 3 : 4)) { recheck(); return how; }
+      if (turns[t]) { PL.yaw(instance, turns[t]); how = 'turned'; }
+      if (PL.placeNear(instance, others, PLATE, keep.x, keep.y, turns[t] ? 3 : 4)) { recheck(); return how; }
     }
-    copy.x = keep.x; copy.y = keep.y; copy.q = keep.q; copy.d = null;
-    var before = S.copies.map(function (c) { return { c: c, x: c.x, y: c.y, q: c.q.clone() }; });
-    if (PL.bestArrange(S.copies, PLATE).parked === 0) { recheck(); if (!S.problems.some(function (p) { return p.rule !== 'too_tall'; })) return 'arranged'; }
+    instance.x = keep.x; instance.y = keep.y; instance.q = keep.q; instance.d = null;
+    var before = S.instances.map(function (c) { return { c: c, x: c.x, y: c.y, q: c.q.clone() }; });
+    if (PL.bestArrange(S.instances, PLATE).parked === 0) { recheck(); if (!S.problems.some(function (p) { return p.rule !== 'too_tall'; })) return 'arranged'; }
     before.forEach(function (b) { b.c.x = b.x; b.c.y = b.y; b.c.q = b.q; b.c.d = null; });
     recheck();
     return null;
@@ -831,14 +831,14 @@
 
   function enterLayout() {
     enterLayoutData();
-    $('#layout-info').textContent = ST.PRINTER.name + ': plate ' + PLATE.x + ' × ' + PLATE.y + ' mm, copies up to ' + PLATE.height + ' mm tall and ' + PLATE.spacing + ' mm apart.';
+    $('#layout-info').textContent = ST.PRINTER.name + ': plate ' + PLATE.x + ' × ' + PLATE.y + ' mm, instances up to ' + PLATE.height + ' mm tall and ' + PLATE.spacing + ' mm apart.';
     if (!editor) {
       editor = Layout3D.create($('#layout-view'), {
         plate: PLATE,
-        getCopies: function () { return S.copies; },
+        getInstances: function () { return S.instances; },
         isSelected: function (id) { return S.selected.indexOf(id) >= 0; },
         isBad: isBad,
-        labelFor: function (id) { var c = copyById(id); return c ? copyLabel(c) : ''; },
+        labelFor: function (id) { var c = instanceById(id); return c ? instanceLabel(c) : ''; },
         select: function (id, how) {
           if (how === 'none') S.selected = [];
           else if (how === 'only') S.selected = [id];
@@ -848,12 +848,12 @@
         },
         // a drag or a lay-down is about to change the plate: keep what it was, for undo
         begin: function () { pendingSnap = snapshot(); },
-        changed: function (why, copy) {
+        changed: function (why, instance) {
           if (pendingSnap && (why === 'move' || why === 'rotate' || why === 'lay')) { pushUndo(pendingSnap); pendingSnap = null; }
           recheck();
-          if (why === 'lay' && copy) { afterLay([copy], 'on that ' + (Opt.lay === 'box' ? 'side' : 'face')); return; }
+          if (why === 'lay' && instance) { afterLay([instance], 'on that ' + (Opt.lay === 'box' ? 'side' : 'face')); return; }
           scheduleLayoutRender();
-          // a click (not a drag) just selected a copy: bring what can be done with it into
+          // a click (not a drag) just selected an instance: bring what can be done with it into
           // sight under the picture. Done on release, so the picture never moves under a press.
           if (why === 'select' && S.selected.length) requestAnimationFrame(function () { requestAnimationFrame(revealSelectionTools); });
         },
@@ -862,7 +862,7 @@
         onKey: function (k) {
           if (k === 'delete') deleteSelected();
           if (k === 'escape') { S.selected = []; renderLayoutSide(); editor.sync(); }
-          if (k === 'all') { S.selected = S.copies.map(function (c) { return c.id; }); renderLayoutSide(); editor.sync(); }
+          if (k === 'all') { S.selected = S.instances.map(function (c) { return c.id; }); renderLayoutSide(); editor.sync(); }
           if (k === 'undo') undo();
           if (k === 'redo') redo();
           if (k === 'duplicate') duplicateSelected();
@@ -885,7 +885,7 @@
     var over = r.bottom + 6 - b.bottom;
     if (over > 0) body.scrollTop += Math.min(over, Math.max(0, top - b.top));
   }
-  var needFit = false;      // the copies were just arranged or added to: zoom to them on entry
+  var needFit = false;      // the instances were just arranged or added to: zoom to them on entry
   var needRefit = false;    // the plate was arranged again behind a lay-down: show all of it
   var layHint = null, rafPending = false;
   function scheduleLayoutRender() {
@@ -896,13 +896,13 @@
     });
   }
   function renderLayoutSide() {
-    var sel = S.selected.map(copyById).filter(Boolean);
+    var sel = S.selected.map(instanceById).filter(Boolean);
     $('#btn-dup').disabled = !sel.length; $('#btn-del').disabled = !sel.length;
     var s = $('#layout-selection');
     $('#layout-selrow').classList.toggle('has-sel', sel.length > 0);
-    if (!sel.length) s.textContent = S.copies.length + ' cop' + (S.copies.length === 1 ? 'y' : 'ies') + ' on the plate. Click one to select it.';
-    else if (sel.length === 1) { var d = PL.derive(sel[0]); s.innerHTML = ''; s.appendChild(el('strong', null, copyLabel(sel[0]))); s.appendChild(document.createTextNode(' ' + Math.round(d.w) + ' × ' + Math.round(d.l) + ' mm, ' + Math.round(d.height) + ' mm tall')); }
-    else { s.innerHTML = ''; s.appendChild(el('strong', null, sel.length + ' copies')); s.appendChild(document.createTextNode(' move and turn together')); }
+    if (!sel.length) s.textContent = S.instances.length + ' instance' + (S.instances.length === 1 ? '' : 's') + ' on the plate. Click one to select it.';
+    else if (sel.length === 1) { var d = PL.derive(sel[0]); s.innerHTML = ''; s.appendChild(el('strong', null, instanceLabel(sel[0]))); s.appendChild(document.createTextNode(' ' + Math.round(d.w) + ' × ' + Math.round(d.l) + ' mm, ' + Math.round(d.height) + ' mm tall')); }
+    else { s.innerHTML = ''; s.appendChild(el('strong', null, sel.length + ' instances')); s.appendChild(document.createTextNode(' move and turn together')); }
     renderOrientLine(sel); renderStrip(sel); renderGestures();
     $('#btn-undo').disabled = !S.undo.length; $('#btn-redo').disabled = !S.redo.length;
     $('#btn-tilt').hidden = Opt.scheme !== 'T'; $('#btn-top').hidden = Opt.scheme === 'T';
@@ -916,22 +916,22 @@
       alertBox.appendChild(el('span', 'more', S.problems.length > 1 ? '+' + (S.problems.length - 1) + ' more ↓' : 'Fix ↓'));
     } else {
       alertBox.title = '';
-      alertBox.appendChild(el('span', 'first', S.copies.length ? '✓ ' + (S.copies.length === 1 ? 'The copy fits' : 'All ' + S.copies.length + ' copies fit') + ' the plate.' : 'No copies yet: add parts on the Parts step.'));
+      alertBox.appendChild(el('span', 'first', S.instances.length ? '✓ ' + (S.instances.length === 1 ? instanceLabel(S.instances[0]) + ' fits' :'All ' + S.instances.length + ' instances fit') + ' the plate.' : 'No instances yet: add parts on the Parts step.'));
     }
     var box = $('#layout-errors'); box.innerHTML = '';
     if (layHint) box.appendChild(layHint);
     S.layoutNotes.forEach(function (n) { box.appendChild(n); });
     if (S.problems.length) {
-      box.appendChild(el('div', 'hint fix-first', S.problems.length === 1 ? 'Fix this before Next:' : 'Fix these ' + S.problems.length + ' before Next (click one to select its copies):'));
+      box.appendChild(el('div', 'hint fix-first', S.problems.length === 1 ? 'Fix this before Next:' : 'Fix these ' + S.problems.length + ' before Next (click one to select its instances):'));
       S.problems.forEach(function (p) {
-        // a copy Arrange left beside the plate: pressing Arrange again cannot help
-        var parkedCopy = p.rule === 'off_plate' && S.layoutNotes.length && PL.bbox(PL.worldHull(copyById(p.copies[0]))).minX > PLATE.x;
-        var acts = p.rule === 'too_tall' ? [['Auto-orient', function (e) { e.stopPropagation(); S.selected = p.copies.slice(); autoOrient(p.copies); }]]
-                 : parkedCopy ? [['Back to Parts', function (e) { e.stopPropagation(); gotoStep('parts'); }]]
+        // an instance Arrange left beside the plate: pressing Arrange again cannot help
+        var parkedInstance = p.rule === 'off_plate' && S.layoutNotes.length && PL.bbox(PL.worldHull(instanceById(p.instances[0]))).minX > PLATE.x;
+        var acts = p.rule === 'too_tall' ? [['Auto-orient', function (e) { e.stopPropagation(); S.selected = p.instances.slice(); autoOrient(p.instances); }]]
+                 : parkedInstance ? [['Back to Parts', function (e) { e.stopPropagation(); gotoStep('parts'); }]]
                  : [['Arrange', function (e) { e.stopPropagation(); doArrange(); }]];
-        var m = msg('error', p.message.split('. ')[0] + '.', parkedCopy ? 'It did not fit: lower its quantity, or lay copies another way to make room.' : p.message.split('. ').slice(1).join('. '), acts);
+        var m = msg('error', p.message.split('. ')[0] + '.', parkedInstance ? 'It did not fit: lower its quantity, or lay instances another way to make room.' : p.message.split('. ').slice(1).join('. '), acts);
         m.classList.add('clickable');
-        m.addEventListener('click', function () { S.selected = p.copies.slice(); editor.resetHandle(); editor.sync(); renderLayoutSide(); });
+        m.addEventListener('click', function () { S.selected = p.instances.slice(); editor.resetHandle(); editor.sync(); renderLayoutSide(); });
         box.appendChild(m);
       });
     }
@@ -948,24 +948,24 @@
     function link(t, fn) { var b = el('button', 'linkish', t); b.type = 'button'; b.addEventListener('click', fn); box.appendChild(b); }
     if (auto && !modelled) {
       box.appendChild(el('span', 'auto-chip', 'Laid down automatically'));
-      link('Put back as modelled', function () { layCopies(sel, function () { return P.resting(sel[0].partKey).modelled; }, 'modelled'); });
+      link('Put back as modelled', function () { layInstances(sel, function () { return P.resting(sel[0].partKey).modelled; }, 'modelled'); });
     } else if (!modelled) {
       box.appendChild(document.createTextNode('Laid down by you. '));
-      link('Put back as modelled', function () { layCopies(sel, function () { return P.resting(sel[0].partKey).modelled; }, 'modelled'); });
+      link('Put back as modelled', function () { layInstances(sel, function () { return P.resting(sel[0].partKey).modelled; }, 'modelled'); });
     } else if (best && !best.modelled) {
       box.appendChild(document.createTextNode('As modelled. '));
       link('Lay it the best way', function () { autoOrient(sel.map(function (c) { return c.id; })); });
     } else box.appendChild(document.createTextNode('As modelled, which is already its best way.'));
   }
-  // The resting-position strip: under the view, while the selection is copies of one part,
+  // The resting-position strip: under the view, while the selection is instances of one part,
   // a picture of each way that part can lie, the auto-orient choice first and marked Best,
-  // the way it lies now outlined. A click lays every selected copy that way.
+  // the way it lies now outlined. A click lays every selected instance that way.
   function renderStrip(sel) {
     var box = $('#rest-strip'); box.innerHTML = '';
     box.hidden = Opt.lay !== 'strip' || !sel.length;
     if (box.hidden) return;
     var key = sel[0].partKey;
-    if (sel.some(function (c) { return c.partKey !== key; })) { box.appendChild(el('div', 'hint', 'Select copies of one part to choose how they lie.')); return; }
+    if (sel.some(function (c) { return c.partKey !== key; })) { box.appendChild(el('div', 'hint', 'Select instances of one part to choose how they lie.')); return; }
     var R = P.resting(key), cur = P.restIndex(key, sel[0].q);
     if (sel.some(function (c) { return P.restIndex(key, c.q) !== cur; })) cur = -2;
     var nWays = R.list.length + (R.modelledListed ? 0 : 1);
@@ -985,23 +985,23 @@
       else if (c.supports) b.appendChild(el('span', 'rs-line warn', 'overhangs'));
       b.title = (it.i === 0 ? 'The best way, chosen automatically: ' : it.i === 'm' ? 'As modelled: ' : '') + Math.round(c.height) + ' mm tall, ' + Math.round(c.contact) + ' mm² on the plate' + (c.overhang > 1 ? ', ' + Math.round(c.overhang) + ' mm² over air' : '') + (c.supports ? '. Much of it hangs over air, so it will probably need Supports.' : '');
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
-      b.addEventListener('click', function () { layCopies(sel, function () { return c; }, it.i === 0 ? 'auto' : it.i === 'm' ? 'modelled' : 'pick'); });
+      b.addEventListener('click', function () { layInstances(sel, function () { return c; }, it.i === 0 ? 'auto' : it.i === 'm' ? 'modelled' : 'pick'); });
       row.appendChild(b);
     });
     box.appendChild(row);
   }
-  // One line under the view: the gestures of the mouse scheme and of the way to lay a copy
+  // One line under the view: the gestures of the mouse scheme and of the way to lay an instance
   // down, chosen in the scenario strip, so a student need not be told.
   var GESTURES = {
-    O: 'Drag a copy to move it, its round handle to turn it. Right-drag to look around, Shift-drag to slide, scroll to zoom.',
-    S: 'Drag a copy to move it, its round handle to turn it. Drag empty space to look around, right-drag to slide, scroll to zoom.',
-    T: 'Seen from above. Drag a copy to move it, its round handle to turn it. Drag empty space to slide, scroll to zoom, right-drag or 3D to tilt.'
+    O: 'Drag an instance to move it, its round handle to turn it. Right-drag to look around, Shift-drag to slide, scroll to zoom.',
+    S: 'Drag an instance to move it, its round handle to turn it. Drag empty space to look around, right-drag to slide, scroll to zoom.',
+    T: 'Seen from above. Drag an instance to move it, its round handle to turn it. Drag empty space to slide, scroll to zoom, right-drag or 3D to tilt.'
   };
   var LAY_GESTURE = {
-    strip: 'Select a copy to see pictures of the ways it can lie; click one to lay it that way.',
-    markers: 'Select a copy, then click an arrow (↓) on one of its faces to lay it on that face.',
-    box: 'Select a copy, then click a side of the box around it to put that side down, or drag the box to roll it.',
-    tip: 'Select a copy, then click ⤵ beside its round handle to tip it onto its next side.'
+    strip: 'Select an instance to see pictures of the ways it can lie; click one to lay it that way.',
+    markers: 'Select an instance, then click an arrow (↓) on one of its faces to lay it on that face.',
+    box: 'Select an instance, then click a side of the box around it to put that side down, or drag the box to roll it.',
+    tip: 'Select an instance, then click ⤵ beside its round handle to tip it onto its next side.'
   };
   var MORE = {
     O: ['Left-drag on empty plate also looks around; middle-drag, Ctrl + right-drag or Shift-drag slides the view.'],
@@ -1012,18 +1012,18 @@
     $('#layout-gestures').textContent = GESTURES[Opt.scheme] + ' ' + LAY_GESTURE[Opt.lay];
     var ul = $('#layout-more'); ul.innerHTML = '';
     MORE[Opt.scheme].concat([
-      'Shift- or Ctrl-click adds a copy to the selection; drag one to move them all.',
+      'Shift- or Ctrl-click adds an instance to the selection; drag one to move them all.',
       'The handle snaps every 45 degrees.',
-      'Double-click a flat face to lay the copy down on it.',
-      'F zooms to the copies; Ctrl+1 looks from above.',
-      'Ctrl+Z undoes, Ctrl+Y or Ctrl+Shift+Z redoes, Ctrl+D duplicates, Delete removes, Ctrl+A selects every copy, Escape clears.'
+      'Double-click a flat face to lay the instance down on it.',
+      'F zooms to the instances; Ctrl+1 looks from above.',
+      'Ctrl+Z undoes, Ctrl+Y or Ctrl+Shift+Z redoes, Ctrl+D duplicates, Delete removes, Ctrl+A selects every instance, Escape clears.'
     ]).forEach(function (t) { ul.appendChild(el('li', null, t)); });
   }
   function doArrange() {
     pushUndo();
-    var res = PL.bestArrange(S.copies, PLATE);
+    var res = PL.bestArrange(S.instances, PLATE);
     S.layoutNotes = arrangeNote(res, tryBestWay(res));
-    layHint = res.parked ? null : msg('ok', 'Arranged ' + plural(res.placed, 'copy', 'copies') + (res.turned ? ', turning ' + res.turned : '') + '.', null);
+    layHint = res.parked ? null : msg('ok', 'Arranged ' + plural(res.placed, 'instance', 'instances') + (res.turned ? ', turning ' + res.turned : '') + '.', null);
     recheck(); editor.resetHandle(); editor.sync(); editor.resetView(); scheduleLayoutRender();
   }
   function deleteSelected() {
@@ -1031,30 +1031,30 @@
     pushUndo();
     var notes = [];
     S.selected.slice().forEach(function (id) {
-      var c = copyById(id); if (!c) return;
+      var c = instanceById(id); if (!c) return;
       var p = partById(c.partId);
-      S.copies.splice(S.copies.indexOf(c), 1);
+      S.instances.splice(S.instances.indexOf(c), 1);
       p.qty--;
       if (p.qty <= 0) { S.parts.splice(S.parts.indexOf(p), 1); notes.push(p.name); }
     });
     S.selected = [];
-    layHint = notes.length ? msg('info', 'Deleted the last copy of ' + notes.join(' and ') + ', so the Parts step no longer lists ' + (notes.length > 1 ? 'them' : 'it') + '.', null) : null;
+    layHint = notes.length ? msg('info', 'Deleted the last instance of ' + notes.join(' and ') + ', so the Parts step no longer lists ' + (notes.length > 1 ? 'them' : 'it') + '.', null) : null;
     recheck(); scheduleLayoutRender(); updateSummary();
   }
   function duplicateSelected() {
       var made = [];
       if (!S.selected.length) return;
-      if (S.copies.length + S.selected.length > MAX_COPIES) { layHint = msg('error', 'Cannot duplicate: the plate would hold ' + (S.copies.length + S.selected.length) + ' copies.', TOO_MANY_COPIES_MESSAGE); renderLayoutSide(); return; }
+      if (S.instances.length + S.selected.length > MAX_INSTANCES) { layHint = msg('error', 'Cannot duplicate: the plate would hold ' + (S.instances.length + S.selected.length) + ' instances.', TOO_MANY_INSTANCES_MESSAGE); renderLayoutSide(); return; }
       pushUndo();
       S.selected.forEach(function (id) {
-        var c = copyById(id), p = partById(c.partId), n = newCopy(p);
+        var c = instanceById(id), p = partById(c.partId), n = newInstance(p);
         n.q = c.q.clone(); n.x = c.x; n.y = c.y; n.auto = c.auto;
         // the duplicate lands in the free spot nearest its original
-        if (!PL.placeNear(n, S.copies, PLATE, c.x, c.y)) PL.place(n, S.copies, PLATE);
-        S.copies.push(n); p.qty++; made.push(n.id);
+        if (!PL.placeNear(n, S.instances, PLATE, c.x, c.y)) PL.place(n, S.instances, PLATE);
+        S.instances.push(n); p.qty++; made.push(n.id);
       });
       S.selected = made; layHint = null; recheck(); editor.resetHandle();
-      if (made.some(function (id) { return !editor.inView(id); })) needRefit = true;      // keep the new copy in sight
+      if (made.some(function (id) { return !editor.inView(id); })) needRefit = true;      // keep the new instance in sight
       scheduleLayoutRender(); updateSummary();
   }
   function bindLayout() {
@@ -1077,12 +1077,12 @@
     if (S.step === 'layout') renderLayoutSide();
   }
 
-  // put a copy at the candidate spot that causes the fewest problems besides the wanted one
+  // put an instance at the candidate spot that causes the fewest problems besides the wanted one
   function bestSpot(c, spots, rule) {
     var best = null;
     spots.forEach(function (s) {
       c.x = s[0]; c.y = s[1];
-      var ps = PL.check(S.copies, PLATE, copyLabel), wanted = ps.filter(function (p) { return p.rule === rule; }).length;
+      var ps = PL.check(S.instances, PLATE, instanceLabel), wanted = ps.filter(function (p) { return p.rule === rule; }).length;
       var score = wanted ? ps.length - wanted : 99;
       if (!best || score < best.score) best = { score: score, s: s };
     });
@@ -1091,20 +1091,20 @@
 
   // armed layout errors: applied now if on the Layout step, else when it is next entered
   function applyLayoutArms() {
-    if (S.step !== 'layout' || !S.copies.length) return;
-    var c0 = S.copies[0], d0, note = null;
+    if (S.step !== 'layout' || !S.instances.length) return;
+    var c0 = S.instances[0], d0, note = null;
     if (Mock.take('too_close')) {
-      if (S.copies.length < 2) { var p = partById(c0.partId), n = newCopy(p); n.q = c0.q.clone(); S.copies.push(n); p.qty++; }
-      // put one copy 2 mm from another: the pair and the side that break no other rule
+      if (S.instances.length < 2) { var p = partById(c0.partId), n = newInstance(p); n.q = c0.q.clone(); S.instances.push(n); p.qty++; }
+      // put one instance 2 mm from another: the pair and the side that break no other rule
       var pick = null;
-      S.copies.forEach(function (a) {
-        S.copies.forEach(function (b) {
+      S.instances.forEach(function (a) {
+        S.instances.forEach(function (b) {
           if (a === b) return;
           var da = PL.derive(a), db = PL.derive(b), keep = [b.x, b.y];
           var gx = da.w / 2 + db.w / 2 + 2, gy = da.l / 2 + db.l / 2 + 2;
           [[a.x + gx, a.y], [a.x - gx, a.y], [a.x, a.y + gy], [a.x, a.y - gy]].forEach(function (s) {
             b.x = s[0]; b.y = s[1];
-            var ps = PL.check(S.copies, PLATE, copyLabel), wanted = ps.filter(function (p) { return p.rule === 'too_close'; }).length;
+            var ps = PL.check(S.instances, PLATE, instanceLabel), wanted = ps.filter(function (p) { return p.rule === 'too_close'; }).length;
             var score = wanted ? ps.length - wanted : 99;
             if (!pick || score < pick.score) pick = { score: score, b: b, s: s };
           });
@@ -1114,19 +1114,19 @@
       pick.b.x = pick.s[0]; pick.b.y = pick.s[1];
     }
     if (Mock.take('off_plate')) {
-      var c = S.copies[S.copies.length - 1], d = PL.derive(c);
+      var c = S.instances[S.instances.length - 1], d = PL.derive(c);
       var yy = Math.min(Math.max(c.y, d.l / 2 + 10), PLATE.y - d.l / 2 - 10), xx = Math.min(Math.max(c.x, d.w / 2 + 10), PLATE.x - d.w / 2 - 10);
       bestSpot(c, [[PLATE.x - d.w * 0.25, yy], [d.w * 0.25, yy], [xx, PLATE.y - d.l * 0.25], [xx, d.l * 0.25]], 'off_plate');
     }
     if (Mock.take('too_tall')) {
-      var rib = S.copies.filter(function (x) { return x.partKey === 'rib'; })[0];
+      var rib = S.instances.filter(function (x) { return x.partKey === 'rib'; })[0];
       if (!rib) {
         var part = { id: 'p' + (S.nextId++), key: 'rib', name: P.byKey.rib.name, qty: 1, status: 'ready', warn: null, error: null };
-        S.parts.push(part); rib = newCopy(part); rib.q = new T.Quaternion(); rib.auto = false; S.copies.push(rib);
-        var ribOthers = S.copies.filter(function (x) { return x !== rib; }), ribMid = PL.centre(ribOthers, PLATE);
+        S.parts.push(part); rib = newInstance(part); rib.q = new T.Quaternion(); rib.auto = false; S.instances.push(rib);
+        var ribOthers = S.instances.filter(function (x) { return x !== rib; }), ribMid = PL.centre(ribOthers, PLATE);
         if (!PL.placeNear(rib, ribOthers, PLATE, ribMid[0], ribMid[1])) PL.place(rib, ribOthers, PLATE);
         note = msg('info', 'Mockup: added a ' + part.name + ' standing up, to show the height rule.', null);
-      } else { rib.q = new T.Quaternion(); rib.d = null; rib.auto = false; note = msg('info', 'Mockup: stood ' + copyLabel(rib) + ' up as modelled, to show the height rule.', null); }
+      } else { rib.q = new T.Quaternion(); rib.d = null; rib.auto = false; note = msg('info', 'Mockup: stood ' + instanceLabel(rib) + ' up as modelled, to show the height rule.', null); }
     }
     if (note) layHint = note;
     recheck();
@@ -1146,9 +1146,9 @@
     { name: 'Generating G-code', w: 0.16 }
   ];
   function signature() {
-    return JSON.stringify({ c: S.copies.map(function (c) { return [c.partKey, c.q.toArray().map(function (x) { return +x.toFixed(4); }), +c.x.toFixed(1), +c.y.toFixed(1)]; }), s: eff(), f: S.filament });
+    return JSON.stringify({ c: S.instances.map(function (c) { return [c.partKey, c.q.toArray().map(function (x) { return +x.toFixed(4); }), +c.x.toFixed(1), +c.y.toFixed(1)]; }), s: eff(), f: S.filament });
   }
-  function plateVolume() { return S.copies.reduce(function (a, c) { return a + P.byKey[c.partKey].volume; }, 0) / 1000; }
+  function plateVolume() { return S.instances.reduce(function (a, c) { return a + P.byKey[c.partKey].volume; }, 0) / 1000; }
 
   function enterPreview() {
     if (S.result && S.resultSig === signature()) { showResult(); return; }
@@ -1160,15 +1160,15 @@
   }
   function startSlice() {
     clearPreview(); S.result = null; S.resultSig = null; updateNext();
-    var v = eff(), vol = plateVolume(), copies = S.copies.slice();
+    var v = eff(), vol = plateVolume(), instances = S.instances.slice();
     var forced = Mock.take('too_large');
     if (forced || vol > PLATE_VOLUME_CAP_CM3) {
       var cap = forced ? Math.max(10, Math.floor(vol * 0.75 / 10) * 10) : PLATE_VOLUME_CAP_CM3;
       $('#preview-errors').appendChild(msg('error',
-        'This plate is too large for the server to slice: its ' + copies.length + ' copies hold about ' + Math.round(vol) + ' cm³ of plastic, and the server slices up to ' + cap + ' cm³ at once.',
-        copies.length > 1 ? 'Lower the quantities and print the rest in a second job.'
-                          : 'This one copy is more than the server can slice, so it cannot be printed from here. Slice it in Orca Slicer on a shop computer.',
-        copies.length > 1 ? [['Back to Parts', function () { gotoStep('parts'); }, 'primary'], ['Back to Layout', function () { gotoStep('layout'); }]]
+        'This plate is too large for the server to slice: its ' + instances.length + ' instances hold about ' + Math.round(vol) + ' cm³ of plastic, and the server slices up to ' + cap + ' cm³ at once.',
+        instances.length > 1 ? 'Lower the quantities and print the rest in a second job.'
+                          : 'This part alone is more than the server can slice, so it cannot be printed from here. Slice it in Orca Slicer on a shop computer.',
+        instances.length > 1 ? [['Back to Parts', function () { gotoStep('parts'); }, 'primary'], ['Back to Layout', function () { gotoStep('layout'); }]]
                           : [['Back to Parts', function () { gotoStep('parts'); }]],
         'Refused before slicing: plate_volume_cm3=' + vol.toFixed(1) + ' cap=' + cap + ' (memory model, supports ' + (v.enable_support ? 'on' : 'off') + ').'));
       if (forced) $('#preview-errors').appendChild(msg('info', 'Mockup: the cap was lowered for this plate to show the message. The mockup’s real cap is ' + PLATE_VOLUME_CAP_CM3 + ' cm³.', null));
@@ -1181,12 +1181,12 @@
     else if (v.enable_support && armedFaulty) { Mock.take('faulty_mesh'); fail = { type: 'faulty', at: 0.18 }; }
     else if (v.enable_support && armedEmpty) Mock.take('empty_layers');        // Supports on is the fix: it slices
     var timeout = Mock.take('timeout'), conn = Mock.take('conn_lost'), autoCancel = Mock.take('cancel');
-    var layers = Math.max.apply(null, copies.map(function (c) { return Math.ceil(PL.derive(c).height / v.layer_height); }));
-    var expected = Math.round(8 + 1.6 * copies.length + vol * 0.12 + layers * 0.04 + (v.enable_support ? 6 : 0));
+    var layers = Math.max.apply(null, instances.map(function (c) { return Math.ceil(PL.derive(c).height / v.layer_height); }));
+    var expected = Math.round(8 + 1.6 * instances.length + vol * 0.12 + layers * 0.04 + (v.enable_support ? 6 : 0));
     var job = S.job = { state: 'running', t: 0, shown: 0, expected: expected, actual: expected * (0.88 + Math.random() * 0.24),
                         fail: fail, suspect: suspect, timeout: timeout, conn: conn ? { at: 0.35 + Math.random() * 0.1 } : null,
-                        autoCancel: autoCancel, tp: null, support: v.enable_support, settings: v, sig: signature(), copies: copies };
-    gen = Preview3D.generate(copies, v, function (res) { job.tp = res; });
+                        autoCancel: autoCancel, tp: null, support: v.enable_support, settings: v, sig: signature(), instances: instances };
+    gen = Preview3D.generate(instances, v, function (res) { job.tp = res; });
     renderStages(job, 0);
     $('#slice-card').hidden = false; $('#slice-card').classList.remove('stalled');
     $('#slice-expected').textContent = 'about ' + clock(expected) + ' left';
@@ -1195,9 +1195,9 @@
     tickSlice(job, 0);
   }
   function pickSuspect() {
-    var warned = S.copies.filter(function (c) { var p = partById(c.partId); return p && p.warn; })[0];
+    var warned = S.instances.filter(function (c) { var p = partById(c.partId); return p && p.warn; })[0];
     if (warned) return warned;
-    return S.copies.slice().sort(function (a, b) { return PL.derive(b).height - PL.derive(a).height; })[0];
+    return S.instances.slice().sort(function (a, b) { return PL.derive(b).height - PL.derive(a).height; })[0];
   }
   function activeStages(job) { return STAGES.filter(function (s) { return !s.support || job.support; }); }
   function stageAt(job, p) {
@@ -1277,7 +1277,7 @@
     stopJob(job); job.state = 'failed';
     $('#slice-card').hidden = true;
     var box = $('#preview-errors'); box.innerHTML = '';
-    var sus = job.suspect, label = sus ? copyLabel(sus) : 'A copy', h = sus ? PL.derive(sus).height : 40;
+    var sus = job.suspect, label = sus ? instanceLabel(sus) : 'An instance', h = sus ? PL.derive(sus).height : 40;
     var z1 = +(h * 0.62).toFixed(2), z2 = +(z1 + 0.72).toFixed(2), zr = Math.round(z1 * 10) / 10;
     var name = sus && partById(sus.partId) ? partById(sus.partId).name : 'the part';
     var orca = 'Orca returned -100. result.json: "Object can’t be printed for empty layer between ' + z1 + ' and ' + z2 + '. Make sure the object is printable or the object has faulty mesh."';
@@ -1285,21 +1285,21 @@
       box.appendChild(msg('error', 'The slice failed: ' + label + ' has empty layers at about ' + zr + ' mm above the plate.',
         'Part of it starts in mid-air there, and Supports is off, so nothing would hold it up while it prints. Turn Supports on and slice again.',
         [['Turn on Supports and slice again', function () { setSetting('enable_support', true); startSlice(); updateSummary(); }, 'primary'], ['Back to Layout', function () { gotoStep('layout'); }]],
-        orca + '\nSupports: off. Copy ' + label + ', part ' + name + '.'));
+        orca + '\nSupports: off. Instance ' + label + ', part ' + name + '.'));
     } else if (type === 'faulty') {
       box.appendChild(msg('error', 'The slice failed: ' + label + ' has a faulty mesh at about ' + zr + ' mm above the plate.',
         'Supports is already on, so the model itself has gaps or zero-thickness pieces there. Repair ' + name + ' in CAD (look for faces that do not meet near ' + zr + ' mm), then ' +
           (S.ctx === 'standalone' ? 'upload the repaired file on the Parts step.' : 'press ↻ on its row on the Parts step to bring in the repaired version.'),
         [['Back to Parts', function () { gotoStep('parts'); }, 'primary']],
-        orca + '\nSupports: on (' + job.settings.support_type + '). Copy ' + label + ', part ' + name + '.'));
+        orca + '\nSupports: on (' + job.settings.support_type + '). Instance ' + label + ', part ' + name + '.'));
     } else if (type === 'timeout') {
       box.appendChild(msg('error', 'The slice took longer than ' + (SLICE_TIMEOUT_S / 60) + ' minutes, the server’s limit, and was stopped.',
-        job.copies.length > 1
-          ? 'Slice again first: the server may have been busy. If it stops again, this plate of ' + job.copies.length + ' copies is too much at once: lower the quantities and print the rest on a second plate, or pick the Draft profile.'
+        job.instances.length > 1
+          ? 'Slice again first: the server may have been busy. If it stops again, this plate of ' + job.instances.length + ' instances is too much at once: lower the quantities and print the rest on a second plate, or pick the Draft profile.'
           : 'Slice again first: the server may have been busy. If it stops again, pick the Draft profile, whose thicker layers slice faster.',
-        job.copies.length > 1 ? [['Slice again', startSlice, 'primary'], ['Back to Parts', function () { gotoStep('parts'); }]]
+        job.instances.length > 1 ? [['Slice again', startSlice, 'primary'], ['Back to Parts', function () { gotoStep('parts'); }]]
                               : [['Slice again', startSlice, 'primary'], ['Back to Setup', function () { gotoStep('setup'); }]],
-        'Orca killed after ' + SLICE_TIMEOUT_S + ' s at stage "' + stageAt(job, job.shown).name + '". Copies ' + job.copies.length + ', volume ' + plateVolume().toFixed(1) + ' cm³.'));
+        'Orca killed after ' + SLICE_TIMEOUT_S + ' s at stage "' + stageAt(job, job.shown).name + '". Instances ' + job.instances.length + ', volume ' + plateVolume().toFixed(1) + ' cm³.'));
     }
     updateNext();
   }
@@ -1318,7 +1318,7 @@
   function finishSlice(job) {
     stopJob(job); job.state = 'done';
     var est = Preview3D.estimate(job.tp, job.settings, filamentObj());
-    S.result = { tp: job.tp, est: est, copies: job.copies, settings: job.settings, filament: filamentObj(), sliceTime: job.t };
+    S.result = { tp: job.tp, est: est, instances: job.instances, settings: job.settings, filament: filamentObj(), sliceTime: job.t };
     S.resultSig = job.sig;
     $('#slice-card').hidden = true;
     showResult();
@@ -1336,10 +1336,10 @@
     [['Print time', hm(r.est.seconds)], ['Filament', Math.round(r.est.grams) + ' g ' + r.filament.type]].forEach(function (s) {
       var d = el('div', 'stat'); d.appendChild(el('strong', null, s[1])); d.appendChild(document.createTextNode(s[0])); stats.appendChild(d);
     });
-    stats.appendChild(el('div', 'stat-line', r.copies.length + ' cop' + (r.copies.length === 1 ? 'y' : 'ies') + ' · ' + r.tp.layers + ' layers of ' + r.settings.layer_height + ' mm · sliced in ' + clock(r.sliceTime)));
+    stats.appendChild(el('div', 'stat-line', r.instances.length + ' instance' + (r.instances.length === 1 ? '' : 's') + ' · ' + r.tp.layers + ' layers of ' + r.settings.layer_height + ' mm · sliced in ' + clock(r.sliceTime)));
     if (!viewer) viewer = Preview3D.createViewer($('#viewer-container'), PLATE);
     setTimeout(function () {
-      viewer.resize(); viewer.show(r.tp, r.copies);
+      viewer.resize(); viewer.show(r.tp, r.instances);
       Object.keys(S.hiddenTypes).forEach(function (k) { if (S.hiddenTypes[k]) viewer.setVisible(k, false); });
       setLayer(r.tp.layers - 1);
     }, 0);
@@ -1404,7 +1404,7 @@
     });
     $('#btn-layer-up').addEventListener('click', function () { S.followPrint = false; syncFollow(); setLayer(S.layer + 1); });
     $('#btn-layer-down').addEventListener('click', function () { S.followPrint = false; syncFollow(); setLayer(S.layer - 1); });
-    $('#btn-preview-view').addEventListener('click', function () { if (viewer && S.result) viewer.reset(S.result.copies); });
+    $('#btn-preview-view').addEventListener('click', function () { if (viewer && S.result) viewer.reset(S.result.instances); });
     // final action: split button, as the CNC wizard
     $('#btn-do').addEventListener('click', function () { doAction(S.action); });
     $('#btn-do-caret').addEventListener('click', function (e) { e.stopPropagation(); $('#do-menu').hidden = !$('#do-menu').hidden; });
@@ -1422,7 +1422,7 @@
     if (!S.result) return;
     if (a === 'download') {
       var t = $('#preview-toast'); t.hidden = false;
-      t.textContent = 'Downloaded ' + fileName() + ' (' + (0.4 + S.result.copies.length * 0.21).toFixed(1) + ' MB). Mockup: no file is saved.';
+      t.textContent = 'Downloaded ' + fileName() + ' (' + (0.4 + S.result.instances.length * 0.21).toFixed(1) + ' MB). Mockup: no file is saved.';
       return;
     }
     confirmSend();
@@ -1437,7 +1437,7 @@
     var r = S.result, c = el('div', 'send-confirm');
     c.appendChild(el('div', 'sc-title', 'Send this plate to ' + ST.PRINTER.name + '?'));
     var ul = el('ul');
-    ul.appendChild(el('li', null, r.copies.length + ' cop' + (r.copies.length === 1 ? 'y' : 'ies') + ': ' + S.parts.filter(function (p) { return p.status === 'ready'; }).map(function (p) { return (p.qty > 1 ? p.qty + ' × ' : '') + p.name; }).join(', ')));
+    ul.appendChild(el('li', null, r.instances.length + ' instance' + (r.instances.length === 1 ? '' : 's') + ': ' + S.parts.filter(function (p) { return p.status === 'ready'; }).map(function (p) { return (p.qty > 1 ? p.qty + ' × ' : '') + p.name; }).join(', ')));
     ul.appendChild(el('li', null, hm(r.est.seconds) + ', ' + Math.round(r.est.grams) + ' g of ' + r.filament.name));
     ul.appendChild(el('li', null, 'It starts printing as soon as it arrives.'));
     c.appendChild(ul);
@@ -1460,7 +1460,7 @@
       return;
     }
     if (Mock.take('printer_unreachable')) {
-      box.appendChild(msg('error', 'Penguin Slicer cannot reach ' + ST.PRINTER.name + ': the shop computer that talks to the printer last reported 7 minutes ago.',
+      box.appendChild(msg('error', 'PenguinSlicer cannot reach ' + ST.PRINTER.name + ': the shop computer that talks to the printer last reported 7 minutes ago.',
         'Your plate was not sent. Check that the printer and that computer are on and connected to the shop network, then send again. Or Download the file and print it another way.',
         [['Send again', confirmSend, 'primary'], ['Download', function () { doAction('download'); }]],
         'Relay: nothing heard from the team’s daemon for 7 min (last sync 14:02:11). Printer serial 0938…A1.'));
