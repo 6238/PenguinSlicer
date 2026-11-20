@@ -1,4 +1,4 @@
-/* Penguin Slicer mockup: fake toolpaths from the mock geometry, and the layer preview.
+/* PenguinSlicer mockup: fake toolpaths from the mock geometry, and the layer preview.
  * Each layer is a real cross-section of the placed mesh; walls are that outline pushed
  * inward, infill is scanlines clipped to the section, solid layers are found by comparing
  * with the layers above and below, supports stand under faces that point down. It is not
@@ -263,9 +263,9 @@
   }
 
   // Build every layer of the plate, a few layers per tick so the page stays live.
-  function generate(copies, S, onDone) {
+  function generate(instances, S, onDone) {
     var groups = {}, items = [];
-    copies.forEach(function (c) {
+    instances.forEach(function (c) {
       var d = MockPlate.derive(c), key = c.partKey + '|' + d.key;
       if (!groups[key]) {
         groups[key] = makeGroup(c.partKey, c.q, d);
@@ -347,14 +347,14 @@
     }
     if (window.ResizeObserver) new ResizeObserver(resize).observe(container);
     var lines = {}, result = null, ghosts = [];
-    function frameView(copies) {
+    function frameView(instances) {
       var b = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity, h: 0 };
-      copies.forEach(function (c) {
+      instances.forEach(function (c) {
         var hb = MockPlate.bbox(MockPlate.worldHull(c));
         b.minX = Math.min(b.minX, hb.minX); b.maxX = Math.max(b.maxX, hb.maxX);
         b.minY = Math.min(b.minY, hb.minY); b.maxY = Math.max(b.maxY, hb.maxY); b.h = Math.max(b.h, MockPlate.derive(c).height);
       });
-      if (!copies.length) b = { minX: 0, maxX: plate.x, minY: 0, maxY: plate.y, h: 10 };
+      if (!instances.length) b = { minX: 0, maxX: plate.x, minY: 0, maxY: plate.y, h: 10 };
       var cx = (b.minX + b.maxX) / 2, cy = (b.minY + b.maxY) / 2, span = Math.max(b.maxX - b.minX, b.maxY - b.minY, 60);
       controls.target.set(cx, cy, b.h / 3);
       var k = 1.42 / Math.min(1, Math.max(0.6, camera.aspect || 1));    // room for the whole group beside the layer bar
@@ -367,7 +367,7 @@
       ghosts.forEach(function (m) { scene.remove(m); }); ghosts = [];
       needs = true;
     }
-    function show(res, copies) {
+    function show(res, instances) {
       clear(); result = res;
       TYPES.forEach(function (t) {
         var a = res.acc[t.id]; if (!a.pos.length) return;
@@ -375,19 +375,19 @@
         var l = new T.LineSegments(g, new T.LineBasicMaterial({ color: t.color }));
         lines[t.id] = l; scene.add(l);
       });
-      frameView(copies);
+      frameView(instances);
       setLayer(res.layers - 1);
     }
-    // the copies as grey ghosts, shown while slicing
-    function showGhosts(copies) {
+    // the instances as grey ghosts, shown while slicing
+    function showGhosts(instances) {
       clear();
-      copies.forEach(function (c) {
+      instances.forEach(function (c) {
         var def = MockParts.byKey[c.partKey], d = MockPlate.derive(c);
         var m = new T.Mesh(def.geometry, new T.MeshStandardMaterial({ color: 0x8a96a3, transparent: true, opacity: 0.35, flatShading: true }));
         m.quaternion.copy(c.q); m.position.set(c.x - d.offset[0], c.y - d.offset[1], -d.offset[2]);
         ghosts.push(m); scene.add(m);
       });
-      frameView(copies);
+      frameView(instances);
     }
     function setLayer(k) {
       if (!result) return;
@@ -396,7 +396,7 @@
     }
     function setVisible(id, on) { if (lines[id]) { lines[id].visible = on; needs = true; } }
     return { show: show, showGhosts: showGhosts, clear: clear, setLayer: setLayer, resize: resize, frameView: frameView, setVisible: setVisible,
-             reset: function (copies) { frameView(copies); } };
+             reset: function (instances) { frameView(instances); } };
   }
 
   window.Preview3D = { TYPES: TYPES, generate: generate, estimate: estimate, createViewer: createViewer };

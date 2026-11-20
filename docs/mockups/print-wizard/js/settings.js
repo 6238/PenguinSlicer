@@ -1,4 +1,4 @@
-/* Penguin Slicer mockup: printer, filaments, the team's profiles and the advanced mode
+/* PenguinSlicer mockup: printer, filaments, the team's profiles and the advanced mode
  * settings. Labels follow Orca Slicer's process tabs (Quality, Strength, Speed, Support,
  * Others); keys are Orca's setting keys. Values are plausible for a 0.6 mm nozzle H2S. */
 (function () {
