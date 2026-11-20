@@ -19,14 +19,29 @@ def running(file_name, percent=42):
 class FakeClock:
     """An injectable wall clock. Every relay age, deadline and rate-limit window reads it."""
 
+    #: The most advances one clock takes in a test: far above the busiest honest test (a
+    #: day of syncs a second apart), far below a loop with no end, which then fails here.
+    STEP_LIMIT = 1_000_000
+
     def __init__(self, now=1_789_300_000.0):
         self.now = now
+        self.steps = 0
 
     def __call__(self):
         return self.now
 
     def advance(self, seconds):
+        self.steps += 1
+        if self.steps > self.STEP_LIMIT:
+            raise ClockRanAway(f'the relay\'s fake clock was advanced more than '
+                               f'{self.STEP_LIMIT} times and the test had not ended; a loop '
+                               'that moves simulated time has no end.')
         self.now += seconds
+
+
+class ClockRanAway(BaseException):
+    """A fake clock passed its step limit. A BaseException, so no `except Exception` in the
+    code under test swallows it."""
 
 
 class Caller:

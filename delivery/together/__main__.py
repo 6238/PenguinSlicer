@@ -79,8 +79,8 @@ class WatchedRelayClient(RelayClient):
         self._say = say
         self._seen = set()
 
-    def sync(self, snapshot):
-        job = super().sync(snapshot)
+    def sync(self, snapshot, job_progress=None):
+        job = super().sync(snapshot, job_progress)
         if job and job['id'] not in self._seen:
             self._seen.add(job['id'])
             self._say('daemon', f"sync handed out job {job['id']} (pending -> handed_out)")

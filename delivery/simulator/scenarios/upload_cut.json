@@ -1,0 +1,5 @@
+{
+  "base": "whole_print",
+  "description": "The printer drops the data connection after 1000 bytes of every upload and answers 426.",
+  "upload": {"cut_bytes": 1000}
+}

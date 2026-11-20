@@ -83,7 +83,8 @@ class TestStatusRoute:
         resp = client.get('/printer/status')
         assert resp.status_code == 200
         assert resp.get_json()['paired'] is False
-        assert any('unreadable identity: stale cookie' in line for line in caller.logged)
+        assert any('unreadable identity: RuntimeError: stale cookie' in line
+                   for line in caller.logged)
 
     def test_identify_is_asked_on_every_poll(self, client, caller):
         client.get('/printer/status')
@@ -146,7 +147,7 @@ class TestJobsRoute:
         assert report['detail'] == body['error']
         assert 'need_verification' not in body
         assert caller.asked == []
-        assert any('unreadable identity: a list where a mapping belongs' in line
+        assert any('unreadable identity: ValueError: a list where a mapping belongs' in line
                    for line in caller.logged)
 
     def test_an_unknown_token_is_not_found(self, client):
@@ -322,7 +323,7 @@ class TestJobsRoute:
         for token, content in contents.items():
             caller.files[token] = SlicedFile(filename='s.gcode.3mf',
                                              stream=io.BytesIO(content))
-        barrier = threading.Barrier(8)
+        barrier = threading.Barrier(8, timeout=30)
         answers = []
 
         def press_send(token):
@@ -339,7 +340,8 @@ class TestJobsRoute:
         for thread in threads:
             thread.start()
         for thread in threads:
-            thread.join()
+            thread.join(timeout=30)
+            assert not thread.is_alive(), 'a sending thread never finished'
         assert sorted(code for code, _, _ in answers) == [202] + [409] * 7
         _, winner, winning_token = next(a for a in answers if a[0] == 202)
         job = relay.store_status(CODE, IDLE)
@@ -443,11 +445,14 @@ class TestDaemonRoutes:
             assert resp.status_code == 404
             assert resp.get_json() == {'error': 'not paired'}
 
-    def test_the_exchange_is_logged_without_the_token(self, client, caller, https):
+    def test_the_exchange_is_logged_without_the_token_or_the_pairing_code(
+            self, client, caller, https):
         token = client.post('/printer/daemon/pair', json={'code': CODE},
                             **https).get_json()['token']
-        assert any('paired for code 7K3M-Q9XW' in line for line in caller.logged)
+        tag = relay_module.printer_tag(CODE)
+        assert f'printer-delivery request=pair printer={tag} status=200' in caller.logged
         assert not any(token in line for line in caller.logged)
+        assert not any(CODE in line or '7K3M-Q9XW' in line for line in caller.logged)
 
     def test_sync_with_a_bad_token_says_repair(self, client, https):
         for header in ({'Authorization': 'Bearer garbage'}, {'Authorization': 'Basic x'},
@@ -479,17 +484,20 @@ class TestDaemonRoutes:
         assert relay.status_for(CODE)['job']['state'] == 'handed_out'
         assert relay.status_for(CODE)['status']['state'] == 'running'
 
-    def test_the_job_on_the_wire_carries_only_the_four_documented_fields(
+    def test_the_job_on_the_wire_carries_only_the_documented_fields(
             self, client, relay, auth, https, clock):
-        """The relay's state -- team_number, the job state, the hand-out time -- is the
-        relay's bookkeeping and is never sent to the Pi."""
+        """The relay's state -- team_number, the job state, the hand-out time, which
+        daemon holds the start -- is the relay's bookkeeping and is never sent to the Pi."""
         go_online(relay)
         relay.claim_job(CODE, job_id='j8f3a2c1', download_path='/printer/download/t',
-                        filename='sample_part.gcode.3mf', team_number=6238)
+                        filename='sample_part.gcode.3mf', team_number=6238, size=9,
+                        sha256='ab' * 32)
         job = client.post('/printer/daemon/sync', json=IDLE, headers=auth(),
                           **https).get_json()['job']
         assert job == {'id': 'j8f3a2c1', 'download_path': '/printer/download/t',
-                       'filename': 'sample_part.gcode.3mf', 'created_at': clock.now}
+                       'filename': 'sample_part.gcode.3mf', 'created_at': clock.now,
+                       'size': 9, 'sha256': 'ab' * 32, 'cancel': False,
+                       'start_granted': False}
 
     def test_sync_answers_a_null_job_when_there_is_none(self, client, auth, https):
         assert client.post('/printer/daemon/sync', json=IDLE, headers=auth(),
@@ -521,7 +529,7 @@ class TestDaemonRoutes:
         assert resp.status_code == 200
         assert resp.get_json() == {'ok': True}
         assert caller.events == [('printer_ack', {'team_number': 6238, 'metadata': {
-            'job_id': 'j8f3a2c1', 'ok': True, 'error': None}})]
+            'job_id': 'j8f3a2c1', 'ok': True, 'error': None, 'code': None}})]
         assert relay.status_for(CODE)['last_result']['ok'] is True
 
     def test_a_failed_ack_keeps_the_daemons_reason(self, client, relay, auth, https):
@@ -699,17 +707,18 @@ class TestHttpsAndDevMode:
 # --- rate limits -----------------------------------------------------------------------
 
 class TestRateLimits:
-    def test_sixty_syncs_a_minute_then_429_with_retry_after(self, client, relay, auth,
-                                                            https, clock):
+    def test_120_syncs_a_minute_then_429_with_retry_after(self, client, relay, auth,
+                                                          https, clock):
+        """A sync a second while an upload moves is sixty a minute: the limit leaves room."""
         relay.note_code(CODE)
         codes = [client.post('/printer/daemon/sync', json=IDLE, headers=auth(),
-                             **https).status_code for _ in range(60)]
+                             **https).status_code for _ in range(120)]
         assert set(codes) == {200}
         clock.advance(20)
         refused = client.post('/printer/daemon/sync', json=IDLE, headers=auth(), **https)
         assert refused.status_code == 429
         assert refused.headers['Retry-After'] == '40'
-        assert refused.get_json() == {'error': 'Too Many Requests: 60 per 1 minute'}
+        assert refused.get_json() == {'error': 'Too Many Requests: 120 per 1 minute'}
         clock.advance(40)
         assert client.post('/printer/daemon/sync', json=IDLE, headers=auth(),
                            **https).status_code == 200

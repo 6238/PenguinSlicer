@@ -23,7 +23,9 @@ import os
 import sys
 import time
 
-from penguin_delivery_daemon.printer import PrinterLink, map_status, suffixed_name
+from penguin_delivery_daemon.printer import (
+    PrinterLink, map_status, reports_file, suffixed_name,
+)
 
 WAIT_FOR_RUNNING_SECONDS = 120.0
 
@@ -65,7 +67,7 @@ def main():
         print(json.dumps(map_status(raw, printer=link.identity), indent=2, sort_keys=True))
 
         print(f"\nuploading as {remote_name} ...")
-        link.upload(source, remote_name)
+        print(f"upload: {link.upload(source, remote_name)}")      # judged by the listing
         print("starting the print ...")
         started = link.start(remote_name)
         print(f"start_print returned {started!r}")
@@ -82,7 +84,7 @@ def main():
             if not seen or seen[-1] != marker:
                 seen.append(marker)
                 print(f"  t+{time.monotonic() - began:5.1f}s  {marker}")
-            if snapshot['state'] == 'running' and snapshot['file'] == remote_name:
+            if snapshot['state'] == 'running' and reports_file(snapshot, remote_name):
                 print(f"\nreported running after "
                       f"{time.monotonic() - began:.1f}s")
                 break

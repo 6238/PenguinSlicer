@@ -1,0 +1,5 @@
+{
+  "base": "whole_print",
+  "description": "The whole print with the printer's FTPS and MQTT capped at TLS 1.2. Which TLS version the H2S speaks on port 990 is not yet known; this and tls13 cover both.",
+  "tls": "1.2"
+}

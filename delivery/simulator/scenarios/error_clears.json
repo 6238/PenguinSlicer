@@ -1,0 +1,15 @@
+{
+  "base": "whole_print",
+  "description": "An error code appears while the print runs and clears, then a serious HMS entry appears and clears, and the print finishes. INVENTED: whether the H2S sets print_error while it keeps printing is on the hardware checklist; the codes are from Bambu's published tables.",
+  "print": [
+    {"gcode_state": "RUNNING", "stg_cur": 0, "mc_percent": 10, "mc_remaining_time": 15,
+     "layer_num": 5, "total_layer_num": 50, "gcode_file": "/data/Metadata/plate_1.gcode",
+     "subtask_name": "{subtask}", "print_error": 0, "hms": []},
+    {"print_error": 117473297},
+    {"print_error": 0, "mc_percent": 20},
+    {"hms": [{"attr": 117473280, "code": 131073}]},
+    {"hms": [], "mc_percent": 30},
+    {"gcode_state": "FINISH", "stg_cur": 255, "mc_percent": 100, "mc_remaining_time": 0,
+     "layer_num": 50}
+  ]
+}

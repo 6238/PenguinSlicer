@@ -239,6 +239,40 @@ class TestWaitForConfig(ConfigTempFile):
         self.assertIn('config.toml', logged[0])
         self.assertIn('cannot read it', logged[0])
 
+    def test_a_file_saved_as_utf_16_is_waited_out_with_a_plain_message(self):
+        """Notepad's "Unicode" encoding: `run` must wait and say what to do, not escape
+        with a UnicodeDecodeError traceback."""
+        with open(self.path, 'w', encoding='utf-16') as fh:
+            fh.write('pairing_code = "7K3MQ9XW"\n')
+        logged = []
+        ticks = {'n': 0}
+
+        def sleep(_seconds):
+            ticks['n'] += 1
+            if ticks['n'] == 2:
+                self.write()
+
+        got = cfg.wait_for_config(self.path, sleep=sleep, clock=lambda: ticks['n'] * 5.0,
+                                  log=lambda *a: logged.append(' '.join(str(x) for x in a)))
+        self.assertEqual(got.pairing_code, '7K3MQ9XW')
+        self.assertEqual(len(logged), 1)
+        self.assertIn('it is not saved as UTF-8 text; save it as UTF-8, or run '
+                      '`python -m penguin_delivery_daemon pair` again', logged[0])
+        self.assertNotIn('sudo', logged[0])
+
+    def test_a_missing_file_names_the_command_that_works_on_every_system(self):
+        logged = []
+        ticks = {'n': 0}
+
+        def sleep(_seconds):
+            ticks['n'] += 1
+            self.write()
+
+        cfg.wait_for_config(self.path, sleep=sleep, clock=lambda: 0.0,
+                            log=lambda *a: logged.append(' '.join(str(x) for x in a)))
+        self.assertIn('run `python -m penguin_delivery_daemon pair` first', logged[0])
+        self.assertNotIn('sudo', logged[0])
+
 
 class TestResolvePairingCode(unittest.TestCase):
     def test_an_existing_code_is_kept_by_default(self):

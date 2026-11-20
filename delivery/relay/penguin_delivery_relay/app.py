@@ -22,7 +22,7 @@ EXTENSION = 'penguin_delivery_relay'
 
 def create_app(*, secret_key, identify, find_sliced_file, clock=time.time, log=None,
                on_event=None, dev=False, dev_pairing_code=None, trusted_proxy_hops=1,
-               installer_path=None, spool_dir=None):
+               installer_path=None, spool_dir=None, stream_wait=None):
     """Build the relay's application.
 
     secret_key        Signs the daemon's token. Must be the same across restarts: a new key
@@ -45,15 +45,24 @@ def create_app(*, secret_key, identify, find_sliced_file, clock=time.time, log=N
     installer_path    The daemon's install.sh, served at /install-printer.sh. None leaves the
                       route out.
     spool_dir         Where the relay keeps its copy of a sliced file that arrived as a
-                      stream. None makes a private temporary directory on first use.
+                      stream. None makes a private temporary directory on first use. It
+                      belongs to this one relay process: at start, every copy a previous
+                      process left in it is removed (see sliced_files.py).
+    stream_wait       How a progress stream waits for news; for tests only. None waits on
+                      the relay's own condition.
     """
     app = Flask(__name__)
     relay = PrinterRelay(clock=clock)
-    ctx = RelayContext(relay=relay, files=SlicedFileStore(spool_dir),
+    files = SlicedFileStore(spool_dir)
+    swept = files.sweep()
+    if swept and log:
+        log(f'printer-delivery event=spool_swept removed={len(swept)}')
+    ctx = RelayContext(relay=relay, files=files,
                        limiter=RateLimiter(clock), secret_key=secret_key,
                        identify=identify, find_sliced_file=find_sliced_file, clock=clock,
                        log=log, on_event=on_event, dev=bool(dev),
-                       dev_pairing_code=dev_pairing_code, installer_path=installer_path)
+                       dev_pairing_code=dev_pairing_code, installer_path=installer_path,
+                       stream_wait=stream_wait)
     app.extensions[EXTENSION] = ctx
     register_routes(app, ctx)
     if trusted_proxy_hops:

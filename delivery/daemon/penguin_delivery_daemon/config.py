@@ -18,6 +18,9 @@ import tomli_w
 
 DEFAULT_CONFIG_PATH = "/etc/penguincam-printer/config.toml"
 DEFAULT_BACKEND_URL = "https://penguincam.popcornpenguins.com"
+#: The command a person runs to pair, named in every message that asks for it. The same
+#: on Windows, macOS and Linux, for a daemon started by hand.
+PAIR_COMMAND = "python -m penguin_delivery_daemon pair"
 
 # Fields written to the file, in this order. `path` is where the file lives, not part of it.
 _FILE_FIELDS = ('backend_url', 'printer_ip', 'printer_serial', 'access_code',
@@ -134,7 +137,11 @@ def wait_for_config(path=DEFAULT_CONFIG_PATH, *, sleep=time.sleep, clock=time.mo
         try:
             return load_config(path)
         except FileNotFoundError:
-            reason = "run `sudo penguincam-printer pair`"
+            reason = f"run `{PAIR_COMMAND}` first"
+        except UnicodeDecodeError:
+            # Saved by an editor in another encoding (Notepad's "Unicode" is UTF-16).
+            reason = ("cannot read it: it is not saved as UTF-8 text; save it as UTF-8, "
+                      f"or run `{PAIR_COMMAND}` again")
         except (OSError, tomllib.TOMLDecodeError) as exc:
             reason = f"cannot read it: {exc}"
         now = clock()

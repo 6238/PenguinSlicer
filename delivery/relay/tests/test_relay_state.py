@@ -281,16 +281,33 @@ class TestSendRefusals(RelayTestCase):
         self.online(running(''))
         self.assertEqual(self.claim()[1], 'Printer busy, printing a file at 42 percent')
 
-    def test_refused_while_paused_unreachable_or_in_error(self):
-        for state, error, expected in (
+    def test_refused_while_paused_unreachable_or_unrecognised(self):
+        for state, unrecognised, expected in (
                 ('paused', None, 'Paused, a file'),
                 ('unreachable', None, 'Printer unreachable from the Pi'),
-                ('error', 'HMS_0300_0100_0001_0004', 'Printer error: HMS_0300_0100_0001_0004'),
-                ('error', None, 'Printer error: unknown')):
-            with self.subTest(state=state, error=error):
-                self.online(dict(IDLE, state=state, error=error))
+                ('unrecognised', "gcode_state 'SLICING'",
+                 "Printer state not recognised: gcode_state 'SLICING'"),
+                ('busy', None, "Printer state not recognised: state 'busy'"),
+                (None, None, 'Printer state not recognised: state None'),
+                # A state that is not text is not kept, which reads as none at all.
+                (42, None, 'Printer state not recognised: state None')):
+            with self.subTest(state=state):
+                self.online(dict(IDLE, state=state, unrecognised=unrecognised))
                 ok, reason, job = self.claim()
                 self.assertEqual((ok, reason, job), (False, expected, None))
+
+    def test_a_printer_whose_last_print_ended_badly_is_free(self):
+        """Round 3, defect 4: a stopped or failed print leaves the printer free; the
+        daemon starts the next one only on a fresh report of a free printer."""
+        for error in ('PRINT_ERROR_0300400C', 'HMS_0300_0100_0001_0004', None):
+            with self.subTest(error=error):
+                self.setUp()
+                self.online(dict(IDLE, state='error', error=error))
+                self.assertEqual(self.claim()[:2], (True, None))
+
+    def test_busy_without_a_percent_never_says_none(self):
+        self.online(dict(IDLE, state='running', file='other.gcode.3mf', percent=None))
+        self.assertEqual(self.claim()[1], 'Printer busy, printing other.gcode.3mf')
 
     def test_refused_when_a_job_is_already_in_flight(self):
         self.hand_out_a_job()

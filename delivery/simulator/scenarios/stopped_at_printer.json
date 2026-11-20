@@ -1,0 +1,12 @@
+{
+  "base": "whole_print",
+  "description": "Someone pauses the print at the printer, resumes it, then stops it (print_error 0x0300400C, INVENTED as the H2S's code for a cancelled task).",
+  "print": [
+    {"gcode_state": "RUNNING", "stg_cur": 0, "mc_percent": 10, "mc_remaining_time": 15,
+     "layer_num": 5, "total_layer_num": 50, "gcode_file": "/data/Metadata/plate_1.gcode",
+     "subtask_name": "{subtask}", "print_error": 0, "hms": []},
+    {"gcode_state": "PAUSE", "stg_cur": 16},
+    {"gcode_state": "RUNNING", "stg_cur": 0, "mc_percent": 12},
+    {"gcode_state": "FAILED", "stg_cur": 255, "print_error": 50348044}
+  ]
+}

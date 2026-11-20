@@ -1,18 +1,25 @@
-"""`penguincam-printer pair | run | status`.
+"""`python -m penguin_delivery_daemon pair | run | status | record`.
 
-The installer writes /usr/local/bin/penguincam-printer as a two-line wrapper that runs
-`python -m penguin_delivery_daemon "$@"` out of the daemon's venv, so this is the whole CLI.
+A plain Python program, started by hand, with the same commands on Windows, macOS and
+Linux. Everything it keeps is in one directory, its home (`--home DIR`; the default is in
+paths.py):
 
-`pair` is the only command a mentor runs by hand, and it runs under sudo: it writes
-/etc/penguincam-printer/config.toml as root, hands the directory and the file to the
-penguincam user the service runs as, and restarts the unit. `run` is what systemd starts.
-`status` is what a mentor runs when the wizard says the printer is offline; it posts
-nothing, so it cannot disturb the running service.
+- `pair` finds the printer, checks it answers, writes the configuration and prints the
+  pairing code to give to the print server;
+- `run` is the daemon itself: it talks to the relay and to the printer until stopped;
+- `status` reports on the configuration, the printer and the relay, and posts nothing,
+  so it cannot disturb a running daemon;
+- `record` saves every status document the printer sends, one JSON line each, so a real
+  print's sequence can replace the simulated printer's invented scenarios.
+
+On a Linux machine installed by the earlier installer (daemon/install.sh, not maintained
+in this version), `pair` with that installer's configuration path also hands the file to
+the service user and restarts the service; nowhere else does it touch either.
 """
 
 import argparse
+import json
 import os
-import pwd
 import secrets
 import subprocess
 import sys
@@ -21,6 +28,7 @@ from urllib.parse import urlparse
 
 from penguin_delivery_daemon import VERSION
 from penguin_delivery_daemon import config as cfg
+from penguin_delivery_daemon import paths
 from penguin_delivery_daemon.printer import PrinterLink, discover
 from penguin_delivery_daemon.relay_client import ChallengeDetected, RelayClient, RelayError
 from penguin_delivery_daemon.run_loop import RunLoop
@@ -39,9 +47,23 @@ CONNECT_POLL_SECONDS = 0.5
 STATUS_WAIT_SECONDS = 10.0
 DISCOVERY_SECONDS = 5.0
 
-#: Where a job's sliced file lands while it is on its way to the printer. Not /tmp: on a Pi
-#: that is often a tmpfs, and a hundred-megabyte 3MF would be spent RAM.
+#: Where an install made by the earlier installer downloads to (its unit grants this path).
+#: Every other run downloads to the `downloads/` folder of its home.
 DOWNLOAD_DIR = '/var/tmp/penguincam-printer'
+RECORD_POLL_SECONDS = 0.5
+
+
+def resolve_paths(args):
+    """Fill `args.config` and `args.download_dir` from `--home` / `--config` (paths.py)."""
+    home = paths.home_for(getattr(args, 'home', None), getattr(args, 'config', None))
+    if not getattr(args, 'config', None):
+        args.config = home.config
+    if paths.is_service_install(args.config):
+        args.download_dir = DOWNLOAD_DIR
+    else:
+        args.download_dir = home.downloads
+    args.recordings = home.recordings
+    return args
 
 
 def generate_pairing_code():
@@ -58,7 +80,7 @@ def format_pairing_code(code):
     return f"{code[:4]}-{code[4:]}"
 
 
-def hand_to_service_user(path, log, *, lookup=pwd.getpwnam, chown=os.chown):
+def hand_to_service_user(path, log, *, lookup=None, chown=None):
     """Give the config directory and file to the user the service runs as.
 
     `pair` runs as root under sudo, so everything it writes is root's. `run` runs as
@@ -69,7 +91,14 @@ def hand_to_service_user(path, log, *, lookup=pwd.getpwnam, chown=os.chown):
 
     Only the daemon's OWN directory is handed over. `pair --config /etc/config.toml` must
     chown /etc/config.toml and nothing else: giving away whatever directory a typed path
-    happens to sit in would be a far bigger change than the one that was asked for."""
+    happens to sit in would be a far bigger change than the one that was asked for.
+
+    Only ever called for a Linux service install (paths.is_service_install), so `pwd`, which
+    Windows lacks, is imported here and never at module scope."""
+    if lookup is None:
+        import pwd
+        lookup = pwd.getpwnam
+    chown = chown or os.chown
     try:
         entry = lookup(SERVICE_USER)
     except KeyError:
@@ -171,6 +200,7 @@ def cmd_pair(args, *, ask=input, out=sys.stdout, clock=time.monotonic, sleep=tim
         print(text, end='', file=out, flush=True)
         return (ask() or '').strip()
 
+    resolve_paths(args)
     backend = args.backend or cfg.DEFAULT_BACKEND_URL
     try:
         cfg.check_backend_url(backend, dev=bool(args.dev))
@@ -214,7 +244,7 @@ def cmd_pair(args, *, ask=input, out=sys.stdout, clock=time.monotonic, sleep=tim
         say("Check that it is in LAN-only mode with Developer Mode ON, and that the")
         say("access code matches the one on the printer's screen. Developer Mode is")
         say("required: Bambu firmware rejects print starts from third-party software")
-        say("in any other mode. See docs/PRINTER_SETUP.md.")
+        say("in any other mode.")
         return 1
 
     identity = snapshot.get('printer') or {}
@@ -228,19 +258,26 @@ def cmd_pair(args, *, ask=input, out=sys.stdout, clock=time.monotonic, sleep=tim
                               access_code=access_code, pairing_code=code, token='',
                               dev=dev, path=args.config)
     cfg.save_config(config, path=args.config)
-    hand_to_service_user(args.config, say)
+    service = paths.is_service_install(args.config)
+    if service:
+        hand_to_service_user(args.config, say)
 
     say("")
-    say(f"Backend: {config.backend_url}")
+    say(f"Relay:   {config.backend_url}")
     say(f"Config:  {args.config}")
     say("")
-    say("Paste these two lines into your team's PenguinCAM-config.yaml in Onshape,")
-    say("then open PenguinCAM from Onshape and click the config refresh link:")
+    say("Give this pairing code to your team's print server, where it asks for the")
+    say("printer's pairing code (for a team configuration file, these two lines):")
     say("")
     say("printing:")
     say(f'  pairing_code: "{format_pairing_code(code)}"')
     say("")
-    restart_service(say)
+    if service:
+        restart_service(say)
+    else:
+        home = ['--home', os.path.dirname(os.path.abspath(args.config))]
+        say("Then start the daemon and leave it running:")
+        say(f"  python -m penguin_delivery_daemon run {' '.join(home)}")
     return 0
 
 
@@ -269,7 +306,7 @@ def wait_for_paired_config(path, *, log=print, sleep=time.sleep, clock=time.mono
             return config
         now = clock()
         if last_log is None or now - last_log >= log_every:
-            log(f"{path} has no pairing code -- run `sudo penguincam-printer pair` first "
+            log(f"{path} has no pairing code -- run `{cfg.PAIR_COMMAND}` first "
                 f"(waited {int(now - started)}s)")
             last_log = now
         sleep(interval)
@@ -287,12 +324,14 @@ def _ensure_download_dir(path):
     return path
 
 
-def cmd_run(args, *, out=sys.stdout, download_dir=DOWNLOAD_DIR, clock=time.monotonic,
+def cmd_run(args, *, out=sys.stdout, download_dir=None, clock=time.monotonic,
             sleep=time.sleep):
-    """The service. Waits for the config file rather than exiting into a restart loop."""
+    """The daemon. Waits for the config file rather than exiting."""
     def log(*parts):
         print(*parts, file=out, flush=True)
 
+    resolve_paths(args)
+    download_dir = download_dir or args.download_dir
     try:
         config = wait_for_paired_config(args.config, log=log, clock=clock, sleep=sleep)
     except KeyboardInterrupt:
@@ -308,11 +347,13 @@ def cmd_run(args, *, out=sys.stdout, download_dir=DOWNLOAD_DIR, clock=time.monot
         log(f"error: {e}")
         return 2
 
-    printer = PrinterLink(config.printer_ip, config.printer_serial, config.access_code)
+    printer = PrinterLink(config.printer_ip, config.printer_serial, config.access_code,
+                          log=log)
     relay = RelayClient(config.backend_url, token=config.token or None)
     loop = RunLoop(config, relay, printer, log=log,
                    download_dir=_ensure_download_dir(download_dir))
-    log(f"penguincam-printer {VERSION} running against {config.backend_url}")
+    log(f"penguincam-printer {VERSION} running against {config.backend_url}; "
+        f"printer at {config.printer_ip}; files in {os.path.dirname(args.config)}")
     status = 0
     try:
         printer.connect()
@@ -329,6 +370,8 @@ def cmd_run(args, *, out=sys.stdout, download_dir=DOWNLOAD_DIR, clock=time.monot
         log(f"error: could not start: {e}")
         status = 1
     finally:
+        # Ends the job thread's waits at once; its file is never started after this.
+        loop.stop()
         loop.executor.shutdown(wait=True)
         printer.disconnect()
     return status
@@ -340,10 +383,17 @@ def cmd_status(args, *, out=sys.stdout, clock=time.monotonic, sleep=time.sleep):
     def say(*parts):
         print(*parts, file=out)
 
+    resolve_paths(args)
     try:
         config = cfg.load_config(args.config)
     except FileNotFoundError:
-        say(f"No config file at {args.config}. Run `sudo penguincam-printer pair`.")
+        say(f"No config file at {args.config}. Run `python -m penguin_delivery_daemon "
+            "pair` first.")
+        return 1
+    except (OSError, ValueError) as e:
+        say(f"The config file at {args.config} cannot be read ({e.__class__.__name__}: "
+            f"{str(e).splitlines()[0] if str(e) else ''}). Run pair again to write a new "
+            "one.")
         return 1
 
     say(f"penguincam-printer {VERSION}")
@@ -383,39 +433,99 @@ def cmd_status(args, *, out=sys.stdout, clock=time.monotonic, sleep=time.sleep):
     return 0
 
 
+def cmd_record(args, *, out=sys.stdout, clock=time.monotonic, sleep=time.sleep,
+               link=None):
+    """Save every status document the printer sends, one JSON line each, until Ctrl-C or
+    `--seconds` have passed. For capturing a real print's sequence in one session at the
+    printer, to replace the simulated printer's invented scenarios. The access code is
+    never written."""
+    def say(*parts):
+        print(*parts, file=out, flush=True)
+
+    resolve_paths(args)
+    try:
+        config = cfg.load_config(args.config)
+    except (OSError, ValueError) as e:
+        say(f"No usable config file at {args.config} ({e.__class__.__name__}); run pair "
+            "first.")
+        return 1
+    target = args.out or os.path.join(
+        args.recordings, time.strftime('status-%Y%m%d-%H%M%S.jsonl'))
+    directory = os.path.dirname(os.path.abspath(target))
+    os.makedirs(directory, exist_ok=True)
+    link = link or PrinterLink(config.printer_ip, config.printer_serial, config.access_code,
+                               log=say)
+    started = clock()
+    saved, last = 0, None
+    say(f"recording the printer's status documents to {target}; press Ctrl-C to stop")
+    try:
+        link.connect()
+        with open(target, 'a', encoding='utf-8') as fh:
+            while args.seconds is None or clock() - started < args.seconds:
+                report = link.raw_report()
+                if report and report != last:
+                    last = report
+                    fh.write(json.dumps({'t': round(clock() - started, 2), 'print': report},
+                                        sort_keys=True) + '\n')
+                    fh.flush()
+                    saved += 1
+                sleep(RECORD_POLL_SECONDS)
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        say(f"error: could not record: {e}")
+        return 1
+    finally:
+        link.disconnect()
+    say(f"saved {saved} status documents to {target}")
+    return 0
+
+
+def _common(parser):
+    parser.add_argument('--home', default=None,
+                        help='the directory for the configuration, state and downloads '
+                             f'(default {paths.default_home()})')
+    parser.add_argument('--config', default=None,
+                        help='the configuration file itself, instead of --home')
+
+
 def build_parser():
-    parser = argparse.ArgumentParser(prog='penguincam-printer',
-                                     description='PenguinCAM printer daemon')
-    # --config is declared on each subcommand, not here: a top-level copy would shadow the
-    # subparser's value with its own default.
+    parser = argparse.ArgumentParser(prog='python -m penguin_delivery_daemon',
+                                     description='Printer delivery daemon')
+    # --home and --config are declared on each subcommand, not here: a top-level copy
+    # would shadow the subparser's value with its own default.
     sub = parser.add_subparsers(dest='command', required=False)
 
     pair = sub.add_parser('pair', help='find the printer and mint a pairing code')
-    pair.add_argument('--config', default=cfg.DEFAULT_CONFIG_PATH)
+    _common(pair)
     pair.add_argument('--new-code', action='store_true',
                       help='mint a fresh pairing code instead of keeping the existing one')
     pair.add_argument('--backend', default=None,
-                      help='backend URL (defaults to the hosted service)')
+                      help='relay URL (defaults to the hosted service)')
     pair.add_argument('--dev', action='store_true',
-                      help='allow a plain-HTTP backend URL (development only)')
+                      help='allow a plain-HTTP relay URL (development only)')
 
-    run = sub.add_parser('run', help='run the relay loop (what systemd starts)')
-    run.add_argument('--config', default=cfg.DEFAULT_CONFIG_PATH)
+    run = sub.add_parser('run', help='run the daemon until stopped')
+    _common(run)
 
-    status = sub.add_parser('status', help='report on the config, printer and backend')
-    status.add_argument('--config', default=cfg.DEFAULT_CONFIG_PATH)
+    status = sub.add_parser('status', help='report on the config, printer and relay')
+    _common(status)
+
+    record = sub.add_parser('record', help="save every status document the printer sends")
+    _common(record)
+    record.add_argument('--out', default=None, help='the file to append to')
+    record.add_argument('--seconds', type=float, default=None,
+                        help='stop after this many seconds (default: at Ctrl-C)')
     return parser
 
 
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.command == 'pair':
-        return cmd_pair(args)
-    if args.command == 'run':
-        return cmd_run(args)
-    if args.command == 'status':
-        return cmd_status(args)
+    commands = {'pair': cmd_pair, 'run': cmd_run, 'status': cmd_status,
+                'record': cmd_record}
+    if args.command in commands:
+        return commands[args.command](args)
     parser.print_help()
     return 1
 

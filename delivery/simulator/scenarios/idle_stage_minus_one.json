@@ -1,0 +1,7 @@
+{
+  "base": "whole_print",
+  "description": "A whole print from an idle printer that reports stg_cur -1, which X1-family firmware is believed to send when idle (INVENTED: what the idle H2S sends is on the hardware checklist). IDLE is no print whatever the stage code says, so the print is delivered.",
+  "idle": {"gcode_state": "IDLE", "stg_cur": -1, "mc_percent": 0, "mc_remaining_time": 0,
+           "layer_num": 0, "total_layer_num": 0, "gcode_file": "", "subtask_name": "",
+           "print_error": 0, "hms": []}
+}

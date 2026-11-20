@@ -14,6 +14,8 @@ dev = [
     "pytest-randomly>=3.15",
     "pytest-xdist>=3.6",
     "coverage>=7.6",
+    "hypothesis>=6.100",
+    "pytest-timeout>=2.3",
 ]
 
 [tool.uv]
@@ -30,19 +32,28 @@ penguin-delivery-daemon = { workspace = true }
 
 [tool.pytest.ini_options]
 # Paths are relative to this file, never to the current directory.
-testpaths = ["relay/tests", "daemon/tests", "tests"]
+testpaths = ["relay/tests", "daemon/tests", "tests", "simulator/tests"]
 # "." for the together run; each tests folder for its own helper module (relay_fakes,
 # daemon_fakes), whose names are unique so the folders can share one interpreter.
-pythonpath = [".", "relay/tests", "daemon/tests"]
+pythonpath = [".", "relay/tests", "daemon/tests", "tests"]
 addopts = ["-p", "no:cacheprovider", "--strict-markers", "--import-mode=importlib"]
+# The hard limit per test, enforced by pytest-timeout from outside the test: a SIGALRM
+# that fails the test where it stands, whatever the test replaced. The fast suite's slowest
+# test takes under half a second, the simulated printer's and the together run's (real_time)
+# a few seconds; 30 s leaves room for a loaded machine and still ends a hang long before it
+# can fill memory.
+timeout = 30
+timeout_method = "signal"
 markers = [
     "known_fault: pins a known fault's CURRENT wrong behaviour; to be fixed in hardening, which flips the assertion",
     "real_time: runs the together run on real threads and real (sped-up) time; not in the fast suite",
+    "upstream: pins a behaviour of the installed printer library the daemon relies on (make test-upstream)",
+    "simulator: drives the daemon against the simulated printer over loopback sockets (make test-sim)",
 ]
 
 [tool.coverage.run]
 branch = true
-source = ["penguin_delivery_relay", "penguin_delivery_daemon", "together"]
+source = ["penguin_delivery_relay", "penguin_delivery_daemon", "together", "simulator"]
 omit = ["*/tests/*"]
 
 [tool.coverage.report]

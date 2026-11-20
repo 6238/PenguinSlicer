@@ -48,7 +48,7 @@ class RunLoopTestCase(unittest.TestCase):
         kwargs = dict(clock=self.clock, sleep=self.clock.sleep,
                       log=lambda *a: self.logged.append(' '.join(str(x) for x in a)),
                       executor=rl.InlineExecutor(),
-                      download_dir=self.tmp,
+                      download_dir=self.tmp, rand=lambda: 0.0, instance='daemon-test',
                       save_token=lambda token, path: self.saved_tokens.append((token, path)))
         kwargs.update(overrides)
         return rl.RunLoop(self.config, self.relay, self.printer, **kwargs)
@@ -75,7 +75,7 @@ class TestExchange(RunLoopTestCase):
         self.assertEqual(self.saved_tokens, [('signed', self.config.path)])
         self.assertEqual(self.relay.token, 'signed')
         self.assertEqual(self.config.token, 'signed')
-        self.assertEqual(self.lines('paired with the backend'), ['paired with the backend'])
+        self.assertEqual(self.lines('paired with the relay'), ['paired with the relay'])
 
     def test_once_paired_the_next_tick_syncs(self):
         loop = self.make()
@@ -327,7 +327,7 @@ class TestJobHandling(RunLoopTestCase):
         self.relay.ack_result = False
         self.deliver(loop)
         self.assertEqual(self.lines('no longer holds'),
-                         ['the backend no longer holds job j8f3a2c1 (404); treating as final'])
+                         ['the relay no longer holds job j8f3a2c1; treating it as finished'])
         self.clock.advance(6)
         self.deliver(loop)
         self.assertEqual(len(self.relay.acks), 1)     # never sent again
@@ -464,7 +464,8 @@ class TestUntrustedJobFields(RunLoopTestCase):
         self.deliver(loop)
         reason = self.relay.acks[0][2]
         self.assertEqual(reason, 'x' * 200)
-        self.assertTrue(self.lines('Traceback'))
+        # An expected failure is a plain line, not a traceback that looks like a crash.
+        self.assertFalse(self.lines('Traceback'))
 
     def test_an_exception_with_no_text_is_named_by_its_class(self):
         loop = self.make_paired()
@@ -485,6 +486,7 @@ class TestJobProgressIsLogged(RunLoopTestCase):
         self.assertEqual(stages, [
             'job j8f3a2c1: downloading the sliced file',
             f'job j8f3a2c1: uploading to the printer as {SUFFIXED}',
+            'job j8f3a2c1: uploaded; the printer has all 9 bytes',
             'job j8f3a2c1: starting the print',
             f'job j8f3a2c1: start accepted; waiting for the printer to report {SUFFIXED}',
             'job j8f3a2c1 acknowledged: ok',
@@ -504,7 +506,7 @@ class TestJobProgressIsLogged(RunLoopTestCase):
         self.relay.ack_error = RelayError('reset')
         self.deliver(loop)
         self.assertEqual(self.lines('could not acknowledge'), [
-            'could not acknowledge j8f3a2c1: reset; will try again on the re-offer'])
+            'could not acknowledge j8f3a2c1: reset; will try again in 5s'])
 
 
 class TestDaemonRestartsMidJob(RunLoopTestCase):
@@ -611,47 +613,47 @@ class KnownFaultsWithTheRealPrinterReport(RunLoopTestCase):
         report['subtask_name'] = remote_name[:-len('.gcode.3mf')]
         return report
 
-    @pytest.mark.known_fault
-    def test_known_fault_the_start_check_never_matches_the_h2s_report(self):
-        """KNOWN FAULT, to be fixed in hardening. The start check compares the uploaded name
-        with `file`, which map_status fills from `gcode_file` (the G-code path inside the
-        archive) before `subtask_name` (our name without .gcode.3mf). So a print that
-        started is acknowledged as failed after sixty seconds. Hardening flips this to
-        expect ('j8f3a2c1', True, None) with no waiting."""
+    def test_the_start_check_matches_the_h2s_report(self):
+        """Known fault 1, fixed: the uploaded name without .gcode.3mf is matched against
+        the H2S's `subtask_name`, so the print that started is acknowledged at once."""
         self.bambu.report_after_start = self.as_the_h2s_reports
         loop = self.make_paired()
         self.deliver(loop)
         self.assertEqual(self.bambu.started['filename'], SUFFIXED)
-        self.assertEqual(self.printer.snapshot()['state'], pr.RUNNING)
-        self.assertEqual(self.relay.acks, [('j8f3a2c1', False,
-                                            'the printer did not start the file within 60s')])
+        self.assertEqual(self.relay.acks, [('j8f3a2c1', True, None)])
+        self.assertEqual(self.clock.slept, [])                 # no waiting at all
 
-    @pytest.mark.known_fault
-    def test_known_fault_a_restarted_daemon_uploads_a_running_job_again(self):
-        """KNOWN FAULT, to be fixed in hardening. Same cause: the restarted daemon cannot
-        recognise its own job in the H2S report, so it uploads and starts the part a second
-        time while the first copy prints. Hardening flips this to expect no upload."""
+    def test_a_restarted_daemon_recognises_its_running_job_and_uploads_nothing(self):
+        """Known fault 1, fixed: a restarted daemon never prints the part twice."""
         self.bambu.report = self.as_the_h2s_reports(SUFFIXED)
         loop = self.make_paired()
         self.deliver(loop)
-        self.assertEqual(self.bambu.uploaded, (SUFFIXED, b'3mf-bytes'))
-        self.assertEqual(self.bambu.started['filename'], SUFFIXED)
+        self.assertIsNone(self.bambu.uploaded)
+        self.assertIsNone(self.bambu.started)
+        self.assertEqual(self.relay.acks, [('j8f3a2c1', True, None)])
 
-    @pytest.mark.known_fault
-    def test_known_fault_a_failed_upload_goes_on_to_start_a_missing_file(self):
-        """KNOWN FAULT, to be fixed in hardening. bambulabs_api catches a failure during the
-        transfer itself, logs it and returns None (a refused connection or login raises,
-        and that is reported); PrinterLink.upload returns the None and the run loop never
-        looks at it. So the daemon starts a file the printer does not have, and the caller
-        learns only of a start timeout a minute later. Hardening flips this to expect no
-        start and an upload failure in the acknowledgement."""
+    def test_a_failed_upload_is_never_started_and_says_upload_failed(self):
+        """Known fault 2, fixed: the library's swallowed failure is caught by the printer's
+        own listing, the upload is tried again, and the job fails as an upload failure
+        without a start."""
         self.bambu.upload_returns_none = True
         loop = self.make_paired()
         self.deliver(loop)
-        self.assertIsNone(self.bambu.uploaded)                 # nothing reached the printer
-        self.assertEqual(self.bambu.started['filename'], SUFFIXED)
+        self.assertIsNone(self.bambu.uploaded)
+        self.assertIsNone(self.bambu.started)
         self.assertEqual(self.relay.acks, [('j8f3a2c1', False,
-                                            'the printer did not start the file within 60s')])
+                                            'the printer did not confirm that the file arrived')])
+        self.assertEqual(self.relay.ack_codes, ['delivery.upload_failed'])
+
+    def test_the_426_after_a_whole_file_goes_on_to_start_and_logs_no_error(self):
+        """The hardware test's case: the reply was 426, the file arrived whole."""
+        self.bambu.arrives_but_426 = True
+        self.bambu.report_after_start = self.as_the_h2s_reports
+        loop = self.make_paired()
+        self.deliver(loop)
+        self.assertEqual(self.relay.acks, [('j8f3a2c1', True, None)])
+        self.assertFalse([line for line in self.logged
+                          if 'Failed to execute' in line or 'error' in line.lower()])
 
 
 class TestPreflightAndRunForever(RunLoopTestCase):
@@ -705,3 +707,256 @@ class TestPreflightAndRunForever(RunLoopTestCase):
             self.assertEqual(loop.download_dir, tempfile.gettempdir())
         finally:
             loop.executor.shutdown(wait=True)
+
+
+class TestSilenceNeverEndsTheStart(RunLoopTestCase):
+    """Defect 1, route A: the start wait counts only the printer's fresh reports. A
+    printer that is unreachable or quiet after an accepted start may be printing."""
+
+    class Requesting(FakePrinter):
+        def __init__(self):
+            super().__init__()
+            self.requests = []
+
+        def request_report(self):
+            self.requests.append(True)
+
+    def run_start(self, script):
+        """Deliver a job whose start is accepted; `script(seconds_since_start)` sets what
+        the printer reports at each poll of the start wait."""
+        loop = self.make_paired()
+        self.printer.starts_running = False
+        begun = {}
+
+        def sleep(seconds):
+            self.clock.sleep(seconds)
+            if self.printer.starts:
+                begun.setdefault('at', self.clock.now - seconds)
+                script(self.clock.now - begun['at'])
+
+        loop.sleep = sleep
+        self.deliver(loop)
+        return loop
+
+    def test_an_unreachable_spell_of_ninety_seconds_then_our_file_is_a_success(self):
+        def script(t):
+            if t < 90:
+                self.printer.set(dict(IDLE, state=pr.UNREACHABLE))
+            else:
+                self.printer.set(running(SUFFIXED))
+
+        self.run_start(script)
+        self.assertEqual(self.relay.acks, [('j8f3a2c1', True, None)])
+        self.assertEqual(self.printer.starts, [SUFFIXED])
+
+    def test_an_unreachable_printer_is_waited_for_with_no_end_and_never_judged(self):
+        """An hour of a printer that cannot be reached: still waiting, nothing acked."""
+        class Done(BaseException):          # not caught by the job's own backstop
+            pass
+
+        def script(t):
+            self.printer.set(dict(IDLE, state=pr.UNREACHABLE))
+            if t >= 3600:
+                raise Done()
+
+        with self.assertRaises(Done):
+            self.run_start(script)
+        self.assertEqual(self.relay.acks, [])
+        self.assertTrue(self.lines('it is not answering just now, so the wait is not counted'))
+
+    def test_a_silent_stream_is_not_counted_and_the_printer_is_asked_for_a_report(self):
+        self.printer = self.Requesting()
+
+        def script(t):
+            if t < 600:
+                self.printer.set(dict(IDLE, report_age_s=int(t) + 30))
+            else:
+                self.printer.set(dict(running(SUFFIXED), report_age_s=0))
+
+        self.run_start(script)
+        self.assertEqual(self.relay.acks, [('j8f3a2c1', True, None)])
+        # Asked every REPORT_REQUEST_SECONDS while quiet, not every poll.
+        self.assertEqual(len(self.printer.requests), int(600 / rl.REPORT_REQUEST_SECONDS))
+
+    def test_only_fresh_reports_count_towards_the_start_timeout(self):
+        def script(t):
+            reachable = int(t) % 40 < 20                  # 20 s answering, 20 s not
+            self.printer.set(dict(IDLE) if reachable else dict(IDLE, state=pr.UNREACHABLE))
+
+        started = self.clock.now
+        self.run_start(script)
+        self.assertEqual(self.relay.ack_codes, ['delivery.start_timeout'])
+        self.assertGreaterEqual(self.clock.now - started, 2 * rl.START_WAIT_SECONDS - 20)
+        self.assertEqual(self.relay.ack_fields, [{'seconds': 60}])
+
+
+class TestFailureFigures(RunLoopTestCase):
+    """Defect 3: every daemon failure whose sentence has a figure sends it in `fields`."""
+
+    def test_the_start_timeout_names_its_seconds(self):
+        loop = self.make_paired()
+        self.deliver(loop)
+        self.assertEqual(self.relay.ack_fields, [{'seconds': 60}])
+
+    def test_an_unreachable_printer_at_the_start_names_its_minutes(self):
+        loop = self.make_paired()
+        self.printer.set(dict(IDLE, state=pr.UNREACHABLE))
+        self.deliver(loop)
+        self.assertEqual(self.relay.ack_codes, ['delivery.printer_unreachable_at_start'])
+        self.assertEqual(self.relay.ack_fields, [{'minutes': 10}])
+
+    def test_a_busy_printer_names_its_print_and_percent(self):
+        loop = self.make_paired()
+        self.printer.set(running('other_part-j0000abc.gcode.3mf'))
+        self.deliver(loop)
+        self.assertEqual(self.relay.ack_codes, ['delivery.printer_busy_at_start'])
+        self.assertEqual(self.relay.ack_fields,
+                         [{'name': 'other_part.gcode.3mf', 'percent': 3}])
+
+    def test_a_printer_error_at_the_start_names_its_code(self):
+        """Our file named by a printer whose print ended badly at once."""
+        loop = self.make_paired()
+        self.printer.starts_running = False
+
+        def sleep(seconds):
+            self.clock.sleep(seconds)
+            if self.printer.starts:
+                self.printer.set(dict(IDLE, state=pr.ERROR, file=SUFFIXED,
+                                      error='PRINT_ERROR_07008011'))
+
+        loop.sleep = sleep
+        self.deliver(loop)
+        self.assertEqual(self.relay.ack_codes, ['delivery.printer_error_at_start'])
+        self.assertEqual(self.relay.ack_fields, [{'error': 'PRINT_ERROR_07008011'}])
+
+    def test_a_printer_left_in_its_failed_state_takes_the_next_print(self):
+        """Round 3, defect 4: the error left over from the last print does not refuse."""
+        loop = self.make_paired()
+        self.printer.starts_running = True
+        self.printer.set(dict(IDLE, state=pr.ERROR, error='PRINT_ERROR_0300400C'))
+        self.deliver(loop)
+        self.assertEqual(self.relay.acks, [('j8f3a2c1', True, None)])
+        self.assertEqual(self.printer.starts, [SUFFIXED])
+
+    def test_another_file_started_is_named(self):
+        loop = self.make_paired()
+        self.printer.starts_running = False
+
+        def sleep(seconds):
+            self.clock.sleep(seconds)
+            if self.printer.starts:
+                self.printer.set(running('someone_elses_part.gcode.3mf'))
+
+        loop.sleep = sleep
+        self.deliver(loop)
+        self.assertEqual(self.relay.ack_codes, ['delivery.start_other_file'])
+        self.assertEqual(self.relay.ack_fields, [{'name': 'someone_elses_part.gcode.3mf'}])
+
+    def test_a_huge_detail_is_cut_before_it_is_sent_or_queued(self):
+        loop = self.make_paired()
+        self.relay.ack_error = RelayError('down')
+        loop._ack('j8f3a2c1', False, 'x', code='delivery.upload_failed', detail='y' * 5_000_000)
+        self.assertLessEqual(len(self.relay.ack_details[0]), rl.MAX_DETAIL_CHARS)
+        self.assertLessEqual(len(loop.pending_acks['j8f3a2c1']['detail']),
+                             rl.MAX_DETAIL_CHARS)
+
+
+class TestStoppingWithAJobInFlight(RunLoopTestCase):
+    """Defect 7: stop() ends the job thread's waits at once, on a real thread, and the
+    file is never started afterwards."""
+
+    def test_stop_ends_a_job_waiting_for_the_printer_promptly_and_never_starts_it(self):
+        import threading
+        from concurrent.futures import ThreadPoolExecutor
+        waiting = threading.Event()
+
+        class Unreachable(FakePrinter):
+            def snapshot(self):
+                waiting.set()
+                return dict(IDLE, state=pr.UNREACHABLE)
+
+        self.printer = Unreachable()
+        executor = ThreadPoolExecutor(max_workers=1)
+        loop = self.make_paired(executor=executor, sleep=None, clock=__import__('time').monotonic)
+        self.deliver(loop)
+        self.assertTrue(waiting.wait(10))              # the job thread is in its wait
+        loop.stop()
+        finished = threading.Event()
+        threading.Thread(target=lambda: (executor.shutdown(wait=True), finished.set()),
+                         daemon=True).start()
+        self.assertTrue(finished.wait(10), 'the job thread did not stop')
+        self.assertEqual(self.printer.starts, [])
+        self.assertEqual(self.printer.uploads, [])
+        self.assertEqual(self.relay.acks, [])          # left for the next run
+        self.assertIsNone(loop.running_job_id)
+        self.assertTrue(self.lines('the daemon is stopping'))
+
+    def test_stop_ends_the_start_wait_promptly_with_the_printer_unreachable(self):
+        """Round 3, defect 6: Ctrl-C while the daemon waits for the printer to report the
+        file it started, the printer unreachable since the command: on a real thread, the
+        job thread ends at once and nothing is sent twice."""
+        import threading
+        import time
+        from concurrent.futures import ThreadPoolExecutor
+        in_start_wait = threading.Event()
+
+        class GoneAfterTheStart(FakePrinter):
+            def snapshot(self):
+                if self.starts:
+                    in_start_wait.set()
+                    return dict(IDLE, state=pr.UNREACHABLE)
+                return super().snapshot()
+
+        self.printer = GoneAfterTheStart()
+        executor = ThreadPoolExecutor(max_workers=1)
+        loop = self.make_paired(executor=executor, sleep=None, clock=time.monotonic)
+        self.deliver(loop)
+        self.assertTrue(in_start_wait.wait(10), 'the job never reached the start wait')
+        loop.stop()
+        finished = threading.Event()
+        threading.Thread(target=lambda: (executor.shutdown(wait=True), finished.set()),
+                         daemon=True).start()
+        self.assertTrue(finished.wait(5), 'the start wait did not end on stop()')
+        self.assertEqual(self.printer.starts, [SUFFIXED])
+        self.assertEqual(self.relay.acks, [])          # left for the next run
+        self.assertIsNone(loop.running_job_id)
+        self.assertTrue(self.lines('the daemon is stopping'))
+
+    def test_a_stop_before_the_start_command_means_it_is_never_sent(self):
+        loop = self.make_paired()
+        original = self.relay.start_gate
+
+        def gate(job_id, instance):
+            loop.stop()                                # Ctrl-C arrives at the gate
+            return original(job_id, instance)
+
+        self.relay.start_gate = gate
+        self.deliver(loop)
+        self.assertEqual(self.printer.starts, [])
+        self.assertEqual(self.relay.acks, [])
+
+    def test_a_stop_during_the_upload_removes_the_partial_file(self):
+        loop = self.make_paired()
+
+        class Stopping(FakePrinter):
+            def upload(self, local_path, remote_name, *, progress=None, cancelled=None):
+                loop.stop()
+                return super().upload(local_path, remote_name, progress=progress,
+                                      cancelled=cancelled)
+
+        self.printer = Stopping()
+        loop.printer = self.printer
+        self.deliver(loop)
+        self.assertEqual(self.printer.deleted, [SUFFIXED])
+        self.assertEqual(self.printer.starts, [])
+
+    def test_run_forever_returns_once_stopped(self):
+        loop = self.make_paired()
+
+        def sleep(seconds):
+            self.clock.sleep(seconds)
+            loop.stop()
+
+        loop.sleep = sleep
+        loop.run_forever()
+        self.assertEqual(self.clock.slept, [rl.TICK_SECONDS])

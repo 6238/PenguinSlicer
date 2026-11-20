@@ -5,16 +5,19 @@
 #   make test-repeat     the fast suite ten times in a row, each in a new random order
 #   make slowest         the fast suite with its ten slowest tests listed
 #   make coverage        branch coverage per module under the fast suite
+#   make test-sim        the daemon against the simulated printer, over loopback sockets
+#   make test-upstream   the upstream check: the installed printer library, and test-sim
+#   make upgrade-printer-library VERSION=x.y.z   move the one pin, re-lock, run the check
 #   make test-together   the together run on real threads (in-process and over loopback)
 #   make together        the together run, printing every state change
 #   make daemon-tarball  the daemon alone, as one archive, in dist/
 #   make hardware-smoke  starts a REAL print on a REAL printer; see daemon/tests/hardware_smoke.py
 
-.PHONY: install test test-parallel test-repeat slowest coverage test-together together \
-        daemon-tarball hardware-smoke
+.PHONY: install test test-parallel test-repeat slowest coverage test-sim test-upstream \
+        upgrade-printer-library test-together together daemon-tarball hardware-smoke
 
 UV := uv run --project $(CURDIR)
-FAST := -m "not real_time"
+FAST := -m "not real_time and not simulator"
 REPEATS ?= 10
 
 install:
@@ -40,16 +43,27 @@ coverage:
 	$(UV) coverage run -m pytest -q $(FAST) -p no:randomly
 	$(UV) coverage report
 
+# One worker: each test starts its own simulated printer on ports the system picks.
+test-sim:
+	$(UV) pytest -q -m simulator -p no:randomly
+
+test-upstream:
+	$(UV) pytest -q -m "upstream or simulator" -p no:randomly
+
+upgrade-printer-library:
+	@test -n "$(VERSION)" || { echo "usage: make upgrade-printer-library VERSION=x.y.z"; exit 2; }
+	$(UV) python scripts/upgrade_printer_library.py $(VERSION)
+
 test-together:
 	$(UV) pytest -q -m real_time
 
 together:
 	$(UV) python -m together $(ARGS)
 
-# The daemon alone, as one archive, for running it on a laptop against a development
-# relay: unpack it, `pip install ./penguincam-printer-daemon` into a venv (its pyproject.toml
-# carries the pins), then run `penguincam-printer`. Staged through a directory rather than
-# tar's --transform, so it works with BSD tar as well as GNU tar.
+# The daemon alone, as one archive: unpack it, `pip install ./penguincam-printer-daemon`
+# into a venv (its pyproject.toml carries the pins), then run it with
+# `python -m penguin_delivery_daemon`. Staged through a directory rather than tar's
+# --transform, so it works with BSD tar as well as GNU tar.
 DAEMON_TARBALL ?= dist/penguincam-printer-daemon.tar.gz
 daemon-tarball:
 	@rm -rf dist/penguincam-printer-daemon

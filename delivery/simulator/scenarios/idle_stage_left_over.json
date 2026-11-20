@@ -1,0 +1,7 @@
+{
+  "base": "whole_print",
+  "description": "A whole print from an idle printer that still reports the stage of its last, stopped print (16, paused by the user), and a stage code no table knows beside it in a neighbour test. INVENTED. IDLE is no print whatever the stage code says, so the print is delivered.",
+  "idle": {"gcode_state": "IDLE", "stg_cur": 16, "mc_percent": 0, "mc_remaining_time": 0,
+           "layer_num": 0, "total_layer_num": 0, "gcode_file": "",
+           "subtask_name": "last_part-j00000001", "print_error": 0, "hms": []}
+}

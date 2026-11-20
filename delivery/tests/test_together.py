@@ -114,10 +114,15 @@ def test_a_job_goes_through_every_state_the_caller_can_see(tmp_path):
     b.sync()                                     # the printer's report reaches the relay
     status = b.status()
     assert status['status']['state'] == 'running'
-    assert status['status']['display_name'] == 'sample_part.gcode.3mf'
-    # The relay drops even a successful result once a sync names the job, so a caller
-    # polling slower than the sync never sees "ok". Kept as it was; see the README.
-    assert status['last_result'] is None
+    assert status['status']['display_name'] == 'sample_part'
+    # A success stays for a caller that polls slowly; only a failure the printer
+    # contradicts is cleared.
+    assert status['last_result']['ok'] is True
+    assert (status['delivery']['state'], status['delivery']['stage']) == ('running',
+                                                                          'printing')
+    b.printer.finish()
+    b.sync()
+    assert b.status()['delivery']['state'] == 'done'
 
 
 def test_the_downloaded_copy_is_gone_from_the_daemon_after_the_job(bench):
@@ -134,7 +139,8 @@ def test_a_sliced_file_that_vanished_before_the_download_reaches_the_caller(benc
     bench.sync()
     last = bench.status()['last_result']
     assert (last['ok'], last['reason']) == (False, 'download answered 404')
-    assert last['error_report']['code'] == 'delivery.job_failed'
+    assert last['error_report']['code'] == 'delivery.download_failed'
+    assert last['error_report']['detail'] == '3 attempts; last: download answered 404'
     assert bench.printer.received == {}
 
 
@@ -236,11 +242,10 @@ def test_a_second_daemon_with_a_copied_config_is_refused_while_the_first_is_aliv
     assert second.exchange(relay_fakes.CODE) is None
 
 
-@pytest.mark.known_fault
-def test_known_fault_a_real_h2s_report_turns_a_running_print_into_a_failure(tmp_path):
-    """KNOWN FAULT, to be fixed in hardening: the whole path with the real PrinterLink and
-    the report the H2S really sends. The part prints, but the caller is told the printer
-    did not start it, and the result is never cleared. Hardening flips both assertions."""
+def test_a_real_h2s_report_is_recognised_as_our_running_print(tmp_path):
+    """Known fault 1, fixed: the whole path with the real PrinterLink and the report the
+    H2S really sends (`subtask_name` without the extension, `gcode_file` the path inside
+    the archive). The part prints and the caller is told so."""
     holder = {}
 
     def factory(ip, access_code, serial):
@@ -264,7 +269,11 @@ def test_known_fault_a_real_h2s_report_turns_a_running_print_into_a_failure(tmp_
     b.sync()
     status = b.status()
     assert status['status']['state'] == 'running'
-    assert status['last_result']['error_report']['code'] == 'delivery.start_timeout'
+    assert status['last_result']['ok'] is True
+    assert status['delivery']['stage'] == 'printing'
+    assert status['delivery']['printer_stage'] == 'cleaning_nozzle'     # stg_cur 14
+    assert status['delivery']['total_layers'] == 50
+    assert holder['bambu'].started['filename'] == holder['bambu'].uploaded[0]
 
 
 # --- the two halves agree where they cannot import each other --------------------------
@@ -297,7 +306,8 @@ def test_the_daemons_snapshot_is_what_the_relay_reads():
     relay.store_status(relay_fakes.CODE, snapshot)
     ok, reason, _ = relay.claim_job(relay_fakes.CODE, job_id='j1', download_path='/d',
                                     filename='f', team_number=None)
-    assert (ok, reason) == (False, 'Paused, sample_part.gcode.3mf')
+    # The H2S reports the subtask name, without the extension.
+    assert (ok, reason) == (False, 'Paused, sample_part')
 
 
 # --- the pieces of the together run ------------------------------------------------------

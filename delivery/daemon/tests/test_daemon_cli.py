@@ -196,8 +196,17 @@ class TestPair(PairTestCase):
         self.run_pair(['10.0.0.42', '01P00A', '12345678'])
         self.assertNotIn('12345678', self.out.getvalue())
 
-    def test_the_config_is_handed_over_and_the_service_restarted(self):
+    def test_a_home_the_person_chose_touches_no_service_user_and_no_service(self):
+        """The daemon runs by hand on any platform: pair writes the file and says how to
+        run the daemon, and that is all."""
         self.run_pair(['10.0.0.42', '01P00A', '12345678'])
+        self.assertEqual((self.handovers, self.restarts), ([], []))
+        self.assertIn(f'python -m penguin_delivery_daemon run --home {self.dir}',
+                      self.out.getvalue())
+
+    def test_an_install_made_by_the_earlier_installer_is_handed_over_and_restarted(self):
+        with mock.patch.object(main_mod.paths, 'is_service_install', lambda path: True):
+            self.run_pair(['10.0.0.42', '01P00A', '12345678'])
         self.assertEqual(self.handovers, [self.path])
         self.assertEqual(self.restarts, [True])
 
@@ -501,7 +510,8 @@ class TestRun(RunTestCase):
 
         self.assertEqual(self.run_run(sleep=fix_it_after_two_waits), 0)
         text = self.out.getvalue()
-        self.assertIn('sudo penguincam-printer pair', text)
+        self.assertIn('run `python -m penguin_delivery_daemon pair` first', text)
+        self.assertNotIn('sudo', text)
         self.assertEqual(len(self.clock.slept), 2)
         self.assertEqual(self.clock.slept, [5.0, 5.0])
 
@@ -631,7 +641,8 @@ class TestStatus(unittest.TestCase):
         missing = os.path.join(self.dir, 'gone.toml')
         rc = self.run_status(self.healthy_relay(), path=missing)
         self.assertEqual(rc, 1)
-        self.assertIn('Run `sudo penguincam-printer pair`', self.out.getvalue())
+        self.assertIn('Run `python -m penguin_delivery_daemon pair` first.',
+                      self.out.getvalue())
 
 
 class PingingRelay(FakeRelay):

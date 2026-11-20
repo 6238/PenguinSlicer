@@ -15,7 +15,8 @@ import requests
 
 from penguin_delivery_daemon import USER_AGENT
 from penguin_delivery_daemon.relay_client import (
-    ChallengeDetected, RateLimited, RelayClient, RelayError, TokenRejected,
+    Cancelled, ChallengeDetected, DownloadCorrupt, RateLimited, RelayClient, RelayError,
+    TokenRejected,
 )
 
 
@@ -199,7 +200,8 @@ class TestAck(unittest.TestCase):
         method, url, kwargs = session.calls[0]
         self.assertEqual(url,
                          'https://example.test/printer/daemon/jobs/j8f3a2c1/ack')
-        self.assertEqual(kwargs['json'], {'ok': True, 'error': None})
+        self.assertEqual(kwargs['json'], {'ok': True, 'error': None, 'code': None,
+                                          'detail': None})
 
     def test_a_failed_ack_carries_one_line_of_reason(self):
         session = FakeSession(FakeResponse(payload={'ok': True}))
@@ -214,6 +216,22 @@ class TestAck(unittest.TestCase):
         session = FakeSession(FakeResponse(404, payload={'error': 'unknown job'}))
         client = RelayClient('https://example.test', token='signed', session=session)
         self.assertFalse(client.ack('j8f3a2c1', True))
+
+    def test_a_404_that_is_not_the_relays_own_answer_is_a_link_fault(self):
+        """Round 2, defect 2: a hosting platform's "application not found" page, or JSON
+        that is not the relay's, says nothing about the job: retried, never final."""
+        for call in (lambda c: c.ack('j8f3a2c1', True),
+                     lambda c: c.start_gate('j8f3a2c1', 'me'),
+                     lambda c: c.exchange('7K3MQ9XW')):
+            for answer, kind in (
+                    (FakeResponse(404, payload=None, text='<html>Application not found</html>',
+                                  headers={'Content-Type': 'text/html'}), ChallengeDetected),
+                    (FakeResponse(404, payload={'message': 'no such app'}), RelayError)):
+                with self.subTest(answer=answer.text):
+                    client = RelayClient('https://example.test', token='signed',
+                                         session=FakeSession(answer))
+                    with self.assertRaises(kind):
+                        call(client)
 
     def test_a_429_raises_with_the_retry_after(self):
         session = FakeSession(FakeResponse(429, payload={}, headers={
@@ -329,7 +347,7 @@ class TestErrorPathsTheOriginalDidNotReach(unittest.TestCase):
         with self.assertRaises(RelayError) as caught:
             client.sync({})
         self.assertNotIsInstance(caught.exception, ChallengeDetected)
-        self.assertIn("could not parse the backend's reply", str(caught.exception))
+        self.assertIn("could not parse the relay's reply", str(caught.exception))
 
     def test_a_response_with_no_content_type_is_named(self):
         session = FakeSession(FakeResponse(200, payload=None, text='',
@@ -372,6 +390,125 @@ class TestErrorPathsTheOriginalDidNotReach(unittest.TestCase):
     def test_without_a_session_a_requests_session_is_made(self):
         self.assertIsInstance(RelayClient('https://example.test')._session,
                               requests.Session)
+
+    def test_json_of_the_wrong_shape_is_a_relay_error_on_every_route(self):
+        """A proxy that answers JSON, but not ours: never an AttributeError."""
+        for payload, call in (([1, 2], lambda c: c.sync({})),
+                              ('a string', lambda c: c.ack('j1', True)),
+                              ({'job': 'not a job'}, lambda c: c.sync({})),
+                              ({'job': {'no': 'id'}}, lambda c: c.sync({})),
+                              ({'outcome': 'maybe'}, lambda c: c.start_gate('j1', 'i')),
+                              ([], lambda c: c.ping())):
+            session = FakeSession(FakeResponse(payload=payload))
+            with self.assertRaisesRegex(RelayError, 'wrong shape'):
+                call(RelayClient('https://example.test', token='t', session=session))
+
+    def test_a_captive_portal_page_is_named_as_one(self):
+        session = FakeSession(FakeResponse(200, payload=None, text='<html>Sign in to Wi-Fi',
+                                           headers={'Content-Type': 'text/html'}))
+        with self.assertRaisesRegex(ChallengeDetected, 'captive portal'):
+            RelayClient('https://example.test', token='t', session=session).sync({})
+
+    def test_the_sync_carries_the_job_progress_beside_the_snapshot(self):
+        session = FakeSession(FakeResponse(payload={'job': None}))
+        RelayClient('https://example.test', token='t', session=session).sync(
+            {'state': 'idle'}, {'id': 'j1', 'stage': 'uploading'})
+        self.assertEqual(session.calls[0][2]['json'],
+                         {'state': 'idle', 'job_progress': {'id': 'j1', 'stage': 'uploading'}})
+
+    def test_the_ack_carries_the_code_and_the_detail(self):
+        session = FakeSession(FakeResponse(payload={'ok': True}))
+        RelayClient('https://example.test', token='t', session=session).ack(
+            'j1', False, 'short', code='delivery.upload_failed', detail='426')
+        self.assertEqual(session.calls[0][2]['json'],
+                         {'ok': False, 'error': 'short', 'code': 'delivery.upload_failed',
+                          'detail': '426'})
+
+    def test_the_start_gate_answers_each_outcome(self):
+        for payload, outcome in (({'start': True, 'outcome': 'start'}, 'start'),
+                                 ({'start': False, 'outcome': 'cancelled'}, 'cancelled'),
+                                 ({'start': False, 'outcome': 'refused'}, 'refused')):
+            session = FakeSession(FakeResponse(payload=payload))
+            client = RelayClient('https://example.test', token='t', session=session)
+            self.assertEqual(client.start_gate('j1', 'inst'), outcome)
+            self.assertEqual(session.calls[0][2]['json'], {'instance': 'inst'})
+            self.assertEqual(session.calls[0][1],
+                             'https://example.test/printer/daemon/jobs/j1/start')
+        session = FakeSession(FakeResponse(404, payload={'error': 'unknown job'}))
+        self.assertEqual(RelayClient('https://example.test', token='t', session=session)
+                         .start_gate('j1', 'i'), 'unknown')
+        session = FakeSession(FakeResponse(401, payload={'error': 'repair'}))
+        with self.assertRaises(TokenRejected):
+            RelayClient('https://example.test', token='t', session=session).start_gate('j', 'i')
+
+    def test_a_download_of_the_wrong_length_or_content_is_corrupt_and_leaves_nothing(self):
+        import hashlib
+        good = hashlib.sha256(b'3mf-bytes').hexdigest()
+        for chunks, size, sha in (([b'3mf-'], 9, good),               # stopped partway
+                                  ([b'3mf-bytes', b'!'], 9, good),    # too long
+                                  ([b'3mf-bytez'], 9, good)):         # damaged
+            session = FakeSession(FakeResponse(chunks=chunks))
+            client = RelayClient('https://example.test', session=session)
+            with tempfile.TemporaryDirectory() as tmp:
+                with self.assertRaises(DownloadCorrupt):
+                    client.download('/printer/download/tok', os.path.join(tmp, 'j.3mf'),
+                                    size=size, sha256=sha)
+                self.assertEqual(os.listdir(tmp), [])
+
+    def test_a_download_that_matches_is_kept_and_reports_progress(self):
+        import hashlib
+        session = FakeSession(FakeResponse(chunks=[b'3mf-', b'bytes']))
+        seen = []
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = os.path.join(tmp, 'j.3mf')
+            RelayClient('https://example.test', session=session).download(
+                '/printer/download/tok', dest, size=9,
+                sha256=hashlib.sha256(b'3mf-bytes').hexdigest(),
+                progress=lambda got, total: seen.append((got, total)))
+            self.assertTrue(os.path.exists(dest))
+        self.assertEqual(seen, [(4, 9), (9, 9)])
+
+    def test_a_cancel_stops_the_download_and_leaves_nothing(self):
+        session = FakeSession(FakeResponse(chunks=[b'a', b'b']))
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(Cancelled):
+                RelayClient('https://example.test', session=session).download(
+                    '/printer/download/tok', os.path.join(tmp, 'j.3mf'),
+                    cancelled=lambda: True)
+            self.assertEqual(os.listdir(tmp), [])
+
+    def test_a_stall_or_reset_mid_download_names_the_bytes_and_never_the_token(self):
+        session = FakeSession(BrokenStream(chunks=[b'3mf-']))
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(RelayError) as caught:
+                RelayClient('https://example.test', session=session).download(
+                    '/printer/download/s3cret-token', os.path.join(tmp, 'j.3mf'))
+        self.assertEqual(str(caught.exception),
+                         'the download failed after 4 bytes: ConnectionError')
+
+    def test_network_failures_are_named_in_plain_words(self):
+        cases = (
+            (requests.exceptions.SSLError('bad handshake'), 'secure connection'),
+            (requests.exceptions.ConnectTimeout('x'), 'did not accept the connection'),
+            (requests.exceptions.ReadTimeout('x'), 'did not answer in time'),
+            (requests.ConnectionError("('Connection aborted.', RemoteDisconnected('x'))"),
+             'it may be restarting'),
+            (requests.ConnectionError('Failed to resolve: NameResolutionError'),
+             'could not be looked up (DNS)'),
+            (requests.ConnectionError('[Errno 111] Connection refused'), 'refused'),
+            (requests.ConnectionError('Connection reset by peer'), 'reset'),
+            (requests.RequestException('something else'), 'RequestException: something else'),
+        )
+        for error, words in cases:
+            session = FakeSession(error)
+            with self.assertRaises(RelayError) as caught:
+                RelayClient('https://example.test', token='t', session=session).sync({})
+            self.assertIn(words, str(caught.exception))
+        session = FakeSession(requests.ConnectionError('reset'))
+        with self.assertRaises(RelayError) as caught:
+            RelayClient('https://example.test', session=session).download(
+                '/printer/download/s3cret', '/nonexistent/x')
+        self.assertNotIn('s3cret', str(caught.exception))
 
     def test_empty_chunks_are_skipped(self):
         session = FakeSession(FakeResponse(chunks=[b'a', b'', b'b']))

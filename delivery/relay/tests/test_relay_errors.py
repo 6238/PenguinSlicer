@@ -132,12 +132,14 @@ def test_no_printer_status(client, caller, relay, tmp_path):
     assert_contract_shape(report)
 
 
-def test_printer_offline_names_the_minutes(client, caller, relay, clock, tmp_path):
+def test_daemon_silent_names_the_minutes(client, caller, relay, clock, tmp_path):
+    """The relay hears the daemon, not the printer: the message says which went quiet."""
     online(relay)
     clock.advance(7 * 60)
     report = refused_send(client, caller, tmp_path)
-    assert report['code'] == 'delivery.printer_offline'
-    assert report['message'] == 'The printer was last heard from 7 minutes ago.'
+    assert report['code'] == 'delivery.daemon_silent'
+    assert report['message'] == ('The computer next to the printer was last heard from 7 '
+                                 'minutes ago.')
     assert report['detail'] == 'Printer offline, last seen 7 min ago'
     assert_contract_shape(report)
 
@@ -146,6 +148,8 @@ def test_printer_busy(client, caller, relay, tmp_path):
     online(relay, running('other-jdeadbeef.gcode.3mf'))
     report = refused_send(client, caller, tmp_path)
     assert report['code'] == 'delivery.printer_busy'
+    assert report['message'] == ('The printer is busy printing other.gcode.3mf, 42 percent '
+                                 'done.')
     assert report['detail'] == 'Printer busy, printing other.gcode.3mf at 42 percent'
     assert_contract_shape(report)
 
@@ -164,14 +168,47 @@ def test_printer_unreachable(client, caller, relay, tmp_path):
     assert_contract_shape(report)
 
 
-def test_printer_error_keeps_the_printer_code_in_the_detail_only(client, caller, relay,
-                                                                tmp_path):
-    online(relay, dict(IDLE, state='error', error='HMS_0300_0100_0001_0004'))
+def test_busy_without_a_percent_never_says_none(client, caller, relay, tmp_path):
+    online(relay, dict(running('other-jdeadbeef.gcode.3mf'), percent=None))
     report = refused_send(client, caller, tmp_path)
-    assert report['code'] == 'delivery.printer_error'
-    assert 'HMS_' not in report['message'] + report['remedy']
-    assert report['detail'] == 'Printer error: HMS_0300_0100_0001_0004'
+    assert report['code'] == 'delivery.printer_busy'
+    assert report['message'] == 'The printer is busy printing other.gcode.3mf.'
     assert_contract_shape(report)
+
+
+def test_printer_state_unrecognised_keeps_the_raw_value_in_the_detail(client, caller, relay,
+                                                                     tmp_path):
+    """Round 3, defect 1: a main state the daemon does not know refuses the send with its
+    own report, true whatever the printer is doing, retryable."""
+    online(relay, dict(IDLE, state='unrecognised', unrecognised="gcode_state 'SLICING'"))
+    report = refused_send(client, caller, tmp_path)
+    assert report['code'] == 'delivery.printer_state_unrecognised'
+    assert report['message'] == ('The printer reported something this version of printer '
+                                 'delivery does not know, so it cannot tell whether the '
+                                 'printer is free.')
+    assert report['remedy'] == 'Check the printer, then try again in a moment.'
+    assert report['retryable'] is True
+    assert report['detail'] == "Printer state not recognised: gcode_state 'SLICING'"
+    assert_contract_shape(report)
+
+
+def test_a_printer_in_its_failed_state_takes_a_send(client, caller, relay, tmp_path):
+    """Round 3, defect 4: the printer's last print ended badly; it is free."""
+    online(relay, dict(IDLE, state='error', error='PRINT_ERROR_0300400C'))
+    caller.offer(tmp_path)
+    assert client.post('/printer/jobs', json={'token': 'tok'}).status_code == 202
+
+
+def test_no_message_ever_shows_a_missing_figure():
+    """Round 3, defect 1: every sentence, with none of its figures known, reads whole."""
+    for code in errors.CODES:
+        for fields in ({}, {'name': None, 'percent': None, 'minutes': None, 'seconds': None},
+                       {'percent': 'None', 'name': 'unknown'}):
+            message = errors.report_for_code(code, **fields)['message']
+            for missing in ('None', 'unknown', '{', '}', '[', ']', '  ', ' ,', ' .'):
+                assert missing not in message, (code, fields, message)
+    assert errors.error_report('Printer busy, printing x at 3 percent')['message'] == \
+        'The printer is busy printing x, 3 percent done.'
 
 
 def test_job_in_flight(client, caller, relay, tmp_path):
@@ -201,12 +238,14 @@ def test_job_not_picked_up(client, caller, relay, clock, tmp_path):
     clock.advance(3 * 60 + 1)
     report = last_result_report(client)
     assert report['code'] == 'delivery.job_not_picked_up'
-    assert report['where'] == {'stage': 'pick_up'}
+    assert report['where'] == {'stage': 'waiting_for_daemon'}
     assert_contract_shape(report)
 
 
-def test_job_not_confirmed_is_not_retryable(client, caller, relay, clock, tmp_path):
-    """The part may be printing already; sending again unchanged could print it twice."""
+def test_job_not_confirmed_is_retryable_because_the_gate_was_never_passed(
+        client, caller, relay, clock, tmp_path):
+    """Only a job whose start was never granted ends on the deadline, and its gate is shut
+    from then on, so the part cannot be printing: sending again is safe."""
     online(relay)
     caller.offer(tmp_path)
     client.post('/printer/jobs', json={'token': 'tok'})
@@ -214,7 +253,8 @@ def test_job_not_confirmed_is_not_retryable(client, caller, relay, clock, tmp_pa
     clock.advance(15 * 60 + 1)
     report = last_result_report(client)
     assert report['code'] == 'delivery.job_not_confirmed'
-    assert report['retryable'] is False
+    assert report['retryable'] is True
+    assert 'unknown' not in report['message']
     assert_contract_shape(report)
 
 
@@ -275,20 +315,21 @@ def test_every_rule_is_reachable_and_produces_the_contract_shape():
         'delivery.daemon_never_reported': ('The Pi has not reported since the service '
                                            'started; check the setup guide.'),
         'delivery.no_printer_status': 'No printer reporting yet; try again in a moment.',
-        'delivery.printer_offline': 'Printer offline, last seen 0 min ago',
-        'delivery.printer_busy': 'Printer busy, printing a file at None percent',
+        'delivery.daemon_silent': 'Printer offline, last seen 0 min ago',
+        'delivery.printer_busy': 'Printer busy, printing a file',
         'delivery.printer_paused': 'Paused, a file',
         'delivery.printer_unreachable': 'Printer unreachable from the Pi',
-        'delivery.printer_error': 'Printer error: unknown',
+        'delivery.printer_state_unrecognised': "Printer state not recognised: state 'x'",
         'delivery.job_in_flight': 'A job is already on its way to the printer',
         'delivery.rate_limited': 'Too Many Requests: 10 per 1 minute',
+        'delivery.relay_failed': 'The printer service failed: KeyError',
         'delivery.job_not_picked_up': 'printer did not pick up the job',
         'delivery.job_not_confirmed': 'printer did not confirm the job',
         'delivery.start_refused': 'the printer refused the print start command',
         'delivery.start_timeout': 'the printer did not start the file within 60s',
         'delivery.printer_error_at_start': 'printer error: unknown',
     }
-    assert set(examples) == {rule.code for rule in errors.RULES}
+    assert set(examples) == {code for code, _pattern in errors.RULES}
     for code, text in examples.items():
         report = errors.error_report(text)
         assert report['code'] == code, text
@@ -322,9 +363,31 @@ def test_an_exception_becomes_one_line_naming_its_class_without_a_token():
     assert len(errors.exception_text(ValueError('x' * 500))) == 200
 
 
-def test_codes_are_unique():
-    codes = [rule.code for rule in errors.RULES] + [errors.FALLBACK.code]
+def test_every_text_rule_names_a_known_code_and_each_code_one_rule_at_most():
+    codes = [code for code, _pattern in errors.RULES]
     assert len(codes) == len(set(codes))
+    assert set(codes) | {errors.FALLBACK} <= set(errors.CODES)
+
+
+def test_every_code_builds_a_report_of_the_contract_shape():
+    for code in errors.CODES:
+        assert_contract_shape(errors.report_for_code(code, detail='x'))
+
+
+def test_an_unknown_code_is_reported_truthfully_with_the_code_kept_in_detail():
+    report = errors.report_for_code('delivery.from_a_newer_daemon', detail='evidence')
+    assert report['code'] == 'delivery.job_failed'
+    assert report['detail'] == "code 'delivery.from_a_newer_daemon' from the daemon; evidence"
+    assert_contract_shape(report)
+
+
+def test_the_guide_lists_exactly_the_codes_printer_delivery_can_report():
+    import os
+    import re
+    guide = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'README.md')
+    with open(guide, encoding='utf-8') as fh:
+        listed = set(re.findall(r'^\| `(delivery\.[a-z_]+)` \|', fh.read(), re.MULTILINE))
+    assert listed == set(errors.CODES)
 
 
 def test_a_stream_send_refused_for_a_busy_printer_reports_busy(client, caller, relay):
@@ -333,3 +396,57 @@ def test_a_stream_send_refused_for_a_busy_printer_reports_busy(client, caller, r
     caller.files['tok'] = SlicedFile(filename='s.gcode.3mf', stream=io.BytesIO(b'3mf'))
     report = client.post('/printer/jobs', json={'token': 'tok'}).get_json()['error_report']
     assert report['code'] == 'delivery.printer_busy'
+
+
+# The daemon's failure codes, built from the `fields` its acknowledgement carries (defect 3):
+# each sentence in full, with no "unknown" where a figure belongs.
+DAEMON_SENTENCES = [
+    ('delivery.start_timeout', {'seconds': 60},
+     'The printer did not show the print as started within 60 seconds.'),
+    ('delivery.printer_unreachable_at_start', {'minutes': 10},
+     'The computer next to the printer could not reach the printer for 10 minutes.'),
+    ('delivery.printer_busy_at_start', {'name': 'bracket.gcode.3mf', 'percent': 42},
+     'The printer was busy with another print, bracket.gcode.3mf, 42 percent done, when '
+     'this one arrived.'),
+    ('delivery.start_other_file', {'name': 'someone_elses_part'},
+     'The printer started a different file, someone_elses_part, instead of this print.'),
+    ('delivery.printer_error_at_start', {'error': 'PRINT_ERROR_07008011'},
+     'The printer showed an error when the print was sent: the filament ran out.'),
+]
+
+
+@pytest.mark.parametrize('code, fields, sentence', DAEMON_SENTENCES)
+def test_a_daemon_failure_reads_with_its_figures(code, fields, sentence):
+    report = errors.error_report('whatever the daemon said', code=code, fields=fields)
+    assert report['code'] == code
+    assert report['message'] == sentence
+    assert 'unknown' not in report['message']
+
+
+@pytest.mark.parametrize('code, fields, sentence', DAEMON_SENTENCES)
+def test_the_figures_reach_the_report_through_the_ack_route(client, caller, relay, auth,
+                                                            https, tmp_path, code, fields,
+                                                            sentence):
+    online(relay)
+    caller.offer(tmp_path)
+    job_id = client.post('/printer/jobs', json={'token': 'tok'}).get_json()['job_id']
+    relay.store_status(CODE, IDLE)
+    resp = client.post(f'/printer/daemon/jobs/{job_id}/ack', headers=auth(),
+                       json={'ok': False, 'error': 'x', 'code': code, 'fields': fields},
+                       **https)
+    assert resp.status_code == 200
+    assert last_result_report(client)['message'] == sentence
+
+
+def test_only_known_short_plain_fields_are_kept():
+    kept = errors.daemon_fields({'name': 'n' * 500, 'percent': 5, 'seconds': True,
+                                 'minutes': [1], 'error': '', 'junk': 'x',
+                                 'detail': 'not a field'})
+    assert kept == {'name': 'n' * errors.MAX_FIELD_CHARS, 'percent': 5}
+    assert errors.daemon_fields(['not', 'a', 'dict']) == {}
+
+
+def test_a_detail_that_is_not_text_is_kept_as_its_json_and_cut():
+    report = errors.report_for_code('delivery.upload_failed', detail={'lines': ['x'] * 5000})
+    assert report['detail'].startswith('{"lines": ["x"')
+    assert len(report['detail']) <= errors.MAX_DETAIL_CHARS
