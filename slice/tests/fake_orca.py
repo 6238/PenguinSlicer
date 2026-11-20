@@ -11,11 +11,12 @@ arguments it was given, and fake-orca.pid, its process id.
 
 Modes:
     ok            slice every object, sending Orca's progress messages first;
-    drop          leave the last object out with exit 0, as Orca does with a copy off the plate;
+    drop          leave the last object out with exit 0, as Orca does with an instance off the plate;
     refuse        refuse the plate with return code -101 (exit status 155);
     garbled       refuse as `refuse` does, printing a line that is not UTF-8 first;
     empty_layers  refuse with -100 and the empty-layer warning Orca writes into result.json;
     general       refuse with -100 and only Orca's general error_string;
+    general_warned  the same, with a floating-regions warning in the debug log (--logfile);
     no_layers     refuse with -100, printing Orca's "No layers were detected." first;
     print_empty   refuse with -100, printing Orca's "The print is empty." first;
     exit_127      exit 127 with the loader's words, as Orca with a library missing does;
@@ -64,6 +65,9 @@ GENERAL = "Failed slicing the model. Please verify the slicing of all plates on 
 NO_LAYERS = ("No layers were detected. You might want to repair your STL file(s) or check their size or thickness "
              "and retry.\n")
 PRINT_EMPTY = "The print is empty. The model is not printable with current print settings."
+# A warning in Orca's debug log, as the pinned Orca writes it at --debug 3 (tests_orca pins it).
+LOG_WARNING = ("cli_status_callback: percent=-1, warning_step=7, message=It seems object {name} has floating "
+               "regions. Please re-orient the object or enable support generation., message_type=2, flag=32")
 LOADER = ("orca-slicer: error while loading shared libraries: libpangoft2-1.0.so.0: cannot open shared object file: "
           "No such file or directory")
 # The stand-in, and the child it can start, end themselves after this long whatever they
@@ -156,6 +160,13 @@ def main(argv):
                                           f"Object: {names[0]}\nMaybe parts of the object at these height are "
                                           f"too thin, or the object has faulty mesh")
     if mode == "general":
+        return refuse(out, -100, GENERAL)
+    if mode == "general_warned":
+        log = Path(argv[argv.index("--logfile") + 1])
+        # The warning twice, as the real log has it (the callback, then the manager's update).
+        log.write_text("cli_callback_mgr_t::start enter.\n" + (LOG_WARNING.format(name=names[0]) + "\n") * 2
+                       + "found slicing or export error for partplate 1\n")
+        print("Errors", flush=True)
         return refuse(out, -100, GENERAL)
     if mode in ("no_layers", "print_empty"):
         print(NO_LAYERS if mode == "no_layers" else PRINT_EMPTY, flush=True)

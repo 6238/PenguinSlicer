@@ -22,13 +22,13 @@ def test_shared_cases_cover_every_rule():
 
 @pytest.mark.parametrize('case', CASES['cases'], ids=[case['name'] for case in CASES['cases']])
 def test_shared_case(case):
-    assert case['copies'], 'make_rotated_cases.py has filled the case'
-    assert plate.check_placement(case['copies'], CASES['parts'], CASES['plate']) == case['problems']
+    assert case['instances'], 'make_rotated_cases.py has filled the case'
+    assert plate.check_placement(case['instances'], CASES['parts'], CASES['plate']) == case['problems']
 
 
 @pytest.mark.parametrize('entry', CASES['matrices'], ids=lambda e: f"{e['orientation']}@{e['angle']}")
 def test_shared_matrix(entry):
-    matrix = plate.copy_matrix(entry['orientation'], entry['angle'], entry['offset'], entry['x'], entry['y'])
+    matrix = plate.instance_matrix(entry['orientation'], entry['angle'], entry['offset'], entry['x'], entry['y'])
     assert len(matrix) == 3
     for row, expected in zip(matrix, entry['matrix']):
         assert row == pytest.approx(expected, abs=1e-9)
@@ -36,7 +36,7 @@ def test_shared_matrix(entry):
 
 def test_shared_labels_and_sanitize():
     for entry in CASES['labels']:
-        assert plate.copy_labels(entry['names']) == entry['labels']
+        assert plate.instance_labels(entry['names']) == entry['labels']
     for entry in CASES['sanitize']:
         assert plate.sanitize_part_name(entry['in']) == entry['out']
 
@@ -46,7 +46,7 @@ def test_shared_labels_and_sanitize():
 def test_matrices_put_named_axis_up(name, angle):
     axis = [0, 0, 0]
     axis['xyz'.index(name[1])] = 1 if name[0] == '+' else -1
-    matrix = plate.copy_matrix(name, angle, [0, 0, 0], 0, 0)
+    matrix = plate.instance_matrix(name, angle, [0, 0, 0], 0, 0)
     up = [sum(matrix[r][c] * axis[c] for c in range(3)) for r in range(3)]
     assert up == pytest.approx([0, 0, 1], abs=1e-12)
 
@@ -54,7 +54,7 @@ def test_matrices_put_named_axis_up(name, angle):
 def test_matrix_places_the_footprint_centre_at_x_y():
     # The offset (footprint centre, lowest z) lands on (x, y, 0), whatever the angle.
     offset = [7.0, -3.0, -11.0]
-    matrix = plate.copy_matrix('+z', 33, offset, 120, 80)
+    matrix = plate.instance_matrix('+z', 33, offset, 120, 80)
     moved = [sum(matrix[r][c] * offset[c] for c in range(3)) + matrix[r][3] for r in range(3)]
     assert moved == pytest.approx([120, 80, 0], abs=1e-9)
 
@@ -76,9 +76,9 @@ def test_constants():
     assert (plate.SPACING_MM, plate.MARGIN_MM, plate.EPS_MM) == (5.0, 3.0, 1e-6)
 
 
-def test_copy_hull_rotates_then_moves():
+def test_instance_hull_rotates_then_moves():
     footprint = {'hull': [[-2, -1], [2, -1], [2, 1], [-2, 1]], 'height': 1, 'offset': [0, 0, 0]}
-    hull = plate.copy_hull({'angle': 90, 'x': 10, 'y': 20}, footprint)
+    hull = plate.instance_hull({'angle': 90, 'x': 10, 'y': 20}, footprint)
     assert [[round(v, 9) + 0.0 for v in p] for p in hull] == [[11, 18], [11, 22], [9, 22], [9, 18]]
 
 

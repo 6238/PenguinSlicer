@@ -1,4 +1,4 @@
-# Penguin Slicer
+# PenguinSlicer
 
 3D printing for FRC shops: take parts, lay them out on a plate, slice them with Orca Slicer
 on a server, and send the result to the shop's printer.
@@ -8,7 +8,7 @@ folder, its own tests and its own guide, and it runs without the other three.
 
 | Folder | Component | What it does |
 |---|---|---|
-| [slice/](slice/README.md) | Slice service | Takes a plate job, runs Orca Slicer, returns a sliced file |
+| [slice/](slice/README.md) | Slice service | Takes a plate configuration, runs Orca Slicer, returns a sliced file, through its HTTP interface |
 | [delivery/](delivery/README.md) | Printer delivery | Sends a sliced file to a printer and reports how the print goes |
 | `wizard/` | Wizard | The step-by-step user interface (not started) |
 | `onshape/` | Onshape source | Turns a selection in Onshape into a part set (not started) |
@@ -17,8 +17,9 @@ folder, its own tests and its own guide, and it runs without the other three.
 
 - A component depends only on [contracts/](contracts/README.md), never on another
   component's code.
-- Every component can be exercised from the command line with the example files in
-  `contracts/examples/`.
+- Every component can be exercised through its interface with the example files in
+  `contracts/examples/`; for the slice service that is its HTTP interface, with `curl`
+  ([slice/README.md](slice/README.md), "Use").
 - Every component reports failures as an
   [error report](contracts/error-report.md) and long jobs as
   [progress reports](contracts/progress-report.md).

@@ -25,13 +25,23 @@ sent and never reported. Of two stops, the first asked is the one reported (Stop
 The memory watchdog (run_process's `memory_ceiling_kb`): while Orca runs, a thread samples
 Orca's whole process group every MEMORY_SAMPLE_S (MEMORY_READER, from /proc), reading each
 process's current resident memory and the kernel's high-water mark of it (VmHWM), so a
-spike between two samples is seen at the next one. When the group's peak passes the
-ceiling it stops Orca as a cancel does, with the reason "memory"; the slice then fails with
-slice.out_of_memory and the measured peak in its detail. That, and a rise in the kernel's
-out-of-memory kill count, are the only grounds on which a slice is reported out of memory
-after a kill (besides Orca's own bad_alloc). The peak reported anywhere (OrcaExit.peak_kb)
-is the higher of the watchdog's last high-water reading and the kernel's ru_maxrss of Orca
-at exit (wait4), so it is never under the true peak of Orca itself.
+spike between two samples is seen at the next one; it also samples at every progress
+message Orca sends, so the last sample follows Orca's "All done, Success", after the
+sliced file is written. When the group's peak passes the ceiling it stops Orca as a cancel
+does, with the reason "memory"; the slice then fails with slice.out_of_memory and the
+measured peak in its detail. That, and a rise in the kernel's out-of-memory kill count, are
+the only grounds on which a slice is reported out of memory after a kill (besides Orca's
+own bad_alloc). The peak reported anywhere (OrcaExit.peak_kb) is the watchdog's: the
+processes of Orca's group alone. The kernel's ru_maxrss at exit is not used, because it
+also counts the slice service's own memory at the moment it started Orca (it survives
+fork and exec). A spike after the last sample (Orca ending by itself between two samples
+with no progress message after it) is not seen.
+
+Orca's debug log (ORCA_LOG, at --debug ORCA_LOG_LEVEL) is read in one place,
+orca_log_warnings: when a slice fails with Orca's general reason only, the warnings Orca
+reported while slicing (for example "floating regions") are in that log and nowhere else.
+The log does not say which warning, if any, made the slice fail, so they follow the general
+sentence labelled as warnings that may be unrelated.
 
 A stop is reported only when it is what ended Orca. A run that was sent only SIGTERM but
 ended on another signal (someone else's SIGKILL, a crash), or that was already ending when
@@ -87,6 +97,19 @@ PLATE_ENTRIES = (GCODE_ENTRY, PLATE_JSON_ENTRY)     # the entries a plate's slic
 KEEPING_STOPS = ("timeout", "memory")
 RESULT_JSON = "result.json"
 PROGRESS_FIFO = "orca-progress.fifo"
+# Orca's debug log, in the slice's folder. Level 3 (info) is the lowest at which Orca logs
+# the warnings it reports while slicing (cli_status_callback, pinned Orca); a small plate's
+# log is about 12 kB.
+ORCA_LOG = "orca.log"
+ORCA_LOG_LEVEL = "3"
+# Orca's debug log line for a warning it reported while slicing, as the pinned Orca writes
+# it: "cli_status_callback: percent=-1, warning_step=7, message=It seems object X has
+# floating regions. ..., message_type=2, flag=32". tests_orca pins this format.
+LOG_WARNING_RE = re.compile(r"cli_status_callback: percent=-?\d+, warning_step=\d+, message=(.*), "
+                            r"message_type=-?\d+, flag=-?\d+\s*$")
+MAX_LOG_BYTES = 64 * 1024 * 1024    # the debug log read on a failure, at most
+MAX_LOG_WARNINGS = 5                # warnings kept from it
+MAX_WARNING_CHARS = 300             # each cut to this
 DETAIL_LINES = 20
 TAIL_LINES = 200              # lines of Orca's output kept in memory while it runs
 MAX_LINE_BYTES = 4096         # a longer line is cut; the rest of it is dropped
@@ -96,6 +119,11 @@ BINARY_TRIANGLE_BYTES = 50    # 12 floats plus a uint16 attribute word
 PLATE_ARCHIVE = "plate" + ARCHIVE_SUFFIX
 
 SLICE_FAILED_MESSAGE = "The slicer could not slice this plate."
+# The debug log cannot tell which warning, if any, made a slice fail: a sound part on the
+# plate warns as well as a failing one does, and some failing parts warn of nothing. So
+# the warnings go after the general sentence, all of them, labelled as maybe unrelated.
+SLICE_FAILED_WARNED_MESSAGE = ("The slicer could not slice this plate. It also warned, though this may not be why it "
+                               "failed: {warnings}")
 UNSTARTABLE_MESSAGE = "The slicer could not be started."
 TIMEOUT_MESSAGE = "The slicer took too long on this plate."
 KILLED_MESSAGE = "Something on the print server stopped the slicer before it finished."
@@ -112,9 +140,9 @@ SCRATCH_UNWRITABLE_MESSAGE = "The print server could not write the slicer's work
 NO_OUTPUT_MESSAGE = "The slicer finished without writing the sliced file."
 UNREADABLE_MESSAGE = "The sliced file the slicer wrote is damaged."
 NO_GCODE_MESSAGE = "The sliced file the slicer wrote has no G-code in it."
-EMPTY_LAYERS_MESSAGE = ("{copy} has nothing to print between {low} and {high} mm high, so the layers above "
+EMPTY_LAYERS_MESSAGE = ("{instance} has nothing to print between {low} and {high} mm high, so the layers above "
                         "would start in mid-air.")
-EMPTY_LAYERS_NO_COPY_MESSAGE = ("A part has nothing to print between {low} and {high} mm high, so the layers "
+EMPTY_LAYERS_NO_INSTANCE_MESSAGE = ("A part has nothing to print between {low} and {high} mm high, so the layers "
                                 "above would start in mid-air.")
 
 # Orca's return codes for a plate it refused, observed with the pinned Orca and
@@ -195,10 +223,10 @@ class SliceError(Exception):
     `message` is one sentence fit for the student; `details` is the evidence for the
     server log (Orca's code and reason, the last lines it printed); `code` is Orca's exit
     code (slice_stl) or its return code (slice_plate), "timeout", or None when Orca did
-    not report one. `error_code` is the error report's code; `where` the part, copy and
+    not report one. `error_code` is the error report's code; `where` the part, instance and
     height, when known. `reason` is Orca's own reason, for the log; `peak_rss_kb` and
     `wall_s` describe the Orca run, when there was one. `remedy`, when set, replaces the
-    code's remedy, and `no_action` drops its action (a plate of one copy cannot lose one)."""
+    code's remedy, and `no_action` drops its action (a plate of one instance cannot lose one)."""
 
     def __init__(self, message, details="", code=None, error_code="slice.orca_failed", where=None, reason="",
                  run=None):
@@ -300,7 +328,7 @@ class OrcaExit:
     output: str
     stopped: str | None = None
     escalated: bool = False
-    peak_rss_kb: int | None = None
+    peak_rss_kb: int | None = None      # the kernel's ru_maxrss: also counts this process at the fork; not reported
     wall_s: float | None = None
     oom_kills: int | None = None
     memory_peak_kb: int | None = None
@@ -310,10 +338,9 @@ class OrcaExit:
 
     @property
     def peak_kb(self):
-        """The peak memory reported for this run: the higher of the watchdog's reading and
-        ru_maxrss, never under either; None when neither is known."""
-        known = [kb for kb in (self.peak_rss_kb, self.memory_peak_kb) if kb is not None]
-        return max(known) if known else None
+        """The peak memory reported for this run: the watchdog's highest reading of Orca's
+        process group alone; None when the watchdog did not run or read nothing."""
+        return self.memory_peak_kb
 
     def over_ceiling(self):
         return self.memory_ceiling_kb is not None and (self.peak_kb or 0) > self.memory_ceiling_kb
@@ -327,6 +354,7 @@ def build_command(stl_path, output_dir):
     archive_name = stl_path.stem + ARCHIVE_SUFFIX
     return [
         str(orca_bin()),
+        "--debug", ORCA_LOG_LEVEL, "--logfile", str(output_dir / ORCA_LOG),
         "--datadir", str(output_dir / "datadir"),
         "--load-settings", f"{PROFILE_DIR / 'printer.json'};{PROFILE_DIR / 'process.json'}",
         "--load-filaments", str(PROFILE_DIR / "filament.json"),
@@ -346,6 +374,7 @@ def build_plate_command(model_3mf, profiles, output_dir):
     output_dir = Path(output_dir).resolve()
     return [
         str(orca_bin()),
+        "--debug", ORCA_LOG_LEVEL, "--logfile", str(output_dir / ORCA_LOG),
         "--datadir", str(output_dir / "datadir"),
         "--load-settings", f"{Path(profiles.printer).resolve()};{Path(profiles.process).resolve()}",
         "--load-filaments", str(Path(profiles.filament).resolve()),
@@ -564,8 +593,9 @@ def run_process(cmd, *, cwd, env, timeout_s, stop=None, on_progress=None, grace_
     (os.mkfifo) whose path is given to --pipe: it is read while Orca runs, each message
     passed to `on_progress`, and removed afterwards. Once Orca has started, `on_progress`
     gets the stage "slicing" before any message of Orca's. With `memory_ceiling_kb`, the
-    watchdog samples `memory_reader(pgid)` (MEMORY_READER by default) at once and then every
-    `sample_s` (MEMORY_SAMPLE_S) until Orca exits, and sets `stop` with reason "memory"
+    watchdog samples `memory_reader(pgid)` (MEMORY_READER by default) at once, then every
+    `sample_s` (MEMORY_SAMPLE_S) until Orca exits, and at every progress message of Orca's
+    while Orca runs, and sets `stop` with reason "memory"
     when a sample's peak (the higher of its resident and high-water figures) passes the
     ceiling. A stop is sent only when Orca is still running once it has been asked, and is
     reported in `stopped` only when it is what ended Orca: when Orca was already ending
@@ -577,13 +607,41 @@ def run_process(cmd, *, cwd, env, timeout_s, stop=None, on_progress=None, grace_
     tail = collections.deque(maxlen=TAIL_LINES)
     streams = {}
     fifo_fds = []
+    memory = {"peak_kb": None}
+    reaping = threading.Lock()        # held to reap Orca, so no sample reads a pid that is reaped
+    exited = threading.Event()
+    proc = None
+
+    def sample():
+        """One reading of Orca's group, while it runs (the watchdog's thread only): the peak
+        kept, the stop asked at the ceiling. True once it has asked the stop, None once Orca
+        has exited (nothing read: its pid may be reaped), else False."""
+        with reaping:
+            if exited.is_set():
+                return None
+            reading = (memory_reader or MEMORY_READER)(proc.pid)
+        if reading is None:
+            return False
+        peak = max(reading)                  # (resident, high-water)
+        memory["peak_kb"] = max(memory["peak_kb"] or 0, peak)
+        if peak > memory_ceiling_kb:
+            stop.set("memory")
+            return True
+        return False
+
+    poke = threading.Event()          # wakes the watchdog for a sample now
+
+    def progress(stage, fraction, message):
+        on_progress(stage, fraction, message)
+        poke.set()                           # a sample at every message: one follows "All done, Success"
+
     if progress_fifo is not None:
         # Open both ends ourselves: the read end so Orca's open never blocks, a write end so
         # the read end sees no end of file before Orca has opened it.
         read_fd = os.open(progress_fifo, os.O_RDONLY | os.O_NONBLOCK)
         fifo_fds = [read_fd, os.open(progress_fifo, os.O_WRONLY | os.O_NONBLOCK)]
         os.set_blocking(read_fd, True)
-        streams[read_fd] = _LineReader(lambda line: _progress_line(line, on_progress))
+        streams[read_fd] = _LineReader(lambda line: _progress_line(line, progress))
     oom_before = _oom_kills()
     started = clock()
     try:
@@ -600,9 +658,7 @@ def run_process(cmd, *, cwd, env, timeout_s, stop=None, on_progress=None, grace_
     # Before the pump starts, so no message of Orca's can be overtaken by it.
     on_progress("slicing", None, "Slicing the plate")
     wake_r, wake_w = os.pipe()
-    exited = threading.Event()
     wake = threading.Event()
-    memory = {"peak_kb": None}
 
     def note_exit():
         try:
@@ -610,32 +666,30 @@ def run_process(cmd, *, cwd, env, timeout_s, stop=None, on_progress=None, grace_
         finally:            # set even if the wait fails, so the watchdog and the stop can never wait for ever
             exited.set()
             wake.set()
+            poke.set()
 
     def watch_memory():
-        reader = memory_reader or MEMORY_READER
+        # The one thread that samples: every `interval`, and at once when poked (a progress
+        # message). A poke during a sample is kept for the next wait, never lost.
         interval = MEMORY_SAMPLE_S if sample_s is None else sample_s
         while True:
-            reading = reader(proc.pid)
-            if reading is not None:
-                peak = max(reading)                  # (resident, high-water)
-                memory["peak_kb"] = max(memory["peak_kb"] or 0, peak)
-                if peak > memory_ceiling_kb:
-                    stop.set("memory")
-                    return
-            if exited.wait(interval):
+            poke.clear()
+            if sample() is not False:        # the stop asked, or Orca gone (its exit pokes)
                 return
+            poke.wait(interval)
 
     pump = threading.Thread(target=_pump, args=(streams, wake_r), name="orca-output", daemon=True)
     waiter = threading.Thread(target=note_exit, name="orca-wait", daemon=True)
     watchdog = threading.Thread(target=watch_memory, name="orca-memory", daemon=True) \
         if memory_ceiling_kb is not None else None
+    # Made before the pump starts, so every message of Orca's is read with the deadline in place.
+    deadline = (timer or TIMER)(timeout_s, lambda: stop.set("timeout"))
+    deadline.daemon = True
     pump.start()
     waiter.start()
     if watchdog:
         watchdog.start()
     stop.listen(wake.set)
-    deadline = (timer or TIMER)(timeout_s, lambda: stop.set("timeout"))
-    deadline.daemon = True
     deadline.start()
     escalated = dying = False
     try:
@@ -656,7 +710,8 @@ def run_process(cmd, *, cwd, env, timeout_s, stop=None, on_progress=None, grace_
         # Reap only once the waiter has noted the exit: reaping first would fail its wait. This
         # matters when the wait above ends by an exception (an interrupt): Orca is killed here.
         exited.wait()
-        _pid, status, usage = os.wait4(proc.pid, 0)
+        with reaping:
+            _pid, status, usage = os.wait4(proc.pid, 0)
         proc.returncode = os.waitstatus_to_exitcode(status)
         waiter.join()
         if watchdog:
@@ -699,16 +754,26 @@ def _signal_group(pgid, sig):
         pass
 
 
-def _run_orca(cmd, output_dir, timeout_s, stop=None, on_progress=None, memory_ceiling_mb=None):
+def _run_orca(cmd, output_dir, archive, timeout_s, stop=None, on_progress=None, memory_ceiling_mb=None):
     """Run Orca in output_dir with its private environment, under the memory watchdog with
     `memory_ceiling_mb` (limits.max_peak_mb() when None); its OrcaExit, for settle() to
-    judge. Raises RuntimeError when the binary is missing, SliceError when the scratch
-    folder cannot be written or Orca cannot start."""
+    judge. Whatever an earlier run left in output_dir that settle() reads (the sliced file
+    `archive` and its temporary name, result.json, the debug log) is removed first, so a
+    run stopped before Orca writes anything is never handed an old file. A `stop` already
+    set by a cancel, an abandonment or a shutdown that came before Orca raises
+    SliceCancelled and Orca is never started (a timeout or a watchdog stop is set only by
+    the run itself, once Orca runs). Raises RuntimeError when the binary is missing,
+    SliceError when the scratch folder cannot be written or Orca cannot start."""
+    if stop is not None and stop.is_set() and stop.reason not in KEEPING_STOPS:
+        raise SliceCancelled(f"stopped by the slice service ({stop.reason}) before Orca was started")
     _require_binary()
     output_dir = Path(output_dir)
     fifo = output_dir / PROGRESS_FIFO
     try:
         output_dir.mkdir(parents=True, exist_ok=True)
+        for stale in (archive, archive.with_name(archive.name + ".tmp"), output_dir / RESULT_JSON,
+                      output_dir / ORCA_LOG):
+            stale.unlink(missing_ok=True)
         env = orca_env(output_dir)
         os.mkfifo(fifo, 0o600)
     except OSError as exc:
@@ -764,11 +829,8 @@ def _ceiling_text(run):
 
 
 def _peak_text(run):
-    """The peak and where it was read: never under the true peak of Orca itself."""
-    sources = [f"{label} {kb:,} kB" for label, kb in (("the watchdog's high-water reading", run.memory_peak_kb),
-                                                     ("Orca's ru_maxrss at exit", run.peak_rss_kb))
-               if kb is not None]
-    return f"a peak of {run.peak_kb:,} kB ({', '.join(sources)})"
+    """The peak and where it was read: the watchdog's reading of Orca's processes alone."""
+    return f"a peak of {run.peak_kb:,} kB (the watchdog's high-water reading of Orca's processes)"
 
 
 def _stop_error(run):
@@ -900,28 +962,60 @@ def orca_failure(run, output_dir, supports_on=None):
     empty = next((m for m in map(EMPTY_LAYER_RE.search, warnings) if m), None)
     if empty:
         names = [m.group(1).strip() for w in warnings for m in [OBJECT_RE.search(w)] if m]
-        copy = names[0] if names else None
+        instance = names[0] if names else None
         low, high = empty.group(1), empty.group(2)
         where = {"height_mm": float(low)}
-        if copy:
-            where["copy"] = copy
-        message = (EMPTY_LAYERS_MESSAGE.format(copy=copy, low=low, high=high) if copy
-                   else EMPTY_LAYERS_NO_COPY_MESSAGE.format(low=low, high=high))
+        if instance:
+            where["instance"] = instance
+        message = (EMPTY_LAYERS_MESSAGE.format(instance=instance, low=low, high=high) if instance
+                   else EMPTY_LAYERS_NO_INSTANCE_MESSAGE.format(low=low, high=high))
         error_code = "slice.empty_layers_with_supports" if supports_on else "slice.empty_layers"
         return SliceError(message, details, code, error_code=error_code, where=where, reason=reason, run=run)
     if said:
         _text, error_code, message = said[0]
         return SliceError(message, details, code, error_code=error_code, reason=reason, run=run)
     error_code, message = ORCA_RETURN_CODES.get(code, ("slice.orca_failed", SLICE_FAILED_MESSAGE))
+    if error_code == "slice.orca_failed":
+        # Orca's general failure: the warnings it reported while slicing are in its debug log only.
+        logged = orca_log_warnings(output_dir)
+        if logged:
+            message = SLICE_FAILED_WARNED_MESSAGE.format(warnings=" ".join(logged))
+            first, _, rest = details.partition("\n")
+            details = "\n".join([first] + [f"orca debug log warning: {w}" for w in logged] + [rest])
+            reason = "\n".join([reason] + logged).strip()
     return SliceError(message, details, code, error_code=error_code, reason=reason, run=run)
+
+
+def orca_log_warnings(output_dir):
+    """The warnings Orca reported while slicing, read from its debug log in `output_dir`
+    (LOG_WARNING_RE), in order, each once, at most MAX_LOG_WARNINGS, each cut to
+    MAX_WARNING_CHARS; at most MAX_LOG_BYTES of the log are read. [] when the log is
+    missing, unreadable or holds none: then nothing is said that the log does not say."""
+    found = []
+    try:
+        with open(Path(output_dir) / ORCA_LOG, "rb") as fh:
+            read = 0
+            while read < MAX_LOG_BYTES and len(found) < MAX_LOG_WARNINGS:
+                raw = fh.readline(MAX_LINE_BYTES)
+                if not raw:
+                    break
+                read += len(raw)
+                match = LOG_WARNING_RE.search(raw.decode("utf-8", errors="replace"))
+                text = match.group(1).strip()[:MAX_WARNING_CHARS] if match else ""
+                if text and text not in found:
+                    found.append(text)
+    except OSError:
+        return []
+    return found
 
 
 def slice_stl(stl_path, output_dir, timeout_s=DEFAULT_TIMEOUT_S, stop=None, on_progress=None):
     """Slice `stl_path` into `output_dir/<stem>.gcode.3mf` and return a SliceResult."""
     stl_path = Path(stl_path).resolve()
     output_dir = Path(output_dir).resolve()
-    run = _run_orca(build_command(stl_path, output_dir), output_dir, timeout_s, stop, on_progress)
-    return settle(run, output_dir / (stl_path.stem + ARCHIVE_SUFFIX), output_dir)
+    archive = output_dir / (stl_path.stem + ARCHIVE_SUFFIX)
+    run = _run_orca(build_command(stl_path, output_dir), output_dir, archive, timeout_s, stop, on_progress)
+    return settle(run, archive, output_dir)
 
 
 def read_result_json(output_dir):
@@ -966,10 +1060,10 @@ def slice_plate(model_3mf, profiles, output_dir, timeout_s=PLATE_SLICE_TIMEOUT_S
     placement as written, Orca stopped at `memory_ceiling_mb` (limits.max_peak_mb() when
     None); return a SliceResult."""
     output_dir = Path(output_dir).resolve()
-    run = _run_orca(build_plate_command(model_3mf, profiles, output_dir), output_dir, timeout_s, stop, on_progress,
-                    memory_ceiling_mb)
-    return settle(run, output_dir / PLATE_ARCHIVE, output_dir, process_supports_on(profiles.process),
-                  entries=PLATE_ENTRIES)
+    archive = output_dir / PLATE_ARCHIVE
+    run = _run_orca(build_plate_command(model_3mf, profiles, output_dir), output_dir, archive, timeout_s, stop,
+                    on_progress, memory_ceiling_mb)
+    return settle(run, archive, output_dir, process_supports_on(profiles.process), entries=PLATE_ENTRIES)
 
 
 def _float(value):
@@ -998,8 +1092,10 @@ def read_summary(archive_path, output_dir):
     archive_path = Path(archive_path)
     try:
         zf = zipfile.ZipFile(archive_path)
-    except (zipfile.BadZipFile, OSError) as exc:
-        raise SliceError(UNREADABLE_MESSAGE, f"{archive_path.name} is not a zip archive ({exc})",
+    except _ZIP_READ_ERRORS as exc:
+        # NotImplementedError among them: a damaged directory entry asking for a zip version
+        # zipfile does not know. Damage, worth retrying, never a bug of the slice service's.
+        raise SliceError(UNREADABLE_MESSAGE, f"{archive_path.name} is not a zip archive ({exc!r})",
                          error_code="slice.unreadable_output") from None
     with zf:
         names = zf.namelist()

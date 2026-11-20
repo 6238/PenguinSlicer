@@ -4,18 +4,19 @@ memory model in penguin_slice/limits.py can be refitted.
 
 Standard library, numpy and the slice service's package. One plate at a time, each run
 through the code that ships (plate_3mf.py writes the plate, slicer.slice_plate slices it,
-the name guard reads it back); the peak is Orca's own ru_maxrss from wait4, and the slice
-service's memory watchdog stops a slice that passes MEASURE_STOP_MB (3 GB).
+the name guard reads it back); the peak is the slice service's memory watchdog's reading of
+Orca's processes (the rows in the guide before Fri 2026-11-20 used Orca's ru_maxrss from
+wait4; on the spacer plates of that day the two read the same), and the watchdog stops a slice that passes MEASURE_STOP_MB (3 GB).
 
     uv run --project slice python slice/scripts/measure_plate.py --list
     uv run --project slice python slice/scripts/measure_plate.py --plate organic-1 --out results.jsonl
     uv run --project slice python slice/scripts/measure_plate.py --fit results.jsonl
 
 Each measurement prints one line and, with --out, appends one JSON object to the file:
-plate, copies, triangles, volume_cm3 (the memory model's volume), supports, estimate_mb
+plate, instances, triangles, volume_cm3 (the memory model's volume), supports, estimate_mb
 (the model's estimate), peak_mb, seconds, cpu_s, sliced_bytes, verdict (ok, failed, over:
 stopped at the stop rule). --fit reads such a file and prints the least-squares fit of
-MEMORY_BASE_MB, MEMORY_PER_COPY_MB and MEMORY_PER_CM3_MB over the rows with supports off,
+MEMORY_BASE_MB, MEMORY_PER_INSTANCE_MB and MEMORY_PER_CM3_MB over the rows with supports off,
 and MEMORY_SUPPORTS_FACTOR from the rows with supports on.
 
 The parts are synthetic and deterministic: a hub (a 40 x 20 mm ring with a 12 mm bore and
@@ -46,7 +47,8 @@ HUB_HEIGHT_MM = 20.0
 HUB_FILLET_MM = 3.0
 PITCH_MM = 50.0            # grid pitch: a 10 mm gap between 40 mm hubs
 GRID_ORIGIN_MM = 40.0
-GRID_COLUMNS = 6           # 6 x 5 covers MAX_COPIES on the 340 x 320 mm plate
+GRID_COLUMNS = 6           # 6 x 5 covers FULL_SMALL_HUBS on the 340 x 320 mm plate
+FULL_SMALL_HUBS = 25       # the full-small plate: the old cap of 25 instances, kept so the rows stay comparable
 
 
 def _hub_profile():
@@ -158,17 +160,17 @@ def grid_centres(count):
             for n in range(count)]
 
 
-def plate_layout(stl_path, copies):
-    """The plate as plate_3mf.py takes it: `copies` hubs, upright, on the grid."""
+def plate_layout(stl_path, instances):
+    """The plate as plate_3mf.py takes it: `instances` hubs, upright, on the grid."""
     stl = Path(stl_path).read_bytes()
     parts = {"hub": {"name": "Hub", "stl_path": Path(stl_path),
                      "footprints": orientation_footprints(read_binary_stl(stl, "Hub"))}}
-    placed = [{"ref": "hub", "orientation": "+z", "angle": 0, "x": x, "y": y} for x, y in grid_centres(copies)]
+    placed = [{"ref": "hub", "orientation": "+z", "angle": 0, "x": x, "y": y} for x, y in grid_centres(instances)]
     return placed, parts
 
 
 # The reference plates (restart notes section 6.9): name -> (parts {ref: stl builder},
-# copies [(ref, x, y)], supports). Placements keep 5 mm between footprints.
+# instances [(ref, x, y)], supports). Placements keep 5 mm between footprints.
 def _organic_row(count):
     return [("organic", 70.0 + 125.0 * k, 160.0) for k in range(count)] if count <= 2 else \
         [("organic", 65.0, 70.0), ("organic", 185.0, 70.0), ("organic", 125.0, 230.0)]
@@ -180,7 +182,7 @@ REFERENCE_PLATES = {
                   [("hub", 40, 40), ("hub", 95, 40), ("tube", 150, 40), ("tube", 180, 40), ("tube", 210, 40),
                    ("tube", 240, 40), ("gusset", 60, 120), ("gusset", 140, 120), ("block", 260, 140)], False),
     "full-small": ({"hub": lambda: hub_stl(12_000)},
-                   [("hub", x, y) for x, y in grid_centres(limits.MAX_COPIES)], False),
+                   [("hub", x, y) for x, y in grid_centres(FULL_SMALL_HUBS)], False),
     "organic-1": ({"organic": lambda: mesh_stl(*organic_mesh())}, _organic_row(1), False),
     "organic-2": ({"organic": lambda: mesh_stl(*organic_mesh())}, _organic_row(2), False),
     "organic-3": ({"organic": lambda: mesh_stl(*organic_mesh())}, _organic_row(3), False),
@@ -191,16 +193,16 @@ REFERENCE_PLATES = {
 
 
 def plate_definition(name):
-    parts, copies, supports = REFERENCE_PLATES[name]
+    parts, instances, supports = REFERENCE_PLATES[name]
     if parts is None:                                     # the same plate as its base, supports on
-        parts, copies, _ = REFERENCE_PLATES[name.removesuffix("-supports")]
-    return parts, copies, supports
+        parts, instances, _ = REFERENCE_PLATES[name.removesuffix("-supports")]
+    return parts, instances, supports
 
 
 def measure(name, stop_mb=limits.MEASURE_STOP_MB):
     """Slice one reference plate under the slice service's memory watchdog with the
     ceiling `stop_mb`; its result dict."""
-    builders, placed_copies, supports = plate_definition(name)
+    builders, placed_instances, supports = plate_definition(name)
     with tempfile.TemporaryDirectory(prefix="measure_plate_") as tmp:
         work = Path(tmp)
         parts, volumes, triangles = {}, {}, {}
@@ -212,17 +214,17 @@ def measure(name, stop_mb=limits.MEASURE_STOP_MB):
             parts[ref] = {"name": ref.capitalize(), "stl_path": path, "footprints": orientation_footprints(mesh)}
             volumes[ref] = analyse(mesh)["volume_mm3"]
             triangles[ref] = mesh.triangles
-        copies = [{"ref": ref, "orientation": "+z", "angle": 0, "x": float(x), "y": float(y)}
-                  for ref, x, y in placed_copies]
-        names = write_plate_3mf(work / "plate.3mf", copies, parts)
+        instances = [{"ref": ref, "orientation": "+z", "angle": 0, "x": float(x), "y": float(y)}
+                  for ref, x, y in placed_instances]
+        names = write_plate_3mf(work / "plate.3mf", instances, parts)
         process = write_process_with_overrides(DEFAULT_PROFILES.process,
                                                validate_overrides({"supports": "on" if supports else "off"}),
                                                work / "process.json")
         profiles = SliceProfiles(DEFAULT_PROFILES.printer, DEFAULT_PROFILES.filament, process)
-        copy_volumes = [volumes[c["ref"]] for c in copies]
-        row = {"plate": name, "copies": len(copies), "triangles": sum(triangles[c["ref"]] for c in copies),
-               "volume_cm3": round(sum(copy_volumes) / 1000, 1), "supports": supports,
-               "estimate_mb": limits.estimate_peak_mb(copy_volumes, supports)}
+        instance_volumes = [volumes[c["ref"]] for c in instances]
+        row = {"plate": name, "instances": len(instances), "triangles": sum(triangles[c["ref"]] for c in instances),
+               "volume_cm3": round(sum(instance_volumes) / 1000, 1), "supports": supports,
+               "estimate_mb": limits.estimate_peak_mb(instance_volumes, supports)}
         started = time.monotonic()
         try:
             result = slice_plate(work / "plate.3mf", profiles, work / "slice", memory_ceiling_mb=stop_mb)
@@ -238,41 +240,41 @@ def measure(name, stop_mb=limits.MEASURE_STOP_MB):
     return row
 
 
-def _model(base, per_copy, per_cm3, factor):
-    return {"MEMORY_BASE_MB": round(float(base), 1), "MEMORY_PER_COPY_MB": round(float(per_copy), 2),
+def _model(base, per_instance, per_cm3, factor):
+    return {"MEMORY_BASE_MB": round(float(base), 1), "MEMORY_PER_INSTANCE_MB": round(float(per_instance), 2),
             "MEMORY_PER_CM3_MB": round(float(per_cm3), 3),
             "MEMORY_SUPPORTS_FACTOR": round(float(factor), 2) if factor is not None else None}
 
 
 def fit(rows):
-    """Two fits of peak = base + per_copy * copies + per_cm3 * volume over the rows with
+    """Two fits of peak = base + per_instance * instances + per_cm3 * volume over the rows with
     supports off, each with its supports factor from the supported rows:
 
     - least_squares: the best fit, with the mean ratio of a supported plate to it;
     - envelope: the upper envelope, which never estimates below a peak of these rows, with
-      the least total over-estimate (base and per_copy on a 5 MB / 0.5 MB grid, per_cm3
+      the least total over-estimate (base and per_instance on a 5 MB / 0.5 MB grid, per_cm3
       the least that covers every row), and the largest supported ratio.
     """
     plain = [r for r in rows if not r["supports"] and r["verdict"] == "ok"]
     if len(plain) < 3:
         raise SystemExit("--fit needs at least three rows with supports off and verdict ok")
     supported = [r for r in rows if r["supports"] and r["verdict"] == "ok"]
-    a = np.array([[1.0, r["copies"], r["volume_cm3"]] for r in plain])
+    a = np.array([[1.0, r["instances"], r["volume_cm3"]] for r in plain])
     y = np.array([r["peak_mb"] for r in plain], dtype=float)
-    (base, per_copy, per_cm3), *_ = np.linalg.lstsq(a, y, rcond=None)
-    ratios = [r["peak_mb"] / (base + per_copy * r["copies"] + per_cm3 * r["volume_cm3"]) for r in supported]
+    (base, per_instance, per_cm3), *_ = np.linalg.lstsq(a, y, rcond=None)
+    ratios = [r["peak_mb"] / (base + per_instance * r["instances"] + per_cm3 * r["volume_cm3"]) for r in supported]
     best = None
     for env_base in np.arange(0.0, 300.1, 5.0):
-        for env_copy in np.arange(0.0, 40.01, 0.5):
-            need = max((r["peak_mb"] - env_base - env_copy * r["copies"]) / r["volume_cm3"] for r in plain)
+        for env_instance in np.arange(0.0, 40.01, 0.5):
+            need = max((r["peak_mb"] - env_base - env_instance * r["instances"]) / r["volume_cm3"] for r in plain)
             env_cm3 = max(float(need), 0.0)
-            over = sum(env_base + env_copy * r["copies"] + env_cm3 * r["volume_cm3"] - r["peak_mb"] for r in plain)
+            over = sum(env_base + env_instance * r["instances"] + env_cm3 * r["volume_cm3"] - r["peak_mb"] for r in plain)
             if best is None or over < best[0] - 1e-9:
-                best = (over, env_base, env_copy, env_cm3)
-    _over, env_base, env_copy, env_cm3 = best
-    env_ratios = [r["peak_mb"] / (env_base + env_copy * r["copies"] + env_cm3 * r["volume_cm3"]) for r in supported]
-    return {"least_squares": _model(base, per_copy, per_cm3, np.mean(ratios) if ratios else None),
-            "envelope": _model(env_base, env_copy, env_cm3, max(env_ratios) if env_ratios else None),
+                best = (over, env_base, env_instance, env_cm3)
+    _over, env_base, env_instance, env_cm3 = best
+    env_ratios = [r["peak_mb"] / (env_base + env_instance * r["instances"] + env_cm3 * r["volume_cm3"]) for r in supported]
+    return {"least_squares": _model(base, per_instance, per_cm3, np.mean(ratios) if ratios else None),
+            "envelope": _model(env_base, env_instance, env_cm3, max(env_ratios) if env_ratios else None),
             "rows": len(plain), "supported_rows": len(supported)}
 
 
@@ -286,8 +288,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.list:
         for name in sorted(REFERENCE_PLATES):
-            _parts, copies, supports = plate_definition(name)
-            print(f"{name}: {len(copies)} copies, supports {'on' if supports else 'off'}")
+            _parts, instances, supports = plate_definition(name)
+            print(f"{name}: {len(instances)} instances, supports {'on' if supports else 'off'}")
         return 0
     if args.fit:
         rows = [json.loads(line) for line in Path(args.fit).read_text().splitlines() if line.strip()]

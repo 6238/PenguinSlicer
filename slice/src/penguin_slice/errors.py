@@ -3,14 +3,14 @@
 
 Each exception the slice service raises carries its error code (`error_code`), its
 sentence for the student (`message`), the evidence for the log (`details`) and, when
-known, the part, copy or height (`where`). The adapter adds the `remedy`, the `action`,
+known, the part, instance or height (`where`). The adapter adds the `remedy`, the `action`,
 `retryable` and the stage from CODES. Orca's return codes and their error codes are in
 slicer.ORCA_RETURN_CODES, the one table of them.
 """
 from .jobs import GENERIC_FAILURE, JobFailure, QueueFull, exception_text
 from .mesh import MeshError
 from .print_config import OverrideError, ProfileError
-from .service import PlateJobRefused
+from .service import PlateConfigurationRefused
 from .slicer import UNSTARTABLE_MESSAGE, SliceCancelled, SliceError
 
 # The queue's refusal had no sentence of its own; this is the original route's.
@@ -22,10 +22,12 @@ REEXPORT_REMEDY = "Export the part again and send a new slice."
 # slice/README.md lists the same codes in this order, and tests/test_errors.py produces
 # each on purpose and states what its report must say.
 CODES = {
-    "slice.bad_plate_job": ("checking", False, None,
-                            "Lay out the plate again and send a new slice."),
-    "slice.too_many_copies": ("checking", False, "lower_quantities",
-                              "Lower the quantities and print the rest in a second job."),
+    "slice.bad_plate_configuration": ("checking", False, None,
+                                      "Lay out the plate again and send a new slice."),
+    "slice.too_many_instances": ("checking", False, "lower_quantities",
+                                 "Lower the quantities and print the rest on a second plate."),
+    "slice.too_many_parts": ("checking", False, None,
+                             "Use fewer different parts on this plate and print the rest on a second plate."),
     "slice.unknown_printer": ("checking", False, None,
                               "Choose a printer from the list, or ask a mentor to add this one."),
     "slice.profiles_not_offered": ("checking", False, "choose_profiles",
@@ -50,11 +52,11 @@ CODES = {
                              "Check the part's units, or split the part in CAD so each piece fits, "
                              "and slice again."),
     "slice.placement_off_plate": ("checking", False, "arrange",
-                                  "Move the copy fully onto the plate, or press Arrange, and slice again."),
+                                  "Move the instance fully onto the plate, or press Arrange, and slice again."),
     "slice.placement_too_tall": ("checking", False, "choose_orientation",
                                  "Lay the part on another face so it is lower, and slice again."),
     "slice.placement_too_close": ("checking", False, "arrange",
-                                  "Move the copies further apart, or press Arrange, and slice again."),
+                                  "Move the instances further apart, or press Arrange, and slice again."),
     "slice.busy": ("queued", True, None,
                    "Wait a minute and slice again."),
     "slice.scratch_unwritable": ("building", True, None,
@@ -65,19 +67,19 @@ CODES = {
     "slice.orca_unstartable": ("slicing", False, None,
                                "Ask a mentor to check the print server; the slicer will not start on it."),
     "slice.timeout": ("slicing", True, "lower_quantities",
-                      "Try again, or slice fewer copies at once."),
+                      "Try again, or slice fewer instances at once."),
     "slice.cancelled": ("slicing", True, None,
                         "Send the slice again when you want it."),
     "slice.out_of_memory": ("slicing", False, "lower_quantities",
-                            "Remove some copies or the largest part and print them in a second job."),
+                            "Remove some instances or the largest part and print them on a second plate."),
     "slice.orca_crashed": ("slicing", False, None,
                            "Try another orientation or other print settings; if it crashes again, ask a mentor "
                            "to check the part."),
     "slice.orca_killed": ("slicing", True, None, SERVER_REMEDY),
     "slice.orca_too_close": ("slicing", False, "arrange",
-                             "Move the copies further apart, or press Arrange, and slice again."),
+                             "Move the instances further apart, or press Arrange, and slice again."),
     "slice.crosses_edge": ("slicing", False, "arrange",
-                           "Move the copy fully onto the plate, or press Arrange, and slice again."),
+                           "Move the instance fully onto the plate, or press Arrange, and slice again."),
     "slice.empty_layers": ("slicing", False, "enable_supports",
                            "Turn Supports on, or repair the part in CAD so it has no gap, and slice again."),
     "slice.empty_layers_with_supports": ("slicing", False, None,
@@ -90,14 +92,14 @@ CODES = {
                           "Check the part's size and units, make thin features thicker than the nozzle, and slice "
                           "again."),
     "slice.nothing_on_plate": ("slicing", False, "arrange",
-                               "Move the copies onto the plate, or press Arrange, and slice again."),
+                               "Move the instances onto the plate, or press Arrange, and slice again."),
     "slice.orca_failed": ("slicing", False, None,
                           "Try another orientation or other print settings, and slice again."),
     "slice.no_output": ("slicing", True, None, SERVER_REMEDY),
     "slice.unreadable_output": ("slicing", True, None, SERVER_REMEDY),
     "slice.no_gcode": ("slicing", True, None, SERVER_REMEDY),
     "slice.left_off_plate": ("slicing", False, "arrange",
-                             "Move every copy fully onto the plate, or press Arrange, and slice again."),
+                             "Move every instance fully onto the plate, or press Arrange, and slice again."),
     "slice.output_unwritable": ("saving", False, None,
                                 "Ask a mentor to check that the print server can write to its output folder, "
                                 "then slice again."),
@@ -114,11 +116,11 @@ CODES = {
 }
 
 # The slice service's own exceptions: each carries message, details, error_code and where.
-_OWN = (PlateJobRefused, MeshError, ProfileError, OverrideError, SliceError, SliceCancelled)
+_OWN = (PlateConfigurationRefused, MeshError, ProfileError, OverrideError, SliceError, SliceCancelled)
 
 
 def report_for_code(code, message, detail="", where=None):
-    """The error report for `code` with its sentence and evidence (the HTTP face's own)."""
+    """The error report for `code` with its sentence and evidence (the HTTP interface's own)."""
     return _report(code, message, detail, where)
 
 
@@ -133,7 +135,8 @@ def _report(code, message, detail="", where=None, remedy=None, no_action=False):
 
 def error_report(exc):
     """The error report for an exception the slice service raised. A SliceError may carry
-    its own remedy and drop the code's action (plate_job.run_plate_job sets them)."""
+    its own remedy and drop the code's action (plate_configuration.run_plate_configuration
+    sets them)."""
     if isinstance(exc, SliceError):
         detail = f"orca code {exc.code}\n{exc.details}" if exc.code is not None else exc.details
         return _report(exc.error_code, exc.message, detail, exc.where, exc.remedy, exc.no_action)

@@ -1,5 +1,5 @@
 """The slice service stands alone: its package and scripts import only the standard library,
-numpy, shapely and the package itself, and its HTTP face (web.py, and only it) Flask and
+numpy, shapely and the package itself, and its HTTP interface (web.py, and only it) Flask and
 Flask's werkzeug;
 nothing of Onshape, a team configuration or another component."""
 import ast
@@ -30,7 +30,7 @@ def test_imports_stay_inside_the_slice_service(path):
     assert outside == [], f"{path.name} imports {outside}"
 
 
-def test_only_the_http_face_imports_flask():
+def test_only_the_http_interface_imports_flask():
     importers = sorted(p.name for p in SOURCES if "flask" in set(imported_roots(p)))
     assert importers == ["web.py"]
 

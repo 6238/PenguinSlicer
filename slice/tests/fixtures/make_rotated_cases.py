@@ -3,7 +3,7 @@
     uv run --project slice python slice/tests/fixtures/make_rotated_cases.py
 
 The axis-aligned cases in plate_cases.json are written by hand and stay exact. The cases
-with a copy turned by 45 degrees, the wedge cases that pin the rotation direction (an
+with an instance turned by 45 degrees, the wedge cases that pin the rotation direction (an
 asymmetric footprint at 30 and 330 degrees), and one matrix at 30 degrees, are computed here with
 shapely and numpy, independently of penguin_slice/plate.py, and written back into the file. Each
 rotated case keeps at least 0.1 mm between its distance and the spacing or margin, so the
@@ -50,12 +50,12 @@ def main():
     assert reach >= CLEARANCE_MM, reach
     assert off_plate_by(placed_hull(square, 0, x, y), plate) <= -CLEARANCE_MM
     cases['off_plate_after_45_rotation'] = {
-        'copies': [{'ref': 'r-square', 'orientation': '+z', 'angle': 45, 'x': x, 'y': y}],
-        'problems': [{'rule': 'off_plate', 'copies': [0], 'message': 'Square #1 is not fully on the plate.'}],
+        'instances': [{'ref': 'r-square', 'orientation': '+z', 'angle': 45, 'x': x, 'y': y}],
+        'problems': [{'rule': 'off_plate', 'instances': [0], 'message': 'Square #1 is not fully on the plate.'}],
         'note': f'reaches {reach:.6f} mm past the margin'}
 
     # Two squares turned by 45 degrees: bounding boxes 1 mm apart in x, the facing edges
-    # parallel and 5.2 mm apart, so the copies pass the 5 mm spacing.
+    # parallel and 5.2 mm apart, so the instances pass the 5 mm spacing.
     ax, ay = 100.0, 100.0
     bx = round(ax + 2 * half_diagonal + 1.0, 6)
     by = round(ay + 5.2 * math.sqrt(2) - 1.0, 6)
@@ -66,7 +66,7 @@ def main():
     assert abs(distance - plate['spacing']) >= CLEARANCE_MM, distance
     assert distance > plate['spacing'] and abs(box_gap - 1.0) < 1e-5, (distance, box_gap)
     cases['rotated_near_miss'] = {
-        'copies': [{'ref': 'r-square', 'orientation': '+z', 'angle': 45, 'x': ax, 'y': ay},
+        'instances': [{'ref': 'r-square', 'orientation': '+z', 'angle': 45, 'x': ax, 'y': ay},
                    {'ref': 'r-square', 'orientation': '+z', 'angle': 45, 'x': bx, 'y': by}],
         'problems': [],
         'note': f'hull distance {distance:.6f} mm, bounding boxes {box_gap:.6f} mm apart'}
@@ -85,12 +85,12 @@ def main():
     assert inside >= CLEARANCE_MM and wrong_way >= CLEARANCE_MM, (inside, wrong_way)
     assert abs(off_plate_by(placed_hull(wedge, 330, wx, wy), plate) - wrong_way) < 1e-9
     cases['wedge_turned_30_fits'] = {
-        'copies': [{'ref': 'r-wedge', 'orientation': '+z', 'angle': 30, 'x': wx, 'y': wy}],
+        'instances': [{'ref': 'r-wedge', 'orientation': '+z', 'angle': 30, 'x': wx, 'y': wy}],
         'problems': [],
         'note': f'{inside:.6f} mm inside the top margin; turned clockwise it would cross by {wrong_way:.6f} mm'}
     cases['wedge_turned_330_off_plate'] = {
-        'copies': [{'ref': 'r-wedge', 'orientation': '+z', 'angle': 330, 'x': wx, 'y': wy}],
-        'problems': [{'rule': 'off_plate', 'copies': [0], 'message': 'Wedge #1 is not fully on the plate.'}],
+        'instances': [{'ref': 'r-wedge', 'orientation': '+z', 'angle': 330, 'x': wx, 'y': wy}],
+        'problems': [{'rule': 'off_plate', 'instances': [0], 'message': 'Wedge #1 is not fully on the plate.'}],
         'note': f'crosses the top margin by {wrong_way:.6f} mm'}
 
     names = [case['name'] for case in data['cases']]

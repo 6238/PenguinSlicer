@@ -1,5 +1,6 @@
 """The plate 3MF writer, the delivered name and the name guard (plate_3mf.py). No Orca run."""
 import re
+import weakref
 import xml.etree.ElementTree as ET
 import zipfile
 from datetime import datetime, timedelta, timezone
@@ -9,11 +10,12 @@ import pytest
 from shapely.geometry import MultiPoint, Polygon
 
 from helpers import corrupt_entry, l_prism_stl, make_part, part_from_stl, write_names_archive
+from penguin_slice import plate_3mf
 from penguin_slice.mesh import MeshError
-from penguin_slice.plate import ORIENTATIONS, copy_hull
+from penguin_slice.plate import ORIENTATIONS, instance_hull
 from penguin_slice.plate_3mf import LEFT_OFF_MESSAGE, LOCAL_TIME_RE, check_plate_names, delivered_file_name, \
     write_plate_3mf
-from penguin_slice.slicer import UNREADABLE_MESSAGE, SliceError, plate_object_names
+from penguin_slice.slicer import UNREADABLE_MESSAGE, SliceCancelled, SliceError, Stop, plate_object_names
 
 NS = {'m': 'http://schemas.microsoft.com/3dmanufacturing/core/2015/02'}
 # The printer delivery's job suffix (`-j<7 or 8 hex>` before the extension), which a
@@ -38,7 +40,7 @@ def placed_vertices(root):
         yield item, np.hstack([vertices, np.ones((len(vertices), 1))]) @ matrix
 
 
-def copy(ref, x, y, orientation='+z', angle=0):
+def instance(ref, x, y, orientation='+z', angle=0):
     return {'ref': ref, 'orientation': orientation, 'angle': angle, 'x': x, 'y': y}
 
 
@@ -50,10 +52,10 @@ def stls(tmp_path):
 
 
 class TestWriter:
-    def test_one_object_per_copy_named_with_labels(self, tmp_path, stls):
+    def test_one_object_per_instance_named_with_labels(self, tmp_path, stls):
         parts = {'a': make_part(stls, 'Bracket', (20, 10, 5)), 'b': make_part(stls, 'Spacer', (8, 8, 8))}
-        copies = [copy('a', 50, 50), copy('a', 100, 50), copy('b', 150, 50)]
-        names = write_plate_3mf(tmp_path / 'plate.3mf', copies, parts)
+        instances = [instance('a', 50, 50), instance('a', 100, 50), instance('b', 150, 50)]
+        names = write_plate_3mf(tmp_path / 'plate.3mf', instances, parts)
         assert names == ['Bracket #1', 'Bracket #2', 'Spacer #1']
         entries, root = read_model(tmp_path / 'plate.3mf')
         assert {'[Content_Types].xml', '_rels/.rels', '3D/3dmodel.model'} <= entries
@@ -64,14 +66,14 @@ class TestWriter:
         assert len({o.get('id') for o in objects}) == 3
         items = root.findall('m:build/m:item', NS)
         assert [i.get('objectid') for i in items] == [o.get('id') for o in objects]
-        # Each copy carries its part's de-duplicated mesh: a box is 8 vertices, 12 triangles.
+        # Each instance carries its part's de-duplicated mesh: a box is 8 vertices, 12 triangles.
         for obj in objects:
             assert len(obj.findall('m:mesh/m:vertices/m:vertex', NS)) == 8
             assert len(obj.findall('m:mesh/m:triangles/m:triangle', NS)) == 12
 
     def test_each_part_stl_is_read_once(self, tmp_path, stls):
         parts = {'a': make_part(stls, 'Bracket', (20, 10, 5))}
-        write_plate_3mf(tmp_path / 'first.3mf', [copy('a', 50, 50)], parts)
+        write_plate_3mf(tmp_path / 'first.3mf', [instance('a', 50, 50)], parts)
         stl_bytes = parts['a']['stl_path'].read_bytes()
         reads = []
         real_read = type(parts['a']['stl_path']).read_bytes
@@ -82,7 +84,7 @@ class TestWriter:
 
         from unittest import mock
         with mock.patch.object(type(parts['a']['stl_path']), 'read_bytes', counting_read):
-            write_plate_3mf(tmp_path / 'plate.3mf', [copy('a', 50, 50), copy('a', 100, 50), copy('a', 150, 50)],
+            write_plate_3mf(tmp_path / 'plate.3mf', [instance('a', 50, 50), instance('a', 100, 50), instance('a', 150, 50)],
                             parts)
         assert reads == [parts['a']['stl_path']]
         assert parts['a']['stl_path'].read_bytes() == stl_bytes
@@ -90,15 +92,15 @@ class TestWriter:
     def test_same_named_parts_get_distinct_object_names(self, tmp_path, stls):
         parts = {'a': make_part(stls, 'Bracket', (20, 10, 5)), 'b': make_part(stls, 'Bracket', (8, 8, 8)),
                  'c': make_part(stls, 'Brack?t', (8, 8, 8))}
-        copies = [copy('a', 50, 50), copy('b', 100, 50), copy('a', 150, 50), copy('c', 200, 50)]
-        assert write_plate_3mf(tmp_path / 'plate.3mf', copies, parts) == \
+        instances = [instance('a', 50, 50), instance('b', 100, 50), instance('a', 150, 50), instance('c', 200, 50)]
+        assert write_plate_3mf(tmp_path / 'plate.3mf', instances, parts) == \
             ['Bracket #1', 'Bracket #2', 'Bracket #3', 'Brack_t #1']
 
     def test_transform_read_back_puts_footprint_centre_at_xy(self, tmp_path, stls):
         # Uncentred, so the footprint offset matters.
         parts = {'a': make_part(stls, 'Bracket', (40, 10, 6), origin=(5.0, -3.0, 2.0))}
         cases = [('+z', 0, 100.0, 120.0), ('+x', 30, 150.5, 80.25), ('-y', 275, 60.0, 200.0), ('-z', 90, 170.0, 160.0)]
-        write_plate_3mf(tmp_path / 'plate.3mf', [copy('a', x, y, o, a) for o, a, x, y in cases], parts)
+        write_plate_3mf(tmp_path / 'plate.3mf', [instance('a', x, y, o, a) for o, a, x, y in cases], parts)
         _entries, root = read_model(tmp_path / 'plate.3mf')
         for (_item, placed), (_o, _a, x, y) in zip(placed_vertices(root), cases):
             low, high = placed.min(axis=0), placed.max(axis=0)
@@ -108,21 +110,21 @@ class TestWriter:
 
     def test_asymmetric_part_footprint_matches_placement_in_every_orientation(self, tmp_path, stls):
         # The 3MF must put the part where plate.py's check sees it: the hull of the
-        # transformed vertices equals copy_hull, which pins the rotation direction.
+        # transformed vertices equals instance_hull, which pins the rotation direction.
         part = part_from_stl(stls, 'Ell', l_prism_stl(origin=(7.0, -4.0, 3.0)))
-        copies = [copy('a', 60.0 + 40 * k, 90.0 + 15 * k, o, 37) for k, o in enumerate(ORIENTATIONS)]
-        write_plate_3mf(tmp_path / 'plate.3mf', copies, {'a': part})
+        instances = [instance('a', 60.0 + 40 * k, 90.0 + 15 * k, o, 37) for k, o in enumerate(ORIENTATIONS)]
+        write_plate_3mf(tmp_path / 'plate.3mf', instances, {'a': part})
         _entries, root = read_model(tmp_path / 'plate.3mf')
-        for (_item, placed), placed_copy in zip(placed_vertices(root), copies):
+        for (_item, placed), placed_instance in zip(placed_vertices(root), instances):
             written = MultiPoint(placed[:, :2].tolist()).convex_hull
-            expected = Polygon(copy_hull(placed_copy, part['footprints'][placed_copy['orientation']]))
+            expected = Polygon(instance_hull(placed_instance, part['footprints'][placed_instance['orientation']]))
             assert expected.area > 100
-            assert written.symmetric_difference(expected).area < 0.05, placed_copy['orientation']
+            assert written.symmetric_difference(expected).area < 0.05, placed_instance['orientation']
             assert placed[:, 2].min() == pytest.approx(0.0, abs=1e-3)
 
     def test_names_xml_escaped_and_sanitized(self, tmp_path, stls):
         parts = {'a': make_part(stls, 'A&B "q" <x>', (10, 10, 10))}
-        assert write_plate_3mf(tmp_path / 'plate.3mf', [copy('a', 50, 50)], parts) == ['A_B__q___x_ #1']
+        assert write_plate_3mf(tmp_path / 'plate.3mf', [instance('a', 50, 50)], parts) == ['A_B__q___x_ #1']
         _entries, root = read_model(tmp_path / 'plate.3mf')     # parses: the XML is well formed
         assert root.find('m:resources/m:object', NS).get('name') == 'A_B__q___x_ #1'
 
@@ -130,19 +132,117 @@ class TestWriter:
         parts = {'a': make_part(stls, 'Bracket', (20, 10, 5))}
         parts['a']['stl_path'].write_bytes(b'solid ascii\nendsolid ascii\n')
         with pytest.raises(MeshError) as caught:
-            write_plate_3mf(tmp_path / 'plate.3mf', [copy('a', 50, 50)], parts)
+            write_plate_3mf(tmp_path / 'plate.3mf', [instance('a', 50, 50)], parts)
         assert caught.value.message == 'The file for Bracket is not an STL file.'
         assert caught.value.details.startswith(f"{parts['a']['stl_path']}: ")
 
     def test_stl_gone_after_the_check_is_a_missing_part(self, tmp_path, stls):
-        # The plate job passed its checks, then the STL went away before the plate was written.
+        # The plate configuration passed its checks, then the STL went away before the plate was written.
         parts = {'a': make_part(stls, 'Bracket', (20, 10, 5))}
         parts['a']['stl_path'].unlink()
         with pytest.raises(SliceError) as caught:
-            write_plate_3mf(tmp_path / 'plate.3mf', [copy('a', 50, 50)], parts)
+            write_plate_3mf(tmp_path / 'plate.3mf', [instance('a', 50, 50)], parts)
         assert (caught.value.error_code, caught.value.message, caught.value.where) == (
             'slice.part_missing', 'The file for Bracket is missing.', {'part': 'Bracket'})
         assert 'No such file or directory' in caught.value.details
+
+
+class CountingStop(Stop):
+    """A Stop that counts how often the writer looks at it, and is set at the look `set_at`."""
+
+    def __init__(self, set_at=None):
+        super().__init__()
+        self.looks, self.set_at = 0, set_at
+
+    def is_set(self):
+        self.looks += 1
+        if self.looks == self.set_at:
+            self.set("cancel")
+        return super().is_set()
+
+
+class TestStopDuringTheWrite:
+    """A cancel, an abandonment or a shutdown sets the slice job's stop; the write looks at it
+    before every part's mesh and every object, so it ends within one object's write."""
+
+    def test_a_stop_set_after_the_first_parts_mesh_ends_the_write(self, tmp_path, stls, monkeypatch):
+        parts = {ref: make_part(stls, name, (10, 10, 5)) for ref, name in (('a', 'A'), ('b', 'B'), ('c', 'C'))}
+        stop, built = Stop(), []
+        real_mesh_xml = plate_3mf._mesh_xml
+
+        def mesh_then_cancel(stl_path, name):
+            built.append(name)
+            stop.set("cancel")
+            return real_mesh_xml(stl_path, name)
+
+        monkeypatch.setattr(plate_3mf, '_mesh_xml', mesh_then_cancel)
+        instances = [instance(ref, 30 + 30 * n, 50) for n, ref in enumerate('abcabc')]
+        with pytest.raises(SliceCancelled) as caught:
+            write_plate_3mf(tmp_path / 'plate.3mf', instances, parts, stop=stop)
+        assert built == ['A']
+        assert caught.value.error_code == 'slice.cancelled'
+        assert caught.value.details == ('stopped by the slice service (cancel) while the plate was being written, '
+                                        'before Orca was started')
+
+    @pytest.mark.parametrize('set_at', [1, 2, 3, 4])
+    def test_a_stop_set_between_two_objects_of_one_part_ends_the_write(self, tmp_path, stls, set_at):
+        parts = {'a': make_part(stls, 'Spacer', (10, 10, 5))}
+        stop = CountingStop(set_at)
+        with pytest.raises(SliceCancelled):
+            write_plate_3mf(tmp_path / 'plate.3mf', [instance('a', 20 + 20 * n, 50) for n in range(3)], parts,
+                            stop=stop)
+        assert stop.looks == set_at          # nothing more was written once it was set
+
+    def test_the_writer_looks_at_the_stop_before_each_mesh_and_each_object(self, tmp_path, stls):
+        parts = {'a': make_part(stls, 'Spacer', (10, 10, 5)), 'b': make_part(stls, 'Hub', (12, 12, 5))}
+        stop = CountingStop()
+        instances = [instance(ref, 20 + 20 * n, 50) for n, ref in enumerate('ababa')]
+        write_plate_3mf(tmp_path / 'plate.3mf', instances, parts, stop=stop)
+        assert stop.looks == len(parts) + len(instances)
+
+    def test_one_parts_mesh_text_at_a_time_objects_grouped_by_part(self, tmp_path, stls):
+        # The objects are written part by part, so only one part's mesh text is held at a
+        # time; their ids and the build items keep the instances' order and names.
+        parts = {'a': make_part(stls, 'Spacer', (10, 10, 5)), 'b': make_part(stls, 'Hub', (12, 12, 7))}
+        instances = [instance(ref, 20 + 20 * n, 50) for n, ref in enumerate('abab')]
+        names = write_plate_3mf(tmp_path / 'plate.3mf', instances, parts)
+        assert names == ['Spacer #1', 'Hub #1', 'Spacer #2', 'Hub #2']
+        _entries, root = read_model(tmp_path / 'plate.3mf')
+        objects = root.findall('m:resources/m:object', NS)
+        assert [o.get('name') for o in objects] == ['Spacer #1', 'Spacer #2', 'Hub #1', 'Hub #2']
+        by_id = {o.get('id'): o for o in objects}
+        items = root.findall('m:build/m:item', NS)
+        assert [i.get('objectid') for i in items] == ['1', '2', '3', '4']
+        assert [by_id[i.get('objectid')].get('name') for i in items] == names
+        for (_item, placed), placed_instance in zip(placed_vertices(root), instances):
+            low, high = placed.min(axis=0), placed.max(axis=0)
+            assert (low[0] + high[0]) / 2 == pytest.approx(placed_instance['x'], abs=1e-3)
+            assert high[2] - low[2] == pytest.approx(5 if placed_instance['ref'] == 'a' else 7, abs=1e-3)
+
+    def test_each_parts_mesh_text_is_released_before_the_next_is_built(self, tmp_path, stls, monkeypatch):
+        # The write's memory is one part's mesh text, not every part's: a weak reference to
+        # each mesh text built (a memoryview, which takes one) is dead by the time the next
+        # part's is built, and none outlives the write. A cache or a list of meshes fails here.
+        parts = {ref: make_part(stls, name, (10 + n, 10, 5)) for n, (ref, name) in enumerate((('a', 'A'), ('b', 'B'),
+                                                                                              ('c', 'C')))}
+        real_mesh_xml, built, alive_at_each_build = plate_3mf._mesh_xml, [], []
+
+        def tracked_mesh_xml(stl_path, name):
+            alive_at_each_build.append([ref() is not None for ref in built])
+            text = memoryview(real_mesh_xml(stl_path, name))
+            built.append(weakref.ref(text))
+            return text
+
+        monkeypatch.setattr(plate_3mf, '_mesh_xml', tracked_mesh_xml)
+        instances = [instance(ref, 20 + 20 * n, 50) for n, ref in enumerate('abcabc')]
+        names = write_plate_3mf(tmp_path / 'plate.3mf', instances, parts)
+        assert alive_at_each_build == [[], [False], [False, False]]
+        assert [ref() for ref in built] == [None, None, None]
+        _entries, root = read_model(tmp_path / 'plate.3mf')      # the memoryviews were written whole
+        assert [o.get('name') for o in root.findall('m:resources/m:object', NS)] == \
+            [names[n] for n in (0, 3, 1, 4, 2, 5)]
+        assert all(len(o.findall('m:mesh/m:vertices/m:vertex', NS)) == 8
+                   for o in root.findall('m:resources/m:object', NS))
 
 
 class TestDeliveredName:
@@ -185,10 +285,10 @@ class TestNameGuard:
         assert caught.value.error_code == "slice.left_off_plate"
         assert caught.value.details.startswith(f"expected 2 objects, found {len(found)}; missing ")
 
-    def test_where_names_the_first_missing_copy_or_nothing(self):
+    def test_where_names_the_first_missing_instance_or_nothing(self):
         with pytest.raises(SliceError) as caught:
             check_plate_names(['Box #1', 'Box #2', 'Box #3'], ['Box #2'])
-        assert caught.value.where == {'copy': 'Box #1'}
+        assert caught.value.where == {'instance': 'Box #1'}
         with pytest.raises(SliceError) as caught:
             check_plate_names(['Box #1'], ['Box #1', 'Box #9'])
         assert caught.value.where == {}

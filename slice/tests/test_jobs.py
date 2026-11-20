@@ -167,13 +167,13 @@ class TestFailure:
             raise SliceError("Parts are too close together; spread them out.", "detail", -101,
                              error_code="slice.orca_too_close", reason="too close")
         pool, logs = make_pool(worker)
-        job_id = pool.submit(describe={"copies": 2})
+        job_id = pool.submit(describe={"instances": 2})
         report = pool.get(job_id)
         assert report["state"] == "failed"
         assert report["error"]["code"] == "slice.orca_too_close"
         assert report["error"]["detail"] == "orca code -101\ndetail"
         failed = logs[-1]
-        assert (failed["state"], failed["error_code"], failed["orca_reason"], failed["copies"]) == \
+        assert (failed["state"], failed["error_code"], failed["orca_reason"], failed["instances"]) == \
             ("failed", "slice.orca_too_close", "too close", 2)
 
     def test_a_bug_in_the_worker_keeps_its_traceback_for_the_log(self):
@@ -531,12 +531,12 @@ class TestLog:
         clock = FakeClock()
         pool, logs = make_pool(clock=clock)
         describe = {"printer": None, "overrides": {"enable_support": "1"}, "parts": {"box": {"triangles": 12}},
-                    "copies": [{"name": "Box #1", "x": 50.0}]}
+                    "instances": [{"name": "Box #1", "x": 50.0}]}
         job_id = pool.submit(describe=describe)
         assert [e["state"] for e in logs] == ["queued", "running", "done"]
         done = logs[-1]
         assert done["event"] == "slice_job" and done["job"] == job_id
-        assert done["overrides"] == {"enable_support": "1"} and done["copies"][0]["name"] == "Box #1"
+        assert done["overrides"] == {"enable_support": "1"} and done["instances"][0]["name"] == "Box #1"
         assert (done["peak_rss_kb"], done["orca_wall_s"], done["wall_s"]) == (2048, 1.5, 0.0)
 
     def test_the_log_never_carries_the_payload(self):

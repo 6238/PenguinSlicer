@@ -227,7 +227,7 @@
  "cases": [
   {
    "name": "all_clear",
-   "copies": [
+   "instances": [
     {
      "ref": "r-box",
      "orientation": "+z",
@@ -247,7 +247,7 @@
   },
   {
    "name": "off_plate_left",
-   "copies": [
+   "instances": [
     {
      "ref": "r-box",
      "orientation": "+z",
@@ -259,7 +259,7 @@
    "problems": [
     {
      "rule": "off_plate",
-     "copies": [
+     "instances": [
       0
      ],
      "message": "Box #1 is not fully on the plate."
@@ -268,7 +268,7 @@
   },
   {
    "name": "off_plate_after_45_rotation",
-   "copies": [
+   "instances": [
     {
      "ref": "r-square",
      "orientation": "+z",
@@ -280,7 +280,7 @@
    "problems": [
     {
      "rule": "off_plate",
-     "copies": [
+     "instances": [
       0
      ],
      "message": "Square #1 is not fully on the plate."
@@ -290,7 +290,7 @@
   },
   {
    "name": "exactly_on_margin",
-   "copies": [
+   "instances": [
     {
      "ref": "r-box",
      "orientation": "+z",
@@ -310,7 +310,7 @@
   },
   {
    "name": "too_tall",
-   "copies": [
+   "instances": [
     {
      "ref": "r-tall",
      "orientation": "+z",
@@ -322,7 +322,7 @@
    "problems": [
     {
      "rule": "too_tall",
-     "copies": [
+     "instances": [
       0
      ],
      "message": "Tall_pin #1 is taller than the printer can print (340 mm)."
@@ -331,7 +331,7 @@
   },
   {
    "name": "overlap",
-   "copies": [
+   "instances": [
     {
      "ref": "r-box",
      "orientation": "+z",
@@ -350,7 +350,7 @@
    "problems": [
     {
      "rule": "too_close",
-     "copies": [
+     "instances": [
       0,
       1
      ],
@@ -360,7 +360,7 @@
   },
   {
    "name": "four_mm_apart",
-   "copies": [
+   "instances": [
     {
      "ref": "r-box",
      "orientation": "+z",
@@ -379,7 +379,7 @@
    "problems": [
     {
      "rule": "too_close",
-     "copies": [
+     "instances": [
       0,
       1
      ],
@@ -389,7 +389,7 @@
   },
   {
    "name": "exactly_spacing_apart",
-   "copies": [
+   "instances": [
     {
      "ref": "r-box",
      "orientation": "+z",
@@ -409,7 +409,7 @@
   },
   {
    "name": "rotated_near_miss",
-   "copies": [
+   "instances": [
     {
      "ref": "r-square",
      "orientation": "+z",
@@ -430,7 +430,7 @@
   },
   {
    "name": "same_name_two_parts",
-   "copies": [
+   "instances": [
     {
      "ref": "r-bracket-a",
      "orientation": "+z",
@@ -456,7 +456,7 @@
    "problems": [
     {
      "rule": "too_close",
-     "copies": [
+     "instances": [
       1,
       2
      ],
@@ -466,7 +466,7 @@
   },
   {
    "name": "problems_in_rule_order",
-   "copies": [
+   "instances": [
     {
      "ref": "r-tall",
      "orientation": "+z",
@@ -506,21 +506,21 @@
    "problems": [
     {
      "rule": "off_plate",
-     "copies": [
+     "instances": [
       1
      ],
      "message": "Box #1 is not fully on the plate."
     },
     {
      "rule": "too_tall",
-     "copies": [
+     "instances": [
       0
      ],
      "message": "Tall_pin #1 is taller than the printer can print (340 mm)."
     },
     {
      "rule": "too_close",
-     "copies": [
+     "instances": [
       0,
       2
      ],
@@ -528,7 +528,7 @@
     },
     {
      "rule": "too_close",
-     "copies": [
+     "instances": [
       3,
       4
      ],
@@ -538,7 +538,7 @@
   },
   {
    "name": "orientation_and_quarter_turn",
-   "copies": [
+   "instances": [
     {
      "ref": "r-box",
      "orientation": "+x",
@@ -551,7 +551,7 @@
   },
   {
    "name": "quarter_turn_off_plate",
-   "copies": [
+   "instances": [
     {
      "ref": "r-box",
      "orientation": "+x",
@@ -563,7 +563,7 @@
    "problems": [
     {
      "rule": "off_plate",
-     "copies": [
+     "instances": [
       0
      ],
      "message": "Box #1 is not fully on the plate."
@@ -572,7 +572,7 @@
   },
   {
    "name": "wedge_turned_30_fits",
-   "copies": [
+   "instances": [
     {
      "ref": "r-wedge",
      "orientation": "+z",
@@ -586,7 +586,7 @@
   },
   {
    "name": "wedge_turned_330_off_plate",
-   "copies": [
+   "instances": [
     {
      "ref": "r-wedge",
      "orientation": "+z",
@@ -598,7 +598,7 @@
    "problems": [
     {
      "rule": "off_plate",
-     "copies": [
+     "instances": [
       0
      ],
      "message": "Wedge #1 is not fully on the plate."
