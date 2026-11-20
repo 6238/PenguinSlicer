@@ -1,0 +1,6 @@
+PLACEHOLDER, NOT A REAL SLICED FILE.
+
+The together run sends these bytes through the relay and the daemon to the stand-in
+printer, which only checks that every byte arrives unchanged. Replace this file, or pass
+--file, with the sliced-file example from contracts/examples/ once the slice service has
+written that contract.

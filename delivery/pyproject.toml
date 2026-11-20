@@ -1,0 +1,50 @@
+[project]
+name = "penguin-delivery"
+version = "0.1.0"
+description = "Printer delivery: the relay and the daemon, developed and tested together"
+requires-python = ">=3.11"
+dependencies = [
+    "penguin-delivery-relay",
+    "penguin-delivery-daemon",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-randomly>=3.15",
+    "pytest-xdist>=3.6",
+    "coverage>=7.6",
+]
+
+[tool.uv]
+# The workspace root is not a package of its own: it holds the dev tools, the together
+# run and the tests that exercise both halves at once.
+package = false
+
+[tool.uv.workspace]
+members = ["relay", "daemon"]
+
+[tool.uv.sources]
+penguin-delivery-relay = { workspace = true }
+penguin-delivery-daemon = { workspace = true }
+
+[tool.pytest.ini_options]
+# Paths are relative to this file, never to the current directory.
+testpaths = ["relay/tests", "daemon/tests", "tests"]
+# "." for the together run; each tests folder for its own helper module (relay_fakes,
+# daemon_fakes), whose names are unique so the folders can share one interpreter.
+pythonpath = [".", "relay/tests", "daemon/tests"]
+addopts = ["-p", "no:cacheprovider", "--strict-markers", "--import-mode=importlib"]
+markers = [
+    "known_fault: pins a known fault's CURRENT wrong behaviour; to be fixed in hardening, which flips the assertion",
+    "real_time: runs the together run on real threads and real (sped-up) time; not in the fast suite",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["penguin_delivery_relay", "penguin_delivery_daemon", "together"]
+omit = ["*/tests/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
