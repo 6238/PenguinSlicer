@@ -109,8 +109,8 @@ def main(argv):
               f'VERSION={old}')
         return 4
     after = locked_versions()
-    # Pin the library's own dependencies to what was resolved, so pip on the shop computer
-    # installs exactly the set the upstream check runs on; re-lock to record the pins.
+    # Pin the library's own dependencies to what was resolved, so pip on the daemon's
+    # computer installs exactly the set the upstream check runs on; re-lock to record the pins.
     with open(PYPROJECT, encoding='utf-8') as fh:
         moved = fh.read()
     with open(PYPROJECT, 'w', encoding='utf-8') as fh:

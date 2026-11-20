@@ -22,10 +22,6 @@ import os
 import sys
 from dataclasses import dataclass
 
-#: Where the installer of the earlier version put the configuration. Only an install made
-#: by that installer (daemon/install.sh, not maintained in this version) uses it.
-LEGACY_CONFIG_PATH = '/etc/penguincam-printer/config.toml'
-
 
 def default_home(*, platform=None, environ=None, expanduser=os.path.expanduser):
     platform = sys.platform if platform is None else platform
@@ -65,11 +61,3 @@ def home_for(home=None, config=None, **platform_args):
     if config:
         return DaemonHome(os.path.dirname(os.path.abspath(config)))
     return DaemonHome(default_home(**platform_args))
-
-
-def is_service_install(config_path, *, platform=None):
-    """True only for a Linux install made by the earlier installer, where `pair` still
-    hands the file to the service user and restarts the service. Never on Windows or
-    macOS, and never for a home the person chose."""
-    platform = sys.platform if platform is None else platform
-    return platform.startswith('linux') and os.path.abspath(config_path) == LEGACY_CONFIG_PATH

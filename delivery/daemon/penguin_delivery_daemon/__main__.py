@@ -11,17 +11,13 @@ paths.py):
   so it cannot disturb a running daemon;
 - `record` saves every status document the printer sends, one JSON line each, so a real
   print's sequence can replace the simulated printer's invented scenarios.
-
-On a Linux machine installed by the earlier installer (daemon/install.sh, not maintained
-in this version), `pair` with that installer's configuration path also hands the file to
-the service user and restarts the service; nowhere else does it touch either.
 """
 
 import argparse
 import json
 import os
 import secrets
-import subprocess
+import signal
 import sys
 import time
 from urllib.parse import urlparse
@@ -34,22 +30,16 @@ from penguin_delivery_daemon.relay_client import ChallengeDetected, RelayClient,
 from penguin_delivery_daemon.run_loop import RunLoop
 
 # Crockford base32 without I, L, O and U. Deliberately duplicated from the relay's
-# penguin_delivery_relay/relay.py: the relay is not installed on the Pi and the daemon never
+# penguin_delivery_relay/relay.py: the relay is not installed beside the daemon, which never
 # imports it. A test in delivery/tests pins the two literals together, so a change to one is
 # caught.
 ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 CODE_LENGTH = 8
 
-SERVICE_NAME = 'penguincam-printer'
-SERVICE_USER = 'penguincam'
 CONNECT_WAIT_SECONDS = 20.0
 CONNECT_POLL_SECONDS = 0.5
 STATUS_WAIT_SECONDS = 10.0
 DISCOVERY_SECONDS = 5.0
-
-#: Where an install made by the earlier installer downloads to (its unit grants this path).
-#: Every other run downloads to the `downloads/` folder of its home.
-DOWNLOAD_DIR = '/var/tmp/penguincam-printer'
 RECORD_POLL_SECONDS = 0.5
 
 
@@ -58,10 +48,7 @@ def resolve_paths(args):
     home = paths.home_for(getattr(args, 'home', None), getattr(args, 'config', None))
     if not getattr(args, 'config', None):
         args.config = home.config
-    if paths.is_service_install(args.config):
-        args.download_dir = DOWNLOAD_DIR
-    else:
-        args.download_dir = home.downloads
+    args.download_dir = home.downloads
     args.recordings = home.recordings
     # Beside the configuration, wherever that is, so it lives in the daemon's home.
     args.start_record = paths.DaemonHome(os.path.dirname(os.path.abspath(args.config))
@@ -81,54 +68,6 @@ def generate_pairing_code():
 def format_pairing_code(code):
     """Display form: two groups of four separated by a dash."""
     return f"{code[:4]}-{code[4:]}"
-
-
-def hand_to_service_user(path, log, *, lookup=None, chown=None):
-    """Give the config directory and file to the user the service runs as.
-
-    `pair` runs as root under sudo, so everything it writes is root's. `run` runs as
-    penguincam and rewrites the whole file to store its token, which needs write permission
-    on the file AND on its directory (the write is a temporary file renamed into place). A
-    development machine has no penguincam user; say so and carry on rather than fail -- the
-    same config file is perfectly usable by the user who wrote it.
-
-    Only the daemon's OWN directory is handed over. `pair --config /etc/config.toml` must
-    chown /etc/config.toml and nothing else: giving away whatever directory a typed path
-    happens to sit in would be a far bigger change than the one that was asked for.
-
-    Only ever called for a Linux service install (paths.is_service_install), so `pwd`, which
-    Windows lacks, is imported here and never at module scope."""
-    if lookup is None:
-        import pwd
-        lookup = pwd.getpwnam
-    chown = chown or os.chown
-    try:
-        entry = lookup(SERVICE_USER)
-    except KeyError:
-        log(f"note: no {SERVICE_USER} user on this machine, so {path} keeps its current "
-            f"owner (fine for development, not for a Pi)")
-        return False
-    directory = os.path.dirname(os.path.abspath(path))
-    own_directory = os.path.dirname(cfg.DEFAULT_CONFIG_PATH)
-    targets = ([directory] if directory == own_directory else []) + [path]
-    for target in targets:
-        try:
-            chown(target, entry.pw_uid, entry.pw_gid)
-        except OSError as e:
-            log(f"warning: could not give {target} to {SERVICE_USER} ({e}); the service "
-                f"will not be able to store its token")
-            return False
-    return True
-
-
-def restart_service(log, *, run=subprocess.run):
-    """Start (or restart) the systemd unit. A machine without systemd just gets a note."""
-    try:
-        run(['systemctl', 'restart', SERVICE_NAME], check=True)
-        log(f"restarted {SERVICE_NAME}")
-    except Exception as e:
-        log(f"could not restart {SERVICE_NAME} ({e}); start it yourself with "
-            f"`sudo systemctl restart {SERVICE_NAME}`")
 
 
 def _connect_and_identify(link, *, wait=CONNECT_WAIT_SECONDS, clock=time.monotonic,
@@ -275,9 +214,6 @@ def cmd_pair(args, *, ask=input, out=sys.stdout, clock=time.monotonic, sleep=tim
                               dev=dev, path=args.config, printer_mqtt_port=mqtt_port,
                               printer_ftps_port=ftps_port)
     cfg.save_config(config, path=args.config)
-    service = paths.is_service_install(args.config)
-    if service:
-        hand_to_service_user(args.config, say)
 
     say("")
     say(f"Relay:   {config.backend_url}")
@@ -289,12 +225,9 @@ def cmd_pair(args, *, ask=input, out=sys.stdout, clock=time.monotonic, sleep=tim
     say("printing:")
     say(f'  pairing_code: "{format_pairing_code(code)}"')
     say("")
-    if service:
-        restart_service(say)
-    else:
-        home = ['--home', os.path.dirname(os.path.abspath(args.config))]
-        say("Then start the daemon and leave it running:")
-        say(f"  python -m penguin_delivery_daemon run {' '.join(home)}")
+    home = ['--home', os.path.dirname(os.path.abspath(args.config))]
+    say("Then start the daemon and leave it running:")
+    say(f"  python -m penguin_delivery_daemon run {' '.join(home)}")
     return 0
 
 
@@ -323,9 +256,9 @@ def wait_for_paired_config(path, *, log=print, sleep=time.sleep, clock=time.mono
     """Block until the config file is there AND carries a usable pairing code.
 
     A config with no code cannot pair, so starting the loop on one would only fill the
-    journal with exchanges the backend answers 404. Waiting beats exiting for the same
-    reason wait_for_config waits: an exit becomes a systemd restart loop that buries the
-    one message a mentor needs to see. Logs once at the start and then once a minute."""
+    log with exchanges the backend answers 404. Waiting beats exiting for the same reason
+    wait_for_config waits: whoever started it sees the one message a mentor needs. Logs
+    once at the start and then once a minute."""
     started = clock()
     last_log = None
     while True:
@@ -353,9 +286,47 @@ def _ensure_download_dir(path):
     return path
 
 
+class _InterruptOnce:
+    """A SIGINT handler: the first interrupt stops the daemon (KeyboardInterrupt); every
+    later one is ignored, so several Ctrl-C at once (to the program and to whatever started
+    it) cannot break into the lines that stop it and end the log in a traceback."""
+
+    def __init__(self):
+        self.seen = 0
+        self.previous = None
+        self.installed = False
+
+    def __call__(self, signum, frame):
+        self.seen += 1
+        if self.seen == 1:
+            raise KeyboardInterrupt
+
+    def install(self):
+        try:
+            self.previous = signal.signal(signal.SIGINT, self)
+            self.installed = True
+        except ValueError:
+            pass                    # not the main thread: interrupts are not ours to take
+
+    def uninstall(self):
+        """Put the earlier handler back; after a real interrupt keep ignoring them, so the
+        last moments before the process exits stay quiet too."""
+        if self.installed:
+            signal.signal(signal.SIGINT, signal.SIG_IGN if self.seen else self.previous)
+
+
 def cmd_run(args, *, out=sys.stdout, download_dir=None, clock=time.monotonic,
             sleep=time.sleep):
     """The daemon. Waits for the config file rather than exiting."""
+    interrupts = _InterruptOnce()
+    interrupts.install()
+    try:
+        return _run(args, out=out, download_dir=download_dir, clock=clock, sleep=sleep)
+    finally:
+        interrupts.uninstall()
+
+
+def _run(args, *, out, download_dir, clock, sleep):
     def log(*parts):
         print(*parts, file=out, flush=True)
 
@@ -395,8 +366,8 @@ def cmd_run(args, *, out=sys.stdout, download_dir=None, clock=time.monotonic,
     except KeyboardInterrupt:
         log("stopping")
     except Exception as e:
-        # A connect that throws -- no bambulabs_api in the venv, a socket the Pi cannot
-        # open -- is a message and an exit code, not a traceback in the journal.
+        # A connect that throws -- no bambulabs_api in the venv, a socket the daemon's
+        # computer cannot open -- is a message and an exit code, not a traceback in the log.
         log(f"error: could not start: {e}")
         status = 1
     finally:

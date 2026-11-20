@@ -843,9 +843,17 @@ class TestTheRemainingFailurePaths(FlowTestCase):
     """Round 3, defect 8: the five failure paths of the second review, each asserting what
     the relay is told and that nothing is started twice."""
 
-    def test_a_file_that_could_not_be_removed_from_the_printer_is_said_so(self):
+    def cancel_during_upload_answered(self, answer):
+        """One delivery job cancelled during its upload, the printer answering the delete
+        with `answer` (PrinterLink.delete's (outcome, the printer's answer))."""
         loop = self.make()
-        self.printer.delete = lambda remote_name: False
+        sent = []
+
+        def delete(remote_name):
+            sent.append(remote_name)
+            return answer
+
+        self.printer.delete = delete
         original = self.printer.upload
 
         def upload(local, remote, *, cancelled=None, progress=None):
@@ -855,8 +863,48 @@ class TestTheRemainingFailurePaths(FlowTestCase):
         self.printer.upload = upload
         self.run_job(loop)
         self.assertEqual(self.outcome(), (False, 'cancelled', 'delivery.cancelled'))
-        self.assertTrue(self.lines(f'could not confirm {SUFFIXED} was removed'))
-        self.assertEqual(self.printer.starts, [])
+        self.assertEqual((sent, self.printer.starts), ([SUFFIXED], []))
+        self.assertFalse(self.lines('Traceback'))
+
+    def test_a_delete_the_printer_confirmed_is_said_removed(self):
+        self.cancel_during_upload_answered((pr.REMOVED, '250 Delete operation successful.'))
+        self.assertTrue(self.lines(f'removed {SUFFIXED} from the printer'))
+        self.assertFalse(self.lines('warning'))
+
+    def test_a_file_that_could_not_be_removed_from_the_printer_is_a_warning_with_its_answer(self):
+        """Delivery review 2, defects 1 and 2: anything but a confirmed delete or "no such
+        file" is a delete that could not be confirmed, with the printer's answer, at
+        warning level."""
+        self.cancel_during_upload_answered((pr.UNCONFIRMED, '550 Permission denied.'))
+        self.assertTrue(self.lines(
+            f'warning: could not confirm that {SUFFIXED} was removed from the printer '
+            '(it answered: 550 Permission denied.)'))
+        self.assertFalse(self.lines(f'removed {SUFFIXED} from the printer'))
+
+    def test_a_delete_with_no_answer_from_the_printer_does_not_say_it_answered(self):
+        """Delivery review 3, defect 1: a timeout, a reset, a dropped connection or no
+        connection at all is no answer from the printer, and the warning says what
+        happened instead of "it answered"."""
+        for answer in ('no answer: timed out', 'no answer: the connection dropped',
+                       'no answer', 'no connection: [Errno 111] Connection refused'):
+            with self.subTest(answer=answer):
+                self.setUp()
+                self.cancel_during_upload_answered((pr.UNCONFIRMED, answer))
+                self.assertTrue(self.lines(
+                    f'warning: could not confirm that {SUFFIXED} was removed from the '
+                    f'printer ({answer}); it is harmless'))
+                self.assertFalse(self.lines('it answered'))
+
+    def test_a_file_that_never_reached_the_printer_is_not_said_to_be_removed(self):
+        """Review 6, defect 6: the printer answered the delete that there is no such file
+        (its upload was refused): the log says the file was not on the printer, nothing
+        that looks like an error, and not that it removed it."""
+        self.cancel_during_upload_answered((pr.NOT_ON_PRINTER, '550 No such file.'))
+        self.assertTrue(self.lines(f'{SUFFIXED} was not on the printer'))
+        self.assertFalse(self.lines(f'removed {SUFFIXED}'))
+        self.assertFalse([line for line in self.logged
+                          if any(word in line.lower()
+                                 for word in ('warning', 'error', 'fail', '550'))])
 
     def test_a_job_that_arrives_already_cancelled_is_acknowledged_without_a_download(self):
         loop = self.make()

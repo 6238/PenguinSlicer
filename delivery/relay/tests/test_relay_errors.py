@@ -28,7 +28,7 @@ def assert_contract_shape(report):
     for sentence in (report['message'], report['remedy']):
         assert sentence[0].isupper() and sentence.endswith('.'), sentence
         assert 'delivery.' not in sentence
-    assert set(report.get('where', {})) <= {'part', 'copy', 'height_mm', 'stage'}
+    assert set(report.get('where', {})) <= {'part', 'instance', 'height_mm', 'stage'}
 
 
 def online(relay, snapshot=IDLE):
@@ -138,7 +138,7 @@ def test_daemon_silent_names_the_minutes(client, caller, relay, clock, tmp_path)
     clock.advance(7 * 60)
     report = refused_send(client, caller, tmp_path)
     assert report['code'] == 'delivery.daemon_silent'
-    assert report['message'] == ('The computer next to the printer was last heard from 7 '
+    assert report['message'] == ("The daemon's computer was last heard from 7 "
                                  'minutes ago.')
     assert report['detail'] == 'Printer offline, last seen 7 min ago'
     assert_contract_shape(report)
@@ -312,13 +312,14 @@ def test_every_rule_is_reachable_and_produces_the_contract_shape():
         'delivery.not_paired': 'No printer paired',
         'delivery.sliced_file_missing': 'File not found or expired',
         'delivery.sliced_file_too_old': 'slice again',
-        'delivery.daemon_never_reported': ('The Pi has not reported since the service '
-                                           'started; check the setup guide.'),
+        'delivery.daemon_never_reported': ("The daemon's computer has not "
+                                           'reported since the service started; check '
+                                           'the setup guide.'),
         'delivery.no_printer_status': 'No printer reporting yet; try again in a moment.',
         'delivery.daemon_silent': 'Printer offline, last seen 0 min ago',
         'delivery.printer_busy': 'Printer busy, printing a file',
         'delivery.printer_paused': 'Paused, a file',
-        'delivery.printer_unreachable': 'Printer unreachable from the Pi',
+        'delivery.printer_unreachable': "Printer unreachable from the daemon's computer",
         'delivery.printer_state_unrecognised': "Printer state not recognised: state 'x'",
         'delivery.job_in_flight': 'A job is already on its way to the printer',
         'delivery.rate_limited': 'Too Many Requests: 10 per 1 minute',
@@ -404,7 +405,7 @@ DAEMON_SENTENCES = [
     ('delivery.start_timeout', {'seconds': 60},
      'The printer did not show the print as started within 60 seconds.'),
     ('delivery.printer_unreachable_at_start', {'minutes': 10},
-     'The computer next to the printer could not reach the printer for 10 minutes.'),
+     "The daemon's computer could not reach the printer for 10 minutes."),
     ('delivery.printer_busy_at_start', {'name': 'bracket.gcode.3mf', 'percent': 42},
      'The printer was busy with another print, bracket.gcode.3mf, 42 percent done, when '
      'this one arrived.'),

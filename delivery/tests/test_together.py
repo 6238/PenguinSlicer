@@ -344,6 +344,15 @@ def test_the_stand_in_refuses_to_start_a_file_it_was_not_sent():
     assert printer.snapshot()['state'] == 'idle'
 
 
+def test_the_stand_in_answers_a_delete_with_the_daemons_outcomes():
+    printer = StandInPrinter()
+    assert printer.delete('missing.gcode.3mf') == (daemon_printer.NOT_ON_PRINTER,
+                                                   '550 No such file.')
+    printer.received['p.gcode.3mf'] = b'x'
+    assert printer.delete('p.gcode.3mf') == (daemon_printer.REMOVED, '250 Deleted.')
+    assert printer.deleted == ['missing.gcode.3mf', 'p.gcode.3mf']
+
+
 def test_describe_names_each_part_of_a_status():
     describe = together_main.describe
     assert describe({'error': 'Too Many Requests: 120 per 1 minute'}) == \

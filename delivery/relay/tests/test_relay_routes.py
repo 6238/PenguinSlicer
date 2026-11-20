@@ -468,7 +468,7 @@ class TestDaemonRoutes:
 
     def test_an_unauthenticated_sync_never_touches_the_relay(self, client, relay, https):
         """The token is checked BEFORE note_daemon, so a guessed code cannot be marked
-        alive -- which would otherwise block the real Pi's next exchange."""
+        alive -- which would otherwise block the real daemon's next exchange."""
         client.post('/printer/daemon/sync', json=IDLE,
                     headers={'Authorization': 'Bearer garbage'}, **https)
         assert relay.status_for(CODE)['waiting'] is True
@@ -487,7 +487,7 @@ class TestDaemonRoutes:
     def test_the_job_on_the_wire_carries_only_the_documented_fields(
             self, client, relay, auth, https, clock):
         """The relay's state -- team_number, the job state, the hand-out time, which
-        daemon holds the start -- is the relay's bookkeeping and is never sent to the Pi."""
+        daemon holds the start -- is the relay's bookkeeping and is never sent to the daemon."""
         go_online(relay)
         relay.claim_job(CODE, job_id='j8f3a2c1', download_path='/printer/download/t',
                         filename='sample_part.gcode.3mf', team_number=6238, size=9,
@@ -638,7 +638,7 @@ class TestDaemonRoutes:
         assert (resp.status_code, resp.get_json()) == (401, {'error': 'repair'})
 
 
-# --- HTTPS, development mode, proxies, the installer --------------------------------------
+# --- HTTPS, development mode, proxies -----------------------------------------------------
 
 DAEMON_ROUTES = (('/printer/daemon/pair', 'post'), ('/printer/daemon/sync', 'post'),
                  ('/printer/daemon/jobs/j8f3a2c1/ack', 'post'), ('/printer/daemon/ping', 'get'))
@@ -680,28 +680,6 @@ class TestHttpsAndDevMode:
                            headers=dict(auth(), **{'X-Forwarded-Proto': 'https'}))
         assert resp.status_code == 403
 
-    def test_the_installer_is_served_when_the_caller_names_it(self, caller, clock, tmp_path,
-                                                            https):
-        script = tmp_path / 'install.sh'
-        script.write_text('#!/usr/bin/env bash\necho hi\n')
-        client = make_app(caller, clock, installer_path=str(script)).test_client()
-        resp = client.get('/install-printer.sh', **https)
-        assert resp.status_code == 200
-        assert resp.mimetype == 'text/x-shellscript'
-        assert resp.get_data(as_text=True).startswith('#!/usr/bin/env bash')
-
-    def test_the_installer_refusal_is_plain_text_a_shell_can_swallow(self, caller, clock,
-                                                                     tmp_path):
-        script = tmp_path / 'install.sh'
-        script.write_text('#!/usr/bin/env bash\n')
-        client = make_app(caller, clock, installer_path=str(script)).test_client()
-        resp = client.get('/install-printer.sh')
-        assert resp.status_code == 403
-        assert resp.mimetype == 'text/plain'
-        assert resp.get_data(as_text=True) == '# HTTPS required\n'
-
-    def test_no_installer_route_without_an_installer_path(self, client, https):
-        assert client.get('/install-printer.sh', **https).status_code == 404
 
 
 # --- rate limits -----------------------------------------------------------------------
@@ -770,14 +748,6 @@ class TestRateLimits:
             'X-Forwarded-For': '203.0.113.7'}).status_code == 429
         assert client.get('/printer/download/nope', headers={
             'X-Forwarded-For': '198.51.100.4'}).status_code == 404
-
-    def test_the_installer_limit(self, caller, clock, tmp_path, https):
-        script = tmp_path / 'install.sh'
-        script.write_text('#!/usr/bin/env bash\n')
-        client = make_app(caller, clock, installer_path=str(script)).test_client()
-        for _ in range(30):
-            assert client.get('/install-printer.sh', **https).status_code == 200
-        assert client.get('/install-printer.sh', **https).status_code == 429
 
     def test_ping_and_ack_each_have_sixty_a_minute(self, client, auth, https):
         for _ in range(60):

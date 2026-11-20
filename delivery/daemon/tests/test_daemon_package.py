@@ -1,18 +1,8 @@
-"""Static checks on the installer, the package metadata and the hardware smoke script.
-
-The installer cannot be executed here -- it makes users, writes to /opt and /etc, and talks
-to apt -- so these tests read it. They exist to catch the mistakes that would only show up
-on a Pi in a shop at the worst possible moment.
-
-Ported from the original daemon's test_install_script.py, with the paths of the new
-repository. New: the pins in requirements.txt and pyproject.toml must agree, and the
-package's version and User-Agent (from the original test_smoke_import.py)."""
+"""Static checks on the daemon's package: its one pin of its dependencies, its version and
+User-Agent, and what it may import."""
 import ast
 import os
-import re
 import shutil
-import stat
-import subprocess
 import sys
 import tomllib
 import unittest
@@ -20,7 +10,6 @@ import unittest
 import penguin_delivery_daemon
 
 DAEMON = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SCRIPT = os.path.join(DAEMON, 'install.sh')
 PACKAGE = os.path.dirname(os.path.abspath(penguin_delivery_daemon.__file__))
 
 # Left behind by tools, never part of the daemon's source: hidden files and folders
@@ -54,124 +43,6 @@ def files_stating_a_version(folder, versions):
             if any(needle in data for needle in needles):
                 offending.append(relative)
     return offending, checked
-
-
-class TestInstallScript(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        with open(SCRIPT) as fh:
-            cls.text = fh.read()
-
-    def test_it_is_executable(self):
-        self.assertTrue(os.stat(SCRIPT).st_mode & stat.S_IXUSR)
-
-    def test_it_parses_as_shell(self):
-        """A typo in a heredoc or a quote only shows up on the Pi otherwise."""
-        bash = shutil.which('bash')
-        if not bash:
-            self.skipTest('bash is not installed')
-        result = subprocess.run([bash, '-n', SCRIPT], capture_output=True, text=True,
-                                timeout=10)
-        self.assertEqual(result.returncode, 0, result.stderr)
-
-    def test_it_fails_fast(self):
-        self.assertIn('set -euo pipefail', self.text)
-
-    def test_the_placeholders_are_guarded(self):
-        """Nothing is pinned yet. The guard is what stops a half-finished installer from
-        downloading a tarball named REPLACE_BEFORE_MERGE."""
-        self.assertIn('DAEMON_SHA="REPLACE_BEFORE_MERGE"', self.text)
-        self.assertIn('SOURCE_REPOSITORY="REPLACE_BEFORE_MERGE"', self.text)
-        self.assertRegex(self.text, r'if\s+\[\s+"\$DAEMON_SHA"\s+=\s+"REPLACE_BEFORE_MERGE"')
-        self.assertRegex(self.text, r'\[\s+"\$SOURCE_REPOSITORY"\s+=\s+"REPLACE_BEFORE_MERGE"')
-
-    def test_it_requires_a_64_bit_userland(self):
-        """There is no 32-bit Pillow wheel on PyPI, so an armv7l install would try to build
-        it from source and fail after a long wait. The userland is tested, not the kernel:
-        a 32-bit OS on a Pi 4 reports `uname -m` as armv8l."""
-        self.assertIn('ARCH="$(dpkg --print-architecture)"', self.text)
-        self.assertIn('"$ARCH" != "arm64"', self.text)
-        self.assertNotIn('$(uname', self.text)
-
-    def test_it_installs_wheels_only_into_a_venv(self):
-        self.assertIn('--only-binary=:all:', self.text)
-        self.assertIn('python3-venv', self.text)
-        self.assertIn('-r "$REQUIREMENTS"', self.text)
-
-    def test_the_pins_are_read_from_pyproject_toml_and_nowhere_else(self):
-        self.assertIn("'*/delivery/daemon/pyproject.toml'", self.text)
-        self.assertIn('["project"]["dependencies"]', self.text)
-        self.assertNotRegex(self.text, r'==\d')            # no version written here
-        self.assertNotIn('requirements.txt', self.text)
-
-    def test_it_downloads_the_pinned_commit_and_extracts_only_the_daemon_package(self):
-        self.assertIn('https://github.com/$SOURCE_REPOSITORY/archive/$DAEMON_SHA.tar.gz',
-                      self.text)
-        # Three levels: <repository>-<sha>, delivery and daemon, so the package lands at
-        # $APP_DIR/penguin_delivery_daemon and `python -m penguin_delivery_daemon` works.
-        self.assertIn("--strip-components=3 \\\n  '*/delivery/daemon/penguin_delivery_daemon/*'",
-                      self.text)
-
-    def test_the_wrapper_runs_the_package_out_of_the_venv(self):
-        self.assertIn('exec env PYTHONPATH="$APP_DIR" "$VENV_DIR/bin/python" -m '
-                      'penguin_delivery_daemon', self.text)
-
-    def test_an_upgrade_removes_the_code_of_an_install_made_before_the_port(self):
-        self.assertIn('rm -rf "${APP_DIR:?}/printer_daemon"', self.text)
-
-    def test_it_creates_the_service_user_and_enables_without_starting(self):
-        self.assertIn('useradd --system', self.text)
-        self.assertIn('SERVICE_USER="penguincam"', self.text)
-        self.assertIn('systemctl enable', self.text)
-        self.assertNotIn('systemctl start', self.text)
-
-    def test_the_unit_restarts_always(self):
-        self.assertIn('Restart=always', self.text)
-        self.assertIn('ExecStart=$WRAPPER run', self.text)
-
-    def test_pair_is_run_with_stdin_from_the_tty(self):
-        """The script itself arrived on standard input from the curl pipe, so pair would
-        read the rest of the script as its answers without this."""
-        self.assertRegex(self.text, r'pair\s*<\s*/dev/tty')
-
-    def test_the_config_directory_is_handed_to_the_service_user_after_pairing(self):
-        match = re.search(r'pair\s*<\s*/dev/tty', self.text)
-        self.assertIsNotNone(match)
-        self.assertRegex(self.text[match.start():],
-                         r'chown[^\n]*"\$SERVICE_USER:\$SERVICE_USER"[^\n]*\$CONFIG_DIR')
-
-    def test_the_unit_is_hardened(self):
-        for directive in ('NoNewPrivileges=true', 'ProtectSystem=strict',
-                          'ProtectHome=true', 'PrivateTmp=true'):
-            self.assertIn(directive, self.text)
-        match = re.search(r'^ReadWritePaths=(.+)$', self.text, re.MULTILINE)
-        self.assertIsNotNone(match, 'the unit grants no writable path')
-        self.assertEqual(match.group(1), '$CONFIG_DIR -$DOWNLOAD_DIR')
-
-    def test_the_service_user_does_not_own_its_own_code(self):
-        self.assertNotRegex(self.text,
-                            r'chown[^\n]*"\$SERVICE_USER:\$SERVICE_USER"[^\n]*INSTALL_DIR')
-
-    def test_the_download_directory_matches_the_daemon_and_is_private(self):
-        from penguin_delivery_daemon import __main__ as main_mod
-        self.assertIn(f'DOWNLOAD_DIR="{main_mod.DOWNLOAD_DIR}"', self.text)
-        self.assertRegex(self.text, r'chown\s+"\$SERVICE_USER:\$SERVICE_USER"\s+"\$DOWNLOAD_DIR"')
-        self.assertRegex(self.text, r'chmod\s+700\s+"\$DOWNLOAD_DIR"')
-
-    def test_the_config_directory_matches_the_daemon(self):
-        from penguin_delivery_daemon import config as cfg
-        self.assertIn(f'CONFIG_DIR="{os.path.dirname(cfg.DEFAULT_CONFIG_PATH)}"', self.text)
-
-    def test_the_documented_command_is_a_github_raw_url_with_dash_f(self):
-        self.assertIn('curl -fsSL https://raw.githubusercontent.com/', self.text)
-        self.assertIn('/delivery/daemon/install.sh | sudo bash', self.text)
-
-    def test_it_never_passes_dev(self):
-        """A shop install must not be able to talk plain HTTP."""
-        self.assertNotIn('--dev', self.text)
-
-    def test_it_contains_no_secret(self):
-        self.assertNotRegex(self.text, r'(?i)(api[_-]?key|password|secret|token)\s*=')
 
 
 class TestPackageMetadata(unittest.TestCase):
@@ -244,7 +115,8 @@ class TestPackageMetadata(unittest.TestCase):
                          f'penguincam-printer/{penguin_delivery_daemon.VERSION}')
 
     def test_the_daemon_imports_only_itself_the_standard_library_and_its_pins(self):
-        """It runs on a Pi where nothing else is installed: never the relay, never Flask."""
+        """It runs on the daemon's computer, where nothing else is installed: never the relay,
+        never Flask."""
         allowed = {'penguin_delivery_daemon', 'requests', 'tomli_w', 'bambulabs_api'}
         for name in sorted(os.listdir(PACKAGE)):
             if not name.endswith('.py'):

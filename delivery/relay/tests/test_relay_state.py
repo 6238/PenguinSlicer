@@ -66,7 +66,7 @@ class TestTokens(unittest.TestCase):
     #: Minted once by issue_token('7K3MQ9XW', 'a-persistent-test-key', issued_at=1789300000).
     #: A token a daemon already holds must keep verifying across restarts and upgrades of
     #: the relay, as long as the key is the same; a change to the salt or the payload
-    #: breaks this test before it breaks every paired Pi.
+    #: breaks this test before it breaks every paired daemon.
     GOLDEN = 'eyJjb2RlIjoiN0szTVE5WFciLCJpYXQiOjE3ODkzMDAwMDAuMH0.PXiJA7hePDaARh6diiELPyIB1EY'
 
     def test_round_trip_carries_the_code_and_issue_time(self):
@@ -261,8 +261,9 @@ class TestSendRefusals(RelayTestCase):
                          (False, 'No printer paired', None))
 
     def test_refused_when_no_daemon_has_ever_been_heard(self):
-        self.assertEqual(self.claim(), (False, 'The Pi has not reported since the service '
-                                               'started; check the setup guide.', None))
+        self.assertEqual(self.claim(), (False, "The daemon's computer has not "
+                                               'reported since the service started; check '
+                                               'the setup guide.', None))
 
     def test_refused_when_heard_but_no_snapshot_yet(self):
         self.relay.note_daemon(self.CODE)
@@ -284,7 +285,7 @@ class TestSendRefusals(RelayTestCase):
     def test_refused_while_paused_unreachable_or_unrecognised(self):
         for state, unrecognised, expected in (
                 ('paused', None, 'Paused, a file'),
-                ('unreachable', None, 'Printer unreachable from the Pi'),
+                ('unreachable', None, "Printer unreachable from the daemon's computer"),
                 ('unrecognised', "gcode_state 'SLICING'",
                  "Printer state not recognised: gcode_state 'SLICING'"),
                 ('busy', None, "Printer state not recognised: state 'busy'"),

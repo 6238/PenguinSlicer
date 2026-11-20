@@ -214,6 +214,23 @@ _EXTENSIONS = ('.gcode.3mf', '.3mf', '.gcode')
 #: meet.
 PLATE_NUMBER = 1
 
+#: The three outcomes of PrinterLink.delete, each decided by the printer's answer to the
+#: delete and never by a listing: REMOVED when it confirmed the delete; NOT_ON_PRINTER when
+#: it answered that there is no such file (an upload that never reached it), so there was
+#: nothing to remove; UNCONFIRMED for any other answer, or none.
+REMOVED = 'removed'
+NOT_ON_PRINTER = 'not_on_printer'
+UNCONFIRMED = 'unconfirmed'
+
+# The printer's answer that it has no such file: a 550 that says so. A 550 that says
+# anything else (a refusal, "Delete operation failed") is not taken as proof of absence.
+_NO_SUCH_FILE_RE = re.compile(
+    r'^550\b.*\b(no such file|not found|does not exist|doesn\'t exist)', re.IGNORECASE)
+# An FTP server's reply begins with its three-digit code.
+_FTP_REPLY_RE = re.compile(r'^\d{3}')
+# How the library's connect_and_run logs the error it swallows.
+_LIBRARY_FAILURE = 'Failed to execute function: '
+
 # A job id is 'j' + hex: the relay builds it as "j" + secrets.token_hex(4), and a leading
 # zero can be dropped, so 7 or 8 hex digits -- the same rule the relay applies. Deliberately
 # tight: a wider pattern would strip suffixes this daemon never wrote, turning a user's
@@ -405,7 +422,7 @@ def map_status(report, *, printer=None):
     """Turn one `mqtt_dump()['print']` document into the snapshot the relay stores.
 
     An empty document means no report has arrived over MQTT, which from the wizard's point
-    of view is the printer being unreachable from the Pi."""
+    of view is the printer being unreachable from the daemon's computer."""
     identity = printer or {'model': None, 'name': None, 'serial': None}
     if not isinstance(report, dict) or not report:
         return {'state': UNREACHABLE, 'file': '', 'job_name': '', 'percent': None,
@@ -659,7 +676,7 @@ class PrinterLink:
     def connect(self):
         """Open the MQTT subscription. Deliberately NOT Printer.connect(), which also
         starts the camera: the daemon never needs camera frames, and decoding them through
-        Pillow is the one avoidable memory cost on a small Pi."""
+        Pillow is the one avoidable memory cost when the daemon's computer is small."""
         take_over_library_log(self._log)
         self._printer = self._make()
         self._printer.mqtt_start()
@@ -801,13 +818,36 @@ class PrinterLink:
         return None
 
     def delete(self, remote_name):
-        """Remove a file from the printer, for a cancelled or abandoned upload. True when
-        the printer no longer lists it. Never raises."""
+        """Remove a file from the printer, for a cancelled or abandoned upload. The delete
+        is always sent, and the printer's answer to it decides; a listing never does (a
+        listing may spell a name otherwise, or fail, and prove nothing). Never raises.
+
+        Returns (outcome, the printer's answer in one line): REMOVED, NOT_ON_PRINTER or
+        UNCONFIRMED (see their comment). When the printer gave no reply, the second item
+        says what happened instead ("no answer: timed out", "no connection: ..."), and
+        is_printer_reply tells the two apart. The library swallows a failed delete and logs the
+        FTP server's reply as a failure; that log is kept here as the answer, so the
+        daemon's log never shows "550 No such file" as an error."""
+        lines = _LIBRARY_LOG.start_capture()
         try:
-            self._require_printer().delete_file(remote_name)
-        except Exception:
-            pass
-        return self.remote_size(remote_name) is None
+            reply = self._require_printer().delete_file(remote_name)
+        except Exception as e:
+            return UNCONFIRMED, f'no connection: {_one_line(e)}'
+        finally:
+            _LIBRARY_LOG.stop_capture()
+        if isinstance(reply, str):
+            answer = _one_line(reply)
+            return (REMOVED if answer[:3] in ('250', '200') else UNCONFIRMED), answer
+        failures = [line[len(_LIBRARY_FAILURE):] for line in lines
+                    if line.startswith(_LIBRARY_FAILURE)]
+        if not failures:
+            return UNCONFIRMED, 'no answer'
+        answer = failures[-1].strip()
+        if not is_printer_reply(answer):
+            # The error that ended the delete, not a reply: a timeout or a reset gives its
+            # text, a connection dropped during the DELE (ftplib's EOFError) gives none.
+            return UNCONFIRMED, f'no answer: {answer or "the connection dropped"}'
+        return (NOT_ON_PRINTER if _NO_SUCH_FILE_RE.match(answer) else UNCONFIRMED), answer
 
     def start(self, remote_name):
         """Start the uploaded file. Plate 1 is what the slicer writes.
@@ -840,6 +880,12 @@ def _carries_main_state(message):
         return isinstance(report, dict) and report.get('gcode_state') not in (None, '')
     except Exception:
         return False
+
+
+def is_printer_reply(answer):
+    """Is this text a reply from the printer's FTP server (three digits first), rather
+    than a description of a delete it never answered?"""
+    return _FTP_REPLY_RE.match(answer) is not None
 
 
 def _one_line(value):

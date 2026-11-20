@@ -30,9 +30,10 @@ def test_the_librarys_own_dependencies_are_floated_then_pinned_to_the_lock():
     assert pinned == text.replace('paho-mqtt==2.2.0', 'paho-mqtt==2.3.0')
 
 
-def test_the_pins_the_shop_computer_installs_are_the_locked_versions():
-    """Defect 9: pip on the shop computer reads daemon/pyproject.toml, not uv.lock, so the
-    library's own dependencies are pinned there to what the upstream check ran on."""
+def test_the_pins_the_daemons_computer_installs_are_the_locked_versions():
+    """Defect 9: pip on the daemon's computer reads daemon/pyproject.toml, not
+    uv.lock, so the library's own dependencies are pinned there to what the upstream check
+    ran on."""
     with open(upgrade.PYPROJECT, encoding='utf-8') as fh:
         text = fh.read()
     locked = upgrade.locked_versions()

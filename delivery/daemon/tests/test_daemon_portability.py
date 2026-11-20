@@ -52,22 +52,19 @@ class TestTheHomeDirectory(unittest.TestCase):
         self.assertEqual(paths.home_for(None, None, platform='linux', environ={},
                                         expanduser=lambda p: '/h').root, '/h/.penguin-delivery')
 
-    def test_only_the_earlier_installers_linux_path_is_a_service_install(self):
-        self.assertTrue(paths.is_service_install(paths.LEGACY_CONFIG_PATH, platform='linux'))
-        self.assertFalse(paths.is_service_install(paths.LEGACY_CONFIG_PATH, platform='win32'))
-        self.assertFalse(paths.is_service_install(paths.LEGACY_CONFIG_PATH, platform='darwin'))
-        self.assertFalse(paths.is_service_install('/home/x/.penguin-delivery/config.toml',
-                                                  platform='linux'))
-
     def test_the_commands_resolve_the_home(self):
         args = main_mod.build_parser().parse_args(['run', '--home', '/data/pd'])
         main_mod.resolve_paths(args)
         self.assertEqual((args.config, args.download_dir),
                          ('/data/pd/config.toml', '/data/pd/downloads'))
-        args = types.SimpleNamespace(home=None, config=paths.LEGACY_CONFIG_PATH)
-        if sys.platform.startswith('linux'):
-            main_mod.resolve_paths(args)
-            self.assertEqual(args.download_dir, main_mod.DOWNLOAD_DIR)
+        args = types.SimpleNamespace(home=None, config='/etc/pd/config.toml')
+        main_mod.resolve_paths(args)
+        self.assertEqual(args.download_dir, os.path.join(os.path.abspath('/etc/pd'),
+                                                         'downloads'))
+
+    def test_the_default_config_path_is_in_the_default_home(self):
+        self.assertEqual(cfg.DEFAULT_CONFIG_PATH,
+                         os.path.join(paths.default_home(), 'config.toml'))
 
     def test_every_command_takes_home(self):
         for command in ('pair', 'run', 'status', 'record'):
@@ -115,10 +112,8 @@ class TestNothingUnixOnly(unittest.TestCase):
                     for root in roots:
                         self.assertNotIn(root, UNIX_ONLY, f'{name} imports {root} at the top')
 
-    def test_unix_paths_appear_only_as_the_earlier_installers_constants(self):
-        allowed = {('paths.py', '/etc/penguincam-printer/config.toml'),
-                   ('config.py', '/etc/penguincam-printer/config.toml'),
-                   ('__main__.py', '/var/tmp/penguincam-printer')}
+    def test_no_unix_path_is_written_into_the_source(self):
+        allowed = set()
         for name in sorted(os.listdir(PACKAGE)):
             if not name.endswith('.py'):
                 continue

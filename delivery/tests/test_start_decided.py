@@ -7,14 +7,14 @@ nothing after a final state, no end taken from a picture that does not show it."
 import os
 
 import pytest
-from hypothesis import HealthCheck, given, settings
+from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from penguin_delivery_daemon import printer as pr
 from penguin_delivery_daemon import run_loop as rl
 from penguin_delivery_relay import deliveries as dl
 
-from link_faults import BASE, DaemonDied, Shop, check_start_path
+from link_faults import BASE, PROPERTY_SETTINGS, DaemonDied, Shop, check_start_path
 from test_link_faults import assert_no_tight_loop, assert_truthful
 
 PREVIOUS = 'previous_part-j00000001'
@@ -495,6 +495,199 @@ def test_both_halves_restarted_inside_the_hold_keep_the_printer_held(tmp_path):
     assert len(shop.printer.started) == 1 and model.overlaps == []
 
 
+def test_a_hold_from_the_note_counts_the_watched_time_once_when_it_takes_the_gates_age(
+        tmp_path):
+    """Review 6, defect 1: the daemon restarts 10 s after the start command, so its hold
+    comes from the note and counts from the first picture it watches. It watches about
+    100 s, the printer's stream goes quiet for 75 s, the caller stops following the first
+    job at 180 s and sends again at 188 s, when the relay gives the gate's age; the printer
+    shows the first print at 250 s. Counted once, the watched time leaves the hold
+    unsettled and the second job is refused as busy when the first print shows; counted
+    twice (from the gate up to now, on top of what the hold counted itself), the hold
+    settles and a second start command goes while the first is pending."""
+    shop = Shop(tmp_path)
+    model = PrinterModel(shop, show_after=250, print_seconds=600)
+    shop.online()
+    first = shop.send()
+    seen = {}
+
+    def die():
+        raise DaemonDied()
+
+    def after_command():
+        shop.at(10, die)
+        shop.printer.quiet(shop, 110, 75)
+        shop.at(180, lambda: seen.update(stop=stop_following(shop, first)))
+        shop.at(188, lambda: seen.update(resend=resend(shop)))
+
+    shop.printer.after_start = after_command
+    assert drive_with_deaths(shop, 1200, lambda: 'resend' in seen
+                             and shop.final(seen['resend'][1]))
+    assert seen['resend'][0] == 202
+    second = shop.report(seen['resend'][1])
+    assert model.overlaps == [], model.overlaps
+    assert len(shop.printer.commanded) == 1, shop.printer.commanded
+    assert (second.get('error') or {}).get('code') == 'delivery.printer_busy_at_start', second
+
+
+def damage_the_note_at_each_restart(shop):
+    """The disk loses the note's end while the daemon is down: the next process finds a
+    note it cannot read."""
+    restart = shop.restart_daemon
+
+    def restart_with_a_damaged_note():
+        if os.path.exists(shop.start_record_path):
+            with open(shop.start_record_path, 'r+b') as fh:
+                fh.truncate(10)
+        restart()
+
+    shop.restart_daemon = restart_with_a_damaged_note
+
+
+def test_a_damaged_note_is_settled_by_the_relays_word_on_the_start_it_stood_for(tmp_path):
+    """Review 6, defect 5: the daemon restarts 10 s after the start command and finds its
+    note damaged. The relay names the start it granted (the first job, offered again with
+    `start_granted`), so the note's hold becomes that job's: the print seen going settles
+    it and removes the note. A resend once the print is over starts at once, not after
+    five minutes of waiting for an earlier print that has long been seen."""
+    shop = Shop(tmp_path)
+    model = PrinterModel(shop, show_after=30, print_seconds=60)
+    shop.online()
+    damage_the_note_at_each_restart(shop)
+    first = shop.send()
+    seen = {}
+
+    def die():
+        raise DaemonDied()
+
+    def after_command():
+        shop.at(10, die)
+        shop.at(150, lambda: seen.update(resend=resend(shop), resend_at=shop()))
+
+    shop.printer.after_start = after_command
+    assert drive_with_deaths(shop, 1200, lambda: 'resend' in seen
+                             and shop.final(seen['resend'][1]))
+    assert shop.report(first)['state'] == 'done'
+    assert seen['resend'][0] == 202
+    second = shop.report(seen['resend'][1])
+    assert second['state'] == 'done', second
+    assert len(shop.printer.commanded) == 2 and model.overlaps == []
+    assert second['elapsed_s'] < 60 + 60, second       # the print itself is 60 s
+    assert not os.path.exists(shop.start_record_path)
+
+
+def test_an_out_of_date_note_gives_way_to_the_relays_last_start(tmp_path):
+    """Review 6, defect 5: a whole note naming a start older than the relay's last one
+    (a note that could not be removed, a disk put back from a backup) is found by a
+    restarted daemon. The relay's `previous_start` is the printer's last start granted,
+    and a note is only ever written after its own grant, so the note is out of date: the
+    hold becomes the relay's last start, which the printer has long settled, and the next
+    print starts at once. The printer is never left without a hold meanwhile."""
+    shop = Shop(tmp_path)
+    model = PrinterModel(shop, show_after=0, print_seconds=60)
+    shop.online()
+    first = shop.send()
+    assert shop.drive(600, lambda: shop.final(first))
+    assert shop.report(first)['state'] == 'done'
+    shop.drive(int(rl.START_SETTLE_SECONDS))     # the relay's last start is long settled
+    rl.start_record.save(shop.start_record_path, job_id='j00000001',
+                         remote_name='old_part-j00000001.gcode.3mf',
+                         printer=shop.loops[-1].config.printer_serial,
+                         phase=rl.start_record.SENT)
+    shop.restart_daemon()
+    assert shop.loops[-1].hold is not None              # the note holds the printer
+    status, second, _code = resend(shop)
+    assert status == 202
+    assert shop.drive(600, lambda: shop.final(second))
+    report = shop.report(second)
+    assert report['state'] == 'done', report
+    assert report['elapsed_s'] < 60 + 60, report        # the print itself is 60 s
+    assert len(shop.printer.commanded) == 2 and model.overlaps == []
+    assert not os.path.exists(shop.start_record_path)
+
+
+@pytest.mark.parametrize('note', ['damaged', 'out_of_date'])
+def test_an_overtaken_note_keeps_the_printer_held_for_the_relays_last_start(tmp_path, note):
+    """Delivery review 1, defect 2: a note that gives way to the relay's last start never
+    frees the printer. The first job's start is pending (the print shows at 250 s); its
+    caller stops following it at 90 s; the daemon restarts at 100 s and finds its note
+    damaged, or a whole note naming an older job; a resend arrives at 115 s. The relay
+    names the first job as its last start, so the printer stays held for it: one start
+    command only, and the resend ends delivery.printer_busy_at_start once the first print
+    shows."""
+    shop = Shop(tmp_path)
+    model = PrinterModel(shop, show_after=250, print_seconds=600)
+    shop.online()
+    restart = shop.restart_daemon
+
+    def restart_with_a_bad_note():
+        if note == 'damaged':
+            if os.path.exists(shop.start_record_path):
+                with open(shop.start_record_path, 'r+b') as fh:
+                    fh.truncate(10)
+        else:
+            rl.start_record.save(shop.start_record_path, job_id='j00000001',
+                                 remote_name='old_part-j00000001.gcode.3mf',
+                                 printer=shop.loops[-1].config.printer_serial,
+                                 phase=rl.start_record.SENT)
+        restart()
+
+    shop.restart_daemon = restart_with_a_bad_note
+    first = shop.send()
+    seen = {}
+
+    def die():
+        raise DaemonDied()
+
+    def after_command():
+        shop.printer.quiet(shop, 20, 75)
+        shop.at(90, lambda: seen.update(stop=stop_following(shop, first)))
+        shop.at(100, die)
+        shop.at(115, lambda: seen.update(resend=resend(shop)))
+
+    shop.printer.after_start = after_command
+    assert drive_with_deaths(shop, 1200, lambda: 'resend' in seen
+                             and seen['resend'][1] and shop.final(seen['resend'][1])), seen
+    assert seen['stop'][0] == 200, seen
+    assert seen['resend'][0] == 202, seen
+    second = shop.report(seen['resend'][1])
+    assert model.overlaps == [], model.overlaps
+    assert len(shop.printer.commanded) == 1, (shop.printer.commanded, second)
+    assert (second.get('error') or {}).get('code') == 'delivery.printer_busy_at_start', second
+
+
+def test_time_nobody_watched_the_hold_is_not_counted(tmp_path):
+    """Review 6, defect 4: the relay restarts 20 s after the start command, so the first
+    job is no longer followed and its wait ends with the hold unsettled; the printer is off
+    the network from 5 s to 400 s after the command; a resend arrives at 402 s and the
+    printer shows the first print at 420 s. The gap between the first job's last look and
+    the second job's first is time without a whole, fresh picture: it is not counted, so
+    the hold is still unsettled at 402 s and the second job is refused as busy."""
+    shop = Shop(tmp_path)
+    model = PrinterModel(shop, show_after=420, print_seconds=600)
+    shop.online()
+    shop.send()
+    seen = {}
+
+    def relay_restart():
+        shop.restart_relay()
+        shop.status()
+
+    def after_command():
+        shop.printer.outage(shop, 5, 395)
+        shop.at(20, relay_restart)
+        shop.at(402, lambda: seen.update(resend=resend(shop)))
+
+    shop.printer.after_start = after_command
+    assert drive_with_deaths(shop, 1200, lambda: 'resend' in seen
+                             and shop.final(seen['resend'][1]))
+    assert seen['resend'][0] == 202
+    assert model.overlaps == [], model.overlaps
+    assert len(shop.printer.commanded) == 1, shop.printer.commanded
+    second = shop.report(seen['resend'][1])
+    assert (second.get('error') or {}).get('code') == 'delivery.printer_busy_at_start', second
+
+
 def test_a_daemon_dead_between_the_gate_and_the_command_is_never_said_to_have_sent_it(
         tmp_path):
     """The reviewer's sequence (review 5, defect 4): the daemon dies after the gate and
@@ -563,9 +756,44 @@ DEATHS = (None, 'gate', 'noted', 'sent')
 START_FAULTS = (None, 'before', 'after')
 
 
-@settings(max_examples=80, deadline=None, derandomize=True, database=None,
-          suppress_health_check=[HealthCheck.function_scoped_fixture,
-                                 HealthCheck.too_slow])
+def starts_case(tmp_path, *, show_after=None, previous_end=None, linger=False, partial=(),
+                quiet=(), outages=(), stop_at=None, resend_at=None, restart_at=None,
+                whole_after=0, someone=None, cancel_at=None, death=None, start_fault=None,
+                relay_restart_at=None):
+    """One sequence of test_random_starts_never_overlap_and_never_end_on_a_left_over."""
+    with pytest.MonkeyPatch.context() as patch:
+        for name, value in SCALED.items():
+            patch.setattr(rl, name, value)
+        # The relay marks a quiet printer stale on the same scale, so a caller can stop
+        # following a job inside the hold and send again.
+        patch.setattr(dl, 'PRINTER_QUIET_SECONDS', 10)
+        random_starts(tmp_path, patch, show_after, previous_end, linger, list(partial),
+                      list(quiet), list(outages), stop_at, resend_at, restart_at,
+                      whole_after=whole_after, someone=someone, cancel_at=cancel_at,
+                      death=death, start_fault=start_fault,
+                      relay_restart_at=relay_restart_at)
+
+
+def resend_case(tmp_path, *, show_after=None, previous_end=None, linger=False, quiet_at=0,
+                quiet_for=12, stop_after=11, resend_after=0, restart_at=None,
+                whole_after=0, death=None, relay_restart=None, damage_note=False):
+    """One sequence of test_a_resend_while_the_first_start_is_unsettled_never_overlaps."""
+    stop_at = quiet_at + stop_after + 10
+    with pytest.MonkeyPatch.context() as patch:
+        for name, value in SCALED.items():
+            patch.setattr(rl, name, value)
+        patch.setattr(dl, 'PRINTER_QUIET_SECONDS', 10)
+        random_starts(tmp_path, patch, show_after, previous_end, linger, [],
+                      [(quiet_at + 10, quiet_for)], [], stop_at,
+                      stop_at + resend_after + (8 if relay_restart else 0), restart_at,
+                      whole_after=whole_after, death=death,
+                      relay_restart_at=stop_at if relay_restart else None,
+                      daemon_dies_with_relay=relay_restart == 'both',
+                      damage_note=damage_note)
+
+
+@pytest.mark.properties
+@settings(PROPERTY_SETTINGS, max_examples=80)
 @given(show_after=st.one_of(st.none(), st.integers(0, 60)),
        previous_end=st.sampled_from([None, 'finished', 'error', 'idle_error']),
        linger=st.booleans(),
@@ -594,22 +822,16 @@ def test_random_starts_never_overlap_and_never_end_on_a_left_over(
     which someone may start a print at the printer), a stop-following, a cancel, a resend,
     a daemon dying anywhere or on the way to the start command, a start command that
     raises, and a relay restart land at random moments."""
-    with pytest.MonkeyPatch.context() as patch:
-        for name, value in SCALED.items():
-            patch.setattr(rl, name, value)
-        # The relay marks a quiet printer stale on the same scale, so a caller can stop
-        # following a job inside the hold and send again.
-        patch.setattr(dl, 'PRINTER_QUIET_SECONDS', 10)
-        random_starts(tmp_path_factory.mktemp('shop'), patch, show_after, previous_end,
-                      linger, partial, quiet, outages, stop_at, resend_at, restart_at,
-                      whole_after=whole_after, someone=someone, cancel_at=cancel_at,
-                      death=death, start_fault=start_fault,
-                      relay_restart_at=relay_restart_at)
+    starts_case(tmp_path_factory.mktemp('shop'), show_after=show_after,
+                previous_end=previous_end, linger=linger, partial=partial, quiet=quiet,
+                outages=outages, stop_at=stop_at, resend_at=resend_at,
+                restart_at=restart_at, whole_after=whole_after, someone=someone,
+                cancel_at=cancel_at, death=death, start_fault=start_fault,
+                relay_restart_at=relay_restart_at)
 
 
-@settings(max_examples=120, deadline=None, derandomize=True, database=None,
-          suppress_health_check=[HealthCheck.function_scoped_fixture,
-                                 HealthCheck.too_slow])
+@pytest.mark.properties
+@settings(PROPERTY_SETTINGS, max_examples=120)
 @given(show_after=st.one_of(st.integers(25, 54), st.integers(45, 54), st.none()),
        previous_end=st.sampled_from([None, 'finished', 'error']),
        linger=st.booleans(),
@@ -632,18 +854,11 @@ def test_a_resend_while_the_first_start_is_unsettled_never_overlaps(
     daemon may die on the way to the command or at a random moment, and the relay (or the
     relay and the daemon together) may restart just before the resend; a restarted daemon
     may find its note damaged."""
-    stop_at = quiet_at + stop_after + 10
-    with pytest.MonkeyPatch.context() as patch:
-        for name, value in SCALED.items():
-            patch.setattr(rl, name, value)
-        patch.setattr(dl, 'PRINTER_QUIET_SECONDS', 10)
-        random_starts(tmp_path_factory.mktemp('shop'), patch, show_after, previous_end,
-                      linger, [], [(quiet_at + 10, quiet_for)], [], stop_at,
-                      stop_at + resend_after + (8 if relay_restart else 0), restart_at,
-                      whole_after=whole_after, death=death,
-                      relay_restart_at=stop_at if relay_restart else None,
-                      daemon_dies_with_relay=relay_restart == 'both',
-                      damage_note=damage_note)
+    resend_case(tmp_path_factory.mktemp('shop'), show_after=show_after,
+                previous_end=previous_end, linger=linger, quiet_at=quiet_at,
+                quiet_for=quiet_for, stop_after=stop_after, resend_after=resend_after,
+                restart_at=restart_at, whole_after=whole_after, death=death,
+                relay_restart=relay_restart, damage_note=damage_note)
 
 
 def random_starts(tmp_path, patch, show_after, previous_end, linger, partial, quiet,
