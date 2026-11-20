@@ -1,0 +1,6 @@
+{
+  "base": "whole_print",
+  "description": "The first hardware test's upload: every byte arrives, then the FTP server answers 426 (the library logs it as a failure and returns None)."
+,
+  "upload": {"reply": "426 Failure reading network stream."}
+}

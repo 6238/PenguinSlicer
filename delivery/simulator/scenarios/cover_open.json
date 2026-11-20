@@ -1,0 +1,13 @@
+{
+  "base": "whole_print",
+  "description": "The front cover is opened mid-print: the printer pauses (stg_cur 17) with print_error 0x0500400E; someone closes it and resumes; the print finishes. INVENTED: the code and whether the H2S sets it while paused are unconfirmed.",
+  "print": [
+    {"gcode_state": "RUNNING", "stg_cur": 0, "mc_percent": 10, "mc_remaining_time": 15,
+     "layer_num": 5, "total_layer_num": 50, "gcode_file": "/data/Metadata/plate_1.gcode",
+     "subtask_name": "{subtask}", "print_error": 0, "hms": []},
+    {"gcode_state": "PAUSE", "stg_cur": 17, "print_error": 83902478},
+    {"gcode_state": "RUNNING", "stg_cur": 0, "print_error": 0, "mc_percent": 11},
+    {"gcode_state": "FINISH", "stg_cur": 255, "mc_percent": 100, "mc_remaining_time": 0,
+     "layer_num": 50}
+  ]
+}

@@ -1,0 +1,244 @@
+"""The plate 3MF writer, the delivered name and the name guard (plate_3mf.py). No Orca run."""
+import re
+import xml.etree.ElementTree as ET
+import zipfile
+from datetime import datetime, timedelta, timezone
+
+import numpy as np
+import pytest
+from shapely.geometry import MultiPoint, Polygon
+
+from helpers import corrupt_entry, l_prism_stl, make_part, part_from_stl, write_names_archive
+from penguin_slice.mesh import MeshError
+from penguin_slice.plate import ORIENTATIONS, copy_hull
+from penguin_slice.plate_3mf import LEFT_OFF_MESSAGE, LOCAL_TIME_RE, check_plate_names, delivered_file_name, \
+    write_plate_3mf
+from penguin_slice.slicer import UNREADABLE_MESSAGE, SliceError, plate_object_names
+
+NS = {'m': 'http://schemas.microsoft.com/3dmanufacturing/core/2015/02'}
+# The printer delivery's job suffix (`-j<7 or 8 hex>` before the extension), which a
+# delivered name must never look like it already carries.
+JOB_SUFFIX_RE = re.compile(r'-j[0-9a-fA-F]{7,8}(?=\.gcode\.3mf$)')
+
+
+def read_model(path):
+    with zipfile.ZipFile(path) as zf:
+        entries = set(zf.namelist())
+        root = ET.fromstring(zf.read('3D/3dmodel.model'))
+    return entries, root
+
+
+def placed_vertices(root):
+    """(item, vertices placed by the item's transform) per build item."""
+    objects = {o.get('id'): o for o in root.findall('m:resources/m:object', NS)}
+    for item in root.findall('m:build/m:item', NS):
+        matrix = np.array([float(v) for v in item.get('transform').split()]).reshape(4, 3)   # p' = [p 1] . M
+        vertices = np.array([[float(v.get(k)) for k in 'xyz']
+                             for v in objects[item.get('objectid')].findall('m:mesh/m:vertices/m:vertex', NS)])
+        yield item, np.hstack([vertices, np.ones((len(vertices), 1))]) @ matrix
+
+
+def copy(ref, x, y, orientation='+z', angle=0):
+    return {'ref': ref, 'orientation': orientation, 'angle': angle, 'x': x, 'y': y}
+
+
+@pytest.fixture
+def stls(tmp_path):
+    path = tmp_path / 'stls'
+    path.mkdir()
+    return path
+
+
+class TestWriter:
+    def test_one_object_per_copy_named_with_labels(self, tmp_path, stls):
+        parts = {'a': make_part(stls, 'Bracket', (20, 10, 5)), 'b': make_part(stls, 'Spacer', (8, 8, 8))}
+        copies = [copy('a', 50, 50), copy('a', 100, 50), copy('b', 150, 50)]
+        names = write_plate_3mf(tmp_path / 'plate.3mf', copies, parts)
+        assert names == ['Bracket #1', 'Bracket #2', 'Spacer #1']
+        entries, root = read_model(tmp_path / 'plate.3mf')
+        assert {'[Content_Types].xml', '_rels/.rels', '3D/3dmodel.model'} <= entries
+        assert root.get('unit') == 'millimeter'
+        objects = root.findall('m:resources/m:object', NS)
+        assert [o.get('name') for o in objects] == names
+        assert all(o.get('type') == 'model' for o in objects)
+        assert len({o.get('id') for o in objects}) == 3
+        items = root.findall('m:build/m:item', NS)
+        assert [i.get('objectid') for i in items] == [o.get('id') for o in objects]
+        # Each copy carries its part's de-duplicated mesh: a box is 8 vertices, 12 triangles.
+        for obj in objects:
+            assert len(obj.findall('m:mesh/m:vertices/m:vertex', NS)) == 8
+            assert len(obj.findall('m:mesh/m:triangles/m:triangle', NS)) == 12
+
+    def test_each_part_stl_is_read_once(self, tmp_path, stls):
+        parts = {'a': make_part(stls, 'Bracket', (20, 10, 5))}
+        write_plate_3mf(tmp_path / 'first.3mf', [copy('a', 50, 50)], parts)
+        stl_bytes = parts['a']['stl_path'].read_bytes()
+        reads = []
+        real_read = type(parts['a']['stl_path']).read_bytes
+
+        def counting_read(path_self):
+            reads.append(path_self)
+            return real_read(path_self)
+
+        from unittest import mock
+        with mock.patch.object(type(parts['a']['stl_path']), 'read_bytes', counting_read):
+            write_plate_3mf(tmp_path / 'plate.3mf', [copy('a', 50, 50), copy('a', 100, 50), copy('a', 150, 50)],
+                            parts)
+        assert reads == [parts['a']['stl_path']]
+        assert parts['a']['stl_path'].read_bytes() == stl_bytes
+
+    def test_same_named_parts_get_distinct_object_names(self, tmp_path, stls):
+        parts = {'a': make_part(stls, 'Bracket', (20, 10, 5)), 'b': make_part(stls, 'Bracket', (8, 8, 8)),
+                 'c': make_part(stls, 'Brack?t', (8, 8, 8))}
+        copies = [copy('a', 50, 50), copy('b', 100, 50), copy('a', 150, 50), copy('c', 200, 50)]
+        assert write_plate_3mf(tmp_path / 'plate.3mf', copies, parts) == \
+            ['Bracket #1', 'Bracket #2', 'Bracket #3', 'Brack_t #1']
+
+    def test_transform_read_back_puts_footprint_centre_at_xy(self, tmp_path, stls):
+        # Uncentred, so the footprint offset matters.
+        parts = {'a': make_part(stls, 'Bracket', (40, 10, 6), origin=(5.0, -3.0, 2.0))}
+        cases = [('+z', 0, 100.0, 120.0), ('+x', 30, 150.5, 80.25), ('-y', 275, 60.0, 200.0), ('-z', 90, 170.0, 160.0)]
+        write_plate_3mf(tmp_path / 'plate.3mf', [copy('a', x, y, o, a) for o, a, x, y in cases], parts)
+        _entries, root = read_model(tmp_path / 'plate.3mf')
+        for (_item, placed), (_o, _a, x, y) in zip(placed_vertices(root), cases):
+            low, high = placed.min(axis=0), placed.max(axis=0)
+            assert (low[0] + high[0]) / 2 == pytest.approx(x, abs=1e-3)
+            assert (low[1] + high[1]) / 2 == pytest.approx(y, abs=1e-3)
+            assert low[2] == pytest.approx(0.0, abs=1e-3)
+
+    def test_asymmetric_part_footprint_matches_placement_in_every_orientation(self, tmp_path, stls):
+        # The 3MF must put the part where plate.py's check sees it: the hull of the
+        # transformed vertices equals copy_hull, which pins the rotation direction.
+        part = part_from_stl(stls, 'Ell', l_prism_stl(origin=(7.0, -4.0, 3.0)))
+        copies = [copy('a', 60.0 + 40 * k, 90.0 + 15 * k, o, 37) for k, o in enumerate(ORIENTATIONS)]
+        write_plate_3mf(tmp_path / 'plate.3mf', copies, {'a': part})
+        _entries, root = read_model(tmp_path / 'plate.3mf')
+        for (_item, placed), placed_copy in zip(placed_vertices(root), copies):
+            written = MultiPoint(placed[:, :2].tolist()).convex_hull
+            expected = Polygon(copy_hull(placed_copy, part['footprints'][placed_copy['orientation']]))
+            assert expected.area > 100
+            assert written.symmetric_difference(expected).area < 0.05, placed_copy['orientation']
+            assert placed[:, 2].min() == pytest.approx(0.0, abs=1e-3)
+
+    def test_names_xml_escaped_and_sanitized(self, tmp_path, stls):
+        parts = {'a': make_part(stls, 'A&B "q" <x>', (10, 10, 10))}
+        assert write_plate_3mf(tmp_path / 'plate.3mf', [copy('a', 50, 50)], parts) == ['A_B__q___x_ #1']
+        _entries, root = read_model(tmp_path / 'plate.3mf')     # parses: the XML is well formed
+        assert root.find('m:resources/m:object', NS).get('name') == 'A_B__q___x_ #1'
+
+    def test_unreadable_stl_refused_while_writing(self, tmp_path, stls):
+        parts = {'a': make_part(stls, 'Bracket', (20, 10, 5))}
+        parts['a']['stl_path'].write_bytes(b'solid ascii\nendsolid ascii\n')
+        with pytest.raises(MeshError) as caught:
+            write_plate_3mf(tmp_path / 'plate.3mf', [copy('a', 50, 50)], parts)
+        assert caught.value.message == 'The file for Bracket is not an STL file.'
+        assert caught.value.details.startswith(f"{parts['a']['stl_path']}: ")
+
+    def test_stl_gone_after_the_check_is_a_missing_part(self, tmp_path, stls):
+        # The plate job passed its checks, then the STL went away before the plate was written.
+        parts = {'a': make_part(stls, 'Bracket', (20, 10, 5))}
+        parts['a']['stl_path'].unlink()
+        with pytest.raises(SliceError) as caught:
+            write_plate_3mf(tmp_path / 'plate.3mf', [copy('a', 50, 50)], parts)
+        assert (caught.value.error_code, caught.value.message, caught.value.where) == (
+            'slice.part_missing', 'The file for Bracket is missing.', {'part': 'Bracket'})
+        assert 'No such file or directory' in caught.value.details
+
+
+class TestDeliveredName:
+    NOW = datetime(2026, 10, 9, 21, 32, tzinfo=timezone.utc)
+
+    def test_patterns(self):
+        assert delivered_file_name(['Bracket', 'Spacer', 'Hub'], '20261009-1432') == \
+            'Bracket_plus2-20261009-1432.gcode.3mf'
+        assert delivered_file_name(['Bracket'], '20261009-1432') == 'Bracket-20261009-1432.gcode.3mf'
+        assert delivered_file_name(['A&B'], '20261009-1432') == 'A_B-20261009-1432.gcode.3mf'
+
+    @pytest.mark.parametrize('bad', ['2026-10-09', None, '20261009-1432\n', 'x' * 13, 20261009])
+    def test_unusable_local_time_falls_back_to_utc(self, bad):
+        assert delivered_file_name(['Bracket'], bad, now=self.NOW) == 'Bracket-20261009-2132.gcode.3mf'
+
+    def test_fallback_converts_to_utc(self):
+        pacific = timezone(timedelta(hours=-7))
+        assert delivered_file_name(['Box'], None, now=datetime(2026, 10, 9, 14, 32, tzinfo=pacific)) == \
+            'Box-20261009-2132.gcode.3mf'
+
+    def test_fallback_without_now_uses_the_current_utc_minute(self):
+        assert re.fullmatch(r'Bracket-\d{8}-\d{4}\.gcode\.3mf', delivered_file_name(['Bracket'], None))
+
+    @pytest.mark.parametrize('parts', [['j1234567'], ['Box', 'j1234567'], ['x-j1234567'], ['j12345678']])
+    def test_never_looks_like_a_delivery_job_suffix(self, parts):
+        assert LOCAL_TIME_RE.match('20261009-1432')
+        assert JOB_SUFFIX_RE.search(delivered_file_name(parts, '20261009-1432')) is None
+
+
+class TestNameGuard:
+    def test_matching_names_pass_in_any_order(self):
+        check_plate_names(['Box #1', 'Box #2'], ['Box #2', 'Box #1'])
+
+    @pytest.mark.parametrize('found', [['Box #1'], ['Box #1', ''], ['Box #1', 'Box #2', 'Box #3'], [],
+                                       ['Box #1', 'Box #1']])
+    def test_missing_blank_extra_or_repeated_names_fail(self, found):
+        with pytest.raises(SliceError) as caught:
+            check_plate_names(['Box #1', 'Box #2'], found)
+        assert caught.value.message == LEFT_OFF_MESSAGE == "A part was left off the plate."
+        assert caught.value.error_code == "slice.left_off_plate"
+        assert caught.value.details.startswith(f"expected 2 objects, found {len(found)}; missing ")
+
+    def test_where_names_the_first_missing_copy_or_nothing(self):
+        with pytest.raises(SliceError) as caught:
+            check_plate_names(['Box #1', 'Box #2', 'Box #3'], ['Box #2'])
+        assert caught.value.where == {'copy': 'Box #1'}
+        with pytest.raises(SliceError) as caught:
+            check_plate_names(['Box #1'], ['Box #1', 'Box #9'])
+        assert caught.value.where == {}
+
+    def test_blank_names_fail_even_when_expected(self):
+        with pytest.raises(SliceError):
+            check_plate_names(['', 'Box #1'], ['', 'Box #1'])
+
+    def test_details_name_the_missing_and_unexpected(self):
+        with pytest.raises(SliceError) as caught:
+            check_plate_names(['Box #1', 'Hub #1'], ['Box #1', 'Peg #1'])
+        assert caught.value.details == "expected 2 objects, found 2; missing ['Hub #1']; unexpected ['Peg #1']"
+
+    def test_object_names_read_from_archive(self, tmp_path):
+        path = tmp_path / 'plate.gcode.3mf'
+        write_names_archive(path, ['Box #1', 'Hub #1'])
+        assert plate_object_names(path) == ['Box #1', 'Hub #1']
+
+    def test_unnamed_object_reads_as_blank(self, tmp_path):
+        path = tmp_path / 'plate.gcode.3mf'
+        with zipfile.ZipFile(path, 'w') as zf:
+            zf.writestr('Metadata/plate_1.json', '{"bbox_objects": [{"name": null}, {}]}')
+        assert plate_object_names(path) == ['', '']
+
+    @pytest.mark.parametrize('content', [None, 'not json', '[1, 2]', '{"bbox_objects": null}', '{}',
+                                         '{"bbox_objects": "Box #1"}', '{"bbox_objects": ["Box #1"]}',
+                                         b'{"bbox_objects": [{"name": "Br\xe4cket"}]}'])
+    def test_unreadable_plate_json(self, tmp_path, content):
+        path = tmp_path / 'plate.gcode.3mf'
+        with zipfile.ZipFile(path, 'w') as zf:
+            zf.writestr('Metadata/plate_1.gcode', '')
+            if content is not None:
+                zf.writestr('Metadata/plate_1.json', content)
+        with pytest.raises(SliceError) as caught:
+            plate_object_names(path)
+        assert caught.value.message == UNREADABLE_MESSAGE
+        assert caught.value.error_code == 'slice.unreadable_output'
+        assert caught.value.details.startswith('Metadata/plate_1.json: ')
+
+    def test_archive_that_is_not_a_zip(self, tmp_path):
+        path = tmp_path / 'plate.gcode.3mf'
+        path.write_bytes(b'nope')
+        with pytest.raises(SliceError) as caught:
+            plate_object_names(path)
+        assert caught.value.message == UNREADABLE_MESSAGE
+
+    def test_corrupt_entry_in_a_readable_zip(self, tmp_path):
+        path = tmp_path / 'plate.gcode.3mf'
+        corrupt_entry(path, 'Metadata/plate_1.json', b'{"bbox_objects": []}' * 200)
+        with pytest.raises(SliceError) as caught:
+            plate_object_names(path)
+        assert caught.value.error_code == 'slice.unreadable_output'
+        assert caught.value.details.startswith('Metadata/plate_1.json: ')

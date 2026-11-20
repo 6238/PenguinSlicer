@@ -1,0 +1,5 @@
+{
+  "base": "whole_print",
+  "description": "The whole print with the printer speaking only TLS 1.3, whose session tickets once cost uploads the end of the file (fixed by the library's own unwrap option). Which TLS version the H2S speaks on port 990 is not yet known.",
+  "tls": "1.3"
+}

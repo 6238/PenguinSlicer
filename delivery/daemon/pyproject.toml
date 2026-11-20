@@ -1,0 +1,31 @@
+[project]
+name = "penguin-delivery-daemon"
+version = "1.0.0"
+description = "Printer delivery's daemon: runs in the shop, fetches jobs from the relay and starts them on a Bambu Lab printer"
+requires-python = ">=3.11"
+# THE one place the daemon's upstream versions are stated. install.sh reads this list on a
+# Raspberry Pi, the workspace installs it for development, and uv.lock records what it
+# resolves to. A test checks that no other file of the daemon names a version.
+#
+# paho-mqtt and pillow are the printer library's own dependencies, pinned here to the
+# versions the upstream check ran on: the shop computer installs with pip, not from
+# uv.lock, and printer.py reaches into the library's paho client. The upgrade command
+# (scripts/upgrade_printer_library.py) moves all three together.
+dependencies = [
+    "bambulabs_api==2.6.6",
+    "paho-mqtt==2.2.0",
+    "pillow==13.0.0",
+    "requests==2.31.0",
+    "tomli-w==1.2.0",
+]
+
+[project.scripts]
+penguincam-printer = "penguin_delivery_daemon.__main__:main"
+
+[build-system]
+requires = ["uv_build>=0.8.14,<0.9"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "penguin_delivery_daemon"
+module-root = ""

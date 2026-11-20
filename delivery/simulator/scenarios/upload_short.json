@@ -1,0 +1,5 @@
+{
+  "base": "whole_print",
+  "description": "The FTP server answers 226, but the file it keeps is 10 bytes short.",
+  "upload": {"short_by": 10}
+}

@@ -6,8 +6,8 @@ outside its own folder.
 | Contract | Passes from | To | Defined in |
 |---|---|---|---|
 | Part set | Onshape source, or a file upload | Wizard | not written yet |
-| Plate job | Wizard | Slice service | written with the slice service |
-| Sliced file | Slice service | Printer delivery | written with the slice service |
+| Plate job | Wizard | Slice service | [plate-job.md](plate-job.md) |
+| Sliced file | Slice service | Printer delivery | [sliced-file.md](sliced-file.md) |
 | Error report | Every component | Its caller | [error-report.md](error-report.md) |
 | Progress report | Every component | Its caller | [progress-report.md](progress-report.md) |
 

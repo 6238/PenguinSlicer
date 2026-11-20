@@ -1,0 +1,6 @@
+{
+  "base": "whole_print",
+  "description": "Review 4, defect 1: someone else's print runs and the printer's documents, even its answer to a request for a whole report, carry figures and a name but no main state (gcode_state). INVENTED: whether the H2S ever sends partial documents is on the hardware checklist.",
+  "idle": {"mc_percent": 43, "mc_remaining_time": 12, "layer_num": 5,
+           "subtask_name": "someone_elses_print"}
+}

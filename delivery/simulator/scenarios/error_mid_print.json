@@ -1,0 +1,12 @@
+{
+  "base": "whole_print",
+  "description": "The print fails partway: the filament runs out (print_error 0x07008011, INVENTED as the H2S's code for it), after an error that appears and clears.",
+  "print": [
+    {"gcode_state": "RUNNING", "stg_cur": 0, "mc_percent": 10, "mc_remaining_time": 15,
+     "layer_num": 5, "total_layer_num": 50, "gcode_file": "/data/Metadata/plate_1.gcode",
+     "subtask_name": "{subtask}", "print_error": 0, "hms": []},
+    {"hms": [{"attr": 50331904, "code": 262145}]},
+    {"hms": [], "mc_percent": 20},
+    {"gcode_state": "FAILED", "stg_cur": 255, "mc_percent": 40, "print_error": 117473297}
+  ]
+}

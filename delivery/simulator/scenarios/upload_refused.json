@@ -1,0 +1,5 @@
+{
+  "base": "whole_print",
+  "description": "The FTP server refuses to store the file (550), as a full card would.",
+  "upload": {"refuse": true}
+}

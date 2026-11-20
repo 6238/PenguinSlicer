@@ -1,0 +1,99 @@
+{
+  "_comment": "PROVISIONAL. Written on 2026-09-13 from the field names of the bambulabs_api pinned in delivery/daemon/pyproject.toml and the OpenBambuAPI reference, because the shop H2S was not connected yet. Replace each block with a real capture from delivery/daemon/tests/hardware_smoke.py once the printer is on the LAN, then re-run make test in delivery/ and fix whatever the mapping got wrong. Each key below is one whole 'print' sub-document as bambulabs_api's mqtt_dump()['print'] returns it. The HMS severity rule map_status applies to these entries -- severity is (code >> 16) & 0xFFFF, and only 1 (fatal) or 2 (serious) turns the state into 'error' -- is provisional on the same capture: it comes from OpenBambuAPI's hms.md, not from bambulabs_api, which exposes no HMS accessor at all.",
+  "idle": {
+    "gcode_state": "IDLE",
+    "stg_cur": 255,
+    "mc_percent": 0,
+    "mc_remaining_time": 0,
+    "layer_num": 0,
+    "total_layer_num": 0,
+    "gcode_file": "",
+    "subtask_name": "",
+    "print_error": 0,
+    "hms": []
+  },
+  "preparing": {
+    "gcode_state": "PREPARE",
+    "stg_cur": 2,
+    "mc_percent": 0,
+    "mc_remaining_time": 44,
+    "layer_num": 0,
+    "total_layer_num": 210,
+    "gcode_file": "sample_part-j8f3a2c1.gcode.3mf",
+    "subtask_name": "sample_part-j8f3a2c1",
+    "print_error": 0,
+    "hms": []
+  },
+  "heating_while_idle_state": {
+    "gcode_state": "IDLE",
+    "stg_cur": 7,
+    "mc_percent": 0,
+    "mc_remaining_time": 44,
+    "layer_num": 0,
+    "total_layer_num": 210,
+    "gcode_file": "sample_part-j8f3a2c1.gcode.3mf",
+    "subtask_name": "sample_part-j8f3a2c1",
+    "print_error": 0,
+    "hms": []
+  },
+  "running": {
+    "gcode_state": "RUNNING",
+    "stg_cur": 0,
+    "mc_percent": 42,
+    "mc_remaining_time": 31,
+    "layer_num": 87,
+    "total_layer_num": 210,
+    "gcode_file": "sample_part-j8f3a2c1.gcode.3mf",
+    "subtask_name": "sample_part-j8f3a2c1",
+    "print_error": 0,
+    "hms": []
+  },
+  "paused": {
+    "gcode_state": "PAUSE",
+    "stg_cur": 16,
+    "mc_percent": 42,
+    "mc_remaining_time": 31,
+    "layer_num": 87,
+    "total_layer_num": 210,
+    "gcode_file": "sample_part-j8f3a2c1.gcode.3mf",
+    "subtask_name": "sample_part-j8f3a2c1",
+    "print_error": 0,
+    "hms": []
+  },
+  "finished": {
+    "gcode_state": "FINISH",
+    "stg_cur": 255,
+    "mc_percent": 100,
+    "mc_remaining_time": 0,
+    "layer_num": 210,
+    "total_layer_num": 210,
+    "gcode_file": "sample_part-j8f3a2c1.gcode.3mf",
+    "subtask_name": "sample_part-j8f3a2c1",
+    "print_error": 0,
+    "hms": []
+  },
+  "running_as_reported_by_h2s": {
+    "_comment": "The fields the team's H2S really reported while printing job jb345bf38 on 2026-10-09, from the first hardware test's notes. Only these fields were recorded; the whole document is still to be captured with tests/hardware_smoke.py. subtask_name is the uploaded name without .gcode.3mf; the tests put their own job's name there.",
+    "gcode_state": "RUNNING",
+    "gcode_file": "/data/Metadata/plate_1.gcode",
+    "subtask_name": "sample_part-jb345bf38",
+    "stg_cur": 14,
+    "mc_percent": 0,
+    "mc_remaining_time": 17,
+    "layer_num": 0,
+    "total_layer_num": 50,
+    "print_error": 0
+  },
+  "failed_with_hms": {
+    "gcode_state": "FAILED",
+    "stg_cur": 255,
+    "mc_percent": 12,
+    "mc_remaining_time": 0,
+    "layer_num": 20,
+    "total_layer_num": 210,
+    "gcode_file": "sample_part-j8f3a2c1.gcode.3mf",
+    "subtask_name": "sample_part-j8f3a2c1",
+    "print_error": 50336003,
+    "hms": [{"attr": 50331904, "code": 65540}]
+  }
+}

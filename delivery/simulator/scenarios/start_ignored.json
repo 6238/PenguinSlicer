@@ -1,0 +1,5 @@
+{
+  "base": "whole_print",
+  "description": "The start command arrives and nothing happens: the printer stays idle.",
+  "start": "ignore"
+}

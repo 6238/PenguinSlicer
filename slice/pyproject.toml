@@ -1,0 +1,44 @@
+[project]
+name = "penguin-slice"
+version = "0.1.0"
+description = "The slice service: takes a plate job, runs Orca Slicer headless, returns a sliced file."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "flask>=3.0",
+    "numpy>=1.24",
+    "shapely>=2.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-randomly>=3.15",
+    "pytest-xdist>=3.5",
+    "coverage[toml]>=7.4",
+    "hypothesis>=6.100",
+]
+
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/penguin_slice"]
+
+[tool.pytest.ini_options]
+# The fast suite only. The tests that run the real Orca Slicer live in tests_orca/ and
+# run with `make test-orca`.
+testpaths = ["tests"]
+addopts = "-p no:cacheprovider --strict-markers"
+markers = [
+    "known_fault: pins a known fault's CURRENT wrong behaviour; to be fixed in hardening, which flips the assertion",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["penguin_slice"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
