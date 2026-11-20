@@ -1,9 +1,9 @@
 {
-  "code": "slice.empty_layers",
-  "message": "Bracket #2 has gaps between about 105 mm and 106 mm, so nothing would hold up the layers above them.",
-  "where": {"part": "Bracket", "copy": "Bracket #2", "height_mm": 105.4, "stage": "slicing"},
-  "remedy": "Turn Supports on and slice again.",
-  "action": "enable_supports",
+  "code": "slice.orca_too_close",
+  "message": "Parts are too close together; spread them out.",
+  "where": {"stage": "slicing"},
+  "remedy": "Move the copies further apart, or press Arrange, and slice again.",
+  "action": "arrange",
   "retryable": false,
-  "detail": "orca return_code -100: Object can't be printed for empty layer between 105.42 and 106.14"
+  "detail": "orca code -101\nexit code 155\norca error_string: G-code conflicts detected after slicing. Please make sure the 3mf file can be successfully sliced in the latest Orca Slicer. If the file slices normally in Orca Slicer, try moving the wipe tower further from other models, as we use more conservative parameters for it during upload.\nrun found error, return -101, exit..."
 }

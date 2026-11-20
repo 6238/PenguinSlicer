@@ -1,0 +1,16 @@
+{
+  "parts": {
+    "bracket": {"name": "Bracket", "stl": "parts/bracket.stl"},
+    "spacer": {"name": "Spacer", "stl": "parts/spacer.stl"}
+  },
+  "copies": [
+    {"ref": "bracket", "orientation": "+z", "angle": 0, "x": 80.0, "y": 80.0},
+    {"ref": "bracket", "orientation": "+z", "angle": 90, "x": 150.0, "y": 80.0},
+    {"ref": "spacer", "orientation": "+x", "angle": 45, "x": 240.0, "y": 200.0}
+  ],
+  "printer": "Bambu Lab H2S 0.4 nozzle",
+  "filament": "Bambu PLA Basic @BBL H2S",
+  "process": "0.20mm Standard @BBL H2S",
+  "overrides": {"infill": 20, "walls": 3, "supports": "off", "brim": "auto"},
+  "local_time": "20261009-1432"
+}
