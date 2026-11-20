@@ -102,9 +102,18 @@ CODES = {
         'Look at the printer to see whether the part is printing before sending it again.',
         False),
     'delivery.cancel_too_late': Code(
-        'This print has already been started on the printer, so it can no longer be '
-        'cancelled from here.',
+        'The start command for this print has already been sent to the printer, so it can '
+        'no longer be cancelled from here.',
         'Stop the print on the printer\'s own screen if it should not go on.', False,
+        'starting'),
+    'delivery.start_being_sent': Code(
+        'The computer next to the printer has been told to start this print and may already '
+        'have sent the start command, so it can no longer be cancelled from here.',
+        'If the print starts, stop it on the printer\'s own screen.', False, 'starting'),
+    'delivery.start_not_shown_yet': Code(
+        'The printer is still answering and has not yet shown whether this print started, '
+        'so the printer service is still following it.',
+        'Wait for the printer to show the print, or look at the printer\'s screen.', False,
         'starting'),
     'delivery.already_finished': Code(
         'This print has already ended, so there is nothing to cancel or stop following.',
@@ -154,6 +163,11 @@ CODES = {
         'when the print arrived, so it was not started.',
         'Check the printer, then send the print again in a moment.', True,
         'waiting_for_printer'),
+    'delivery.earlier_start_unsettled': Code(
+        'The printer was sent another print just before this one and has not shown[ within '
+        '{minutes} minutes] whether that one started, so this print was not started.',
+        'Look at the printer, then send this print again.', True,
+        'waiting_for_earlier_print'),
     'delivery.printer_error_at_start': Code(
         'The printer showed an error when the print was sent{meaning}.',
         'Ask someone at the printer to clear the error on its screen, then send the print '
@@ -199,8 +213,9 @@ CODES = {
         'The printer stopped reporting this print without saying it finished.',
         'Look at the printer to see whether the part is complete.', False, 'printing'),
     'delivery.outcome_unknown': Code(
-        'Contact with the printer was lost after the print started, so the printer service '
-        'cannot tell whether the print is still running or has finished.',
+        'Contact with the printer was lost after this print was handed over to be started, '
+        'so the printer service cannot tell whether it is printing, has finished or never '
+        'started.',
         'Check the printer to see whether the part printed, and send it again only if it '
         'did not.', False, 'printing'),
 }

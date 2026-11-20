@@ -66,6 +66,31 @@ def test_each_status_document_reaches_the_message_hook_and_outlives_a_disconnect
     assert printer.mqtt_dump()['print']['mc_percent'] == 7
 
 
+def test_the_message_hook_gets_the_message_and_the_connect_hook_fires_on_each_connect():
+    """PROTECTS: a whole picture (review 4, defect 1). PrinterLink reads the MQTT message,
+    the hook's last argument, to see whether the document named `gcode_state`, and resets
+    the picture to "not whole" from `mqtt_client.on_connect_handler`, which the library
+    calls on every connect, its own reconnects included. The library merges a partial
+    document onto what it holds, so without this a partial document after a reconnect
+    reads as a whole one."""
+    printer = make_printer()
+    client = printer.mqtt_client
+    seen, connects = [], []
+    client.on_message_handler = lambda *args: seen.append(args[-1])
+    client.on_connect_handler = lambda *args: connects.append(len(args))
+    whole = type('Message', (), {'payload': json.dumps({'print': {'gcode_state': 'IDLE'}})})
+    partial = type('Message', (), {'payload': json.dumps({'print': {'mc_percent': 3}})})
+    client._on_message(client._client, None, whole)
+    client._on_message(client._client, None, partial)
+    assert [m.payload for m in seen] == [whole.payload, partial.payload]
+    merged = printer.mqtt_dump()['print']
+    assert (merged['gcode_state'], merged['mc_percent']) == ('IDLE', 3)   # merged
+    client.pushall_aggressive = False         # no publish from inside the test
+    success = type('Code', (), {'is_failure': False, '__eq__': lambda s, o: o == 0})()
+    client._on_connect(client._client, None, None, success, None)
+    assert connects == [6]
+
+
 def test_pushall_and_the_paho_client_disconnect_exist():
     """PROTECTS: PrinterLink.request_report calls mqtt_client.pushall(), and disconnect()
     calls the paho client's disconnect() before mqtt_stop() so the network thread ends at

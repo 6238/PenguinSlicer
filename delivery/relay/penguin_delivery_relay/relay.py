@@ -209,7 +209,8 @@ class _Record:
     happens under PrinterRelay's single lock."""
 
     __slots__ = ('session_seen_at', 'daemon_seen_at', 'status', 'status_received_at',
-                 'job', 'last_result', 'last_result_at', 'touched_at', 'latest_delivery')
+                 'job', 'last_result', 'last_result_at', 'touched_at', 'latest_delivery',
+                 'last_grant')
 
     def __init__(self, now):
         self.session_seen_at = None
@@ -223,6 +224,7 @@ class _Record:
         self.last_result_at = None
         self.touched_at = now
         self.latest_delivery = None     # the id of this printer's most recent delivery job
+        self.last_grant = None          # {'id', 'filename', 'at'}: the last start granted
 
 
 class PrinterRelay:
@@ -616,7 +618,16 @@ class PrinterRelay:
                 if delivery is not None:
                     delivery.handed_out(now)
                     self._note(delivery)
-            return dict(job)
+            offered = dict(job)
+            # What a restarted daemon needs to rebuild its hold on the printer: the gate's
+            # age for this job, and the printer's last start granted to an earlier one.
+            if job.get('start_granted_at') is not None:
+                offered['start_granted_age_s'] = int(now - job['start_granted_at'])
+            last = record.last_grant
+            if last is not None and last['id'] != job['id']:
+                offered['previous_start'] = {'id': last['id'], 'filename': last['filename'],
+                                             'age_s': int(now - last['at'])}
+            return offered
 
     def _follow_prints(self, code, status, progress, now):
         """Every live delivery job of this printer hears the sync. Caller holds the lock."""
@@ -627,10 +638,12 @@ class PrinterRelay:
             delivery.printer_word(status)
             if (isinstance(progress, dict) and progress.get('id') == delivery.job_id):
                 delivery.daemon_progress(progress, now)
-            if delivery.stage == 'starting' and delivery.printer_has_it(status):
-                # The printer names this job's file as its print before the daemon's
+            if delivery.stage in dl.STARTING and delivery.printer_shows_it_going(status):
+                # The printer shows this job's file going before the daemon's
                 # acknowledgement arrived (it may be on its way through a link that is
-                # down): the printer's own report is the evidence that it started.
+                # down): the printer's own report is the evidence that it started. An end
+                # naming the file is not: it may be the previous print's, left over, and
+                # only the daemon can tell (see "How a start is decided").
                 delivery.started(now)
             delivery.print_report(status, now)
             delivery.refresh(now)
@@ -691,6 +704,9 @@ class PrinterRelay:
             instance = instance[:MAX_INSTANCE_CHARS]
             if job['start_granted_to'] is None:
                 job['start_granted_to'] = instance
+                job['start_granted_at'] = self._clock()
+                record.last_grant = {'id': job_id, 'filename': job['filename'],
+                                     'at': job['start_granted_at']}
                 delivery = self._deliveries.get(job_id)
                 if delivery is not None:
                     delivery.gate_passed = True
@@ -704,8 +720,9 @@ class PrinterRelay:
         """The caller stops following a delivery job past the start gate whose report is
         stale. One of 'stopped' (it ends `failed`, `delivery.outcome_unknown`, and its job
         slot is freed), 'fresh' (the printer is still reporting it: refused, the print can
-        only be stopped at the printer), 'not_started' (before the gate: cancel it instead),
-        'final', 'unknown'.
+        only be stopped at the printer), 'not_shown' (past the gate, fresh word, and the
+        printer has not shown the print yet: refused, the daemon is still watching),
+        'not_started' (before the gate: cancel it instead), 'final', 'unknown'.
 
         A later send is still guarded by the printer's own report: a printer that is busy,
         or that cannot be heard, refuses it."""
@@ -723,7 +740,9 @@ class PrinterRelay:
             if not delivery.gate_passed:
                 return 'not_started'
             if delivery.stale_age is None:
-                return 'fresh'
+                # Fresh word: following the print, the printer reports it; before that, the
+                # printer has not shown it yet, and nobody may be told it is running.
+                return 'fresh' if delivery.stage in dl.FOLLOWING else 'not_shown'
             delivery.outcome_unknown(now, 'the caller stopped following it')
             self._note(delivery)
             return 'stopped'
@@ -731,8 +750,10 @@ class PrinterRelay:
     def cancel(self, code, job_id):
         """The caller cancels a delivery job. Returns one of 'cancelled' (it was still
         waiting for the daemon: done at once), 'cancelling' (the daemon holds it: it stops
-        on its next sync, and the job ends as cancelled once it has), 'too_late' (the start
-        was granted), 'final' (already over), 'unknown'."""
+        on its next sync, and the job ends as cancelled once it has), 'being_sent' (the start
+        was granted and the daemon has not yet said the command went: it may be going now),
+        'too_late' (the start command was sent, or the printer showed the print), 'final'
+        (already over), 'unknown'."""
         code = normalize_code(code)
         with self._lock:
             delivery = self._deliveries.get(job_id)
@@ -741,9 +762,11 @@ class PrinterRelay:
             record = self._get(code)
             job = record.job if record is not None else None
             if job is None or job['id'] != job_id:
-                return 'final' if delivery.final else 'too_late'
+                if delivery.final:
+                    return 'final'
+                return 'too_late' if delivery.start_sent else 'being_sent'
             if job['start_granted_to'] is not None:
-                return 'too_late'
+                return 'too_late' if delivery.start_sent else 'being_sent'
             if job['state'] == 'pending':
                 self._finish(code, record, job, ok=False, reason='cancelled',
                              error_code='delivery.cancelled')

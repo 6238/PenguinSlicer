@@ -156,7 +156,8 @@ class SimulatedPrinter:
 
     # -- lifecycle ---------------------------------------------------------------------
 
-    def start(self):
+    def start(self, *, mqtt_port=0, ftps_port=0):
+        """Listen on 127.0.0.1; a port of 0 is one the system picks (the suites use that)."""
         self._folder = tempfile.mkdtemp(prefix='simulated-printer-')
         cert, key = _make_certificate(self._folder)
         self._tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -169,8 +170,8 @@ class SimulatedPrinter:
             self._tls.minimum_version = ssl.TLSVersion.TLSv1_3
         else:
             self._tls.maximum_version = ssl.TLSVersion.TLSv1_2
-        self.mqtt_port = self._listen(self._serve_mqtt)
-        self.ftps_port = self._listen(self._serve_ftps)
+        self.mqtt_port = self._listen(self._serve_mqtt, mqtt_port)
+        self.ftps_port = self._listen(self._serve_ftps, ftps_port)
         return self
 
     def stop(self):
@@ -211,10 +212,10 @@ class SimulatedPrinter:
         with self.changed:
             return self.changed.wait_for(predicate, timeout)
 
-    def _listen(self, handler):
+    def _listen(self, handler, port=0):
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server.bind(('127.0.0.1', 0))
+        server.bind(('127.0.0.1', port))
         server.listen(8)
         self._sockets.append(server)
 

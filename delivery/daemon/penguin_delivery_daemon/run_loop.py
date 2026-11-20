@@ -17,15 +17,16 @@ A delivery job, on the daemon:
 1. the printer already reports the file: acknowledge, never upload it again;
 2. the relay says a start was already granted (to this daemon before a restart, or to
    another): never start it again, only wait for the printer's report;
-3. wait for fresh evidence that the printer is free: a report younger than
-   FRESH_REPORT_SECONDS that shows no print going on;
+3. wait for a free printer: a whole, fresh picture that shows no print going on, and no
+   earlier start command still holding the printer (StartHold);
 4. download, checked against the relay's size and checksum, retried with backoff;
 5. upload, judged by the printer's own listing, retried with backoff;
-6. ask the relay's start gate; start only on its yes, and only on fresh evidence, again,
-   that the printer is free. A cancel, or a relay that cannot be reached, means the file
-   is never started;
-7. wait for the printer to report the file, and acknowledge; leave the wait once the
-   relay no longer holds the job.
+6. wait for a free printer again, still cancellable, then ask the relay's start gate; on
+   its yes look once more, without waiting, and send the start command only on a free
+   printer. A cancel, or a relay that cannot be reached, means the file is never started;
+7. hold the printer and watch for the evidence of what became of the command (seen going,
+   a proven end, or START_SETTLE_SECONDS of pictures without our print), and acknowledge;
+   leave the wait once the relay no longer holds the job (the hold stays).
 
 Every acknowledgement carries the failure's code (the guide lists them; the relay turns
 each into an error report), the one line of reason, and the evidence in `detail`. An acknowledgement that
@@ -57,13 +58,27 @@ BACKOFF_CAP = 60.0
 #: Every wait after a failure is shortened by up to this share, drawn from `rand`, so a
 #: shop full of daemons that lost the relay at the same moment do not return in step.
 JITTER = 0.25
-#: How long the printer's own fresh reports must go on not naming the started file before
-#: the start is given up. Only time in which the printer is reachable and speaking counts:
-#: a printer that is unreachable or silent after the start command may be printing, so
-#: silence is waited out (the relay shows the job as stale meanwhile), never judged.
-START_WAIT_SECONDS = 60.0
+# The settings of "How a start is decided" (the guide's section of that name). Every one
+# is a guess until the real H2S is timed.
+#
+#: After the start command, this long without the printer showing our print and the
+#: delivery job's stage becomes `start_not_shown` (non-final, with `waited_s`).
+START_SLOW_SECONDS = 60.0
+#: After the start command, this long of whole, fresh pictures that do not show our print
+#: (idle, another file, an end that is not ours) settles it: the printer did not start the
+#: file, and only then may another start command go to the printer. Only time in which the
+#: printer is reachable and speaking counts: a printer that is unreachable or silent after
+#: the start command may be printing, so silence is waited out (the relay shows the job as
+#: stale meanwhile), never judged.
+START_SETTLE_SECONDS = 5 * 60.0
+#: An end naming our file, never seen going, never counts in the first this-many seconds
+#: after the command: a left-over end of the previous print is seen then, and no print ends
+#: that fast. After it, an end counts when the main state changed after the command; a
+#: daemon that lost the printer for this long after the command (or did not send it) takes
+#: such an end only once the command is START_SETTLE_SECONDS old.
+LEFTOVER_END_SECONDS = 2 * 60.0
 START_POLL_SECONDS = 2.0
-#: A report older than this is not the printer's word in the start wait.
+#: A report older than this is not the printer's word.
 FRESH_REPORT_SECONDS = 15.0
 #: While its reports are older than that, the printer is asked for a whole report this often.
 REPORT_REQUEST_SECONDS = 10.0
@@ -95,9 +110,88 @@ _DOWNLOAD_PATH_RE = re.compile(r'(/download/)[^\s\'"]+')
 # The files a delivery job leaves in the download directory: the job id is in the name.
 _LEFTOVER_RE = re.compile(r'-j[0-9a-f]{7,8}\.gcode\.3mf(\.part)?$')
 
-# The printer states that mean it accepted the file: any of them answers the only question
-# an acknowledgement asks, which is whether the job reached the machine.
-_ACCEPTED = (printer_module.RUNNING, printer_module.PAUSED, printer_module.FINISHED)
+# The printer states in which a print named in the report is under way: seeing our file in
+# one of them is seeing the print going.
+_GOING = (printer_module.RUNNING, printer_module.PAUSED)
+# The printer states that are an end of the print named in the report.
+_ENDED = (printer_module.FINISHED, printer_module.ERROR)
+
+
+class StartHold:
+    """What the daemon knows of one start command, from the moment it is sent until the
+    evidence settles what became of it. While a hold is unsettled no other start command
+    goes to the printer (see "How a start is decided" in the guide).
+
+    `sent_at` is on the daemon's monotonic clock. `sent_here` is False for a hold rebuilt
+    from the relay (a restarted daemon, or a start another process holds): then nothing is
+    known of the printer's state before the command. `before_state` is the main state of
+    the last whole, fresh picture before the command."""
+
+    def __init__(self, job_id, remote_name, sent_at, *, sent_here, before_state=None,
+                 now=None):
+        self.job_id = job_id
+        self.remote_name = remote_name
+        self.sent_at = sent_at
+        self.sent_here = sent_here
+        self.last_state = before_state if sent_here else None
+        self.state_changed = False
+        self.unwatched = not sent_here
+        self.counted = 0.0
+        # A rebuilt hold counts the time since the gate as already waited: the first whole,
+        # fresh picture without our print may settle it.
+        age = max(0.0, (now if now is not None else sent_at) - sent_at)
+        self.required = (START_SETTLE_SECONDS if sent_here
+                         else max(0.0, START_SETTLE_SECONDS - age))
+        self._last_at = None
+        self._last_fresh_at = sent_at
+        self.other = None
+        #: None while unsettled; then 'going', 'ended' or 'no_print'.
+        self.outcome = None
+        self.evidence = None
+
+    def _end_counts(self, now):
+        """Is an end naming our file, never seen going, the end of this print? Never in the
+        first LEFTOVER_END_SECONDS after the command (a left-over end is seen then, and no
+        print ends that fast). After that, when the main state changed after the command.
+        A daemon that could not watch continuously cannot tell a left-over from a real
+        end: it takes the end once the command is START_SETTLE_SECONDS old, the same time
+        after which a printer that has not shown the print is taken not to have started
+        it, so a real end is found and never waited on for ever."""
+        age = now - self.sent_at
+        if age < LEFTOVER_END_SECONDS:
+            return False
+        if self.state_changed:
+            return True
+        return self.unwatched and age >= START_SETTLE_SECONDS
+
+    def watch(self, snapshot, now, fresh):
+        """Take one picture into account. Returns the outcome (None while unsettled); a
+        settled hold is dropped by its owner, so it is never watched again."""
+        dt = 0.0 if self._last_at is None else max(0.0, now - self._last_at)
+        self._last_at = now
+        state = snapshot.get('state')
+        if not fresh or state == printer_module.UNRECOGNISED_STATE:
+            if now - self._last_fresh_at >= LEFTOVER_END_SECONDS:
+                self.unwatched = True
+            return None
+        self._last_fresh_at = now
+        if self.last_state is not None and state != self.last_state:
+            self.state_changed = True
+        self.last_state = state
+        ours = printer_module.reports_file(snapshot, self.remote_name)
+        if ours and state in _GOING:
+            self.outcome, self.evidence = 'going', snapshot
+            return self.outcome
+        if ours and state in _ENDED and self._end_counts(now):
+            self.outcome, self.evidence = 'ended', snapshot
+            return self.outcome
+        # Not our print: idle, another file, or an end with our name that is not ours.
+        self.counted += dt
+        if state in _GOING and snapshot.get('file') and not ours:
+            self.other = snapshot
+        if self.counted >= self.required:
+            self.outcome, self.evidence = 'no_print', snapshot
+        return self.outcome
 
 
 class InlineExecutor:
@@ -167,6 +261,8 @@ class RunLoop:
         self._sent_progress = None
         self.cancel_requested = set()
         self.pending_acks = {}          # job id -> dict(ok, reason, code, detail, due, wait)
+        #: The last start command's StartHold while it is unsettled, else None.
+        self.hold = None
         self.clean_download_dir()
 
     # -- helpers -----------------------------------------------------------------------
@@ -513,19 +609,23 @@ class RunLoop:
         remote_name = printer_module.suffixed_name(
             printer_module.safe_file_name(job['filename']), job_id)
 
-        # 1. The printer already has this job: a daemon that died after the start command
-        #    must not print the part a second time.
-        if self._acknowledge_if_the_printer_has_it(
+        self._adopt_previous_start(job)
+        # 1. The printer is already printing this job: a daemon that died after the start
+        #    command must not print the part a second time.
+        if self._acknowledge_if_going(
                 job_id, remote_name,
                 note=f"the printer already has {remote_name}; not uploading it again"):
             return
         # 2. A start was granted before (to an earlier run of this daemon, or to another
-        #    daemon with the same pairing): whatever happened, never start it again.
+        #    daemon with the same pairing): whatever happened, never start it again. The
+        #    hold is rebuilt from the gate's age, as the relay measured it.
         if job.get('start_granted'):
             self.log(f"job {job_id}: the start was already granted, so it is never started "
                      "again from here; waiting for the printer to report it")
             self._stage(job_id, 'starting')
-            self._await_start(job_id, remote_name)
+            self._await_start(job_id, remote_name,
+                              self._rebuilt_hold(job_id, remote_name,
+                                                 job.get('start_granted_age_s')))
             return
         if job.get('cancel'):
             self._end_cancelled(job_id)
@@ -540,18 +640,62 @@ class RunLoop:
         self._gate(job_id, remote_name)                                  # 6
         self._start(job_id, remote_name)                                 # 7
 
-    def _await_free_printer(self, job_id, remote_name=None):
-        """Wait for fresh evidence that the printer is free: a report younger than
-        FRESH_REPORT_SECONDS that shows no print going on (idle, or its last print ended,
-        well or badly). Called when the job arrives, between upload attempts, and once more
-        just before the start command, so a start command is only ever sent on such a
-        report -- two different files can never overlap on a printer that went quiet.
+    def _rebuilt_hold(self, job_id, remote_name, age_s):
+        """A StartHold for a start this process did not send, `age_s` after the gate."""
+        now = self.clock()
+        age = float(age_s) if (isinstance(age_s, (int, float))
+                               and not isinstance(age_s, bool) and age_s >= 0) else 0.0
+        return StartHold(job_id, remote_name, now - age, sent_here=False, now=now)
 
-        Without a fresh report (the printer unreachable, or its status stream quiet) the
-        printer is asked for a whole report every REPORT_REQUEST_SECONDS, and the job waits
-        in the stage `waiting_for_printer`, where a cancel still ends it. After
-        PRINTER_WAIT_SECONDS of that the job ends unstarted. A fresh report of a print going
-        on, or of a state this version does not know, ends it unstarted at once. With
+    def _adopt_previous_start(self, job):
+        """A restarted daemon has no hold in memory: the relay names the printer's last
+        start granted (`previous_start`), and an earlier job this process has not settled
+        holds the printer until the evidence settles it."""
+        previous = job.get('previous_start')
+        if not isinstance(previous, dict) or self.hold is not None:
+            return
+        previous_id = previous.get('id')
+        if (not isinstance(previous_id, str) or previous_id == job.get('id')
+                or previous_id in self.acked_job_ids
+                or not isinstance(previous.get('filename'), str)):
+            return
+        name = printer_module.suffixed_name(
+            printer_module.safe_file_name(previous['filename']), previous_id)
+        self.hold = self._rebuilt_hold(previous_id, name, previous.get('age_s'))
+        self.log(f"job {job.get('id')}: the printer was sent {name} (job {previous_id}) "
+                 "before this process started; no other print starts until the printer "
+                 "shows what became of it")
+
+    def _watch_foreign_hold(self, job_id, snapshot):
+        """Feed a picture to a hold left by another delivery job. True while it holds."""
+        hold = self.hold
+        if hold is None or hold.job_id == job_id:
+            return False
+        outcome = hold.watch(snapshot, self.clock(), self._fresh(snapshot))
+        if outcome is None:
+            return True
+        self.hold = None
+        self.log(f"the earlier start of {hold.remote_name} (job {hold.job_id}) is settled: "
+                 + {'going': 'the printer is printing it',
+                    'ended': 'the printer reports it ended',
+                    'no_print': 'the printer did not start it'}[outcome])
+        return False
+
+    def _await_free_printer(self, job_id, remote_name=None):
+        """Wait for a free printer: a whole, fresh picture (younger than
+        FRESH_REPORT_SECONDS) that shows no print going on (idle, or its last print ended,
+        well or badly), with no earlier start command still holding the printer. Called
+        when the job arrives, between upload attempts, and after the upload, before the
+        start gate is asked -- so every wait comes before the gate, where a cancel still
+        ends the job, and two different files can never overlap on a printer that went
+        quiet or was slow to show the last print.
+
+        Without a whole, fresh picture (the printer unreachable, its status stream quiet,
+        or only partial documents since the daemon connected) the printer is asked for a
+        whole report every REPORT_REQUEST_SECONDS, and the job waits in the stage
+        `waiting_for_printer`; held by an earlier start, in `waiting_for_earlier_print`.
+        After PRINTER_WAIT_SECONDS of that the job ends unstarted. A fresh report of a print
+        going on, or of a state this version does not know, ends it unstarted at once. With
         `remote_name`, the uploaded file is removed from the printer whenever it ends."""
         waited_from = self.clock()
         last_log = None
@@ -561,41 +705,44 @@ class RunLoop:
                 self._end_cancelled(job_id, remote_name)
             snapshot = self.printer.snapshot()
             state = snapshot.get('state')
+            held = self._watch_foreign_hold(job_id, snapshot)
             if self._fresh(snapshot):
-                if state in (printer_module.RUNNING, printer_module.PAUSED):
-                    fields = self._busy_fields(snapshot)
-                    if remote_name is not None:
-                        self._remove_from_printer(job_id, remote_name)
-                        reason = f"someone started {fields['name']} at the printer before this print"
-                    else:
-                        reason = f"the printer is busy with {fields['name']}"
-                        if 'percent' in fields:
-                            reason += f" at {fields['percent']} percent"
-                    self._end(job_id, False, reason, code='delivery.printer_busy_at_start',
-                              detail=self._snapshot_detail(snapshot), fields=fields)
-                if state == printer_module.UNRECOGNISED_STATE:
-                    value = snapshot.get('unrecognised') or f'state {state!r}'
-                    if remote_name is not None:
-                        self._remove_from_printer(job_id, remote_name)
-                    self.log(f"job {job_id}: the printer reports something this version does "
-                             f"not know ({value}); the print is not started")
-                    self._end(job_id, False,
-                              f'the printer reported something this version does not know: '
-                              f'{value}', code='delivery.printer_state_unrecognised_at_start',
-                              detail=f'{value}; {self._snapshot_detail(snapshot)}')
-                return snapshot
+                self._refuse_if_not_free(job_id, snapshot, remote_name)
+                if not held:
+                    return snapshot
             now = self.clock()
             waited = now - waited_from
             if waited >= PRINTER_WAIT_SECONDS:
                 minutes = int(PRINTER_WAIT_SECONDS // 60)
                 if remote_name is not None:
                     self._remove_from_printer(job_id, remote_name)
+                if held and self._fresh(snapshot):
+                    # The printer answers, but has not shown what became of the earlier
+                    # start. (A printer that does not answer is the plainer reason below.)
+                    hold = self.hold
+                    self._end(job_id, False,
+                              f'the printer did not show within {minutes} min what became of '
+                              f'the print sent before this one ({hold.remote_name})',
+                              code='delivery.earlier_start_unsettled',
+                              detail=f'job {hold.job_id} was sent a start command; '
+                                     f'{int(hold.counted)} s of fresh reports since, none '
+                                     f'naming it; the last: {self._snapshot_detail(snapshot)}',
+                              fields={'minutes': minutes})
                 self._end(job_id, False, f'the printer did not answer for {minutes} min',
                           code='delivery.printer_unreachable_at_start',
-                          detail=f'no fresh report from the printer for {int(waited)} s; '
-                                 f'the last: {self._snapshot_detail(snapshot)}, '
+                          detail=f'no whole, fresh report from the printer for {int(waited)} '
+                                 f's; the last: {self._snapshot_detail(snapshot)}, '
                                  f"{snapshot.get('report_age_s')!r} s old",
                           fields={'minutes': minutes})
+            if held and self._fresh(snapshot):
+                self._stage(job_id, 'waiting_for_earlier_print')
+                if last_log is None or now - last_log >= LOG_EVERY:
+                    last_log = now
+                    self.log(f"job {job_id}: waiting for the printer to show what became of "
+                             f"{self.hold.remote_name}, sent before this one ({int(waited)}s "
+                             "so far)")
+                self._wait(job_id, PRINTER_POLL_SECONDS)
+                continue
             self._stage(job_id, 'waiting_for_printer')
             if last_request is None or now - last_request >= REPORT_REQUEST_SECONDS:
                 last_request = now
@@ -612,6 +759,36 @@ class RunLoop:
                              f"(its last is {snapshot.get('report_age_s')} s old) before "
                              f"going on ({int(waited)}s so far)")
             self._wait(job_id, PRINTER_POLL_SECONDS)
+
+    def _refuse_if_not_free(self, job_id, snapshot, remote_name):
+        """End the job unstarted when a fresh picture shows a print going on, or a main
+        state this version does not know (a picture with no main state is never fresh, so
+        it never reaches here). With `remote_name`, the uploaded file is removed."""
+        state = snapshot.get('state')
+        if remote_name is not None and self._acknowledge_if_going(job_id, remote_name,
+                                                                   snapshot):
+            raise _JobEnded()
+        if state in _GOING:
+            fields = self._busy_fields(snapshot)
+            if remote_name is not None:
+                self._remove_from_printer(job_id, remote_name)
+                reason = f"someone started {fields['name']} at the printer before this print"
+            else:
+                reason = f"the printer is busy with {fields['name']}"
+                if 'percent' in fields:
+                    reason += f" at {fields['percent']} percent"
+            self._end(job_id, False, reason, code='delivery.printer_busy_at_start',
+                      detail=self._snapshot_detail(snapshot), fields=fields)
+        if state == printer_module.UNRECOGNISED_STATE:
+            value = snapshot.get('unrecognised') or f'state {state!r}'
+            if remote_name is not None:
+                self._remove_from_printer(job_id, remote_name)
+            self.log(f"job {job_id}: the printer reports something this version does "
+                     f"not know ({value}); the print is not started")
+            self._end(job_id, False,
+                      f'the printer reported something this version does not know: '
+                      f'{value}', code='delivery.printer_state_unrecognised_at_start',
+                      detail=f'{value}; {self._snapshot_detail(snapshot)}')
 
     def _download(self, job_id, job, dest):
         self._stage(job_id, 'downloading')
@@ -683,12 +860,21 @@ class RunLoop:
     def _gate(self, job_id, remote_name):
         """Ask the relay's start gate until it answers. A file is started only on its yes:
         a cancel, an unknown job, or a relay that cannot be reached for GATE_WAIT_SECONDS
-        each mean it is never started."""
-        self._stage(job_id, 'starting')
+        each mean it is never started.
+
+        Before each ask the printer must be free on a whole, fresh picture (a wait for one
+        is cancellable, and the gate is not asked meanwhile), and is asked for a whole
+        report, so its answer arrives while the gate's answer travels: the one look after
+        the gate then finds a fresh picture whenever the printer is answering."""
         started = self.clock()
         wait = BACKOFF_START
         while True:
             self._check_stop()
+            self._await_free_printer(job_id, remote_name)
+            request = getattr(self.printer, 'request_report', None)
+            if request is not None:
+                request()
+            self._stage(job_id, 'starting')
             try:
                 outcome = self.relay.start_gate(job_id, self.instance)
             except RelayError as e:
@@ -718,19 +904,38 @@ class RunLoop:
             return
 
     def _start(self, job_id, remote_name):
+        """Past the gate: one look, no wait, then the start command or none at all.
+
+        Every wait came before the gate, where a cancel still ends the job. Here the
+        printer's picture is read once: on a free printer the command goes; otherwise it
+        does not, the file is removed, and the failure is acknowledged with a code that
+        says the print was not started -- which is true."""
+        snapshot = self.printer.snapshot()
         # Started already (by another daemon with the same pairing, say): never again.
-        if self._acknowledge_if_the_printer_has_it(
-                job_id, remote_name,
+        if self._acknowledge_if_going(
+                job_id, remote_name, snapshot,
                 note=f"the printer is already printing {remote_name}; not starting it again"):
             raise _JobEnded()
-        # Someone may have started another print at the printer since the upload, or the
-        # printer may have gone quiet: the command goes only on a fresh report that shows
-        # no print going on.
-        self._await_free_printer(job_id, remote_name)
+        held = self._watch_foreign_hold(job_id, snapshot)
+        if not self._fresh(snapshot):
+            self._remove_from_printer(job_id, remote_name)
+            self._end(job_id, False, 'the printer stopped answering just before the start',
+                      code='delivery.printer_unreachable_at_start',
+                      detail=f'past the start gate, no whole, fresh report: '
+                             f'{self._snapshot_detail(snapshot)}, '
+                             f"{snapshot.get('report_age_s')!r} s old; not started")
+        self._refuse_if_not_free(job_id, snapshot, remote_name)
+        if held:
+            self._remove_from_printer(job_id, remote_name)
+            self._end(job_id, False, 'an earlier start still holds the printer',
+                      code='delivery.earlier_start_unsettled',
+                      detail=f'job {self.hold.job_id} was sent a start command and the '
+                             'printer has not shown what became of it; not started')
         self._stage(job_id, 'starting')
         # The last moment a stop can come in before the command: after it, never.
         self._check_stop()
         self.log(f"job {job_id}: starting the print")
+        before_state = snapshot.get('state')
         try:
             accepted = self.printer.start(remote_name)
         except Exception as e:
@@ -742,51 +947,57 @@ class RunLoop:
         if not accepted:
             self._end(job_id, False, 'the printer refused the print start command',
                       code='delivery.start_refused')
+        hold = StartHold(job_id, remote_name, self.clock(), sent_here=True,
+                         before_state=before_state)
+        self.hold = hold
+        self._stage(job_id, 'starting', start_sent=True)
         self.log(f"job {job_id}: start accepted; waiting for the printer to report "
                  f"{remote_name}")
-        self._await_start(job_id, remote_name)
+        self._await_start(job_id, remote_name, hold)
 
-    def _await_start(self, job_id, remote_name):
-        """Wait for the printer to confirm it is running OUR file, so a start that silently
-        did nothing is reported rather than shown as a success.
+    def _await_start(self, job_id, remote_name, hold=None):
+        """Hold the printer and wait for the evidence of what became of the start command
+        (see "How a start is decided" in the guide): the print seen going, a proven end of
+        ours, or START_SETTLE_SECONDS of whole, fresh pictures that do not show our print.
+        A start that silently did nothing is reported, never shown as a success, and an end
+        left over from the previous print is never taken for ours.
 
-        The wait is counted in the printer's own fresh reports: START_WAIT_SECONDS of a
-        reachable printer reporting something else is the evidence that the start did
-        nothing. While the printer is unreachable or its reports are old, nothing is
+        While the printer is unreachable or its picture is old or not whole, nothing is
         counted -- it may be printing our file -- and it is asked for a whole report every
         REPORT_REQUEST_SECONDS. A wait with no end is honest here: the relay marks the job
-        stale, and the job goes on the moment the printer speaks."""
-        watched = 0.0
-        other = None
-        last = self.clock()
+        stale, and the job goes on the moment the printer speaks. After START_SLOW_SECONDS
+        the stage says the printer has the file and has not shown the print yet."""
+        if hold is None:
+            hold = StartHold(job_id, remote_name, self.clock(), sent_here=False,
+                             now=self.clock())
+        if self.hold is None or self.hold.job_id == job_id:
+            self.hold = hold
         last_request = None
         last_log = None
-        last_hold_check = last
-        while watched < START_WAIT_SECONDS:
+        last_slow_log = None
+        last_hold_check = self.clock()
+        while True:
             self._check_stop()
-            if self._acknowledge_if_the_printer_has_it(job_id, remote_name):
-                raise _JobEnded()
             snapshot = self.printer.snapshot()
             now = self.clock()
+            fresh = self._fresh(snapshot)
+            outcome = hold.watch(snapshot, now, fresh)
+            if outcome is not None:
+                if self.hold is hold:
+                    self.hold = None
+                self._settled(job_id, remote_name, hold)
             if now - last_hold_check >= HOLD_CHECK_SECONDS:
                 last_hold_check = now
                 if not self._relay_still_holds(job_id):
                     # The caller stopped following it, or the relay dropped it: nobody
                     # waits for this answer any more. The file is left where it is (it may
-                    # be printing) and the daemon is free for the next delivery job, which
-                    # starts only on a fresh report of a free printer.
+                    # be printing). The hold stays: the next delivery job waits for it to
+                    # settle before its own start command can go.
                     self.log(f"job {job_id}: the relay no longer holds this job; no longer "
-                             "waiting for the printer to report it")
+                             "waiting for the printer to report it (the printer stays held "
+                             "until it shows what became of the start)")
                     raise _JobEnded()
-            if self._fresh(snapshot) and (snapshot.get('state')
-                                          != printer_module.UNRECOGNISED_STATE):
-                watched += now - last
-                if (snapshot.get('state') in (printer_module.RUNNING, printer_module.PAUSED)
-                        and snapshot.get('file')):
-                    other = snapshot
-                if watched >= START_WAIT_SECONDS:
-                    break
-            else:
+            if not fresh:
                 if last_request is None or now - last_request >= REPORT_REQUEST_SECONDS:
                     last_request = now
                     request = getattr(self.printer, 'request_report', None)
@@ -796,18 +1007,43 @@ class RunLoop:
                     last_log = now
                     self.log(f"job {job_id}: waiting for the printer to report the print; "
                              "it is not answering just now, so the wait is not counted")
-            last = now
+            waited = now - hold.sent_at
+            if waited >= START_SLOW_SECONDS:
+                self._stage(job_id, 'start_not_shown', start_sent=True,
+                            waited_s=int(waited))
+                if last_slow_log is None or now - last_slow_log >= LOG_EVERY:
+                    last_slow_log = now
+                    self.log(f"job {job_id}: the printer has {remote_name} and has not shown "
+                             f"the print yet ({int(waited)}s since the start command, "
+                             f"{int(hold.counted)}s of fresh reports without it)")
             self.sleep(START_POLL_SECONDS)
-        if other is not None:
-            name = printer_module.strip_job_suffix(other.get('file') or '')
+
+    def _settled(self, job_id, remote_name, hold):
+        """Acknowledge what the evidence says became of the start command."""
+        snapshot = hold.evidence
+        if hold.outcome == 'going':
+            self._ack(job_id, True)
+            raise _JobEnded()
+        if hold.outcome == 'ended':
+            if snapshot.get('state') == printer_module.FINISHED:
+                self._ack(job_id, True)
+                raise _JobEnded()
+            self._end(job_id, False, f"printer error: {snapshot.get('error') or 'unknown'}",
+                      code='delivery.printer_error_at_start',
+                      detail=self._snapshot_detail(snapshot),
+                      fields={'error': snapshot.get('error')})
+        seconds = int(START_SETTLE_SECONDS)
+        if hold.other is not None:
+            name = printer_module.strip_job_suffix(hold.other.get('file') or '')
             self._end(job_id, False, f'the printer started {name} instead',
-                      code='delivery.start_other_file', detail=self._snapshot_detail(other),
-                      fields={'name': name})
-        self._end(job_id, False, 'the printer did not start the file within '
-                                 f'{START_WAIT_SECONDS:.0f}s', code='delivery.start_timeout',
-                  detail=f'{START_WAIT_SECONDS:.0f} s of fresh reports from the printer '
-                         f'never named {remote_name}',
-                  fields={'seconds': int(START_WAIT_SECONDS)})
+                      code='delivery.start_other_file',
+                      detail=self._snapshot_detail(hold.other), fields={'name': name})
+        self._end(job_id, False, f'the printer did not start the file within {seconds}s',
+                  code='delivery.start_timeout',
+                  detail=f'{int(hold.counted)} s of whole, fresh reports from the printer '
+                         f'after the start command never showed {remote_name}; the last: '
+                         f'{self._snapshot_detail(snapshot)}',
+                  fields={'seconds': seconds})
 
     def _relay_still_holds(self, job_id):
         """Does the relay still hold this job? Asked through the start gate, which answers
@@ -820,8 +1056,11 @@ class RunLoop:
 
     @staticmethod
     def _fresh(snapshot):
-        """Is this snapshot the printer's own recent word?"""
+        """Is this snapshot a whole, fresh picture: the printer's own recent word, with its
+        main state reported since the daemon connected?"""
         if snapshot.get('state') == printer_module.UNREACHABLE:
+            return False
+        if snapshot.get('whole') is False:
             return False
         age = snapshot.get('report_age_s')
         return not isinstance(age, (int, float)) or age <= FRESH_REPORT_SECONDS
@@ -834,28 +1073,24 @@ class RunLoop:
             fields['percent'] = snapshot['percent']
         return fields
 
-    def _acknowledge_if_the_printer_has_it(self, job_id, remote_name, *, note=None):
-        """Acknowledge when the printer is reporting our file. `note` is logged only when
-        the printer has accepted it.
+    def _acknowledge_if_going(self, job_id, remote_name, snapshot=None, *, note=None):
+        """Acknowledge when a whole, fresh picture shows our file going (or waiting for a
+        person). `note` is logged when it does. An end naming our file is not enough here:
+        only StartHold can tell this print's end from one left over before its start.
 
         The file name carries the job id, so this cannot mistake the previous print for
         ours -- which is what lets a restarted daemon recognise a job it already started."""
-        snapshot = self.printer.snapshot()
-        if not printer_module.reports_file(snapshot, remote_name):
+        if snapshot is None:
+            snapshot = self.printer.snapshot()
+        if not (self._fresh(snapshot) and snapshot.get('state') in _GOING
+                and printer_module.reports_file(snapshot, remote_name)):
             return False
-        state = snapshot.get('state')
-        if state in _ACCEPTED:
-            if note:
-                self.log(note)
-            self._ack(job_id, True)
-            return True
-        if state == printer_module.ERROR:
-            self._ack(job_id, False, f"printer error: {snapshot.get('error') or 'unknown'}",
-                      code='delivery.printer_error_at_start',
-                      detail=self._snapshot_detail(snapshot),
-                      fields={'error': snapshot.get('error')})
-            return True
-        return False
+        if note:
+            self.log(note)
+        if self.hold is not None and self.hold.job_id == job_id:
+            self.hold = None
+        self._ack(job_id, True)
+        return True
 
     @staticmethod
     def _snapshot_detail(snapshot):

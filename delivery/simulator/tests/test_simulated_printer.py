@@ -93,7 +93,10 @@ class SimTestCase(unittest.TestCase):
             self.wait_until(lambda: self.has(sent), f'status document {sent}')
         return True
 
-    def run_job(self, content=CONTENT):
+    def run_job(self, content=CONTENT, on_sleep=None):
+        """Deliver one job. `on_sleep(loop)` runs after each of the daemon's waits, once
+        the printer has caught up: where a test steps the printer on."""
+        holder = {}
         relay = FakeRelay(token='signed')
         relay.content = content
         relay.sync_job = dict(JOB, size=len(content))
@@ -135,6 +138,8 @@ class SimTestCase(unittest.TestCase):
                 if self.sim.published:
                     last = self.sim.published[-1]
                     self.wait_until(lambda: self.has(last), 'the answer to the start')
+            if on_sleep is not None:
+                on_sleep(holder['loop'])
 
         config = DaemonConfig(backend_url='https://example.test', pairing_code='7K3MQ9XW',
                               token='signed', path=os.path.join(self.tmp, 'c.toml'))
@@ -142,6 +147,7 @@ class SimTestCase(unittest.TestCase):
                           log=self.logged.append, executor=rl.InlineExecutor(),
                           download_dir=self.tmp, rand=lambda: 0.0, instance='sim',
                           save_token=lambda *a: None)
+        holder['loop'] = loop
         loop.tick()
         self.assertEqual(len(relay.acks), 1, relay.acks)
         return relay.acks[0][1:], relay.ack_codes[0]
@@ -398,6 +404,124 @@ class TestQuietWhileBusy(SimTestCase):
         (ok, reason), code = self.run_job()
         self.assertEqual((ok, code), (False, 'delivery.printer_unreachable_at_start'))
         self.assertEqual(self.sim.started, [])
+
+
+class TestNoMainState(SimTestCase):
+    """Review 4, defect 1: documents with figures and a name but no main state, even the
+    answer to a request for a whole report, during someone else's print."""
+    scenario = 'no_main_state'
+
+    def test_a_picture_with_no_main_state_is_never_free(self):
+        snapshot = self.link.snapshot()
+        self.assertEqual((snapshot['state'], snapshot['whole']),
+                         (pr.UNRECOGNISED_STATE, False))
+        (ok, _reason), code = self.run_job()
+        self.assertEqual((ok, code), (False, 'delivery.printer_unreachable_at_start'))
+        self.assertEqual((self.sim.started, self.sim.files), ([], {}))
+        self.assertGreaterEqual(self.sim.pushalls, 2)               # connect, and the asks
+
+
+class TestLeftOverFinish(SimTestCase):
+    """Review 4, defect 2: our name under the previous print's FINISH just after the start
+    command is not the end of this print."""
+    scenario = 'left_over_finish'
+
+    def test_a_left_over_finish_with_our_name_waits_for_the_print(self):
+        stepped = []
+
+        def on_sleep(loop):
+            if self.sim.started and len(stepped) < 5:
+                stepped.append(loop.job_progress)
+                if len(stepped) == 5:
+                    self.step()                                     # PREPARE, ours
+
+        (ok, reason), code = self.run_job(on_sleep=on_sleep)
+        self.assertEqual((ok, reason, code), (True, None, None))
+        self.assertEqual(len(stepped), 5)       # it waited through the left-over FINISH
+        self.assertEqual(self.link.snapshot()['state'], pr.RUNNING)
+        self.assertEqual(self.sim.started, [SUFFIXED])
+
+    def test_a_left_over_finish_that_stays_is_a_start_not_shown_never_done(self):
+        (ok, _reason), code = self.run_job()
+        self.assertEqual((ok, code), (False, 'delivery.start_timeout'))
+        self.assertEqual(len(self.sim.commands), 1)
+
+
+class TestSlowStart(SimTestCase):
+    """Review 4, defect 4: a printer that shows the print 90 s after accepting it."""
+    scenario = 'slow_start'
+
+    def test_a_slow_printer_gets_a_non_final_stage_then_the_print_is_followed(self):
+        seen = []
+
+        def on_sleep(loop):
+            if not self.sim.started or shown:
+                return
+            seen.append((loop.job_progress or {}).get('stage'))
+            if self.clock.now - started[0] >= 90:
+                shown.append(self.step())                           # PREPARE, ours
+
+        started = [self.clock.now]
+        shown = []
+        (ok, reason), code = self.run_job(on_sleep=on_sleep)
+        self.assertEqual((ok, reason, code), (True, None, None))
+        self.assertIn('start_not_shown', seen)
+        self.assertEqual(seen[0], 'starting')
+        self.assertEqual(len(self.sim.commands), 1)
+
+
+def test_the_simulated_printer_runs_on_its_own_and_plays_a_print(tmp_path):
+    """`python -m simulator` (review 4, defect 5): it says where it listens and what to
+    give `pair`, a hand-run daemon's PrinterLink reaches it, and a start command plays
+    the scenario's print one document per step."""
+    import io
+    from simulator import __main__ as sim_main
+
+    out = io.StringIO()
+    stop = threading.Event()
+    ready = threading.Event()
+    holder = {}
+
+    def on_ready(printer):
+        holder['printer'] = printer
+        ready.set()
+
+    thread = threading.Thread(target=sim_main.run, args=('whole_print',),
+                              kwargs={'mqtt_port': 0, 'ftps_port': 0, 'step_seconds': 0.05,
+                                      'out': out, 'stop': stop, 'ready': on_ready},
+                              daemon=True)
+    thread.start()
+    try:
+        assert ready.wait(30)
+        sim = holder['printer']
+        link = pr.PrinterLink('127.0.0.1', sim.serial, sim.access_code, ports=sim.ports)
+        arrived = threading.Condition()
+
+        def on_document():
+            with arrived:
+                arrived.notify_all()
+
+        link.on_document = on_document
+        link.connect()
+        try:
+            assert sim.wait_for(lambda: bool(sim.logins))
+            path = tmp_path / SUFFIXED
+            path.write_bytes(CONTENT)
+            link.upload(str(path), SUFFIXED)
+            assert link.start(SUFFIXED)
+            with arrived:      # woken by each status document the steps send
+                assert arrived.wait_for(
+                    lambda: link.raw_report().get('gcode_state') == 'FINISH', 30)
+        finally:
+            link.disconnect()
+    finally:
+        stop.set()
+        thread.join(10)
+    text = out.getvalue()
+    assert f'MQTT {sim.mqtt_port}, FTPS {sim.ftps_port}' in text
+    assert '--printer-ports' in text and 'access code 12345678' in text
+    assert f'received {SUFFIXED}' in text and "'gcode_state': 'FINISH'" in text
+    assert text.rstrip().endswith('stopped')
 
 
 class TestStoppedAtPrinter(SimTestCase):

@@ -12,9 +12,11 @@ three final. Stages, in order:
 |---|---|---|
 | `waiting_for_daemon` | queued | the send; the daemon has not collected the job |
 | `waiting_for_printer` | running | the daemon: the printer is off or unreachable |
+| `waiting_for_earlier_print` | running | the daemon: an earlier start command still holds the printer |
 | `downloading` | running | the daemon fetching the sliced file |
 | `uploading` | running | the daemon sending it to the printer, `fraction` from bytes sent |
-| `starting` | running | the start command and the wait for the printer to report it |
+| `starting` | running | the start gate passed; the start command and the wait for the printer to report it |
+| `start_not_shown` | running | the daemon: the printer has the file and has not shown the print yet; `waited_s` beside it |
 | `printing` | running | the printer's reports; `printer_stage`, `percent`, `layer`, `total_layers`, `remaining_min` beside it |
 | `waiting_for_person` | running | the printer's reports: the print is under way, but the printer waits for someone (a pause, an error code, a door open, filament run out); `waiting_for`, `waiting_label`, `at_the_printer`, `printer_error`, `printer_error_meaning` beside it. Back to `printing` when it resumes |
 
@@ -30,15 +32,21 @@ FINAL = frozenset({DONE, FAILED, CANCELLED})
 STAGES = (
     ('waiting_for_daemon', 'Waiting for the computer next to the printer'),
     ('waiting_for_printer', 'Waiting for the printer to answer'),
+    ('waiting_for_earlier_print',
+     'Waiting to see whether the print sent before this one has started'),
     ('downloading', 'The computer next to the printer is fetching the file'),
     ('uploading', 'Sending the file to the printer'),
     ('starting', 'Starting the print'),
+    ('start_not_shown', 'The printer has the file and has not shown the print yet'),
     ('printing', 'Printing'),
     ('waiting_for_person', 'The printer is waiting for someone'),
 )
 STAGE_LABELS = dict(STAGES)
 #: The stages a daemon may report for a job it holds; the two below are the relay's.
-DAEMON_STAGES = frozenset({'waiting_for_printer', 'downloading', 'uploading', 'starting'})
+DAEMON_STAGES = frozenset({'waiting_for_printer', 'waiting_for_earlier_print', 'downloading',
+                           'uploading', 'starting', 'start_not_shown'})
+#: Past the start gate, before the printer's report shows the print.
+STARTING = frozenset({'starting', 'start_not_shown'})
 #: The stages in which the relay follows the print through the printer's own reports.
 FOLLOWING = frozenset({'printing', 'waiting_for_person'})
 #: Past the start gate, this long with no fresh word (the daemon silent, or the printer
@@ -54,9 +62,11 @@ AT_THE_PRINTER = "Look at the printer's screen, deal with what it shows, then re
 STAGE_SPAN = {
     'waiting_for_daemon': (0.0, 0.0),
     'waiting_for_printer': (0.0, 0.0),
+    'waiting_for_earlier_print': (0.0, 0.0),
     'downloading': (0.0, 0.02),
     'uploading': (0.02, 0.08),
     'starting': (0.08, 0.10),
+    'start_not_shown': (0.08, 0.10),
     'printing': (0.10, 1.0),
     'waiting_for_person': (0.10, 1.0),
 }
@@ -81,7 +91,9 @@ FINAL_TTL_SECONDS = 24 * 60 * 60
 _EXTRAS = ('printer_stage', 'printer_stage_label', 'percent', 'layer', 'total_layers',
            'remaining_min', 'bytes_sent', 'bytes_total', 'cancel_requested', 'waiting_for',
            'waiting_label', 'at_the_printer', 'printer_error', 'printer_error_meaning',
-           'unrecognised')
+           'unrecognised', 'waited_s')
+#: The printer states in which the printer's own report shows a print under way.
+_GOING = frozenset({'running', 'paused'})
 
 
 def _number(value):
@@ -118,6 +130,9 @@ class Delivery:
         #: The start gate was passed (or the printer named the file): from here the file
         #: may be printing, so only the printer's word, or stop_following, ends the job.
         self.gate_passed = False
+        #: The daemon said the start command went to the printer (or the printer showed the
+        #: print). Between the gate and this, nobody may be told the print started.
+        self.start_sent = False
         #: When the job last had fresh word (not stale), for OUTCOME_UNKNOWN_AFTER_SECONDS.
         self.fresh_at = now
         self.report = None
@@ -214,6 +229,13 @@ class Delivery:
         """Does the printer's report name this job's file as a print under way or ended?"""
         return snapshot.get('state') in _FOLLOWED and self._names_us(snapshot)
 
+    def printer_shows_it_going(self, snapshot):
+        """Does the printer's report name this job's file as a print under way? Only this
+        moves a job past the gate to `printing` on the printer's word: an end naming the
+        file may be the previous print's, left over (see "How a start is decided"), so an
+        end before the print was seen comes from the daemon's acknowledgement."""
+        return snapshot.get('state') in _GOING and self._names_us(snapshot)
+
     def _names_us(self, snapshot):
         return (self.job_id in (snapshot.get('job_name') or '')
                 or self.job_id in (snapshot.get('file') or ''))
@@ -231,9 +253,16 @@ class Delivery:
             extras = {'bytes_sent': int(sent), 'bytes_total': int(total)}
         elif _number(progress.get('fraction')) is not None:
             fraction = max(0.0, min(1.0, progress['fraction']))
+        if self.gate_passed and (progress.get('start_sent') is True
+                                 or stage == 'start_not_shown'):
+            self.start_sent = True
+        waited = _number(progress.get('waited_s'))
+        if stage == 'start_not_shown' and waited is not None:
+            extras['waited_s'] = int(max(0, waited))
         if stage != self.stage:
             self.extras.pop('bytes_sent', None)
             self.extras.pop('bytes_total', None)
+            self.extras.pop('waited_s', None)
         if self.state == QUEUED:
             self.running_since = now
         self._change(now, state=RUNNING, stage=stage, stage_fraction=fraction, extras=extras)
@@ -242,10 +271,12 @@ class Delivery:
         """The daemon acknowledged the start, or the printer's report named the file: from
         here the printer's reports lead. A second word of the same changes nothing."""
         self.gate_passed = True
+        self.start_sent = True
         if self.stage in FOLLOWING:
             return
         self.extras.pop('bytes_sent', None)
         self.extras.pop('bytes_total', None)
+        self.extras.pop('waited_s', None)
         if self.running_since is None:
             self.running_since = now
         self.not_seen_since = None
@@ -355,7 +386,7 @@ class Delivery:
         silent = now - self.last_word_at
         if self.state == RUNNING and silent >= STALE_AFTER_SECONDS:
             return silent
-        if self.stage == 'starting' or self.stage in FOLLOWING:
+        if self.stage in STARTING or self.stage in FOLLOWING:
             quiet = self.printer_quiet_s or 0
             if (self.printer_unreachable or self.printer_unrecognised
                     or quiet >= PRINTER_QUIET_SECONDS):

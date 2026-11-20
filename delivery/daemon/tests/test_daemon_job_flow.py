@@ -626,7 +626,7 @@ class TestFreshWordBeforeTheStart(FlowTestCase):
         self.run_job()
         ok, reason, code = self.outcome()
         self.assertEqual((ok, code), (False, 'delivery.printer_unreachable_at_start'))
-        self.assertIn('no fresh report', self.relay.ack_details[0])
+        self.assertIn('no whole, fresh report', self.relay.ack_details[0])
         self.assertEqual((self.relay.downloads, self.printer.uploads, self.printer.starts),
                          ([], [], []))
         # Asked again every REPORT_REQUEST_SECONDS, never in a tight loop.
@@ -648,13 +648,25 @@ class TestFreshWordBeforeTheStart(FlowTestCase):
         self.assertEqual(self.outcome(), (False, 'cancelled', 'delivery.cancelled'))
         self.assertEqual((self.relay.downloads, self.printer.starts), ([], []))
 
-    def test_after_the_gate_a_quiet_printer_is_asked_before_the_start_command(self):
-        original = self.relay.start_gate
+    def test_a_printer_quiet_after_the_upload_is_waited_for_before_the_gate(self):
+        """Review 4, defect 3: the wait for a fresh report sits before the start gate, so
+        it is cancellable and nothing tells the caller the print started. The gate is not
+        asked until the printer has answered."""
+        original_upload = self.printer.upload
+        gates = []
+
+        def upload(*args, **kwargs):
+            note = original_upload(*args, **kwargs)
+            self.printer.set(dict(STALE_IDLE))           # quiet from the upload on
+            return note
+
+        original_gate = self.relay.start_gate
 
         def gate(job_id, instance):
-            self.printer.set(dict(STALE_IDLE))           # quiet from the gate on
-            return original(job_id, instance)
+            gates.append(self.printer.last_read['report_age_s'])
+            return original_gate(job_id, instance)
 
+        self.printer.upload = upload
         self.relay.start_gate = gate
         loop = self.make()
         watch = self.watch_stage(loop)
@@ -662,10 +674,32 @@ class TestFreshWordBeforeTheStart(FlowTestCase):
         self.run_job(loop)
         self.assertEqual(self.outcome(), (True, None, None))
         self.assertEqual(self.stages, ['waiting_for_printer'] * 2)
+        self.assertEqual(gates, [0])                     # asked only on fresh word
         self.assertEqual(self.printer.starts, [SUFFIXED])
         self.assert_started_on_fresh_word_only()
 
-    def test_after_the_gate_a_printer_quiet_for_the_whole_wait_means_no_start(self):
+    def test_a_cancel_while_the_printer_is_quiet_after_the_upload_ends_it_unstarted(self):
+        """Review 4, defect 3, the reviewer's sequence: the printer quiet from the upload
+        on. Before, the gate was already passed and the cancel was refused as "already
+        started"; now the wait is before the gate and the cancel ends the job."""
+        original_upload = self.printer.upload
+
+        def upload(*args, **kwargs):
+            note = original_upload(*args, **kwargs)
+            self.printer.set(dict(STALE_IDLE))
+            return note
+
+        self.printer.upload = upload
+        loop = self.make()
+        self.sleeps = [None, lambda: loop._maybe_start_job(dict(JOB, cancel=True))]
+        self.run_job(loop)
+        self.assertEqual(self.outcome(), (False, 'cancelled', 'delivery.cancelled'))
+        self.assertEqual((self.relay.gates, self.printer.starts), ([], []))
+        self.assertEqual(self.printer.deleted, [SUFFIXED])
+
+    def test_after_the_gate_a_quiet_printer_means_no_start_and_no_wait(self):
+        """Past the gate there is one look and no wait: a printer quiet at that look gets no
+        start command, and the failure says it was not started."""
         original = self.relay.start_gate
 
         def gate(job_id, instance):
@@ -676,24 +710,55 @@ class TestFreshWordBeforeTheStart(FlowTestCase):
         self.run_job()
         ok, reason, code = self.outcome()
         self.assertEqual((ok, code), (False, 'delivery.printer_unreachable_at_start'))
+        self.assertIn('not started', self.relay.ack_details[0])
         self.assertEqual(self.printer.starts, [])
         self.assertEqual(self.printer.deleted, [SUFFIXED])
+        self.assertEqual(self.clock.slept, [])
 
     def test_after_the_gate_fresh_word_of_another_print_means_no_start(self):
         original = self.relay.start_gate
 
         def gate(job_id, instance):
-            self.printer.set(dict(STALE_IDLE))
+            self.printer.set(dict(running('walk_up_print'), report_age_s=0))
             return original(job_id, instance)
 
         self.relay.start_gate = gate
-        self.sleeps = [None, lambda: self.printer.set(dict(running('walk_up_print'),
-                                                           report_age_s=0))]
         self.run_job()
         ok, reason, code = self.outcome()
         self.assertEqual((ok, code), (False, 'delivery.printer_busy_at_start'))
         self.assertEqual(self.printer.starts, [])
         self.assertEqual(self.printer.deleted, [SUFFIXED])
+
+    def test_a_picture_with_no_main_state_is_never_free(self):
+        """Review 4, defect 1, the reviewer's sequence: during someone else's print the
+        daemon hears a document with no main state (figures and a name only). It asks for
+        a whole report and waits; the whole report shows the print, and nothing starts."""
+        partial = pr.map_status({'mc_percent': 43, 'mc_remaining_time': 12, 'layer_num': 5,
+                                 'subtask_name': 'someone_elses_print'})
+        self.printer.set(dict(partial, report_age_s=0))
+        loop = self.make()
+        watch = self.watch_stage(loop)
+        self.sleeps = [watch, lambda: self.printer.set(
+            dict(running('someone_elses_print'), report_age_s=0, percent=43))]
+        self.run_job(loop)
+        ok, reason, code = self.outcome()
+        self.assertEqual((ok, code), (False, 'delivery.printer_busy_at_start'))
+        self.assertEqual(self.stages, ['waiting_for_printer'])
+        self.assertGreaterEqual(self.printer.requests, 1)
+        self.assertEqual((self.relay.downloads, self.printer.starts), ([], []))
+
+    def test_a_picture_not_whole_since_the_connection_is_never_free(self):
+        """The same, through `whole`: an idle picture merged from the last connection,
+        with only partial documents since, waits for a whole one before going on."""
+        self.printer.set(dict(FRESH_IDLE, whole=False))
+        loop = self.make()
+        watch = self.watch_stage(loop)
+        self.sleeps = [watch, watch, lambda: self.printer.set(dict(FRESH_IDLE, whole=True))]
+        self.run_job(loop)
+        self.assertEqual(self.outcome(), (True, None, None))
+        self.assertEqual(self.stages, ['waiting_for_printer'] * 2)
+        for evidence in self.printer.start_evidence:
+            self.assertIs(evidence['whole'], True)
 
     def test_an_unrecognised_state_just_before_the_start_means_no_start(self):
         original = self.relay.start_gate
@@ -738,12 +803,19 @@ class TestLeavingTheStartWait(FlowTestCase):
         waited = sum(self.clock.slept)
         self.assertGreaterEqual(waited, rl.HOLD_CHECK_SECONDS)
         self.assertLess(waited, rl.HOLD_CHECK_SECONDS + 2 * rl.START_POLL_SECONDS)
-        # The next delivery job is taken up at once.
+        # The next delivery job is taken up at once, but the first start command still
+        # holds the printer (review 4, defect 4): its own start command goes only after
+        # START_SETTLE_SECONDS of fresh pictures without the first print.
+        self.assertEqual(loop.hold.job_id, 'j8f3a2c1')
         self.printer.start = original
         self.printer.set(dict(IDLE))
         self.printer.starts_running = True
+        before = self.clock.now
         self.run_job(loop, job=dict(JOB, id='j0000abcd'))
         self.assertEqual(self.relay.acks, [('j0000abcd', True, None)])
+        self.assertGreaterEqual(self.clock.now - before, rl.START_SETTLE_SECONDS)
+        self.assertIsNone(loop.hold)
+        self.assertTrue(self.lines('the earlier start of'))
 
     def test_a_hold_check_that_gets_no_answer_keeps_waiting(self):
         self.relay.gate_outcomes = ['start', RelayError('reset'), 'refused']

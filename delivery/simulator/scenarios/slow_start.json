@@ -1,0 +1,14 @@
+{
+  "base": "whole_print",
+  "description": "Review 4, defect 4: the printer accepts the start command and goes on reporting idle, without the file's name, until a test steps it on to PREPARE. INVENTED: how long the H2S takes to show a print it accepted is on the hardware checklist.",
+  "print": [
+    {"gcode_state": "IDLE", "stg_cur": 255, "subtask_name": ""},
+    {"gcode_state": "PREPARE", "stg_cur": 2, "mc_percent": 0, "mc_remaining_time": 18,
+     "layer_num": 0, "total_layer_num": 50, "gcode_file": "/data/Metadata/plate_1.gcode",
+     "subtask_name": "{subtask}", "print_error": 0, "hms": []},
+    {"gcode_state": "RUNNING", "stg_cur": 0, "mc_percent": 50, "mc_remaining_time": 9,
+     "layer_num": 25},
+    {"gcode_state": "FINISH", "stg_cur": 255, "mc_percent": 100, "mc_remaining_time": 0,
+     "layer_num": 50}
+  ]
+}

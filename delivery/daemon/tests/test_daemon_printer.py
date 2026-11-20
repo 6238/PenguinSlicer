@@ -54,7 +54,7 @@ class TestStateMapping(unittest.TestCase):
                                 'percent': 42, 'remaining_min': 31, 'layer': 87,
                                 'layers': 210, 'error': None, 'waiting_for': None,
                                 'waiting_label': None, 'at_the_printer': None,
-                                'unrecognised': None,
+                                'unrecognised': None, 'whole': True,
                                 'printer': {'model': None, 'name': None, 'serial': None}})
 
     def test_the_real_h2s_report_maps_to_running_with_its_progress(self):
@@ -145,7 +145,8 @@ class TestStateMapping(unittest.TestCase):
 
     SNAPSHOT_KEYS = {'state', 'file', 'job_name', 'stage_code', 'stage', 'stage_label',
                      'percent', 'remaining_min', 'layer', 'layers', 'error', 'printer',
-                     'waiting_for', 'waiting_label', 'at_the_printer', 'unrecognised'}
+                     'waiting_for', 'waiting_label', 'at_the_printer', 'unrecognised',
+                     'whole'}
 
     def test_the_snapshot_has_exactly_the_keys_the_relay_expects(self):
         self.assertEqual(set(pr.map_status(H2S['running'])), self.SNAPSHOT_KEYS)
@@ -308,17 +309,26 @@ class TestWhatTheReportMeans(unittest.TestCase):
         snap = self.doc(gcode_state='UNKNOWN')
         self.assertEqual((snap['state'], snap['unrecognised']), (pr.UNRECOGNISED_STATE, None))
 
-    def test_a_document_with_no_state_and_no_stage_is_idle(self):
-        self.assertEqual(pr.map_status({'mc_percent': 3})['state'], pr.IDLE)
+    def test_a_document_with_no_main_state_says_nothing_about_a_print(self):
+        """Review 4, defect 1: the reviewer's document (someone else's print at 43 percent,
+        no `gcode_state`) read as idle, and a start went out on it. A picture with no main
+        state is unrecognised as a whole and not whole, whatever its stage, figures or
+        name say."""
+        reviewers = {'mc_percent': 43, 'mc_remaining_time': 12, 'layer_num': 5,
+                     'subtask_name': 'someone_elses_print'}
+        for document in (reviewers, {'mc_percent': 3}, {'stg_cur': 255}, {'stg_cur': 2},
+                         {'stg_cur': 17}, {'stg_cur': 255, 'print_error': 1},
+                         {'stg_cur': -1}, {'gcode_state': None, 'stg_cur': 255},
+                         {'gcode_state': '', 'mc_percent': 0}):
+            with self.subTest(document=document):
+                snap = pr.map_status(document)
+                self.assertEqual(snap['state'], pr.UNRECOGNISED_STATE)
+                self.assertTrue(snap['unrecognised'].startswith(pr.NO_MAIN_STATE))
+                self.assertIs(snap['whole'], False)
 
-    def test_a_document_with_no_state_is_read_by_its_stage(self):
-        self.assertEqual(pr.map_status({'stg_cur': 255})['state'], pr.IDLE)
-        self.assertEqual(pr.map_status({'stg_cur': 2})['state'], pr.RUNNING)
-        self.assertEqual(pr.map_status({'stg_cur': 17})['state'], pr.PAUSED)
-        self.assertEqual(pr.map_status({'stg_cur': 255, 'print_error': 1})['state'], pr.ERROR)
-        snap = pr.map_status({'stg_cur': -1})
-        self.assertEqual((snap['state'], snap['unrecognised']),
-                         (pr.UNRECOGNISED_STATE, "stg_cur '-1'"))
+    def test_a_document_with_a_main_state_is_whole(self):
+        self.assertIs(pr.map_status(H2S['idle'])['whole'], True)
+        self.assertIs(pr.map_status({})['whole'], False)
 
     def test_the_guide_prints_the_table(self):
         guide = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..',
@@ -593,6 +603,43 @@ class TestPrinterLink(TempDirTestCase):
         self.assertEqual(heard, [1000.0, 1040.0])
         link.request_report()
         self.assertEqual(asks, [1])
+
+    def test_the_picture_is_whole_only_after_a_main_state_since_the_connection(self):
+        """Review 4, defect 1: the library keeps its merged document across a reconnect,
+        so a partial document merged onto the last connection's IDLE read as a fresh idle
+        printer. Until a document carrying `gcode_state` arrives on this connection the
+        snapshot says `whole: False` (and the run loop does not count it as fresh)."""
+        import json as _json
+
+        class Message:
+            def __init__(self, document):
+                self.payload = _json.dumps(document).encode()
+
+        class Hooked(FakeBambuPrinter):
+            def __init__(self, *a):
+                super().__init__(*a)
+                self.mqtt_client = type('Client', (), {'on_message_handler': None,
+                                                       'on_connect_handler': None})()
+
+        link = pr.PrinterLink('10.0.0.42', '01P00A', '12345678', printer_factory=Hooked,
+                              clock=FakeClock())
+        printer = link.connect()
+        printer.report = dict(H2S['idle'])          # left from before: merged, old
+        self.assertIs(link.snapshot()['whole'], False)
+        hook = printer.mqtt_client.on_message_handler
+        printer.report = dict(H2S['idle'], mc_percent=43, subtask_name='someone_elses')
+        hook(None, None, None, Message({'print': {'mc_percent': 43}}))   # partial
+        self.assertIs(link.snapshot()['whole'], False)
+        hook(None, None, None, Message({'print': {'gcode_state': 'IDLE'}}))
+        self.assertIs(link.snapshot()['whole'], True)
+        hook(None, None, None, Message({'print': {'mc_percent': 44}}))   # partial again
+        self.assertIs(link.snapshot()['whole'], True)
+        printer.mqtt_client.on_connect_handler(None, None, None, None, None, None)
+        self.assertIs(link.snapshot()['whole'], False)                   # a reconnect
+        hook(None, None, None, type('Garbled', (), {'payload': b'not json'})())
+        self.assertIs(link.snapshot()['whole'], False)
+        hook(None, None, None, None)                                     # no message
+        self.assertIs(link.snapshot()['whole'], False)
 
     def test_request_report_never_raises(self):
         link = self.link()

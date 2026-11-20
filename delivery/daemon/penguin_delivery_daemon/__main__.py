@@ -222,15 +222,28 @@ def cmd_pair(args, *, ask=input, out=sys.stdout, clock=time.monotonic, sleep=tim
         # is gone either way, and this run writes a whole new file over it.
         existing = None
 
-    ip, serial, model, name = _choose_printer(prompt, say)
+    try:
+        mqtt_port, ftps_port = parse_printer_ports(getattr(args, 'printer_ports', None))
+    except ValueError as e:
+        say(f"error: {e}")
+        return 2
+    if mqtt_port:
+        # Only the simulated printer listens elsewhere; a real one is found on its network.
+        ip, serial, model, name = (_ask_until_answered(prompt, "printer IP address: "),
+                                   _ask_until_answered(prompt, "printer serial: "),
+                                   None, None)
+    else:
+        ip, serial, model, name = _choose_printer(prompt, say)
     access_code = _ask_until_answered(prompt, "printer LAN access code: ")
+    ports = cfg.DaemonConfig(printer_mqtt_port=mqtt_port,
+                             printer_ftps_port=ftps_port).printer_ports()
 
     # Anything the link raises -- a mistyped address, a refused connection, bambulabs_api
     # missing from the venv -- is the same answer to the mentor as silence, and it gets the
     # same advice rather than a traceback.
     link = None
     try:
-        link = PrinterLink(ip, serial, access_code, model=model, name=name)
+        link = PrinterLink(ip, serial, access_code, model=model, name=name, ports=ports)
         snapshot = _connect_and_identify(link, clock=clock, sleep=sleep)
     except Exception as e:
         say(f"error: could not talk to the printer at {ip}: {e}")
@@ -256,7 +269,8 @@ def cmd_pair(args, *, ask=input, out=sys.stdout, clock=time.monotonic, sleep=tim
                                     generate=generate_pairing_code)
     config = cfg.DaemonConfig(backend_url=backend, printer_ip=ip, printer_serial=serial,
                               access_code=access_code, pairing_code=code, token='',
-                              dev=dev, path=args.config)
+                              dev=dev, path=args.config, printer_mqtt_port=mqtt_port,
+                              printer_ftps_port=ftps_port)
     cfg.save_config(config, path=args.config)
     service = paths.is_service_install(args.config)
     if service:
@@ -279,6 +293,18 @@ def cmd_pair(args, *, ask=input, out=sys.stdout, clock=time.monotonic, sleep=tim
         say("Then start the daemon and leave it running:")
         say(f"  python -m penguin_delivery_daemon run {' '.join(home)}")
     return 0
+
+
+def parse_printer_ports(text):
+    """`--printer-ports MQTT,FTPS` -> (mqtt, ftps); None or empty -> (0, 0), the printer's
+    own. For the simulated printer only (see the guide's "Try it on one machine")."""
+    if not text:
+        return 0, 0
+    parts = [part.strip() for part in str(text).split(',')]
+    if len(parts) != 2 or not all(part.isdigit() and 0 < int(part) < 65536
+                                  for part in parts):
+        raise ValueError(f"--printer-ports takes two port numbers, MQTT,FTPS (got {text!r})")
+    return int(parts[0]), int(parts[1])
 
 
 def is_pairing_code(value):
@@ -348,7 +374,7 @@ def cmd_run(args, *, out=sys.stdout, download_dir=None, clock=time.monotonic,
         return 2
 
     printer = PrinterLink(config.printer_ip, config.printer_serial, config.access_code,
-                          log=log)
+                          log=log, ports=config.printer_ports())
     relay = RelayClient(config.backend_url, token=config.token or None)
     loop = RunLoop(config, relay, printer, log=log,
                    download_dir=_ensure_download_dir(download_dir))
@@ -406,7 +432,8 @@ def cmd_status(args, *, out=sys.stdout, clock=time.monotonic, sleep=time.sleep):
     say(f"token: {'set' if config.token else 'not set'}")
     say(f"dev mode: {'yes' if config.dev else 'no'}")
 
-    printer = PrinterLink(config.printer_ip, config.printer_serial, config.access_code)
+    printer = PrinterLink(config.printer_ip, config.printer_serial, config.access_code,
+                          ports=config.printer_ports())
     try:
         snapshot = _connect_and_identify(printer, wait=STATUS_WAIT_SECONDS, clock=clock,
                                          sleep=sleep)
@@ -454,7 +481,7 @@ def cmd_record(args, *, out=sys.stdout, clock=time.monotonic, sleep=time.sleep,
     directory = os.path.dirname(os.path.abspath(target))
     os.makedirs(directory, exist_ok=True)
     link = link or PrinterLink(config.printer_ip, config.printer_serial, config.access_code,
-                               log=say)
+                               log=say, ports=config.printer_ports())
     started = clock()
     saved, last = 0, None
     say(f"recording the printer's status documents to {target}; press Ctrl-C to stop")
@@ -504,6 +531,9 @@ def build_parser():
                       help='relay URL (defaults to the hosted service)')
     pair.add_argument('--dev', action='store_true',
                       help='allow a plain-HTTP relay URL (development only)')
+    pair.add_argument('--printer-ports', default=None, metavar='MQTT,FTPS',
+                      help="the printer's MQTT and FTPS ports, for the simulated printer "
+                           "only (a real printer uses its own)")
 
     run = sub.add_parser('run', help='run the daemon until stopped')
     _common(run)

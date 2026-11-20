@@ -230,11 +230,16 @@ def register_routes(app, ctx):
         """The job as the daemon receives it."""
         if not job:
             return None
-        return {'id': job['id'], 'download_path': job['download_path'],
-                'filename': job['filename'], 'created_at': job['created_at'],
-                'size': job.get('size'), 'sha256': job.get('sha256'),
-                'cancel': bool(job.get('cancel_requested')),
-                'start_granted': job.get('start_granted_to') is not None}
+        wired = {'id': job['id'], 'download_path': job['download_path'],
+                 'filename': job['filename'], 'created_at': job['created_at'],
+                 'size': job.get('size'), 'sha256': job.get('sha256'),
+                 'cancel': bool(job.get('cancel_requested')),
+                 'start_granted': job.get('start_granted_to') is not None}
+        # For a restarted daemon's hold on the printer (see "How a start is decided").
+        for key in ('start_granted_age_s', 'previous_start'):
+            if job.get(key) is not None:
+                wired[key] = job[key]
+        return wired
 
     def housekeeping():
         """After every relay read: sweep expired records, drop the sliced files of jobs the
@@ -293,10 +298,11 @@ def register_routes(app, ctx):
         code = team_code(team)
         refusal = limited('status', code_key(code), STATUS_LIMIT, caller=True)
         if refusal is not None:
-            request_line('status', 429, code)
+            request_line('status', 429, code, team=getattr(team, 'team_number', None),
+                         error='rate_limited')
             return refusal
         if team is None:
-            request_line('status', 401, code)
+            request_line('status', 401, code, error='not_signed_in')
             return unauthorized_session()
         maybe_seed_dev_code()
         if code:
@@ -314,10 +320,11 @@ def register_routes(app, ctx):
         code = team_code(team)
         refusal = limited('jobs', code_key(code), JOBS_LIMIT, caller=True)
         if refusal is not None:
-            request_line('send', 429, code)
+            request_line('send', 429, code, team=getattr(team, 'team_number', None),
+                         error='rate_limited')
             return refusal
         if team is None:
-            request_line('send', 401, code)
+            request_line('send', 401, code, error='not_signed_in')
             return unauthorized_session()
         if unreadable is not None:
             request_line('send', 401, code, error='identity_unreadable')
@@ -387,13 +394,20 @@ def register_routes(app, ctx):
         return jsonify({'ok': True, 'job_id': job_id}), 202
 
     def caller_team(name, limit):
-        """(code, refusal): the identified team's code for a delivery job route."""
+        """(code, refusal): the identified team's code for a delivery job route. Every
+        refusal leaves its line: the route, the refusal, the team when known."""
         team, unreadable = identify()
         code = team_code(team)
+        team_number = getattr(team, 'team_number', None)
+        job = (request.view_args or {}).get('job_id')
         refusal = limited(name, code_key(code), limit, caller=True)
         if refusal is not None:
+            request_line(name, 429, code, team=team_number, job=job, error='rate_limited')
             return code, refusal
         if team is None or unreadable is not None:
+            request_line(name, 401, code, team=team_number, job=job,
+                         error='identity_unreadable' if unreadable is not None
+                         else 'not_signed_in')
             return code, unauthorized_session()
         return code, None
 
@@ -464,7 +478,12 @@ def register_routes(app, ctx):
             return unknown_job('cancel', code, job_id)
         if outcome == 'too_late':
             return coded_failure('delivery.cancel_too_late', 409, text='too late to cancel',
-                                 detail=f'delivery job {job_id} was already started')
+                                 detail=f'the start command of delivery job {job_id} was '
+                                        'sent to the printer')
+        if outcome == 'being_sent':
+            return coded_failure('delivery.start_being_sent', 409, text='too late to cancel',
+                                 detail=f'delivery job {job_id} passed the start gate; the '
+                                        'daemon has not yet said the command went')
         if outcome == 'final':
             return coded_failure('delivery.already_finished', 409, text='already finished',
                                  detail=f'delivery job {job_id} has ended')
@@ -493,6 +512,10 @@ def register_routes(app, ctx):
             return coded_failure('delivery.still_reporting', 409, text='still reporting',
                                  detail=f'delivery job {job_id} has fresh word from the '
                                         'printer')
+        if outcome == 'not_shown':
+            return coded_failure('delivery.start_not_shown_yet', 409, text='not shown yet',
+                                 detail=f'delivery job {job_id} has fresh word from the '
+                                        'printer, which has not shown the print yet')
         if outcome == 'not_started':
             return coded_failure('delivery.not_started', 409, text='not started',
                                  detail=f'delivery job {job_id} has not passed the start '
@@ -509,11 +532,11 @@ def register_routes(app, ctx):
     def printer_daemon_pair():
         refusal = limited('pair', 'printer-exchange', EXCHANGE_LIMIT)
         if refusal is not None:
-            request_line('pair', 429)
+            request_line('pair', 429, error='rate_limited')
             return refusal
         refusal = require_https()
         if refusal:
-            request_line('pair', 403)
+            request_line('pair', 403, error='https_required')
             return refusal
         maybe_seed_dev_code()
         code = relay_module.normalize_code(json_object().get('code'))
@@ -523,7 +546,7 @@ def register_routes(app, ctx):
             return jsonify({'token': token})
         # The SAME body for an unknown code, a code no caller has presented yet, and a
         # code whose daemon is already alive -- so a guesser learns nothing from the reply.
-        request_line('pair', 404, code)
+        request_line('pair', 404, code, error='not_paired')
         return jsonify({'error': 'not paired'}), 404
 
     def daemon_gate(name, limit):
@@ -531,14 +554,14 @@ def register_routes(app, ctx):
         code = authenticated_code()
         refusal = limited(name, code_key(code), limit)
         if refusal is not None:
-            request_line(name, 429, code)
+            request_line(name, 429, code, error='rate_limited')
             return code, refusal
         refusal = require_https()
         if refusal:
-            request_line(name, 403, code)
+            request_line(name, 403, code, error='https_required')
             return code, refusal
         if not code:
-            request_line(name, 401)
+            request_line(name, 401, error='token_invalid')
             return code, (jsonify({'error': 'repair'}), 401)
         return code, None
 
@@ -630,12 +653,12 @@ def register_routes(app, ctx):
         token is never logged."""
         refusal = limited('download', address_key(), DOWNLOAD_LIMIT)
         if refusal is not None:
-            request_line('download', 429)
+            request_line('download', 429, error='rate_limited')
             return refusal
         housekeeping()
         held = ctx.files.get(token)
         if held is None or not os.path.isfile(held.path):
-            request_line('download', 404)
+            request_line('download', 404, error='file_unknown')
             return jsonify({'error': 'File not found or expired'}), 404
         request_line('download', 200, held.code, job=held.job_id, bytes=held.size)
         return send_file(held.path, mimetype='application/octet-stream',
@@ -653,9 +676,11 @@ def register_routes(app, ctx):
             into bash fails confusingly."""
             refusal = limited('installer', address_key(), INSTALLER_LIMIT)
             if refusal is not None:
+                request_line('installer', 429, error='rate_limited')
                 return refusal
             refusal = require_https(plain_text=True)
             if refusal:
+                request_line('installer', 403, error='https_required')
                 return refusal
             return send_file(os.path.join(installer_dir, installer_name),
                              mimetype='text/x-shellscript')

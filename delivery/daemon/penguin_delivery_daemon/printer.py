@@ -193,9 +193,12 @@ def values_table():
         rows.append(f'| `{field}` | `{value}` | {names[kind]} | `{name}` | {remedy or ""} |')
     rows.append('| `gcode_state` | a value not listed | unrecognised as a whole (the raw '
                 'value is kept in `unrecognised`) | | |')
+    rows.append('| `gcode_state` | missing, `null` or empty | unrecognised as a whole, '
+                'whatever else the document says: it says nothing about whether a print is '
+                'going on (`unrecognised` says "no main state (gcode_state) reported yet") '
+                '| | |')
     rows.append('| `stg_cur` | a value not listed | under a going state: going, '
-                'unrecognised stage; under `IDLE`: no print; with no `gcode_state` in the '
-                'document: unrecognised as a whole (the raw value is kept in '
+                'unrecognised stage; under `IDLE`: no print (the raw value is kept in '
                 '`unrecognised`) | | |')
     rows.append('| `hms` severity | a value not listed | changes nothing (the raw value is '
                 'kept in `unrecognised`) | | |')
@@ -354,8 +357,9 @@ def classify(report):
       error code or a serious HMS entry (the printer waits for a person), then a pause, else
       the print is going. A stage code the table does not know is "going, unrecognised
       stage", its raw value kept;
-    - no main state in the document at all: the stage code alone, read the same way (a
-      stage the table does not know then leaves nothing to go on: unrecognised)."""
+    - no main state in the document at all: it says nothing about whether a print is going
+      on, whatever its stage code, figures or file name say. Unrecognised as a whole, so it
+      is never free (see "How a start is decided" in the guide)."""
     unrecognised = []
     raw_state = report.get('gcode_state')
     state_key = str(raw_state).upper() if raw_state not in (None, '') else None
@@ -373,19 +377,13 @@ def classify(report):
     unrecognised += [f'hms severity {s}' for s in severities if s not in _HMS_KNOWN]
     serious = sorted(s for s in severities if s in HMS_SEVERITY_STOPS)
 
-    if state_key is not None and (state_row is None or state_row[0] == UNRECOGNISED):
+    if state_key is None:
+        return UNRECOGNISED, None, [NO_MAIN_STATE] + unrecognised
+    if state_row is None or state_row[0] == UNRECOGNISED:
         return UNRECOGNISED, None, unrecognised
-    if state_row is not None and state_row[0] in (ENDED_WELL, ENDED_BADLY):
+    if state_row[0] in (ENDED_WELL, ENDED_BADLY):
         return state_row[0], None, unrecognised
-    if state_row is not None:
-        no_print = state_row[0] == NO_PRINT
-    elif raw_stage is None or (stage_row is not None and stage_row[0] == NO_PRINT):
-        no_print = True                          # no main state, and no stage or an idle one
-    elif stage_row is None:
-        return UNRECOGNISED, None, unrecognised  # no main state, and a stage nobody knows
-    else:
-        no_print = False
-    if no_print:
+    if state_row[0] == NO_PRINT:
         return (ENDED_BADLY if print_error or serious else NO_PRINT), None, unrecognised
     if stage_row is not None and stage_row[0] == WAITING:
         return WAITING, stage_row, unrecognised
@@ -393,9 +391,14 @@ def classify(report):
         return WAITING, PRINTER_VALUES[('print_error', 'any other')], unrecognised
     if serious:
         return WAITING, PRINTER_VALUES[('hms severity', serious[0])], unrecognised
-    if state_row is not None and state_row[0] == WAITING:
+    if state_row[0] == WAITING:
         return WAITING, state_row, unrecognised
     return GOING, None, unrecognised
+
+
+#: What `unrecognised` says of a picture that carries no main state: the printer has sent
+#: only partial documents (or none with `gcode_state`) since the daemon connected.
+NO_MAIN_STATE = 'no main state (gcode_state) reported yet'
 
 
 def map_status(report, *, printer=None):
@@ -409,7 +412,7 @@ def map_status(report, *, printer=None):
                 'remaining_min': None, 'layer': 0, 'layers': 0, 'error': None,
                 'stage_code': None, 'stage': None, 'stage_label': None,
                 'waiting_for': None, 'waiting_label': None, 'at_the_printer': None,
-                'unrecognised': None, 'printer': identity}
+                'unrecognised': None, 'whole': False, 'printer': identity}
 
     kind, waiting, unrecognised = classify(report)
     raw_stage = _as_int(report.get('stg_cur'))
@@ -449,6 +452,9 @@ def map_status(report, *, printer=None):
         'layer': _as_int(report.get('layer_num'), 0),
         'layers': _as_int(report.get('total_layer_num'), 0),
         'error': error,
+        # The picture carries the printer's main state. PrinterLink.snapshot narrows it to
+        # "since the current connection began" (see "How a start is decided").
+        'whole': report.get('gcode_state') not in (None, ''),
         'printer': identity,
     }
 
@@ -592,14 +598,28 @@ class PrinterLink:
         # When the printer last sent a status document, on `clock`; set by the library's
         # message callback. None until one arrives, or when the library offers no callback.
         self._document_at = None
+        # Whether a document carrying the main state (`gcode_state`) has arrived since the
+        # current connection to the printer began. None when the library offers no hooks
+        # (a stand-in): then the merged picture alone decides.
+        self._whole_since_connect = None
         #: Called with no arguments after each status document, on the library's thread.
         self.on_document = None
 
-    def _document_arrived(self, *_args):
-        """The library's message callback: the printer has just spoken."""
+    def _document_arrived(self, *args):
+        """The library's message callback: the printer has just spoken. The library hands
+        the MQTT message last; a document that names the main state makes the picture whole
+        for this connection."""
         self._document_at = self._clock()
+        if self._whole_since_connect is not None and not self._whole_since_connect:
+            self._whole_since_connect = _carries_main_state(args[-1] if args else None)
         if self.on_document is not None:
             self.on_document()
+
+    def _connected(self, *_args):
+        """The library's connect callback (also on its own reconnects): until a document
+        with the main state arrives, the merged picture is the last connection's, so it
+        is not whole."""
+        self._whole_since_connect = False
 
     def _make(self):
         if self._factory is not None:
@@ -632,6 +652,9 @@ class PrinterLink:
         client = getattr(printer, 'mqtt_client', None)
         if client is not None and hasattr(client, 'on_message_handler'):
             client.on_message_handler = self._document_arrived
+        if client is not None and hasattr(client, 'on_connect_handler'):
+            client.on_connect_handler = self._connected
+            self._whole_since_connect = False
 
     def connect(self):
         """Open the MQTT subscription. Deliberately NOT Printer.connect(), which also
@@ -710,6 +733,8 @@ class PrinterLink:
         spoke_at = self._document_at if self._document_at is not None else self._last_change_at
         snapshot = map_status(report, printer=self.identity)
         snapshot['report_age_s'] = max(0, int(now - spoke_at))
+        if self._whole_since_connect is False:
+            snapshot['whole'] = False
         return snapshot
 
     def upload(self, local_path, remote_name, *, progress=None, cancelled=None):
@@ -803,6 +828,18 @@ class PrinterLink:
         return self._require_printer().start_print(
             remote_name, PLATE_NUMBER, use_ams=False, ams_mapping=[0],
             flow_calibration=True)
+
+
+def _carries_main_state(message):
+    """Does this MQTT message's status document name the printer's main state? Never
+    raises: a message that is not JSON names nothing."""
+    try:
+        import json
+        document = json.loads(getattr(message, 'payload', b'') or b'')
+        report = document.get('print') if isinstance(document, dict) else None
+        return isinstance(report, dict) and report.get('gcode_state') not in (None, '')
+    except Exception:
+        return False
 
 
 def _one_line(value):

@@ -26,7 +26,7 @@ each section below, and the two faults the first hardware test found are fixed (
 | `relay/` | The relay: the `penguin-delivery-relay` project, package `penguin_delivery_relay`, and its tests |
 | `daemon/` | The daemon: the `penguin-delivery-daemon` project (its `pyproject.toml` is the one pin of its dependencies), package `penguin_delivery_daemon`, its tests and fixtures |
 | `simulator/` | The simulated printer: an H2S played over loopback sockets, its scenarios and its suite |
-| `together/` | The together run: both halves and a stand-in printer in one process |
+| `together/` | The together run: both halves and a stand-in printer in one process; `relay_server.py`, the relay on its own for [Try it on one machine](#try-it-on-one-machine) |
 | `tests/` | Tests that need both halves at once, the fault-injecting link among them |
 | `scripts/` | `upgrade_printer_library.py`, behind `make upgrade-printer-library` |
 | `conftest.py` | Bounds every sleep a test injects into the daemon (see [Tests](#tests)) |
@@ -74,6 +74,74 @@ the stored token and access code by the operating system. The earlier installer,
 version**: they are left as they were ported. Only for an install it made (the
 configuration at `/etc/penguincam-printer/config.toml` on Linux) does `pair` still hand
 the file to the service user and restart the service.
+
+## Try it on one machine
+
+The whole chain by hand, on one computer, with no printer and no server: the simulated
+printer, the relay, the daemon, and `curl` as the caller. Four terminals, each started in
+`delivery/` after `make install` (`uv` must be installed). Everything listens on 127.0.0.1
+only. The home directory below is a scratch folder; any empty one will do.
+
+1. **The simulated printer.** It prints the serial and the access code to give `pair`:
+
+   ```
+   uv run python -m simulator --scenario whole_print
+   ```
+
+   It listens on MQTT 18883 and FTPS 18990 (`--mqtt-port`, `--ftps-port` change them),
+   and once a start command arrives it plays the scenario's print, one status document
+   every 3 s (`--step-seconds`). Any scenario in `simulator/scenarios/` can be named.
+2. **Pair the daemon** against a relay that is not running yet (pairing only writes the
+   configuration). Answer `127.0.0.1`, `SIM00H2S0001` and `12345678`:
+
+   ```
+   uv run python -m penguin_delivery_daemon pair --home /tmp/pd-home --backend http://127.0.0.1:8787 --dev --printer-ports 18883,18990
+   ```
+
+   It connects to the simulated printer and prints a pairing code such as `B6MQ-DN77`.
+   `--printer-ports` is for the simulated printer only; a real printer uses its own.
+3. **The relay**, with a stand-in caller that signs every request in as one team with
+   that pairing code (development mode, plain HTTP; never for a real shop):
+
+   ```
+   uv run python -m together.relay_server --code B6MQ-DN77
+   ```
+
+4. **Run the daemon**, back in the second terminal:
+
+   ```
+   uv run python -m penguin_delivery_daemon run --home /tmp/pd-home
+   ```
+
+   It says `paired with the relay`, then that it is idle. The relay's log shows a
+   `request=sync` line every 5 s.
+5. **Send the sample sliced file and watch it**, in the fourth terminal. The send answers
+   with the delivery job's id; the stream gives every progress report until the final one:
+
+   ```
+   curl -s -X POST -H 'Content-Type: application/json' -d '{"token": "sample"}' http://127.0.0.1:8787/printer/jobs
+   curl -sN http://127.0.0.1:8787/printer/jobs/<job_id>/events
+   ```
+
+   The reports go from `downloading` and `uploading` through `printing` (with the
+   printer's stage and percent) to `done` within about thirty seconds; the simulated
+   printer shows the upload, the start command and each status document.
+6. **Cancel one.** Send again and cancel at once, in one line, while the job still waits
+   for the daemon; the answer is `"outcome":"cancelled"`, and the job's report says
+   `cancelled`:
+
+   ```
+   JOB=$(curl -s -X POST -H 'Content-Type: application/json' -d '{"token": "sample"}' http://127.0.0.1:8787/printer/jobs | python3 -c 'import sys, json; print(json.load(sys.stdin)["job_id"])'); curl -s -X POST http://127.0.0.1:8787/printer/jobs/$JOB/cancel
+   curl -s http://127.0.0.1:8787/printer/jobs/$JOB
+   ```
+
+   A cancel a few seconds later, once the daemon holds the job, answers
+   `"outcome":"cancelling"`; the daemon stops before the start gate, removes the file from
+   the printer, and the report says `cancelled` a moment later. Later still, once the
+   start command went, it answers `409 delivery.cancel_too_late`.
+
+Ctrl-C stops each program. `make together` runs the same chain in one process, with the
+stand-in printer instead of the simulated one, and checks it end to end.
 
 ## How the relay and the daemon pair
 
@@ -129,10 +197,12 @@ print. Its progress reports follow
 | Stage, in order | State | Comes from | Extra fields |
 |---|---|---|---|
 | `waiting_for_daemon` | queued, then running once handed out | the send | |
-| `waiting_for_printer` | running | the daemon: the printer is off or unreachable, or has sent no report in the last 15 s, and the daemon waits for a fresh report that shows it free (a cancel still ends it here before the start gate) | |
+| `waiting_for_printer` | running | the daemon: the printer is off or unreachable, has sent no report in the last 15 s, or has not reported its main state since the daemon connected, and the daemon waits for a whole, fresh picture that shows it free; always before the start gate, so a cancel still ends it here | |
+| `waiting_for_earlier_print` | running | the daemon: the printer answers, but a start command sent for an earlier delivery job has not settled yet (see [How a start is decided](#how-a-start-is-decided)); before the gate, so a cancel still ends it here | |
 | `downloading` | running | the daemon fetching the sliced file | `bytes_sent`, `bytes_total` |
 | `uploading` | running | the daemon sending it to the printer | `bytes_sent`, `bytes_total`; `fraction` from bytes sent |
-| `starting` | running | the start gate passed; the start command and the wait for the printer to report it | |
+| `starting` | running | the daemon asking the start gate, then, past it, the start command and the wait for the printer to show the print | |
+| `start_not_shown` | running | the daemon: the start command went `START_SLOW_SECONDS` (60 s) ago and the printer has the file but has not shown the print yet | `waited_s`, the seconds since the command |
 | `printing` | running, then done or failed | the printer's own reports | `printer_stage`, `printer_stage_label`, `percent`, `layer`, `total_layers`, `remaining_min`, `expected_s`; `unrecognised` when the printer reported a value the daemon does not know |
 | `waiting_for_person` | running | the printer's own reports: the print is under way but the printer waits for someone (a pause, an error code set while paused or running, a door open, filament run out, a serious fault). Never an end: back to `printing` when it resumes | as `printing`, plus `waiting_for` (a stable name), `waiting_label`, `at_the_printer` (what to do there), `printer_error` (the printer's code) and `printer_error_meaning` (where known) |
 
@@ -183,28 +253,38 @@ on (see [What the printer's report means](#what-the-printers-report-means)). A l
 printer that "seems down, then recovers" gives a stale report and a job still in
 progress, which goes on from the first word that comes back:
 
-- the daemon's start wait counts only time in which the printer is reachable and its
-  reports are fresh (60 s of those not naming our file is `delivery.start_timeout`); while
-  the printer is unreachable or quiet the daemon waits and asks it for a whole report;
+- the daemon waits for a free printer before the start gate, where a cancel still ends
+  the job; past the gate there is one look and no wait, and a printer not free at that
+  look gets no start command and the job fails saying it was not started;
+- after the start command the printer is held (see
+  [How a start is decided](#how-a-start-is-decided)): five minutes of whole, fresh
+  pictures without the print is `delivery.start_timeout`, after one minute the stage is
+  `start_not_shown`, and time the printer is unreachable or quiet is not counted (the
+  daemon asks it for a whole report);
 - the relay's 15-minute deadline applies only to a job whose start was never granted; its
   gate is shut from then on, so the file can never be started. A job past the gate keeps
-  its slot until the daemon acknowledges it or the printer's report names its file, which
-  moves it to `printing` even before the acknowledgement arrives;
+  its slot until the daemon acknowledges it or the printer's report shows its file going
+  (`PREPARE`, `RUNNING`, `PAUSE`), which moves it to `printing` even before the
+  acknowledgement arrives. An end naming the file before that is not taken from the
+  report: it may be the previous print's, left over, and only the daemon can tell;
 - a daemon's start-stage failure that arrives after the printer's report named the file is
   outranked by that report, and the job goes on following the print;
 - past the start gate, a job nobody can hear can be given up, honestly. The caller may
   **stop following** it (`POST /printer/jobs/<id>/stop-following`) while its report is
   stale: it ends `failed` with `delivery.outcome_unknown`, which says contact was lost
-  after the print started and the print may be running or finished, and to check the
-  printer. It frees the job slot. A daemon still waiting for that job's print to show
-  leaves the wait within 30 s (it asks the start gate, which answers `unknown`), so the
-  next delivery job is taken up; that one is started only on a fresh report of a free
-  printer (steps 3 and 6 of [the daemon's side](#the-daemons-side-of-a-delivery-job)), so a
-  first print that is still running refuses it as `delivery.printer_busy_at_start`, and a
-  printer that stays quiet ends it unstarted after ten minutes. While the printer still
-  reports the print, stop-following is refused
-  with `delivery.still_reporting` (the print can only be stopped at the printer); before
-  the gate it is refused with `delivery.not_started` (cancel instead);
+  after the print was handed over to be started and the print may be running, finished
+  or never started, and to check the printer. It frees the job slot. A daemon still
+  waiting for that job's print to show leaves the wait within 30 s (it asks the start
+  gate, which answers `unknown`), so the next delivery job is taken up; but the first
+  start command still holds the printer until the evidence settles it (see
+  [How a start is decided](#how-a-start-is-decided)), so the next job waits in
+  `waiting_for_earlier_print` or `waiting_for_printer`; a first print that then shows
+  refuses it as `delivery.printer_busy_at_start`, and a printer that stays quiet ends it
+  unstarted after ten minutes. While the printer still reports the print, stop-following
+  is refused with `delivery.still_reporting` (the print can only be stopped at the
+  printer); while it answers but has not shown the print yet, with
+  `delivery.start_not_shown_yet`; before the gate, with `delivery.not_started` (cancel
+  instead);
 - the relay does the same by itself after **24 hours of continuous staleness** past the
   gate, whether or not anyone polls, so no record lives for ever. This is the one place
   where time ends a delivery job, and its sentence says the outcome is unknown, never that
@@ -246,8 +326,8 @@ grows with what a daemon or a caller sends.
 | `POST /printer/jobs` `{token}` | `202 {ok, job_id}`, or a refusal with its error report. 10 a minute per team |
 | `GET /printer/jobs/<id>` | The delivery job's latest progress report: what a caller that connects late gets at once. `404 delivery.job_unknown` when the relay has none |
 | `GET /printer/jobs/<id>/events` | The progress reports as a server-sent event stream (`event: progress`, `id:` the sequence): the latest at once, then each new one, ending after a final state; a comment line every 15 s of quiet |
-| `POST /printer/jobs/<id>/cancel` | `200` cancelled at once (still queued); `202` cancelling (the daemon holds it; it ends `cancelled` once the daemon has stopped); `409 delivery.cancel_too_late` once the start was granted; `409 delivery.already_finished` |
-| `POST /printer/jobs/<id>/stop-following` | `200 {ok, outcome: "stopped", progress}`: a job past the start gate whose report is stale ends `failed`, `delivery.outcome_unknown`, and its slot is freed; `409 delivery.still_reporting` while the printer reports it; `409 delivery.not_started` before the gate; `409 delivery.already_finished`; `404 delivery.job_unknown`. 10 a minute per team |
+| `POST /printer/jobs/<id>/cancel` | `200` cancelled at once (still queued); `202` cancelling (the daemon holds it; it ends `cancelled` once the daemon has stopped); `409 delivery.start_being_sent` once the start was granted, until the daemon says the command went; `409 delivery.cancel_too_late` after that; `409 delivery.already_finished` |
+| `POST /printer/jobs/<id>/stop-following` | `200 {ok, outcome: "stopped", progress}`: a job past the start gate whose report is stale ends `failed`, `delivery.outcome_unknown`, and its slot is freed; `409 delivery.still_reporting` while the printer reports the print; `409 delivery.start_not_shown_yet` while it answers but has not shown it yet; `409 delivery.not_started` before the gate; `409 delivery.already_finished`; `404 delivery.job_unknown`. 10 a minute per team |
 
 A success stays in `last_result` for its ten minutes. A failure is cleared when a later
 sync shows the printer printing that very job (the printer has the job whatever the
@@ -268,21 +348,30 @@ says yes only to a job not cancelled. So a daemon that cannot reach the relay ca
 the file, and learns of the cancel when it returns. A cancel the daemon never answers ends
 as cancelled at the 15-minute deadline.
 
-From the gate on, a cancel is refused with `delivery.cancel_too_late`: the print may be
-starting, and only the printer's own screen can stop it.
+Every wait of the daemon comes before the gate, so a job that waits for the printer can
+always be cancelled. From the gate on, a cancel is refused: with
+`delivery.start_being_sent` ("may already have sent the start command") until the daemon
+says the command went, with `delivery.cancel_too_late` ("has already been sent to the
+printer") after; neither says the print started. The daemon sends the command right after
+the gate, with no wait in between, so the first refusal is seen only in that instant or
+when the daemon's word was lost on the way.
 
 ## The daemon's side of a delivery job
 
-1. The printer already reports the file (its `subtask_name` is the uploaded name without
-   `.gcode.3mf`): acknowledge it, never upload it again.
+1. The printer already shows the file going (its `subtask_name` is the uploaded name
+   without `.gcode.3mf`): acknowledge it, never upload it again.
 2. The relay says the start was already granted (to this daemon before a restart, or to
-   another daemon): never start it again; wait for the printer to report it.
-3. Wait for **fresh evidence that the printer is free**: a report from the printer younger
-   than 15 s that shows no print going on (idle, or its last print ended, well or badly).
-   Without one (the printer unreachable, or its status stream quiet) the daemon asks the
-   printer for a whole report every 10 s and waits in `waiting_for_printer`, where a cancel
-   still ends the job; after ten minutes the job ends `delivery.printer_unreachable_at_start`,
-   never started. A fresh report of a print going on (printing, paused, mid-calibration,
+   another daemon): never start it again; rebuild the hold on the printer from the gate's
+   age (`start_granted_age_s`) and wait for the evidence, as in step 7.
+3. Wait for **a free printer**: a whole, fresh picture (a report younger than 15 s, with
+   the main state reported since the daemon connected) that shows no print going on (idle,
+   or its last print ended, well or badly), and no earlier start command holding the
+   printer. Without one (the printer unreachable, its status stream quiet, only partial
+   documents) the daemon asks the printer for a whole report every 10 s and waits in
+   `waiting_for_printer` (held by an earlier start, in `waiting_for_earlier_print`), where
+   a cancel still ends the job; after ten minutes the job ends
+   `delivery.printer_unreachable_at_start` (or `delivery.earlier_start_unsettled`), never
+   started. A fresh report of a print going on (printing, paused, mid-calibration,
    door open, out of filament) ends it at once with `delivery.printer_busy_at_start`, and
    one of a main state this version does not know with
    `delivery.printer_state_unrecognised_at_start` (the value in `detail` and in the
@@ -292,20 +381,117 @@ starting, and only the printer's own screen can stop it.
 5. Upload, judged by the size the printer lists for the file afterwards, not by the FTP
    reply. Three attempts with backoff, waiting for the printer between them; a failed
    upload's file is removed from the printer.
-6. Ask the start gate; on its yes, wait once more for fresh evidence that the printer is
-   free, as in step 3 (so nobody started another print at the printer in the meantime,
-   and a printer gone quiet is asked first), then send the start command, once. A start
-   command is never sent on a report older than 15 s or one that shows a print going on.
-   A start command that raises is never sent again: the printer's report decides.
-7. Wait for the printer to report the file: running, paused or finished is success; our
-   file in an error is a failure, and so are sixty seconds of the printer's fresh reports
-   (reachable, a document within 15 s, a main state it knows) naming another file or
-   nothing. Time the printer is unreachable, quiet or in a state this version does not
-   know is not counted: the daemon waits, asks it for a whole report every 10 s, and the
-   relay shows the job stale meanwhile. Every 30 s the daemon asks the start gate whether
-   the relay still holds the job; on `unknown` (the caller stopped following it, or the
-   relay dropped it) it leaves the wait, leaves the file on the printer (it may be
-   printing) and is free for the next delivery job.
+6. Wait for a free printer once more, as in step 3 (still cancellable), ask the printer
+   for a whole report, and ask the start gate; before every further ask of the gate the
+   wait is made again. On the gate's yes, look once, without waiting: on a free printer
+   send the start command, once; otherwise send nothing, remove the file and acknowledge
+   the failure. A start command is never sent on a picture older than 15 s, one without
+   the main state, one that shows a print going on, or while an earlier start holds the
+   printer. A start command that raises is never sent again: the printer's report decides.
+7. Hold the printer and wait for the evidence of what became of the command (see
+   [How a start is decided](#how-a-start-is-decided)): seen going is success; a proven end
+   of ours is success (finished) or `delivery.printer_error_at_start`; five minutes of
+   whole, fresh pictures without our print is `delivery.start_timeout` (or
+   `delivery.start_other_file`). Time the printer is unreachable, quiet, without its main
+   state or in a state this version does not know is not counted: the daemon waits, asks
+   it for a whole report every 10 s, and the relay shows the job stale meanwhile. Every
+   30 s the daemon asks the start gate whether the relay still holds the job; on `unknown`
+   (the caller stopped following it, or the relay dropped it) it leaves the wait, leaves
+   the file on the printer (it may be printing) and is free for the next delivery job,
+   which waits for the hold to settle before its own start command.
+
+### How a start is decided
+
+The moment a print starts is one design: what counts as a free printer, when the start
+command goes, what holds the printer after it, and what counts as the end of *this* print.
+
+**A whole, fresh picture.** The printer library merges each status document into the
+last (a printer may send only the fields that changed). The daemon's picture is **whole**
+only once a document carrying the main state (`gcode_state`) has arrived since the
+current connection to the printer began; partial documents are merged onto it for the
+fields they carry. It is **fresh** while the last document of any kind is at most
+`FRESH_REPORT_SECONDS` old. A picture with no main state says nothing about whether a
+print is going on: its snapshot reads `unrecognised` ("no main state reported yet"), it
+is never free, and the daemon treats it as it treats an old one: it asks the printer for
+a whole report every `REPORT_REQUEST_SECONDS` and waits.
+
+**The printer is free** only on a whole, fresh picture whose main state positively means
+no print: `IDLE`, or the previous print's end (`FINISH`, `FAILED`, `IDLE` with an error
+code), and only when no earlier start command still holds the printer (below).
+
+**Before the gate, the wait; after it, no wait.** The daemon waits for a free printer when
+the job arrives and again after the upload, in `waiting_for_printer`, where a cancel still
+ends the job and its sentence says it was never started. Only then does it ask the
+relay's start gate. On the gate's yes it looks once more, at once and without waiting: on
+a free printer it sends the start command; otherwise it does not send it, removes the file
+and acknowledges the failure (`delivery.printer_busy_at_start`,
+`delivery.printer_unreachable_at_start` or `delivery.printer_state_unrecognised_at_start`),
+which is true, because nothing was started. Between the gate and the daemon's word that the
+command went, the relay refuses a cancel with `delivery.start_being_sent` ("is being sent
+to the printer now"), never with a sentence that says the print started.
+
+**After the start command, the printer is held.** No other start command goes to that
+printer until the evidence settles what became of the first:
+
+- the print is **seen going**: a whole, fresh picture names our file under a going or
+  waiting state (`PREPARE`, `RUNNING`, `PAUSE`). The delivery job is acknowledged and
+  followed;
+- or `START_SETTLE_SECONDS` of whole, fresh pictures after the command show no print of
+  ours (idle, another file, or an end that is not ours by the rule below). The job ends
+  `delivery.start_timeout` ("the printer did not show the print as started"), or
+  `delivery.start_other_file` when the printer was printing another file;
+- or a proven end of ours (below).
+
+Time without a whole, fresh picture is not counted. A printer that is slow to show the
+print gets, after `START_SLOW_SECONDS`, the non-final stage `start_not_shown` ("The
+printer has the file and has not shown the print yet") with `waited_s`. A delivery job
+that arrives while an earlier start still holds the printer waits in
+`waiting_for_earlier_print`; if the hold has not settled within `PRINTER_WAIT_SECONDS`
+it ends unstarted with `delivery.earlier_start_unsettled`. The hold outlives the job that
+made it (a caller that stopped following it, a relay that dropped it), and a restarted
+daemon rebuilds it from the relay: every job document names the printer's last start
+granted (`previous_start`: its job id, file name and age), and a hold rebuilt that way
+settles like any other, its time counted from the gate.
+
+**An end counts only if it is the end of this print.** A whole, fresh picture that names
+our file under `FINISH`, `FAILED` or `IDLE` with an error code ends the delivery job only
+when one of these is true:
+
+- the print was seen going after the start command (then the relay follows it, and the
+  end comes from the printer's report as usual);
+- the command is at least `LEFTOVER_END_SECONDS` old (no print ends sooner, and a
+  left-over is seen in the first moments) and the main state changed after the command:
+  the daemon's last picture before the command had another main state, or one of its
+  pictures since did, so the end arrived after the start, not before it;
+- the daemon could not watch continuously since the command, so it cannot tell a
+  left-over from a real end: it did not send the command (a restarted daemon; the relay
+  sends `start_granted_age_s`, the gate's age) or it had no whole, fresh picture for
+  `LEFTOVER_END_SECONDS` after it. Then the end counts once the command is
+  `START_SETTLE_SECONDS` old, the same time after which a printer that has not shown the
+  print is taken not to have started it: a real end is found, never waited on for ever.
+
+Otherwise it is the previous print's end with our name already on it: "not showing our
+print yet", counted towards `START_SETTLE_SECONDS` like any other picture without our
+print. The limit of the rule, stated: a printer that shows a left-over end with our name
+for longer than `START_SETTLE_SECONDS`, to a daemon that could not watch, and only then
+starts the file, is read as finished (or failed) and freed for the next start; a printer
+that takes longer than `START_SETTLE_SECONDS` to show a print at all is read as not having
+started it. The real H2S's timings decide whether either can happen. The relay holds to the same rule: it moves a job to `printing` on its own only when
+the printer's report names the file under a going state; an end is taken from the
+daemon's acknowledgement.
+
+| Setting (`run_loop.py`) | Default | What it bounds |
+|---|---|---|
+| `FRESH_REPORT_SECONDS` | 15 s | The oldest picture that counts as the printer's word |
+| `REPORT_REQUEST_SECONDS` | 10 s | How often the printer is asked for a whole report while the picture is not whole and fresh |
+| `PRINTER_WAIT_SECONDS` | 10 min | The wait for a free printer, before the gate, before the job ends unstarted |
+| `START_SLOW_SECONDS` | 60 s | After the command, when the stage becomes `start_not_shown` |
+| `START_SETTLE_SECONDS` | 5 min | Whole, fresh pictures without our print after the command, before "did not start" and before the printer is free for another start |
+| `LEFTOVER_END_SECONDS` | 2 min | How old a start command must be before an end naming our file, never seen going, can count at all; and how long without a whole, fresh picture makes the daemon one that could not watch |
+
+Every figure is a guess until the real H2S is timed; the
+[hardware checklist](#before-trusting-it-at-the-h2s-what-a-hardware-session-must-confirm)
+asks for the measurements that set them.
 
 **Stopping.** Ctrl-C ends every wait of the run loop and of the job thread at once. A job
 in flight ends at its next wait, unacknowledged, and its file is never started by that
@@ -340,8 +526,10 @@ or a fatal or serious HMS entry set, it is how the last print ended badly); then
 going state (`PREPARE`, `RUNNING`, `PAUSE`), a stage that waits for a person, then an error
 code or a fatal or serious HMS entry (waiting for a person), then a pause, else the print
 is going; a stage code the table does not know is then "going, unrecognised stage". A
-document with no main state at all is read by its stage code alone the same way, and is
-unrecognised if that stage is not in the table. An error code of 0 leaves the class to the
+picture with no main state at all says nothing about whether a print is going on, whatever
+its stage code, figures or file name: it is unrecognised as a whole, never free, and the
+daemon asks for a whole report and waits (see
+[How a start is decided](#how-a-start-is-decided)). An error code of 0 leaves the class to the
 other fields. In every case a value the table does not know is kept, raw, in the
 snapshot's `unrecognised`. PROVISIONAL: no pause or fault of the H2S
 has been recorded yet, so what it reports while it waits is on the
@@ -400,7 +588,8 @@ has been recorded yet, so what it reports while it waits is on the
 | `hms severity` | `3` | going | `notice` |  |
 | `hms severity` | `4` | going | `notice` |  |
 | `gcode_state` | a value not listed | unrecognised as a whole (the raw value is kept in `unrecognised`) | | |
-| `stg_cur` | a value not listed | under a going state: going, unrecognised stage; under `IDLE`: no print; with no `gcode_state` in the document: unrecognised as a whole (the raw value is kept in `unrecognised`) | | |
+| `gcode_state` | missing, `null` or empty | unrecognised as a whole, whatever else the document says: it says nothing about whether a print is going on (`unrecognised` says "no main state (gcode_state) reported yet") | | |
+| `stg_cur` | a value not listed | under a going state: going, unrecognised stage; under `IDLE`: no print (the raw value is kept in `unrecognised`) | | |
 | `hms` severity | a value not listed | changes nothing (the raw value is kept in `unrecognised`) | | |
 
 **What each class means for a send.** A printer with no print, or whose last print ended
@@ -422,9 +611,11 @@ not known (`fill` in `errors.py`; a test renders every message with no figures).
 ## Restarts and cleanup
 
 **A restarted daemon** has nothing in memory. The relay re-offers the job it holds, with
-`start_granted` and `cancel` as they stand, and the printer's report says whether it
-prints: so the new process acknowledges a job already printing, never starts one whose
-start was granted, and does the whole of one that had not started. Downloads left by the
+`start_granted` and `cancel` as they stand (and `start_granted_age_s`, the gate's age, and
+`previous_start`, the printer's last start granted to another job), and the printer's
+report says whether it prints: so the new process acknowledges a job already printing,
+never starts one whose start was granted, rebuilds the hold on the printer, and does the
+whole of one that had not started. Downloads left by the
 process before are removed at start (only names a delivery job writes).
 
 **A restarted relay** keeps nothing but its secret key: every job, delivery job and
@@ -455,6 +646,11 @@ printer-delivery event=transition job=j8f3a2c1 printer=3f2a9c1e team=6238 state=
 
 Every caller request (status polls included, so support can see whether a page kept
 asking) and every daemon exchange (pair, sync, ack, start, download, ping) has a line.
+So does every refused request, on every route: its line names the route, the refusal
+(`error=not_signed_in`, `identity_unreadable`, `rate_limited`, `https_required`,
+`token_invalid`, `not_paired`, `file_unknown`, `job_unknown` and the send's refusals) and
+the team when it is known, for example
+`printer-delivery request=events printer=- status=401 team=- job=j8f3a2c1 error=not_signed_in`.
 `printer` is eight hex digits of a hash of the pairing code, never the code; no line
 holds a pairing code, a token, a download token or an access code.
 
@@ -496,30 +692,33 @@ it on purpose.
 | `delivery.rate_limited` | Over a caller route's limit | yes |
 | `delivery.relay_failed` | An exception escaped a route | yes |
 | `delivery.job_unknown` | No such delivery job for this team, perhaps because the relay restarted | no |
-| `delivery.cancel_too_late` | Cancel after the start was granted | no |
+| `delivery.cancel_too_late` | Cancel after the daemon said the start command went to the printer, or after the printer showed the print | no |
+| `delivery.start_being_sent` | Cancel after the start gate passed and before the daemon said the command went: it is being sent now | no |
 | `delivery.already_finished` | Cancel or stop-following after a final state | no |
 | `delivery.still_reporting` | Stop-following while the printer still reports the print (it is running, or waiting for a person): only the printer can stop it | no |
+| `delivery.start_not_shown_yet` | Stop-following past the gate while the printer answers but has not shown the print yet: the daemon is still watching for it | no |
 | `delivery.not_started` | Stop-following before the start gate (`action`: `cancel`) | no |
 | `delivery.request_too_large` | A request body over 64 kB, from a daemon or a caller | no |
 | `delivery.job_not_picked_up` | Not collected within 3 min | yes |
 | `delivery.job_not_confirmed` | Collected, but the start gate was not asked within 15 min; the gate is then shut, so it never started | yes |
 | `delivery.cancelled` | Cancelled before the start | yes |
-| `delivery.printer_unreachable_at_start` | No fresh report from the printer for ten minutes while the daemon waited to go on (the printer unreachable, or its status stream quiet); never started | yes |
-| `delivery.printer_busy_at_start` | A fresh report showed a print going on when the job arrived, or just before the start command (someone started another print before ours) | yes |
-| `delivery.printer_state_unrecognised_at_start` | A fresh report showed a main state this version does not know when the job arrived or just before the start command; never started (the value in `detail`) | yes |
-| `delivery.printer_error_at_start` | The printer named our file in an error state at the start | yes |
+| `delivery.printer_unreachable_at_start` | No whole, fresh picture from the printer for ten minutes while the daemon waited to go on (the printer unreachable, its status stream quiet, or no main state reported), or none at the one look after the start gate; never started | yes |
+| `delivery.printer_busy_at_start` | A fresh report showed a print going on when the job arrived, after the upload, or at the one look after the start gate (someone started another print before ours) | yes |
+| `delivery.printer_state_unrecognised_at_start` | A fresh report showed a main state this version does not know when the job arrived, after the upload or at the look after the gate; never started (the value in `detail`) | yes |
+| `delivery.earlier_start_unsettled` | An earlier start command still held the printer (it had not shown what became of it) for ten minutes while this job waited, or at the look after the gate; never started | yes |
+| `delivery.printer_error_at_start` | After the start command, the printer named our file in an error state that is an end of this print (see [How a start is decided](#how-a-start-is-decided)) before it was seen going | yes |
 | `delivery.start_without_instance` | A start gate request that named no daemon process (only a daemon not of this version can send one): refused, nothing granted | no |
 | `delivery.download_failed` | Three downloads failed | yes |
 | `delivery.download_corrupt` | Three downloads arrived with the wrong length or checksum | yes |
 | `delivery.upload_failed` | Three uploads did not leave the whole file on the printer | yes |
 | `delivery.start_refused` | The printer refused the start command | yes |
-| `delivery.start_timeout` | Sixty seconds of the printer's fresh reports after the start never named the file (time it was unreachable or quiet is not counted) | no |
-| `delivery.start_other_file` | The printer started a different file (named) | no |
+| `delivery.start_timeout` | Five minutes (`START_SETTLE_SECONDS`) of whole, fresh pictures after the start command never showed our print (time it was unreachable or quiet is not counted; an end left over from the previous print does not count as ours) | no |
+| `delivery.start_other_file` | The same, and the printer was printing a different file (named) | no |
 | `delivery.job_failed` | Anything unexpected on the daemon, the gate unreachable for ten minutes, or an unknown code | yes |
 | `delivery.print_failed` | The printer's own report says the print ended badly (`FAILED`, or idle with an error code); its code in `detail`, its meaning in the message when known. An error code while the print is paused or running is not this: it is the stage `waiting_for_person` | yes |
 | `delivery.print_stopped` | The print was stopped at the printer | yes |
 | `delivery.print_vanished` | For two minutes the printer's reports showed the print not under way (another file, none, or idle with ours named) without a finish | no |
-| `delivery.outcome_unknown` | Past the start gate, the relay stopped following the job: the caller's stop-following of a stale job, or 24 hours of continuous staleness. The print may be running or finished; check the printer (`detail` says which, and for how long nothing fresh was heard) | no |
+| `delivery.outcome_unknown` | Past the start gate, the relay stopped following the job: the caller's stop-following of a stale job, or 24 hours of continuous staleness. The print may be running, finished or never started; check the printer (`detail` says which, and for how long nothing fresh was heard) | no |
 
 `delivery.job_expired` (nothing heard for six hours) is gone: silence alone ends a
 delivery job only after a day past the gate, as `delivery.outcome_unknown`.
@@ -589,7 +788,14 @@ resume (`pause_resume`), an error code and a serious HMS entry that appear and c
 of round 3: an idle printer reporting stage -1 (`idle_stage_minus_one`) or a stage left
 over from its last print (`idle_stage_left_over`) takes the print; and a printer whose
 status stream went quiet while someone started a print at it (`quiet_while_busy`) is asked
-for a whole report before anything is started, and the answer refuses the job. `drop_mqtt()` cuts the MQTT connection mid-print,
+for a whole report before anything is started, and the answer refuses the job. Three play
+the start of review 4: documents with no main state during someone else's print
+(`no_main_state`: nothing is started), the previous print's FINISH with our name put on it
+after the start command (`left_over_finish`: the job waits for the print, and a left-over
+that stays ends `delivery.start_timeout`, never `done`), and a printer that shows the print
+90 s after accepting it (`slow_start`: the stage `start_not_shown`, then the print is
+followed). `python -m simulator` runs it on its own for a hand-run daemon (see
+[Try it on one machine](#try-it-on-one-machine)). `drop_mqtt()` cuts the MQTT connection mid-print,
 and `answer_pushall` decides whether the reconnecting library hears anything. A test
 plays the print's status documents one at a time; every wait is on the library's own
 message callback, which `PrinterLink` hands on through `on_document`.
@@ -635,9 +841,15 @@ faults: every exchange (pairing, sync, job fetch, download, acknowledgement, sta
 meets each of timeouts, late answers, resets, DNS and TLS failures, 5xx, 429 with and
 without a hint, web pages, truncated and wrongly shaped JSON, duplicates, slow answers,
 broken downloads, outages of seconds to hours, flapping, and relay or daemon restarts
-between any two exchanges; Hypothesis runs random sequences of faults on both links. Each
-test gets its own app, temporary directory and fake clocks; pytest-randomly shuffles the
-order.
+between any two exchanges; Hypothesis runs random sequences of faults on both links.
+`tests/test_start_decided.py` plays [How a start is decided](#how-a-start-is-decided) on
+the same path: the reviewer's sequences one by one, then random ones (a printer slow to
+show the print or never showing it, left-over ends with our name, partial pictures, quiet
+streams, outages, stop-following, a resend, a daemon restart) with the invariants one
+start command per file, no start command while the printer prints or an earlier start is
+pending, nothing after a final state, and no end taken from a left-over; it scales the
+settings of that section down so each sequence runs in milliseconds. Each test gets its
+own app, temporary directory and fake clocks; pytest-randomly shuffles the order.
 
 **No test can hang.** Three layers. First, a hard limit per test from outside the test:
 pytest-timeout (a dev dependency) fails any test of the fast suite, the simulated-printer
@@ -691,9 +903,25 @@ H2S, with `record` running, settles these:
       say so.
 - [ ] Whether a paused H2S keeps sending status documents (if not, a paused print shows
       stale after 60 s), and what it does with a start command while it is printing.
-- [ ] **How long the H2S takes to name the file after the start command.** The start wait
-      gives up after 60 seconds of fresh reports that do not name it
-      (`delivery.start_timeout`), so a slower start would show a good print as failed.
+- [ ] **The first documents after a start command, one by one** (after a finished print,
+      after a print stopped on the screen, from power-on): does `subtask_name` change in
+      the same document as `gcode_state`, or before it, and how long does the previous
+      end stay? Do `print_error` and the HMS entries of the last print clear, and when?
+      This sets `LEFTOVER_END_SECONDS` (2 min) and checks the end rule of
+      [How a start is decided](#how-a-start-is-decided).
+- [ ] **How long the H2S takes to show the print after the start command**, for a small
+      file and the largest the team prints. It sets `START_SLOW_SECONDS` (60 s, when the
+      stage becomes `start_not_shown`) and `START_SETTLE_SECONDS` (5 min of fresh reports
+      without the print before "did not start" and before another start can go), which
+      must stay well above it.
+- [ ] **Whether the H2S sends whole status documents or only the fields that changed**,
+      what the first document after a connect is, and how long its answer to a request
+      for a whole report takes. A picture without the main state waits for a whole one.
+- [ ] How often an idle H2S sends status documents on its own, and that it answers a
+      request for a whole report every 10 s for ten minutes without complaint
+      (`FRESH_REPORT_SECONDS`, `REPORT_REQUEST_SECONDS`, `PRINTER_WAIT_SECONDS`).
+- [ ] Unplug the printer's network between the end of the upload and the start for two
+      minutes, then plug it back: the page shows `waiting_for_printer` and a cancel works.
 - [ ] What the H2S reports after it is switched off mid-print and on again (if it offers
       to resume, the job is already `failed`, `delivery.print_vanished`, after two minutes
       of idle reports).

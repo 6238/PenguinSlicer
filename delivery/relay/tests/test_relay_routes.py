@@ -795,3 +795,74 @@ class TestRateLimits:
         assert client.get('/printer/daemon/ping', headers=auth(), **https).status_code == 200
         assert client.post('/printer/daemon/jobs/j1/ack', json={'ok': True}, headers=auth(),
                            **https).status_code == 404
+
+
+# --- review 4, defect 6: every refused request leaves its line ------------------------------
+
+JOB_ROUTES = [('GET', '/printer/jobs/j8f3a2c1', 'job'),
+              ('GET', '/printer/jobs/j8f3a2c1/events', 'events'),
+              ('POST', '/printer/jobs/j8f3a2c1/cancel', 'cancel'),
+              ('POST', '/printer/jobs/j8f3a2c1/stop-following', 'stop_following')]
+
+
+def refusal_lines(caller, name):
+    return [line for line in caller.logged if f'printer-delivery request={name} ' in line]
+
+
+@pytest.mark.parametrize('method,path,name', JOB_ROUTES)
+def test_a_signed_out_request_on_a_job_route_is_logged(client, caller, method, path, name):
+    """The reviewer's sequence: nobody signed in, each delivery job route answered 401 with
+    an error report and logged nothing. Now each logs the route, the refusal and the
+    job, with no secret in it."""
+    caller.team = None
+    resp = client.open(path, method=method)
+    assert resp.status_code == 401
+    assert resp.get_json()['error_report']
+    lines = refusal_lines(caller, name)
+    assert len(lines) == 1, caller.logged
+    assert 'status=401' in lines[0] and 'error=not_signed_in' in lines[0]
+    assert 'job=j8f3a2c1' in lines[0]
+    assert CODE not in lines[0]
+
+
+@pytest.mark.parametrize('method,path,name', JOB_ROUTES)
+def test_an_unreadable_identity_on_a_job_route_is_logged(client, caller, method, path,
+                                                         name):
+    caller.identify_error = RuntimeError('stale cookie')
+    assert client.open(path, method=method).status_code == 401
+    lines = refusal_lines(caller, name)
+    assert len(lines) == 1 and 'error=identity_unreadable' in lines[0], caller.logged
+
+
+@pytest.mark.parametrize('method,path,name', JOB_ROUTES)
+def test_a_rate_limited_request_on_a_job_route_is_logged_with_its_team(
+        client, caller, method, path, name):
+    limit = routes.STATUS_LIMIT if method == 'GET' else routes.JOBS_LIMIT
+    for _ in range(limit.count + 1):
+        resp = client.open(path, method=method)
+    assert resp.status_code == 429
+    lines = [line for line in refusal_lines(caller, name) if 'status=429' in line]
+    assert len(lines) == 1, caller.logged
+    assert 'error=rate_limited' in lines[0] and 'team=6238' in lines[0]
+    assert relay_module.printer_tag(CODE) in lines[0] and CODE not in lines[0]
+
+
+def test_every_other_refusal_names_itself_in_its_line(client, caller, https, auth):
+    """The caller routes and the daemon routes: each refused request's line says which
+    refusal it was."""
+    caller.team = None
+    client.get('/printer/status')
+    client.post('/printer/jobs', json={'token': 'tok'})
+    client.post('/printer/daemon/sync', json=IDLE)                      # no token, HTTP
+    client.post('/printer/daemon/sync', json=IDLE, **https)             # no token
+    client.post('/printer/daemon/pair', json={'code': CODE}, **https)   # not presented
+    client.get('/printer/download/nothing-here')
+    logged = '\n'.join(caller.logged)
+    for expected in ('request=status printer=- status=401 error=not_signed_in',
+                     'request=send printer=- status=401 error=not_signed_in',
+                     'request=sync printer=- status=403 error=https_required',
+                     'request=sync printer=- status=401 error=token_invalid',
+                     'status=404 error=not_paired',
+                     'request=download printer=- status=404 error=file_unknown'):
+        assert expected in logged, (expected, caller.logged)
+    assert CODE not in logged and 'nothing-here' not in logged

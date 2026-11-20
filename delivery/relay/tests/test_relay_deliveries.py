@@ -375,8 +375,9 @@ class TestStaleness:
         error = report['error']
         assert error['code'] == 'delivery.outcome_unknown'
         assert error['message'] == (
-            'Contact with the printer was lost after the print started, so the printer '
-            'service cannot tell whether the print is still running or has finished.')
+            'Contact with the printer was lost after this print was handed over to be '
+            'started, so the printer service cannot tell whether it is printing, has '
+            'finished or never started.')
         assert 'fail' not in error['message']
         assert error['retryable'] is False
         assert 'the relay stopped following it after 24 h' in error['detail']
@@ -762,17 +763,76 @@ class TestStartGateAndCancel:
         assert 'error' not in shop.report(job_id)
 
     def test_cancel_after_the_start_was_granted_is_refused_with_an_error_report(self, shop):
+        """Review 4, defect 3: between the gate and the daemon's word that the command went,
+        the refusal says the start is being sent, never that the print started."""
         job_id = shop.send()
         shop.sync(IDLE)
         shop.start(job_id)
         resp = shop.cancel(job_id)
         assert resp.status_code == 409
         report = resp.get_json()['error_report']
-        assert report['code'] == 'delivery.cancel_too_late'
+        assert report['code'] == 'delivery.start_being_sent'
+        assert 'started' not in report['message']
         assert 'printer' in report['remedy']
+        shop.sync(IDLE, {'id': job_id, 'stage': 'starting', 'start_sent': True})
+        report = shop.cancel(job_id).get_json()['error_report']
+        assert report['code'] == 'delivery.cancel_too_late'
+        assert 'start command' in report['message'] and 'sent' in report['message']
         shop.ack(job_id, True)
         assert shop.cancel(job_id).get_json()['error_report']['code'] == \
             'delivery.cancel_too_late'
+
+    def test_a_restarted_daemon_is_told_the_gates_age_and_the_previous_start(self, shop):
+        """Review 4, defects 2 and 4: the relay knows when the start gate was passed. A
+        re-offered job carries its gate's age; the next job names the printer's last start
+        granted, so a restarted daemon can hold the printer until it settles."""
+        first = shop.send()
+        shop.sync(IDLE)
+        shop.start(first)
+        shop.clock.advance(42)
+        job = shop.sync(IDLE, {'id': first, 'stage': 'start_not_shown', 'waited_s': 42,
+                               'start_sent': True})
+        assert (job['id'], job['start_granted'], job['start_granted_age_s']) == \
+            (first, True, 42)
+        assert 'previous_start' not in job
+        shop.ack(first, True)
+        shop.sync(shop.printing(first, state='finished', percent=100))
+        second = shop.send()
+        job = shop.sync(IDLE)
+        assert job['id'] == second and not job['start_granted']
+        assert 'start_granted_age_s' not in job
+        assert job['previous_start'] == {'id': first, 'filename': 'sample_part.gcode.3mf',
+                                         'age_s': 42}
+
+    def test_an_end_reported_with_our_name_before_the_print_shows_is_left_to_the_daemon(
+            self, shop):
+        """The relay does not move a job past the gate to `printing` on an end naming its
+        file: only a going state does (the daemon tells a left-over end from ours)."""
+        job_id = shop.send()
+        shop.sync(IDLE)
+        shop.start(job_id)
+        shop.sync(shop.printing(job_id, state='finished', percent=100))
+        assert shop.report(job_id)['stage'] == 'starting'
+        shop.sync(shop.printing(job_id, state='paused'))
+        assert shop.report(job_id)['stage'] == 'waiting_for_person'
+
+    def test_stop_following_while_the_printer_has_not_shown_the_print_says_so(self, shop):
+        """Review 4, defect 3: fresh word past the gate, the print not shown yet. The refusal
+        is `delivery.start_not_shown_yet`, never "still reporting, so it is running"."""
+        job_id = shop.send()
+        shop.sync(IDLE)
+        shop.start(job_id)
+        shop.sync(IDLE, {'id': job_id, 'stage': 'start_not_shown', 'start_sent': True,
+                         'waited_s': 75})
+        report = shop.report(job_id)
+        assert (report['stage'], report['waited_s']) == ('start_not_shown', 75)
+        assert report['stage_label'] == \
+            'The printer has the file and has not shown the print yet'
+        resp = shop.client.post(f'/printer/jobs/{job_id}/stop-following')
+        assert resp.status_code == 409
+        report = resp.get_json()['error_report']
+        assert report['code'] == 'delivery.start_not_shown_yet'
+        assert 'running' not in report['message']
 
     def test_cancel_of_a_finished_job_says_so(self, shop):
         job_id = shop.through_to_printing()
@@ -1225,10 +1285,27 @@ class TestTheSlotIsFreedByAnyEnd:
         job_id = shop.send()
         shop.sync(IDLE)
         shop.start(job_id)
+        shop.sync(shop.printing(job_id))
         shop.sync(shop.printing(job_id, state='error', error='PRINT_ERROR_07008011'))
         last = shop.client.get('/printer/status').get_json()['last_result']
         assert last['ok'] is False
         assert last['error_report']['code'] == 'delivery.print_failed'
+
+    @pytest.mark.parametrize('state', ['finished', 'error'])
+    def test_an_end_naming_the_file_before_it_was_seen_going_is_not_taken(self, shop,
+                                                                        state):
+        """Review 4, defect 2, the relay's half: our name under the previous print's end
+        (`FINISH`, `FAILED`, idle with an error code) in the first seconds after the gate is
+        not the end of this print. The relay waits for the daemon, which can tell."""
+        job_id = shop.send()
+        shop.sync(IDLE)
+        shop.start(job_id)
+        shop.sync(shop.printing(job_id, state=state, percent=100,
+                                error='PRINT_ERROR_0300400C' if state == 'error' else None))
+        report = shop.report(job_id)
+        assert (report['state'], report['stage']) == ('running', 'starting')
+        shop.sync(shop.printing(job_id, percent=1))
+        assert shop.report(job_id)['stage'] == 'printing'
 
 
 # --- what the relay keeps of what a daemon sends (defect 5, round 2) ------------------------

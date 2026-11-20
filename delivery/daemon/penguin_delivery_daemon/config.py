@@ -40,9 +40,34 @@ class DaemonConfig:
     token: str = ""
     dev: bool = False
     path: str = DEFAULT_CONFIG_PATH
+    #: The printer's MQTT and FTPS ports when they are not the printer's own (8883, 990):
+    #: only the simulated printer, run by hand on one machine, needs them. 0 is the
+    #: printer's own. Written to the file only when set.
+    printer_mqtt_port: int = 0
+    printer_ftps_port: int = 0
 
     def to_dict(self):
-        return {name: getattr(self, name) for name in _FILE_FIELDS}
+        values = {name: getattr(self, name) for name in _FILE_FIELDS}
+        for name in _PORT_FIELDS:
+            if getattr(self, name):
+                values[name] = getattr(self, name)
+        return values
+
+    def printer_ports(self):
+        """The ports PrinterLink takes ({'mqtt': n, 'ftps': n}), or None for a real
+        printer's own."""
+        ports = {key: getattr(self, f'printer_{key}_port') for key in ('mqtt', 'ftps')}
+        ports = {key: value for key, value in ports.items() if value}
+        return ports or None
+
+
+_PORT_FIELDS = ('printer_mqtt_port', 'printer_ftps_port')
+
+
+def _port(value):
+    """A port from the file: a whole number from 1 to 65535, else 0 (the printer's own)."""
+    return value if (isinstance(value, int) and not isinstance(value, bool)
+                     and 0 < value < 65536) else 0
 
 
 def _normalize_url(url):
@@ -78,6 +103,8 @@ def load_config(path=DEFAULT_CONFIG_PATH):
     # Fail closed: only a real TOML boolean turns dev on. A hand-edited dev = "false" is a
     # string, and a truthy one, so anything that is not a boolean has to mean "not dev".
     values['dev'] = values.get('dev') is True
+    for name in _PORT_FIELDS:
+        values[name] = _port(values.get(name))
     return DaemonConfig(path=path, **values)
 
 

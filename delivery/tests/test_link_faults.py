@@ -162,9 +162,11 @@ def test_the_printer_silent_after_an_accepted_start_then_printing_ends_done(tmp_
     assert shop.drive(1800, lambda: shop.final(job_id))
     assert shop.report(job_id)['state'] == 'done'
     # Seventy seconds into the silence: past the daemon's old 60 s give-up, still going,
-    # and marked stale rather than showing old figures as fresh.
+    # and marked stale rather than showing old figures as fresh. Past START_SLOW_SECONDS
+    # the stage says the printer has the file and has not shown the print yet.
     assert (during[0]['state'], during[0]['stage'], during[0]['stale']) == \
-        ('running', 'starting', True)
+        ('running', 'start_not_shown', True)
+    assert during[0]['waited_s'] >= 60
     assert len(shop.printer.started) == 1
     assert_truthful(shop, job_id)
 
@@ -191,7 +193,7 @@ def test_a_start_the_printer_ignores_has_its_seconds_in_the_sentence(tmp_path):
     assert shop.drive(900, lambda: shop.final(job_id))
     error = shop.report(job_id)['error']
     assert error['code'] == 'delivery.start_timeout'
-    assert error['message'] == ('The printer did not show the print as started within 60 '
+    assert error['message'] == ('The printer did not show the print as started within 300 '
                                 'seconds.')
 
 
@@ -662,8 +664,12 @@ def test_the_caller_stops_following_a_job_whose_daemon_is_gone(tmp_path):
     job_id = shop.send()
     shop.drive(300, lambda: shop.printer.started)
     shop.drive(60)
+    # The daemon's word that the command went never reached the relay: the refusal says
+    # the start may have been sent, never that the print started (review 4, defect 3).
     refused_too_late = shop.pages.post(f'/printer/jobs/{job_id}/cancel', base_url=BASE)
-    assert refused_too_late.get_json()['error_report']['code'] == 'delivery.cancel_too_late'
+    report = refused_too_late.get_json()['error_report']
+    assert report['code'] == 'delivery.start_being_sent'
+    assert 'started' not in report['message']
     resp = shop.pages.post(f'/printer/jobs/{job_id}/stop-following', base_url=BASE)
     assert resp.status_code == 200
     assert resp.get_json()['progress']['error']['code'] == 'delivery.outcome_unknown'
@@ -683,13 +689,23 @@ def test_stop_following_a_print_the_printer_still_reports_is_refused(tmp_path):
 # --- round 3: a second file after stop-following, with the status stream quiet ------------
 
 def quiet_after_the_first_upload(shop, quiet_seconds):
-    """The reviewer's W1: the status stream goes silent at the first upload (socket open,
-    the idle document kept) and the first file prints for an hour. Two minutes after the
-    send the caller stops following the first delivery job and sends a second."""
+    """The reviewer's W1: the status stream goes silent (socket open, the idle document
+    kept) and the first file prints for an hour. Two minutes after the send the caller
+    stops following the first delivery job and sends a second.
+
+    Since review 4 (defect 3) every wait comes before the start gate, so a stream silent
+    from the first upload on would never let the first file start at all; the silence now
+    begins the moment the first start command goes, before the printer has shown the print
+    (its last document is the idle one), which is the case W1 is about."""
     shop.printer.print_seconds = 3600
     shop.online()
     first = shop.send()
-    shop.printer.before_upload = lambda: shop.printer.quiet(shop, 0, quiet_seconds)
+
+    def go_quiet():
+        shop.printer.quiet(shop, 0, quiet_seconds)
+        shop.printer.frozen = dict(shop.printer._idle())
+
+    shop.printer.after_start = go_quiet
     seen = {}
 
     def give_up_and_send_again():
@@ -743,7 +759,7 @@ def test_a_printer_that_stays_quiet_ends_the_second_file_unstarted(tmp_path):
     assert shop.drive(20 * 60, lambda: 'second' in seen and shop.final(seen['second']))
     report = shop.report(seen['second'])
     assert report['error']['code'] == 'delivery.printer_unreachable_at_start'
-    assert 'no fresh report' in report['error']['detail']
+    assert 'no whole, fresh report' in report['error']['detail']
     assert len(shop.printer.started) == 1
     assert_started_only_on_fresh_word_of_a_free_printer(shop)
 

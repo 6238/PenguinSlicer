@@ -259,17 +259,20 @@ class TestJobHandling(RunLoopTestCase):
         self.assertEqual(self.relay.acks, [('j8f3a2c1', False,
                                             'the printer refused the print start command')])
 
-    def test_a_printer_that_never_reports_running_times_out_at_sixty_seconds(self):
+    def test_a_printer_that_never_reports_running_settles_after_five_minutes(self):
+        """Review 4, defect 4: the final "did not start" needs START_SETTLE_SECONDS of whole,
+        fresh pictures without the print after the command, not sixty seconds."""
         loop = self.make_paired()
         self.printer.starts_running = False                 # stays idle after the start
         started_at = self.clock.now
         self.deliver(loop)
         self.assertEqual(self.relay.acks, [('j8f3a2c1', False,
-                                            'the printer did not start the file within 60s')])
-        self.assertEqual(self.clock.now - started_at, rl.START_WAIT_SECONDS)
+                                            'the printer did not start the file within 300s')])
+        self.assertEqual(self.clock.now - started_at, rl.START_SETTLE_SECONDS)
         self.assertEqual(self.clock.slept,
-                         [rl.START_POLL_SECONDS] * int(rl.START_WAIT_SECONDS
+                         [rl.START_POLL_SECONDS] * int(rl.START_SETTLE_SECONDS
                                                        / rl.START_POLL_SECONDS))
+        self.assertIsNone(loop.hold)                        # settled: the printer is free
 
     def test_the_start_wait_acknowledges_as_soon_as_the_printer_reports(self):
         loop = self.make_paired()
@@ -303,7 +306,13 @@ class TestJobHandling(RunLoopTestCase):
 
     def test_an_error_without_a_code_says_unknown(self):
         loop = self.make_paired()
-        self.printer.set(dict(IDLE, state=pr.ERROR, file=SUFFIXED))
+        self.printer.starts_running = False
+
+        def sleep(seconds):
+            self.clock.sleep(seconds)
+            self.printer.set(dict(IDLE, state=pr.ERROR, file=SUFFIXED))
+
+        loop.sleep = sleep
         self.deliver(loop)
         self.assertEqual(self.relay.acks, [('j8f3a2c1', False, 'printer error: unknown')])
 
@@ -544,11 +553,49 @@ class TestDaemonRestartsMidJob(RunLoopTestCase):
                          [f'the printer already has {SUFFIXED}; not uploading it again'])
 
     def test_died_after_the_print_finished_the_job_is_acknowledged_ok(self):
+        """The relay says the gate was passed ten minutes ago: an end naming our file that
+        long after the start is this print's end, found at once, not waited on for ever."""
         self.printer.set(dict(IDLE, state=pr.FINISHED, file=SUFFIXED, percent=100))
         loop = self.fresh_loop()
-        self.deliver(loop)
+        self.deliver(loop, dict(JOB, start_granted=True, start_granted_age_s=600))
         self.assertEqual(self.printer.uploads, [])
+        self.assertEqual(self.printer.starts, [])
         self.assertEqual(self.relay.acks, [('j8f3a2c1', True, None)])
+        self.assertEqual(self.clock.slept, [])
+
+    def test_a_restart_just_after_the_start_does_not_take_a_left_over_end_for_ours(self):
+        """Review 4, defect 2, for a restarted daemon: the gate passed 5 s ago and the
+        printer names our file under the previous print's FINISH. Not our end yet: the
+        print shows going a little later and the job is acknowledged as started, never as
+        finished in its first seconds."""
+        self.printer.set(dict(IDLE, state=pr.FINISHED, file=SUFFIXED, percent=100))
+        loop = self.fresh_loop()
+        polls = {'n': 0}
+
+        def sleep(seconds):
+            self.clock.sleep(seconds)
+            polls['n'] += 1
+            if polls['n'] == 5:
+                self.printer.set(running(SUFFIXED))
+
+        loop.sleep = sleep
+        self.deliver(loop, dict(JOB, start_granted=True, start_granted_age_s=5))
+        self.assertEqual(polls['n'], 5)
+        self.assertEqual(self.relay.acks, [('j8f3a2c1', True, None)])
+        self.assertEqual(self.printer.starts, [])
+
+    def test_a_restarted_daemon_finds_a_real_end_once_the_start_is_old_enough(self):
+        """The same left-over-looking FINISH that stays: a restarted daemon cannot tell it
+        from a real end, so once the gate is START_SETTLE_SECONDS old it counts as this
+        print's end, and the job ends done, bounded, never waited on for ever."""
+        self.printer.set(dict(IDLE, state=pr.FINISHED, file=SUFFIXED, percent=100))
+        loop = self.fresh_loop()
+        started = self.clock.now
+        self.deliver(loop, dict(JOB, start_granted=True, start_granted_age_s=5))
+        self.assertEqual(self.relay.acks, [('j8f3a2c1', True, None)])
+        self.assertGreaterEqual(self.clock.now - started, rl.START_SETTLE_SECONDS - 5)
+        self.assertLess(self.clock.now - started,
+                        rl.START_SETTLE_SECONDS - 5 + 2 * rl.START_POLL_SECONDS)
 
     def test_a_paused_print_of_the_job_counts_as_started(self):
         self.printer.set(dict(IDLE, state=pr.PAUSED, file=SUFFIXED))
@@ -560,7 +607,7 @@ class TestDaemonRestartsMidJob(RunLoopTestCase):
         self.printer.set(dict(IDLE, state=pr.ERROR, file=SUFFIXED,
                               error='HMS_0300_0100_0001_0004'))
         loop = self.fresh_loop()
-        self.deliver(loop)
+        self.deliver(loop, dict(JOB, start_granted=True, start_granted_age_s=600))
         self.assertEqual(self.relay.acks, [('j8f3a2c1', False,
                                             'printer error: HMS_0300_0100_0001_0004')])
         self.assertEqual(self.printer.uploads, [])
@@ -775,8 +822,10 @@ class TestSilenceNeverEndsTheStart(RunLoopTestCase):
 
         self.run_start(script)
         self.assertEqual(self.relay.acks, [('j8f3a2c1', True, None)])
-        # Asked every REPORT_REQUEST_SECONDS while quiet, not every poll.
-        self.assertEqual(len(self.printer.requests), int(600 / rl.REPORT_REQUEST_SECONDS))
+        # Asked once just before the start gate, then every REPORT_REQUEST_SECONDS while
+        # quiet, not every poll.
+        self.assertEqual(len(self.printer.requests),
+                         1 + int(600 / rl.REPORT_REQUEST_SECONDS))
 
     def test_only_fresh_reports_count_towards_the_start_timeout(self):
         def script(t):
@@ -786,8 +835,8 @@ class TestSilenceNeverEndsTheStart(RunLoopTestCase):
         started = self.clock.now
         self.run_start(script)
         self.assertEqual(self.relay.ack_codes, ['delivery.start_timeout'])
-        self.assertGreaterEqual(self.clock.now - started, 2 * rl.START_WAIT_SECONDS - 20)
-        self.assertEqual(self.relay.ack_fields, [{'seconds': 60}])
+        self.assertGreaterEqual(self.clock.now - started, 2 * rl.START_SETTLE_SECONDS - 20)
+        self.assertEqual(self.relay.ack_fields, [{'seconds': 300}])
 
 
 class TestFailureFigures(RunLoopTestCase):
@@ -796,7 +845,7 @@ class TestFailureFigures(RunLoopTestCase):
     def test_the_start_timeout_names_its_seconds(self):
         loop = self.make_paired()
         self.deliver(loop)
-        self.assertEqual(self.relay.ack_fields, [{'seconds': 60}])
+        self.assertEqual(self.relay.ack_fields, [{'seconds': 300}])
 
     def test_an_unreachable_printer_at_the_start_names_its_minutes(self):
         loop = self.make_paired()
@@ -960,3 +1009,331 @@ class TestStoppingWithAJobInFlight(RunLoopTestCase):
         loop.sleep = sleep
         loop.run_forever()
         self.assertEqual(self.clock.slept, [rl.TICK_SECONDS])
+
+
+class TestHowAStartIsDecided(RunLoopTestCase):
+    """Review 4, the four rulings on the moment a print starts (the guide's "How a start
+    is decided"), one test per case, on the fake clock."""
+
+    def setUp(self):
+        super().setUp()
+        self.printer.starts_running = False
+
+    def at_sleep(self, loop, schedule):
+        """Run `schedule[n]` after the n-th sleep of the job thread (1-based)."""
+        count = {'n': 0}
+
+        def sleep(seconds):
+            self.clock.sleep(seconds)
+            count['n'] += 1
+            action = schedule.get(count['n'])
+            if action is not None:
+                action()
+
+        loop.sleep = sleep
+        return count
+
+    # -- ruling 1: only a whole picture that positively says no print is free ----------
+
+    def test_a_picture_with_no_main_state_is_never_free_and_starts_nothing(self):
+        self.printer.set(dict(IDLE, state=pr.UNRECOGNISED_STATE, whole=False,
+                              unrecognised=pr.NO_MAIN_STATE, percent=43,
+                              file='someone_elses_print'))
+        loop = self.make_paired()
+        self.deliver(loop)
+        self.assertEqual(self.relay.ack_codes, ['delivery.printer_unreachable_at_start'])
+        self.assertEqual(self.printer.starts, [])
+        self.assertTrue(self.lines('waiting for a fresh report'))
+
+    def test_a_picture_not_whole_waits_and_a_whole_one_decides(self):
+        self.printer.starts_running = True
+        self.printer.set(dict(IDLE, whole=False))
+        loop = self.make_paired()
+        self.at_sleep(loop, {3: lambda: self.printer.set(dict(IDLE))})
+        self.deliver(loop)
+        self.assertEqual(self.relay.acks, [('j8f3a2c1', True, None)])
+        self.assertEqual(self.printer.starts, [SUFFIXED])
+
+    def test_the_last_document_of_a_whole_picture_is_what_counts(self):
+        self.assertFalse(rl.RunLoop._fresh(dict(IDLE, whole=False, report_age_s=0)))
+        self.assertTrue(rl.RunLoop._fresh(dict(IDLE, whole=True, report_age_s=0)))
+        self.assertTrue(rl.RunLoop._fresh(dict(IDLE, report_age_s=0)))     # a stand-in
+
+    # -- ruling 2: an end counts only if it is the end of this print -------------------
+
+    def test_a_left_over_finish_naming_our_file_is_not_our_end(self):
+        """The previous print's FINISH, with our name put on it in the first seconds."""
+        self.printer.set(dict(IDLE, state=pr.FINISHED, file='other_part-j00000001'))
+        loop = self.make_paired()
+        original_start = self.printer.start
+
+        def start(name):
+            accepted = original_start(name)
+            self.printer.set(dict(IDLE, state=pr.FINISHED, file=SUFFIXED, percent=100))
+            return accepted
+
+        self.printer.start = start
+        self.at_sleep(loop, {5: lambda: self.printer.set(running(SUFFIXED))})
+        self.deliver(loop)
+        self.assertEqual(self.relay.acks, [('j8f3a2c1', True, None)])
+        self.assertEqual(self.clock.slept, [rl.START_POLL_SECONDS] * 5)
+
+    def test_a_left_over_failed_naming_our_file_is_not_a_failure(self):
+        self.printer.set(dict(IDLE, state=pr.ERROR, file='other_part-j00000001',
+                              error='PRINT_ERROR_0300400C'))
+        loop = self.make_paired()
+        original_start = self.printer.start
+
+        def start(name):
+            accepted = original_start(name)
+            self.printer.set(dict(IDLE, state=pr.ERROR, file=SUFFIXED,
+                                  error='PRINT_ERROR_0300400C'))
+            return accepted
+
+        self.printer.start = start
+        self.at_sleep(loop, {5: lambda: self.printer.set(running(SUFFIXED))})
+        self.deliver(loop)
+        self.assertEqual(self.relay.acks, [('j8f3a2c1', True, None)])
+
+    def test_a_left_over_end_that_never_changes_settles_as_not_started(self):
+        """The same state from before the command, never seen going: after
+        START_SETTLE_SECONDS the printer is taken not to have started the file."""
+        self.printer.set(dict(IDLE, state=pr.FINISHED, file='other_part-j00000001'))
+        loop = self.make_paired()
+        original_start = self.printer.start
+
+        def start(name):
+            accepted = original_start(name)
+            self.printer.set(dict(IDLE, state=pr.FINISHED, file=SUFFIXED))
+            return accepted
+
+        self.printer.start = start
+        self.deliver(loop)
+        self.assertEqual(self.relay.ack_codes, ['delivery.start_timeout'])
+        self.assertEqual(self.relay.ack_fields, [{'seconds': int(rl.START_SETTLE_SECONDS)}])
+
+    def test_an_end_that_follows_a_change_after_the_command_is_ours(self):
+        """IDLE before the command, then FAILED with our name: the state changed after the
+        start, so once the command is LEFTOVER_END_SECONDS old it is this print's end."""
+        loop = self.make_paired()
+        original_start = self.printer.start
+
+        def start(name):
+            accepted = original_start(name)
+            self.printer.set(dict(IDLE, state=pr.ERROR, file=SUFFIXED,
+                                  error='PRINT_ERROR_07008011'))
+            return accepted
+
+        self.printer.start = start
+        started = self.clock.now
+        self.deliver(loop)
+        self.assertEqual(self.relay.ack_codes, ['delivery.printer_error_at_start'])
+        self.assertGreaterEqual(self.clock.now - started, rl.LEFTOVER_END_SECONDS)
+
+    def test_a_restarted_daemon_takes_an_end_naming_the_file_after_the_settle_time(self):
+        """The relay says the gate passed long ago: the end is found at once."""
+        self.printer.set(dict(IDLE, state=pr.FINISHED, file=SUFFIXED, percent=100))
+        loop = self.make_paired()
+        self.deliver(loop, dict(JOB, start_granted=True,
+                                start_granted_age_s=int(rl.START_SETTLE_SECONDS) + 60))
+        self.assertEqual(self.relay.acks, [('j8f3a2c1', True, None)])
+        self.assertEqual(self.clock.slept, [])
+
+    # -- ruling 3: every wait before the gate, no untrue sentence ----------------------
+
+    def test_past_the_gate_there_is_one_look_and_no_wait(self):
+        original_gate = self.relay.start_gate
+
+        def gate(job_id, instance):
+            self.printer.set(dict(IDLE, report_age_s=int(rl.FRESH_REPORT_SECONDS) + 5))
+            return original_gate(job_id, instance)
+
+        self.relay.start_gate = gate
+        loop = self.make_paired()
+        self.deliver(loop)
+        self.assertEqual(self.relay.ack_codes, ['delivery.printer_unreachable_at_start'])
+        self.assertEqual((self.printer.starts, self.printer.deleted), ([], [SUFFIXED]))
+        self.assertEqual(self.clock.slept, [])
+        self.assertIn('not started', self.relay.ack_details[0])
+
+    def test_a_quiet_printer_after_the_upload_is_waited_for_before_the_gate(self):
+        original_upload = self.printer.upload
+
+        def upload(*args, **kwargs):
+            note = original_upload(*args, **kwargs)
+            self.printer.set(dict(IDLE, report_age_s=int(rl.FRESH_REPORT_SECONDS) + 5))
+            return note
+
+        self.printer.upload = upload
+        self.printer.starts_running = True
+        loop = self.make_paired()
+        stages = []
+        self.at_sleep(loop, {
+            1: lambda: stages.append(loop.job_progress['stage']),
+            2: lambda: (self.assertEqual(self.relay.gates, []),
+                        self.printer.set(dict(IDLE)))})
+        self.deliver(loop)
+        self.assertEqual(stages, ['waiting_for_printer'])
+        self.assertEqual(self.relay.acks, [('j8f3a2c1', True, None)])
+        self.assertEqual(len(self.relay.gates), 1)
+
+    def test_our_file_seen_going_before_the_gate_is_acknowledged_never_started(self):
+        """Another process with this pairing started it (the gate keeps that to one): the
+        pre-gate wait sees our file going and acknowledges it, with no start command."""
+        original_upload = self.printer.upload
+
+        def upload(*args, **kwargs):
+            note = original_upload(*args, **kwargs)
+            self.printer.set(running(SUFFIXED))
+            return note
+
+        self.printer.upload = upload
+        loop = self.make_paired()
+        self.deliver(loop)
+        self.assertEqual(self.relay.acks, [('j8f3a2c1', True, None)])
+        self.assertEqual((self.printer.starts, self.relay.gates), ([], []))
+
+    def test_the_look_after_the_gate_refuses_a_start_while_an_earlier_one_holds(self):
+        """The one look past the gate checks the hold too (it cannot have appeared since
+        the wait before the gate in one job thread, but the look does not rely on that)."""
+        loop = self.make_paired()
+        loop.hold = rl.StartHold('j00000001', 'other-j00000001.gcode.3mf', self.clock.now,
+                                 sent_here=True, before_state=pr.IDLE)
+        with self.assertRaises(rl._JobEnded):
+            loop._start('j8f3a2c1', SUFFIXED)
+        self.assertEqual(self.relay.ack_codes, ['delivery.earlier_start_unsettled'])
+        self.assertEqual((self.printer.starts, self.printer.deleted), ([], [SUFFIXED]))
+
+    def test_a_rebuilt_hold_with_no_usable_age_counts_from_now(self):
+        loop = self.make_paired()
+        for age in (None, 'x', True, -5):
+            hold = loop._rebuilt_hold('j8f3a2c1', SUFFIXED, age)
+            self.assertEqual((hold.sent_at, hold.required, hold.sent_here),
+                             (self.clock.now, rl.START_SETTLE_SECONDS, False))
+
+    def test_the_wait_is_made_again_before_a_second_ask_of_the_gate(self):
+        """The gate does not answer; while the daemon waits to ask again the printer goes
+        quiet; the next ask waits for a fresh report first, still cancellable."""
+        self.relay.gate_outcomes = [RelayError('reset'), 'start']
+        self.printer.starts_running = True
+        loop = self.make_paired()
+        self.at_sleep(loop, {1: lambda: self.printer.set(dict(IDLE, report_age_s=60)),
+                             8: lambda: self.printer.set(dict(IDLE))})
+        self.deliver(loop)
+        self.assertEqual(self.relay.acks, [('j8f3a2c1', True, None)])
+        self.assertTrue(self.lines('waiting for a fresh report'))
+
+    def test_the_daemon_says_when_the_start_command_went(self):
+        loop = self.make_paired()
+        sent = []
+        original_start = self.printer.start
+
+        def start(name):
+            sent.append(dict(loop.job_progress))
+            accepted = original_start(name)
+            sent.append(dict(loop.job_progress))
+            return accepted
+
+        self.printer.start = start
+        self.at_sleep(loop, {1: lambda: self.printer.set(running(SUFFIXED))})
+        self.deliver(loop)
+        self.assertNotIn('start_sent', sent[0])
+        self.assertEqual(loop.relay.acks, [('j8f3a2c1', True, None)])
+
+    # -- ruling 4: after a start command the printer is held ---------------------------
+
+    def test_a_slow_printer_gets_a_non_final_stage_then_success(self):
+        loop = self.make_paired()
+        stages = []
+        show_at = int(90 / rl.START_POLL_SECONDS)
+        schedule = {n: (lambda: stages.append(dict(loop.job_progress)))
+                    for n in range(1, show_at)}
+        schedule[show_at] = lambda: self.printer.set(running(SUFFIXED))
+        self.at_sleep(loop, schedule)
+        self.deliver(loop)
+        self.assertEqual(self.relay.acks, [('j8f3a2c1', True, None)])
+        names = [s['stage'] for s in stages]
+        self.assertEqual(names[0], 'starting')
+        self.assertIn('start_not_shown', names)
+        late = [s for s in stages if s['stage'] == 'start_not_shown']
+        self.assertGreaterEqual(late[0]['waited_s'], rl.START_SLOW_SECONDS)
+        self.assertTrue(all(s.get('start_sent') for s in stages))
+
+    def test_a_second_job_waits_while_the_first_start_holds_the_printer(self):
+        """The first job leaves its wait (the relay no longer holds it) with its start
+        unsettled. The second job is not started while the printer is fresh and idle
+        until START_SETTLE_SECONDS of that settle the first."""
+        self.relay.gate_outcomes = ['start', 'unknown']
+        loop = self.make_paired()
+        self.deliver(loop)
+        self.assertIsNotNone(loop.hold)
+        self.assertEqual(loop.hold.job_id, 'j8f3a2c1')
+        self.assertEqual(self.printer.starts, [SUFFIXED])
+        before = self.clock.now
+        self.relay.gate_outcomes = []
+        self.printer.starts_running = True
+        self.deliver(loop, dict(JOB, id='j0000abcd'))
+        self.assertEqual(self.relay.acks[-1], ('j0000abcd', True, None))
+        self.assertGreaterEqual(self.clock.now - before,
+                                rl.START_SETTLE_SECONDS - rl.HOLD_CHECK_SECONDS)
+        self.assertEqual(len(self.printer.starts), 2)
+        self.assertTrue(self.lines('the earlier start of'))
+
+    def test_a_second_job_is_refused_when_the_held_print_shows(self):
+        self.relay.gate_outcomes = ['start', 'unknown']
+        loop = self.make_paired()
+        self.deliver(loop)
+        self.relay.gate_outcomes = []
+        self.at_sleep(loop, {3: lambda: self.printer.set(running(SUFFIXED))})
+        self.deliver(loop, dict(JOB, id='j0000abcd'))
+        self.assertEqual(self.relay.ack_codes[-1], 'delivery.printer_busy_at_start')
+        self.assertEqual(self.printer.starts, [SUFFIXED])
+        self.assertIsNone(loop.hold)
+
+    def test_a_hold_unsettled_at_the_ten_minute_wait_ends_the_second_job_unstarted(self):
+        self.relay.gate_outcomes = ['start', 'unknown']
+        loop = self.make_paired()
+        self.deliver(loop)
+        self.relay.gate_outcomes = []
+        self.printer.set(dict(IDLE, report_age_s=60))            # quiet, nothing counted
+        near_end = int(rl.PRINTER_WAIT_SECONDS - 3)          # the wait sleeps a second a time
+        self.at_sleep(loop, {near_end: lambda: self.printer.set(dict(IDLE))})
+        self.deliver(loop, dict(JOB, id='j0000abcd'))
+        self.assertEqual(self.relay.ack_codes[-1], 'delivery.earlier_start_unsettled')
+        self.assertEqual(self.relay.ack_fields[-1], {'minutes': 10})
+        self.assertEqual(self.printer.starts, [SUFFIXED])
+
+    def test_a_restarted_daemon_rebuilds_the_hold_from_the_relays_previous_start(self):
+        loop = self.make_paired()
+        previous = {'id': 'j00000001', 'filename': 'other_part.gcode.3mf', 'age_s': 10}
+        self.at_sleep(loop, {3: lambda: self.printer.set(running('other_part-j00000001'))})
+        self.deliver(loop, dict(JOB, previous_start=previous))
+        self.assertEqual(self.relay.ack_codes, ['delivery.printer_busy_at_start'])
+        self.assertEqual(self.printer.starts, [])
+
+    def test_an_old_previous_start_settles_on_the_first_free_picture(self):
+        self.printer.starts_running = True
+        loop = self.make_paired()
+        previous = {'id': 'j00000001', 'filename': 'other_part.gcode.3mf',
+                    'age_s': int(rl.START_SETTLE_SECONDS) + 1}
+        self.deliver(loop, dict(JOB, previous_start=previous))
+        self.assertEqual(self.relay.acks, [('j8f3a2c1', True, None)])
+        self.assertEqual(self.clock.slept[:1], [])
+
+    def test_a_previous_start_this_process_acknowledged_is_not_rebuilt(self):
+        self.printer.starts_running = True
+        loop = self.make_paired()
+        loop._remember_acked('j00000001')
+        previous = {'id': 'j00000001', 'filename': 'other_part.gcode.3mf', 'age_s': 5}
+        self.deliver(loop, dict(JOB, previous_start=previous))
+        self.assertIsNone(loop.hold)
+        self.assertEqual(self.relay.acks, [('j8f3a2c1', True, None)])
+
+    def test_a_malformed_previous_start_is_ignored(self):
+        self.printer.starts_running = True
+        loop = self.make_paired()
+        for previous in ('x', {'id': 5}, {'id': 'j00000001'}, {'filename': 'a.3mf'}):
+            loop.hold = None
+            self.deliver(loop, dict(JOB, id=f'j{len(self.relay.acks):08x}',
+                                    previous_start=previous))
+        self.assertIsNone(loop.hold)
