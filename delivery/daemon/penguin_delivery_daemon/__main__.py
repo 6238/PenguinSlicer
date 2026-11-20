@@ -63,6 +63,9 @@ def resolve_paths(args):
     else:
         args.download_dir = home.downloads
     args.recordings = home.recordings
+    # Beside the configuration, wherever that is, so it lives in the daemon's home.
+    args.start_record = paths.DaemonHome(os.path.dirname(os.path.abspath(args.config))
+                                         ).start_record
     return args
 
 
@@ -377,7 +380,8 @@ def cmd_run(args, *, out=sys.stdout, download_dir=None, clock=time.monotonic,
                           log=log, ports=config.printer_ports())
     relay = RelayClient(config.backend_url, token=config.token or None)
     loop = RunLoop(config, relay, printer, log=log,
-                   download_dir=_ensure_download_dir(download_dir))
+                   download_dir=_ensure_download_dir(download_dir),
+                   start_record_path=args.start_record)
     log(f"penguincam-printer {VERSION} running against {config.backend_url}; "
         f"printer at {config.printer_ip}; files in {os.path.dirname(args.config)}")
     status = 0

@@ -782,6 +782,24 @@ class TestStartGateAndCancel:
         assert shop.cancel(job_id).get_json()['error_report']['code'] == \
             'delivery.cancel_too_late'
 
+    def test_a_daemon_that_cannot_know_whether_the_command_went_is_never_taken_to_say_so(
+            self, shop):
+        """Review 5, defect 4: a daemon restarted between the gate and the command reports
+        `start_not_shown` with `start_sent` false. The cancel still answers that the
+        command may already have been sent, with what to do, never that it was."""
+        job_id = shop.send()
+        shop.sync(IDLE)
+        shop.start(job_id)
+        shop.clock.advance(90)
+        shop.sync(IDLE, {'id': job_id, 'stage': 'start_not_shown', 'waited_s': 90,
+                         'start_sent': False})
+        shop.sync(IDLE, {'id': job_id, 'stage': 'start_not_shown', 'waited_s': 91})
+        report = shop.cancel(job_id).get_json()['error_report']
+        assert report['code'] == 'delivery.start_being_sent'
+        assert 'may already have sent' in report['message']
+        assert 'if this print starts' in report['remedy']
+        assert 'if it does not' in report['remedy']
+
     def test_a_restarted_daemon_is_told_the_gates_age_and_the_previous_start(self, shop):
         """Review 4, defects 2 and 4: the relay knows when the start gate was passed. A
         re-offered job carries its gate's age; the next job names the printer's last start

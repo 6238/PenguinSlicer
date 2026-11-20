@@ -109,7 +109,9 @@ CODES = {
     'delivery.start_being_sent': Code(
         'The computer next to the printer has been told to start this print and may already '
         'have sent the start command, so it can no longer be cancelled from here.',
-        'If the print starts, stop it on the printer\'s own screen.', False, 'starting'),
+        'Look at the printer: if this print starts, stop it on the printer\'s own screen; if '
+        'it does not, wait for this print\'s report to end before sending it again.', False,
+        'starting'),
     'delivery.start_not_shown_yet': Code(
         'The printer is still answering and has not yet shown whether this print started, '
         'so the printer service is still following it.',
@@ -164,10 +166,17 @@ CODES = {
         'Check the printer, then send the print again in a moment.', True,
         'waiting_for_printer'),
     'delivery.earlier_start_unsettled': Code(
-        'The printer was sent another print just before this one and has not shown[ within '
-        '{minutes} minutes] whether that one started, so this print was not started.',
+        'Another print sent to this printer before this one may have been started, and the '
+        'printer has not shown[ within {minutes} minutes] whether it was, so this print '
+        'was not started.',
         'Look at the printer, then send this print again.', True,
         'waiting_for_earlier_print'),
+    'delivery.start_not_recorded': Code(
+        'The computer next to the printer could not save its note of the start on its own '
+        'disk, so it did not start the print.',
+        'Ask a mentor to check that the printer computer\'s disk has space and its '
+        'printer delivery folder can be written, then send the print again.', True,
+        'starting'),
     'delivery.printer_error_at_start': Code(
         'The printer showed an error when the print was sent{meaning}.',
         'Ask someone at the printer to clear the error on its screen, then send the print '

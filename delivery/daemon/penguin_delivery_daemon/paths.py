@@ -10,8 +10,9 @@ home, which the person running it chooses with `--home DIR`. Without the option:
 | macOS, Linux and anything else | `~/.penguin-delivery` |
 
 Inside it: `config.toml` (the pairing, the printer's address and access code, the token),
-`downloads/` (a sliced file on its way to the printer, removed once sent) and
-`recordings/` (what `record` saves).
+`downloads/` (a sliced file on its way to the printer, removed once sent),
+`start.json` (the note of a start command whose outcome the printer has not yet shown;
+start_record.py) and `recordings/` (what `record` saves).
 
 The platform and the environment are arguments, so the tests choose each platform's answer
 on any machine.
@@ -46,6 +47,10 @@ class DaemonHome:
     @property
     def downloads(self):
         return os.path.join(self.root, 'downloads')
+
+    @property
+    def start_record(self):
+        return os.path.join(self.root, 'start.json')
 
     @property
     def recordings(self):

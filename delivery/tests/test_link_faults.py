@@ -17,6 +17,7 @@ from penguin_delivery_daemon import printer as pr
 from penguin_delivery_relay import deliveries as dl
 
 from link_faults import BASE, CONTENT, DOWNLOAD_FAULTS, EXCHANGES, FAULTS, Canned, DaemonDied, Shop
+from link_faults import check_start_path
 
 # Generous for any honest backoff, far below a tight loop (which makes one a tick).
 MAX_REQUESTS_PER_SECOND = 1.5
@@ -432,18 +433,27 @@ def assert_started_only_on_fresh_word_of_a_free_printer(shop):
         assert evidence['report_age_s'] <= rl.FRESH_REPORT_SECONDS, evidence
 
 
-@settings(max_examples=40, deadline=None, derandomize=True, database=None,
+@settings(max_examples=60, deadline=None, derandomize=True, database=None,
           suppress_health_check=[HealthCheck.function_scoped_fixture,
                                  HealthCheck.too_slow])
-@given(faults=fault_lists, outages=printer_off, down=st.integers(0, 400),
+@given(faults=fault_lists, outages=printer_off,
+       down=st.one_of(st.integers(0, 60), st.integers(0, 400)),
        restart_daemon_at=st.one_of(st.none(), st.integers(1, 600)),
        jitter=st.floats(0, 1),
        after_start=st.one_of(st.none(), st.tuples(st.sampled_from(['link', 'printer']),
                                                   st.integers(1, 1500))),
-       quiet=printer_quiet)
+       quiet=printer_quiet,
+       whole_after=st.integers(0, 60),
+       quiet_from_upload=st.one_of(st.none(), st.tuples(st.integers(1, 120),
+                                                        st.integers(0, 3))),
+       cancel_at=st.one_of(st.none(), st.none(), st.none(), st.none(),
+                           st.integers(30, 120)),
+       death=st.one_of(st.none(), st.sampled_from(['gate', 'noted', 'sent'])),
+       start_fault=st.one_of(st.none(), st.sampled_from(['before', 'after'])),
+       someone=st.one_of(st.none(), st.none(), st.none(), st.integers(0, 30)))
 def test_random_faults_never_print_twice_and_always_tell_the_truth(
         tmp_path_factory, faults, outages, down, restart_daemon_at, jitter, after_start,
-        quiet):
+        quiet, whole_after, quiet_from_upload, cancel_at, death, start_fault, someone):
     """`after_start` cuts the link or the printer for up to 25 minutes from just after the
     start command: past the daemon's start wait and the relay's 15-minute deadline. A print
     that ran must then end done, never failed (defect 1).
@@ -451,12 +461,58 @@ def test_random_faults_never_print_twice_and_always_tell_the_truth(
     Every outage and the daemon's death are placed on the shop's timers (round 2, defect
     6), so they happen wherever the daemon is at that moment: inside its job's waits as
     well as between syncs. The printer cut after the start begins in the start command
-    itself, before the daemon has seen the print."""
+    itself, before the daemon has seen the print.
+
+    The daemon hears the printer through the real PrinterLink, each connection with only
+    partial documents for `whole_after` seconds. The printer's stream may go quiet from
+    the download on while the first asks of the start gate time out; the caller may
+    cancel; the daemon may die on the way to the start
+    command; the start command may raise before or after it reaches the printer; and
+    someone may start a print at the printer while it is off the network, just as the
+    job arrives."""
     from link_faults import die
-    shop = Shop(tmp_path_factory.mktemp('shop'), rand=lambda: jitter)
+    shop = Shop(tmp_path_factory.mktemp('shop'), rand=lambda: jitter, linked=True,
+                whole_after=whole_after)
     shop.online(seconds=600)
+    if someone is not None:
+        shop.printer.outage(shop, someone, 20)
+        shop.printer.someone_prints(shop, someone + 1, 900)
     for exchange, kinds in faults.items():
         shop.link.inject(exchange, *kinds)
+    shop.printer.start_raises = start_fault
+    if quiet_from_upload is not None:
+        # The stream goes quiet as the download starts, and the first asks of the start
+        # gate time out: every further ask must wait for the printer first.
+        seconds, gate_timeouts = quiet_from_upload
+        shop.link.before['download'] = lambda: shop.printer.quiet(shop, 0, seconds)
+        shop.link.inject('start', *['timeout'] * gate_timeouts)
+    cancels = []
+    if death is not None:
+        real_save = rl.start_record.save
+        dying = {'armed': True}
+
+        def save(path, **fields):
+            first = dying['armed'] and fields['phase'] == ('sent' if death == 'sent'
+                                                           else 'sending')
+            if first and death in ('gate', 'sent'):
+                dying['armed'] = False
+                raise DaemonDied()
+            real_save(path, **fields)
+            if first:
+                dying['armed'] = False
+                raise DaemonDied()
+
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(rl.start_record, 'save', save)
+            random_faults(shop, die, outages, down, restart_daemon_at, after_start, quiet,
+                          cancel_at, cancels)
+    else:
+        random_faults(shop, die, outages, down, restart_daemon_at, after_start, quiet,
+                      cancel_at, cancels)
+
+
+def random_faults(shop, die, outages, down, restart_daemon_at, after_start, quiet,
+                  cancel_at, cancels):
     if after_start is not None:
         side, seconds = after_start
 
@@ -475,12 +531,19 @@ def test_random_faults_never_print_twice_and_always_tell_the_truth(
         shop.printer.quiet(shop, at, length)
     if restart_daemon_at is not None:
         shop.at(restart_daemon_at, die)
+    if cancel_at is not None:
+        def cancel_it():
+            resp = shop.pages.post(f'/printer/jobs/{job_id}/cancel', base_url=BASE)
+            code = (resp.get_json().get('error_report') or {}).get('code')
+            cancels.append((job_id, code, shop(), list(shop.printer.commanded)))
+        shop.at(cancel_at, cancel_it)
     for _second in range(3600):
         try:
             shop.advance(1)
             shop.tick()
         except DaemonDied:
             shop.restart_daemon()       # killed by a timer between two ticks
+        shop.observe([job_id])
         if shop.final(job_id):
             break
     report = shop.report(job_id)
@@ -493,7 +556,9 @@ def test_random_faults_never_print_twice_and_always_tell_the_truth(
     if report['state'] == 'running':
         # Still in progress after an hour: only honest if it says what it waits for.
         assert report['stage'] in ('printing', 'waiting_for_person', 'waiting_for_printer',
-                                   'starting')
+                                   'starting', 'start_not_shown'), report
+    # The stand-in shows a print the moment it accepts the command.
+    check_start_path(shop, [job_id], shown=list(shop.printer.started), cancels=cancels)
     assert_truthful(shop, job_id)
     assert_no_tight_loop(shop, 4200)
 

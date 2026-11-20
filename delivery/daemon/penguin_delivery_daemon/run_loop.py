@@ -22,11 +22,13 @@ A delivery job, on the daemon:
 4. download, checked against the relay's size and checksum, retried with backoff;
 5. upload, judged by the printer's own listing, retried with backoff;
 6. wait for a free printer again, still cancellable, then ask the relay's start gate; on
-   its yes look once more, without waiting, and send the start command only on a free
-   printer. A cancel, or a relay that cannot be reached, means the file is never started;
+   its yes look once more, without waiting, write the note of the start (start_record.py)
+   and send the start command only on a free printer. A cancel, a relay that cannot be
+   reached, or a note that cannot be written, means the file is never started;
 7. hold the printer and watch for the evidence of what became of the command (seen going,
    a proven end, or START_SETTLE_SECONDS of pictures without our print), and acknowledge;
-   leave the wait once the relay no longer holds the job (the hold stays).
+   leave the wait once the relay no longer holds the job (the hold stays, and so does the
+   note, so a restarted daemon holds the printer too).
 
 Every acknowledgement carries the failure's code (the guide lists them; the relay turns
 each into an error report), the one line of reason, and the evidence in `detail`. An acknowledgement that
@@ -46,6 +48,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from penguin_delivery_daemon import config as config_module
 from penguin_delivery_daemon import printer as printer_module
+from penguin_delivery_daemon import start_record
 from penguin_delivery_daemon.relay_client import (
     Cancelled, ChallengeDetected, DownloadCorrupt, RateLimited, RelayError, TokenRejected,
 )
@@ -123,31 +126,54 @@ class StartHold:
     goes to the printer (see "How a start is decided" in the guide).
 
     `sent_at` is on the daemon's monotonic clock. `sent_here` is False for a hold rebuilt
-    from the relay (a restarted daemon, or a start another process holds): then nothing is
-    known of the printer's state before the command. `before_state` is the main state of
-    the last whole, fresh picture before the command."""
+    from the relay or from the note in the daemon's home (a restarted daemon, or a start
+    another process holds): then nothing is known of the printer's state before the
+    command. `before_state` is the main state of the last whole, fresh picture before the
+    command. `start_known` says whether the command is known to have gone (a hold rebuilt
+    after a crash between the gate and the command may stand for a command never sent).
+    `recorded` says the note in the daemon's home stands for this hold, so settling it
+    removes the note. A `remote_name` of None is a hold from a damaged note: which file
+    it stood for is unknown, so only a print seen going (any file) or the settle time of
+    whole, fresh pictures with no print going settles it."""
 
     def __init__(self, job_id, remote_name, sent_at, *, sent_here, before_state=None,
-                 now=None):
+                 now=None, start_known=None, recorded=False):
         self.job_id = job_id
         self.remote_name = remote_name
         self.sent_at = sent_at
         self.sent_here = sent_here
+        self.start_known = sent_here if start_known is None else start_known
+        self.recorded = recorded
         self.last_state = before_state if sent_here else None
         self.state_changed = False
         self.unwatched = not sent_here
         self.counted = 0.0
         # A rebuilt hold counts the time since the gate as already waited: the first whole,
         # fresh picture without our print may settle it.
-        age = max(0.0, (now if now is not None else sent_at) - sent_at)
+        self.made_at = now if now is not None else sent_at
+        age = max(0.0, self.made_at - sent_at)
         self.required = (START_SETTLE_SECONDS if sent_here
                          else max(0.0, START_SETTLE_SECONDS - age))
         self._last_at = None
+        self._first_watch_at = None
         self._last_fresh_at = sent_at
         self.other = None
         #: None while unsettled; then 'going', 'ended' or 'no_print'.
         self.outcome = None
         self.evidence = None
+
+    def take_age(self, age, now):
+        """The relay measured the gate `age` seconds ago, on its own clock: a hold rebuilt
+        from the note (which counts only what it watched) counts from the gate instead, as
+        a hold rebuilt from the relay does: the time from the gate to the first picture it
+        watched is taken as already waited. Never later than it already counts."""
+        gate_at = now - age
+        # The time before the first picture this hold watched is taken as waited, as for
+        # any hold rebuilt from the gate's age; what it has counted since is its own.
+        anchor = self._first_watch_at if self._first_watch_at is not None else now
+        before = max(0.0, anchor - gate_at)
+        self.sent_at = min(self.sent_at, gate_at)
+        self.required = min(self.required, max(0.0, START_SETTLE_SECONDS - before))
 
     def _end_counts(self, now):
         """Is an end naming our file, never seen going, the end of this print? Never in the
@@ -168,6 +194,8 @@ class StartHold:
         """Take one picture into account. Returns the outcome (None while unsettled); a
         settled hold is dropped by its owner, so it is never watched again."""
         dt = 0.0 if self._last_at is None else max(0.0, now - self._last_at)
+        if self._last_at is None:
+            self._first_watch_at = now
         self._last_at = now
         state = snapshot.get('state')
         if not fresh or state == printer_module.UNRECOGNISED_STATE:
@@ -178,6 +206,16 @@ class StartHold:
         if self.last_state is not None and state != self.last_state:
             self.state_changed = True
         self.last_state = state
+        if self.remote_name is None:
+            # A damaged note: any print going is the printer moved on (the next job's own
+            # look refuses a busy printer); anything else counts towards the settle time.
+            if state in _GOING:
+                self.outcome, self.evidence = 'going', snapshot
+                return self.outcome
+            self.counted += dt
+            if self.counted >= self.required:
+                self.outcome, self.evidence = 'no_print', snapshot
+            return self.outcome
         ours = printer_module.reports_file(snapshot, self.remote_name)
         if ours and state in _GOING:
             self.outcome, self.evidence = 'going', snapshot
@@ -225,7 +263,8 @@ class RunLoop:
 
     def __init__(self, config, relay, printer, *, clock=time.monotonic, sleep=None,
                  log=print, executor=None, download_dir=None,
-                 save_token=config_module.save_token, rand=random.random, instance=None):
+                 save_token=config_module.save_token, rand=random.random, instance=None,
+                 start_record_path=None):
         self.config = config
         self.relay = relay
         self.printer = printer
@@ -263,7 +302,65 @@ class RunLoop:
         self.pending_acks = {}          # job id -> dict(ok, reason, code, detail, due, wait)
         #: The last start command's StartHold while it is unsettled, else None.
         self.hold = None
+        #: Where the note of a start command is kept (start_record.py); None keeps none,
+        #: which only a test that does not restart the daemon may choose.
+        self.start_record_path = start_record_path
         self.clean_download_dir()
+        self._hold_from_note()
+
+    # -- the note of a start command (start_record.py) ------------------------------------
+
+    def _hold_from_note(self):
+        """A note left by an earlier process holds the printer from now on: its command
+        may have gone, and the printer has not shown what became of it. Its time counts
+        from the first picture it watches (the note's clock time is never trusted), unless
+        the relay later gives the gate's age. A damaged note holds the printer too; only a note about another
+        printer (the daemon was paired again since) is set aside."""
+        if self.start_record_path is None:
+            return
+        note = start_record.load(self.start_record_path)
+        if note is None:
+            return
+        now = self.clock()
+        if isinstance(note, start_record.Damaged):
+            self.hold = StartHold(None, None, now, sent_here=False, now=now,
+                                  start_known=False, recorded=True)
+            self.log(f"the note of the last start command ({self.start_record_path}) "
+                     f"{note.reason}; no print starts until the printer has shown, over "
+                     f"{int(START_SETTLE_SECONDS)} s of whole, fresh reports, that no print "
+                     "of it is going")
+            return
+        serial = self.config.printer_serial or ''
+        if note['printer'] and serial and note['printer'] != serial:
+            self.log(f"the note of the last start command names another printer "
+                     f"({note['printer']}); this daemon is paired with {serial}, so the "
+                     "note is set aside")
+            start_record.clear(self.start_record_path)
+            return
+        self.hold = StartHold(note['job_id'], note['remote_name'], now, sent_here=False,
+                              now=now, start_known=note['phase'] == start_record.SENT,
+                              recorded=True)
+        self.log(f"an earlier run of this daemon "
+                 + ("sent" if note['phase'] == start_record.SENT else "was sending")
+                 + f" the printer a start command for {note['remote_name']} (job "
+                 f"{note['job_id']}); no other print starts until the printer shows what "
+                 "became of it")
+
+    def _note_start(self, job_id, remote_name, phase):
+        """Write the note. Raises OSError when it could not be written."""
+        if self.start_record_path is None:
+            return
+        start_record.save(self.start_record_path, job_id=job_id, remote_name=remote_name,
+                          printer=self.config.printer_serial, phase=phase)
+
+    def _drop_hold(self, hold):
+        """The evidence settled `hold`: no longer held, and its note goes."""
+        if self.hold is hold:
+            self.hold = None
+        if hold.recorded and self.start_record_path is not None:
+            if not start_record.clear(self.start_record_path):
+                self.log(f"could not remove {self.start_record_path}; the next run of this "
+                         "daemon holds the printer for a few minutes for nothing")
 
     # -- helpers -----------------------------------------------------------------------
 
@@ -618,8 +715,10 @@ class RunLoop:
             return
         # 2. A start was granted before (to an earlier run of this daemon, or to another
         #    daemon with the same pairing): whatever happened, never start it again. The
-        #    hold is rebuilt from the gate's age, as the relay measured it.
-        if job.get('start_granted'):
+        #    hold is rebuilt from the gate's age, as the relay measured it. The note in the
+        #    daemon's home naming this job means the same, whatever the relay says.
+        if job.get('start_granted') or (self.hold is not None
+                                        and self.hold.job_id == job_id):
             self.log(f"job {job_id}: the start was already granted, so it is never started "
                      "again from here; waiting for the printer to report it")
             self._stage(job_id, 'starting')
@@ -641,10 +740,19 @@ class RunLoop:
         self._start(job_id, remote_name)                                 # 7
 
     def _rebuilt_hold(self, job_id, remote_name, age_s):
-        """A StartHold for a start this process did not send, `age_s` after the gate."""
+        """A StartHold for a start this process did not send, `age_s` after the gate. When
+        this process already holds the printer for this job (from the note in its home, or
+        its own command), that hold is kept (it knows whether the command went); one
+        rebuilt from the note takes the gate's age."""
         now = self.clock()
-        age = float(age_s) if (isinstance(age_s, (int, float))
-                               and not isinstance(age_s, bool) and age_s >= 0) else 0.0
+        usable = (isinstance(age_s, (int, float)) and not isinstance(age_s, bool)
+                  and age_s >= 0)
+        age = float(age_s) if usable else 0.0
+        hold = self.hold
+        if hold is not None and hold.job_id == job_id:
+            if usable and not hold.sent_here:
+                hold.take_age(age, now)
+            return hold
         return StartHold(job_id, remote_name, now - age, sent_here=False, now=now)
 
     def _adopt_previous_start(self, job):
@@ -652,12 +760,20 @@ class RunLoop:
         start granted (`previous_start`), and an earlier job this process has not settled
         holds the printer until the evidence settles it."""
         previous = job.get('previous_start')
-        if not isinstance(previous, dict) or self.hold is not None:
+        if not isinstance(previous, dict):
             return
         previous_id = previous.get('id')
         if (not isinstance(previous_id, str) or previous_id == job.get('id')
                 or previous_id in self.acked_job_ids
                 or not isinstance(previous.get('filename'), str)):
+            return
+        if self.hold is not None:
+            # The note already holds the printer for that start: take the gate's age.
+            age = previous.get('age_s')
+            if (self.hold.job_id == previous_id and not self.hold.sent_here
+                    and isinstance(age, (int, float)) and not isinstance(age, bool)
+                    and age >= 0):
+                self.hold.take_age(float(age), self.clock())
             return
         name = printer_module.suffixed_name(
             printer_module.safe_file_name(previous['filename']), previous_id)
@@ -674,7 +790,12 @@ class RunLoop:
         outcome = hold.watch(snapshot, self.clock(), self._fresh(snapshot))
         if outcome is None:
             return True
-        self.hold = None
+        self._drop_hold(hold)
+        if hold.remote_name is None:
+            self.log("the start command of the unreadable note is settled: "
+                     + ('the printer is printing a file' if outcome == 'going'
+                        else 'the printer showed no print going'))
+            return False
         self.log(f"the earlier start of {hold.remote_name} (job {hold.job_id}) is settled: "
                  + {'going': 'the printer is printing it',
                     'ended': 'the printer reports it ended',
@@ -700,40 +821,30 @@ class RunLoop:
         waited_from = self.clock()
         last_log = None
         last_request = None
+        # What the printer said during this wait, for the reason if it ends: the seconds
+        # of whole, fresh pictures, and when the last one came.
+        fresh_s = 0.0
+        last_fresh_at = None
+        last_look = None
         while True:
             if self._cancelled(job_id):
                 self._end_cancelled(job_id, remote_name)
             snapshot = self.printer.snapshot()
             state = snapshot.get('state')
             held = self._watch_foreign_hold(job_id, snapshot)
+            now = self.clock()
             if self._fresh(snapshot):
+                if last_look is not None and last_fresh_at == last_look:
+                    fresh_s += now - last_look
+                last_fresh_at = now
                 self._refuse_if_not_free(job_id, snapshot, remote_name)
                 if not held:
                     return snapshot
-            now = self.clock()
+            last_look = now
             waited = now - waited_from
             if waited >= PRINTER_WAIT_SECONDS:
-                minutes = int(PRINTER_WAIT_SECONDS // 60)
-                if remote_name is not None:
-                    self._remove_from_printer(job_id, remote_name)
-                if held and self._fresh(snapshot):
-                    # The printer answers, but has not shown what became of the earlier
-                    # start. (A printer that does not answer is the plainer reason below.)
-                    hold = self.hold
-                    self._end(job_id, False,
-                              f'the printer did not show within {minutes} min what became of '
-                              f'the print sent before this one ({hold.remote_name})',
-                              code='delivery.earlier_start_unsettled',
-                              detail=f'job {hold.job_id} was sent a start command; '
-                                     f'{int(hold.counted)} s of fresh reports since, none '
-                                     f'naming it; the last: {self._snapshot_detail(snapshot)}',
-                              fields={'minutes': minutes})
-                self._end(job_id, False, f'the printer did not answer for {minutes} min',
-                          code='delivery.printer_unreachable_at_start',
-                          detail=f'no whole, fresh report from the printer for {int(waited)} '
-                                 f's; the last: {self._snapshot_detail(snapshot)}, '
-                                 f"{snapshot.get('report_age_s')!r} s old",
-                          fields={'minutes': minutes})
+                self._end_unstarted_after_wait(job_id, remote_name, snapshot, held,
+                                               waited, fresh_s, last_fresh_at)
             if held and self._fresh(snapshot):
                 self._stage(job_id, 'waiting_for_earlier_print')
                 if last_log is None or now - last_log >= LOG_EVERY:
@@ -759,6 +870,45 @@ class RunLoop:
                              f"(its last is {snapshot.get('report_age_s')} s old) before "
                              f"going on ({int(waited)}s so far)")
             self._wait(job_id, PRINTER_POLL_SECONDS)
+
+    def _end_unstarted_after_wait(self, job_id, remote_name, snapshot, held, waited,
+                                  fresh_s, last_fresh_at):
+        """PRINTER_WAIT_SECONDS without a free printer: end the job unstarted, with the
+        reason that is true. An earlier start still holding the printer is the reason
+        whenever the printer answered at all during the wait (a printer that answers on and
+        off is not "unreachable for ten minutes"); a printer that never answered is. (With
+        no hold, the first whole, fresh picture ends the wait, so a printer that answered
+        at all and no hold never reach here.)"""
+        minutes = int(PRINTER_WAIT_SECONDS // 60)
+        now = self.clock()
+        if remote_name is not None:
+            self._remove_from_printer(job_id, remote_name)
+        last = (f"the last report: {self._snapshot_detail(snapshot)}, "
+                f"{snapshot.get('report_age_s')!r} s old")
+        if last_fresh_at is None:
+            answered = f'no whole, fresh report from the printer in the {int(waited)} s waited'
+        else:
+            answered = (f'whole, fresh reports from the printer for {int(fresh_s)} s of the '
+                        f'{int(waited)} s waited, the last {int(now - last_fresh_at)} s ago')
+        if held and last_fresh_at is not None:
+            hold = self.hold
+            what = (f'job {hold.job_id} ({hold.remote_name})' if hold.remote_name
+                    else 'the file named in an unreadable note')
+            sent = 'was sent' if hold.start_known else 'may have been sent'
+            self._end(job_id, False,
+                      f'the printer did not show within {minutes} min what became of the '
+                      'print sent before this one',
+                      code='delivery.earlier_start_unsettled',
+                      detail=f'{what} {sent} a start command {int(now - hold.sent_at)} s '
+                             f'ago; {int(hold.counted)} s of the {int(hold.required)} s of '
+                             'whole, fresh reports that settle it have come, none showing '
+                             f'that print going; {answered}; {last}',
+                      fields={'minutes': minutes})
+        # Here the printer gave no whole, fresh picture in the whole wait: one would have
+        # freed it (no hold) or made the hold the reason (above).
+        self._end(job_id, False, f'the printer did not answer for {minutes} min',
+                  code='delivery.printer_unreachable_at_start',
+                  detail=f'{answered}; {last}', fields={'minutes': minutes})
 
     def _refuse_if_not_free(self, job_id, snapshot, remote_name):
         """End the job unstarted when a fresh picture shows a print going on, or a main
@@ -927,13 +1077,26 @@ class RunLoop:
         self._refuse_if_not_free(job_id, snapshot, remote_name)
         if held:
             self._remove_from_printer(job_id, remote_name)
+            hold = self.hold
             self._end(job_id, False, 'an earlier start still holds the printer',
                       code='delivery.earlier_start_unsettled',
-                      detail=f'job {self.hold.job_id} was sent a start command and the '
-                             'printer has not shown what became of it; not started')
+                      detail=f'job {hold.job_id} '
+                             + ('was sent' if hold.start_known else 'may have been sent')
+                             + ' a start command and the printer has not shown what became '
+                             'of it; not started')
         self._stage(job_id, 'starting')
         # The last moment a stop can come in before the command: after it, never.
         self._check_stop()
+        # The note goes to the disk before the command, so a daemon that dies from here on
+        # still holds the printer when it starts again, whatever the relay remembers.
+        try:
+            self._note_start(job_id, remote_name, start_record.SENDING)
+        except OSError as e:
+            self._remove_from_printer(job_id, remote_name)
+            self._end(job_id, False,
+                      'could not save the note of the start command, so it was not sent',
+                      code='delivery.start_not_recorded',
+                      detail=f'{self.start_record_path}: {self._one_line(e)}; not started')
         self.log(f"job {job_id}: starting the print")
         before_state = snapshot.get('state')
         try:
@@ -945,10 +1108,21 @@ class RunLoop:
                      f"({self._one_line(e)}); waiting for the printer to report it")
             accepted = True
         if not accepted:
+            # Refused: nothing holds the printer, so the note goes.
+            if self.start_record_path is not None:
+                start_record.clear(self.start_record_path)
             self._end(job_id, False, 'the printer refused the print start command',
                       code='delivery.start_refused')
+        try:
+            self._note_start(job_id, remote_name, start_record.SENT)
+        except OSError as e:
+            # The note that says "sending" stays: a restarted daemon still holds the
+            # printer, and only says less than it could about whether the command went.
+            self.log(f"job {job_id}: could not mark the note of the start command as sent "
+                     f"({self._one_line(e)}); it still holds the printer")
         hold = StartHold(job_id, remote_name, self.clock(), sent_here=True,
-                         before_state=before_state)
+                         before_state=before_state,
+                         recorded=self.start_record_path is not None)
         self.hold = hold
         self._stage(job_id, 'starting', start_sent=True)
         self.log(f"job {job_id}: start accepted; waiting for the printer to report "
@@ -968,8 +1142,7 @@ class RunLoop:
         stale, and the job goes on the moment the printer speaks. After START_SLOW_SECONDS
         the stage says the printer has the file and has not shown the print yet."""
         if hold is None:
-            hold = StartHold(job_id, remote_name, self.clock(), sent_here=False,
-                             now=self.clock())
+            hold = self._rebuilt_hold(job_id, remote_name, None)
         if self.hold is None or self.hold.job_id == job_id:
             self.hold = hold
         last_request = None
@@ -983,8 +1156,7 @@ class RunLoop:
             fresh = self._fresh(snapshot)
             outcome = hold.watch(snapshot, now, fresh)
             if outcome is not None:
-                if self.hold is hold:
-                    self.hold = None
+                self._drop_hold(hold)
                 self._settled(job_id, remote_name, hold)
             if now - last_hold_check >= HOLD_CHECK_SECONDS:
                 last_hold_check = now
@@ -1009,7 +1181,9 @@ class RunLoop:
                              "it is not answering just now, so the wait is not counted")
             waited = now - hold.sent_at
             if waited >= START_SLOW_SECONDS:
-                self._stage(job_id, 'start_not_shown', start_sent=True,
+                # `start_sent` only when this process knows the command went: a hold
+                # rebuilt after a restart may stand for a command that was never sent.
+                self._stage(job_id, 'start_not_shown', start_sent=hold.start_known,
                             waited_s=int(waited))
                 if last_slow_log is None or now - last_slow_log >= LOG_EVERY:
                     last_slow_log = now
@@ -1041,7 +1215,10 @@ class RunLoop:
         self._end(job_id, False, f'the printer did not start the file within {seconds}s',
                   code='delivery.start_timeout',
                   detail=f'{int(hold.counted)} s of whole, fresh reports from the printer '
-                         f'after the start command never showed {remote_name}; the last: '
+                         + ('after the start command' if hold.start_known
+                            else 'after the start gate (this process cannot know whether '
+                                 'the start command was sent)')
+                         + f' never showed {remote_name}; the last: '
                          f'{self._snapshot_detail(snapshot)}',
                   fields={'seconds': seconds})
 
@@ -1088,7 +1265,7 @@ class RunLoop:
         if note:
             self.log(note)
         if self.hold is not None and self.hold.job_id == job_id:
-            self.hold = None
+            self._drop_hold(self.hold)
         self._ack(job_id, True)
         return True
 

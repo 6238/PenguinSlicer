@@ -4,6 +4,8 @@ defects 1 to 4 and the reviewer's sequences, then random sequences of the same f
 with the invariants: one start command per file, no two files overlapping on the printer,
 nothing after a final state, no end taken from a picture that does not show it."""
 
+import os
+
 import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
@@ -12,7 +14,7 @@ from penguin_delivery_daemon import printer as pr
 from penguin_delivery_daemon import run_loop as rl
 from penguin_delivery_relay import deliveries as dl
 
-from link_faults import BASE, DaemonDied, Shop
+from link_faults import BASE, DaemonDied, Shop, check_start_path
 from test_link_faults import assert_no_tight_loop, assert_truthful
 
 PREVIOUS = 'previous_part-j00000001'
@@ -41,10 +43,27 @@ class PrinterModel:
 
     def start(self, remote_name):
         printer = self.shop.printer
-        if self.pending or printer._snapshot['state'] in ('running', 'paused'):
+        if printer.start_raises == 'before':
+            return self._start(remote_name)             # raises: it never reaches the printer
+        if self.pending or printer.truth()['state'] in ('running', 'paused'):
             self.overlaps.append((remote_name, self.pending, dict(printer._snapshot)))
         before = dict(printer._snapshot)
-        accepted = self._start(remote_name)
+        reached = len(printer.started)
+        raised = None
+        try:
+            accepted = self._start(remote_name)
+        except OSError as e:
+            if len(printer.started) == reached:
+                raise                                   # it never reached the printer
+            raised, accepted = e, True                  # reached it, and the answer was lost
+        try:
+            return self._after_start(remote_name, accepted, before)
+        finally:
+            if raised is not None:
+                raise raised
+
+    def _after_start(self, remote_name, accepted, before):
+        printer = self.shop.printer
         if not accepted or self.show_after == 0:
             if accepted:
                 self.showed.append(remote_name)
@@ -331,6 +350,201 @@ def test_a_start_the_printer_ignored_frees_the_printer_only_after_it_settles(tmp
     assert len(shop.printer.started) == 2 and model.overlaps == []
 
 
+# --- review 5, defects 3 and 4: restarts between the gate and the settling ---------------
+
+#: The points between the gate and the settling where a half restarts: after the gate's
+#: yes and before the note; after the note and before the command; after the command and
+#: before the note says it went; after that; 30 s into the hold; at the acknowledgement
+#: once the print has shown.
+POINTS = ('gate', 'noted', 'sent', 'marked', 'held', 'settled')
+#: What a cancel 90 s after a daemon-only restart must answer: the command may not have
+#: gone until the note says it did.
+CANCEL_AFTER_DAEMON_RESTART = {
+    'gate': 'delivery.start_being_sent', 'noted': 'delivery.start_being_sent',
+    'sent': 'delivery.start_being_sent', 'marked': 'delivery.cancel_too_late',
+    'held': 'delivery.cancel_too_late', 'settled': 'delivery.already_finished'}
+
+
+def drive_with_deaths(shop, seconds, until):
+    """Drive the shop, starting a new daemon process whenever one dies, wherever it was."""
+    for _ in range(seconds):
+        if until():
+            return True
+        try:
+            shop.advance(1)
+            shop.tick()
+        except DaemonDied:
+            shop.restart_daemon()
+    return until()
+
+
+@pytest.mark.parametrize('half', ['daemon', 'relay', 'both'])
+@pytest.mark.parametrize('point', POINTS)
+def test_a_restart_between_the_gate_and_the_settling_never_sends_a_second_start(
+        tmp_path, monkeypatch, half, point):
+    """The printer shows a print 200 s after a start command reaches it. One half, or
+    both, restart at `point`; 70 s later the caller sends again, and 90 s later cancels
+    the first job. At most one start command reaches the printer while it holds another,
+    each file is sent one start command at most, a cancel never says a command went that
+    may not have, and once all is over the printer is free for the next send."""
+    shop = Shop(tmp_path)
+    model = PrinterModel(shop, show_after=200, print_seconds=60)
+    shop.online()
+    seen = {}
+    jobs = []
+
+    def event():
+        if seen.get('event_at') is not None:
+            return
+        seen['event_at'] = shop()
+        seen['commands_at_event'] = len(shop.printer.started)
+        if half in ('relay', 'both'):
+            shop.restart_relay()
+            shop.status()
+        shop.at(70, again)
+        shop.at(90, lambda: seen.update(cancel=cancel(shop, jobs[0])))
+        if half in ('daemon', 'both'):
+            raise DaemonDied()
+
+    def again():
+        status, job_id, _code = resend(shop)
+        seen['resend'] = status
+        if status == 202:
+            jobs.append(job_id)
+
+    real_save = rl.start_record.save
+
+    def save(path, **fields):
+        if point == 'gate' and fields['phase'] == 'sending':
+            event()
+        if point == 'sent' and fields['phase'] == 'sent':
+            event()
+        real_save(path, **fields)
+        if point == 'noted' and fields['phase'] == 'sending':
+            event()
+        if point == 'marked' and fields['phase'] == 'sent':
+            event()
+        if point == 'held' and fields['phase'] == 'sent':
+            shop.at(30, event)
+
+    monkeypatch.setattr(rl.start_record, 'save', save)
+    if point == 'settled':
+        def at_the_ack():
+            if model.showed:
+                event()
+            else:
+                shop.link.before['ack'] = at_the_ack
+        shop.link.before['ack'] = at_the_ack
+    jobs.append(shop.send())
+    assert drive_with_deaths(shop, 3600, lambda: 'resend' in seen and all(
+        shop.report(job_id) is None or shop.final(job_id) for job_id in jobs))
+    # One start command per file; none while the printer printed or held another.
+    assert len(shop.printer.started) == len(set(shop.printer.started))
+    assert model.overlaps == [], model.overlaps
+    sent_first = seen['commands_at_event'] == 1 or point not in ('gate', 'noted')
+    if half == 'daemon':
+        assert seen['cancel'][1] == CANCEL_AFTER_DAEMON_RESTART[point], seen['cancel']
+        first = shop.report(jobs[0])
+        if sent_first:
+            assert first['state'] == 'done', first
+        else:
+            assert first['error']['code'] == 'delivery.start_timeout', first
+            assert shop.printer.started == [] or len(jobs) > 1
+    else:
+        assert seen['cancel'][1] == 'delivery.job_unknown', seen['cancel']
+    # The printer is not blocked: once its own print is over, a send prints. (A relay
+    # that restarted no longer knows the first job, so its print may still be going.)
+    assert drive_with_deaths(shop, 1800, lambda: not model.pending and
+                             shop.printer._snapshot['state'] not in ('running', 'paused'))
+    shop.drive(10)
+    model.show_after = 0
+    status, last, code = resend(shop)
+    assert status == 202, (code, shop.status())
+    assert drive_with_deaths(shop, 1800, lambda: shop.final(last))
+    assert shop.report(last)['state'] == 'done'
+    assert model.overlaps == []
+
+
+def test_both_halves_restarted_inside_the_hold_keep_the_printer_held(tmp_path):
+    """The reviewer's sequence (review 5, defect 3): start command at once, the printer
+    shows the print 200 s later; the daemon and the relay both restart at 40 s; the
+    resend at 70 s is accepted by the new relay, waits behind the note's hold, and is
+    refused once the first print shows. One start command."""
+    shop = Shop(tmp_path)
+    model = PrinterModel(shop, show_after=200, print_seconds=600)
+    shop.online()
+    shop.send()
+    seen = {}
+
+    def both():
+        shop.restart_relay()
+        shop.status()
+        raise DaemonDied()
+
+    def again():
+        seen['resend'] = resend(shop)
+
+    shop.at(40, both)
+    shop.at(70, again)
+    shop.at(150, lambda: seen.update(stage=shop.report(seen['resend'][1])['stage']))
+    assert drive_with_deaths(shop, 1200, lambda: 'stage' in seen
+                             and shop.final(seen['resend'][1]))
+    assert seen['resend'][0] == 202
+    assert seen['stage'] == 'waiting_for_earlier_print'
+    assert shop.report(seen['resend'][1])['error']['code'] == 'delivery.printer_busy_at_start'
+    assert len(shop.printer.started) == 1 and model.overlaps == []
+
+
+def test_a_daemon_dead_between_the_gate_and_the_command_is_never_said_to_have_sent_it(
+        tmp_path):
+    """The reviewer's sequence (review 5, defect 4): the daemon dies after the gate and
+    before the start command. Cancels at 20 s and 90 s both answer
+    `delivery.start_being_sent` ("may already have sent"), never
+    `delivery.cancel_too_late`; the job ends `delivery.start_timeout`; nothing was sent."""
+    shop = Shop(tmp_path)
+    PrinterModel(shop, show_after=0)
+    shop.online()
+    original = shop.printer.start
+    seen = {}
+
+    def die_first(name):
+        shop.printer.start = original
+        shop.at(20, lambda: seen.update(cancel_20=cancel(shop, first)))
+        shop.at(90, lambda: seen.update(cancel_90=cancel(shop, first),
+                                        stage_90=shop.report(first)['stage']))
+        raise DaemonDied()
+
+    shop.printer.start = die_first
+    first = shop.send()
+    assert drive_with_deaths(shop, 900, lambda: shop.final(first))
+    assert seen['cancel_20'][:2] == (409, 'delivery.start_being_sent')
+    assert seen['cancel_90'][:2] == (409, 'delivery.start_being_sent')
+    assert 'may already have sent' in seen['cancel_90'][2]
+    assert seen['stage_90'] == 'start_not_shown'
+    assert shop.report(first)['error']['code'] == 'delivery.start_timeout'
+    assert shop.printer.started == []
+    assert_truthful(shop, first)
+
+
+def test_a_note_that_cannot_be_written_reaches_the_caller_as_not_started(tmp_path):
+    """The daemon cannot write its note of the start: no start command, the file is
+    removed, and the caller's error report says the print was not started."""
+    shop = Shop(tmp_path)
+    (tmp_path / 'start.json').mkdir()
+    (tmp_path / 'start.json' / 'in-the-way').write_text('x')
+    shop.restart_daemon()                  # a new process that reads the unreadable note
+    shop.loops[0].hold = None              # (a damaged note holds; here only the write is tried)
+    shop.online()
+    job_id = shop.send()
+    assert shop.drive(600, lambda: shop.final(job_id))
+    report = shop.report(job_id)
+    assert report['error']['code'] == 'delivery.start_not_recorded'
+    assert 'did not start the print' in report['error']['message']
+    assert report['error']['retryable'] is True
+    assert shop.printer.started == []
+    assert_truthful(shop, job_id)
+
+
 # --- random sequences --------------------------------------------------------------------
 
 #: The settings of "How a start is decided", scaled down for the random sequences so each
@@ -341,7 +555,15 @@ SCALED = {'START_SLOW_SECONDS': 10.0, 'START_SETTLE_SECONDS': 60.0,
 END_STATE = {'finished': 'finished', 'error': 'error', 'idle_error': 'error'}
 
 
-@settings(max_examples=40, deadline=None, derandomize=True, database=None,
+#: Where a daemon may die on the way to the start command, for the random sequences:
+#: after the gate and before the note, after the note and before the command, after the
+#: command and before the note says it went.
+DEATHS = (None, 'gate', 'noted', 'sent')
+#: A start command that raises: before it reaches the printer, or after.
+START_FAULTS = (None, 'before', 'after')
+
+
+@settings(max_examples=80, deadline=None, derandomize=True, database=None,
           suppress_health_check=[HealthCheck.function_scoped_fixture,
                                  HealthCheck.too_slow])
 @given(show_after=st.one_of(st.none(), st.integers(0, 60)),
@@ -352,54 +574,95 @@ END_STATE = {'finished': 'finished', 'error': 'error', 'idle_error': 'error'}
        outages=st.lists(st.tuples(st.integers(0, 80), st.integers(1, 40)), max_size=2),
        stop_at=st.one_of(st.none(), st.integers(1, 120)),
        resend_at=st.one_of(st.none(), st.integers(1, 150)),
-       restart_at=st.one_of(st.none(), st.integers(1, 80)))
+       restart_at=st.one_of(st.none(), st.integers(1, 80)),
+       whole_after=st.integers(0, 40),
+       someone=st.one_of(st.none(), st.tuples(st.one_of(st.just(0), st.integers(0, 80)),
+                                              st.integers(1, 60))),
+       cancel_at=st.one_of(st.none(), st.none(), st.none(), st.integers(1, 60)),
+       death=st.one_of(st.none(), st.sampled_from(DEATHS[1:])),
+       start_fault=st.one_of(st.none(), st.sampled_from(START_FAULTS[1:])),
+       relay_restart_at=st.one_of(st.none(), st.none(), st.none(), st.integers(1, 80)))
 def test_random_starts_never_overlap_and_never_end_on_a_left_over(
         tmp_path_factory, show_after, previous_end, linger, partial, quiet, outages,
-        stop_at, resend_at, restart_at):
+        stop_at, resend_at, restart_at, whole_after, someone, cancel_at, death,
+        start_fault, relay_restart_at):
     """The printer before the send is idle or shows the previous print's end; after a
     start command it may keep that end with our name on it (`linger`, a left-over) and
-    show the print `show_after` seconds later, or never. Partial pictures, quiet streams,
-    outages, a stop-following, a resend and a daemon restart land at random moments."""
+    show the print `show_after` seconds later, or never. The daemon hears it through the
+    real PrinterLink: each connection has only partial documents for `whole_after`
+    seconds, and `partial` spells are reconnects. Quiet streams, outages (during one of
+    which someone may start a print at the printer), a stop-following, a cancel, a resend,
+    a daemon dying anywhere or on the way to the start command, a start command that
+    raises, and a relay restart land at random moments."""
     with pytest.MonkeyPatch.context() as patch:
         for name, value in SCALED.items():
             patch.setattr(rl, name, value)
         # The relay marks a quiet printer stale on the same scale, so a caller can stop
         # following a job inside the hold and send again.
         patch.setattr(dl, 'PRINTER_QUIET_SECONDS', 10)
-        random_starts(tmp_path_factory.mktemp('shop'), show_after, previous_end, linger,
-                      partial, quiet, outages, stop_at, resend_at, restart_at)
+        random_starts(tmp_path_factory.mktemp('shop'), patch, show_after, previous_end,
+                      linger, partial, quiet, outages, stop_at, resend_at, restart_at,
+                      whole_after=whole_after, someone=someone, cancel_at=cancel_at,
+                      death=death, start_fault=start_fault,
+                      relay_restart_at=relay_restart_at)
 
 
-@settings(max_examples=30, deadline=None, derandomize=True, database=None,
+@settings(max_examples=120, deadline=None, derandomize=True, database=None,
           suppress_health_check=[HealthCheck.function_scoped_fixture,
                                  HealthCheck.too_slow])
-@given(show_after=st.integers(25, 54),
+@given(show_after=st.one_of(st.integers(25, 54), st.integers(45, 54), st.none()),
        previous_end=st.sampled_from([None, 'finished', 'error']),
        linger=st.booleans(),
        quiet_at=st.integers(0, 6), quiet_for=st.integers(12, 20),
        stop_after=st.integers(11, 12), resend_after=st.integers(0, 2),
-       restart_at=st.one_of(st.none(), st.integers(1, 60)))
+       restart_at=st.one_of(st.none(), st.integers(1, 60), st.integers(30, 50)),
+       whole_after=st.integers(0, 20),
+       death=st.sampled_from(DEATHS),
+       relay_restart=st.sampled_from([None, 'relay', 'both']), damage_note=st.booleans())
 def test_a_resend_while_the_first_start_is_unsettled_never_overlaps(
         tmp_path_factory, show_after, previous_end, linger, quiet_at, quiet_for,
-        stop_after, resend_after, restart_at):
+        stop_after, resend_after, restart_at, whole_after, death, relay_restart,
+        damage_note):
     """The sequence ruling 4 is about, aimed at: the printer goes quiet just after the
     start command (its last document without the print), the caller stops following once
     the relay marks it stale and sends again at once, the printer answers again without
-    the print, and shows the first print later, inside the stated time. Without the hold,
-    the second start command would go while the first is still pending."""
+    the print, and shows the first print later, inside the stated time, or never. Without
+    the hold, the second start command would go while the first is still pending, and a
+    hold that waits longer than its rule holds the second job back for nothing. The
+    daemon may die on the way to the command or at a random moment, and the relay (or the
+    relay and the daemon together) may restart just before the resend; a restarted daemon
+    may find its note damaged."""
     stop_at = quiet_at + stop_after + 10
     with pytest.MonkeyPatch.context() as patch:
         for name, value in SCALED.items():
             patch.setattr(rl, name, value)
         patch.setattr(dl, 'PRINTER_QUIET_SECONDS', 10)
-        random_starts(tmp_path_factory.mktemp('shop'), show_after, previous_end, linger,
-                      [], [(quiet_at + 10, quiet_for)], [], stop_at,
-                      stop_at + resend_after, restart_at)
+        random_starts(tmp_path_factory.mktemp('shop'), patch, show_after, previous_end,
+                      linger, [], [(quiet_at + 10, quiet_for)], [], stop_at,
+                      stop_at + resend_after + (8 if relay_restart else 0), restart_at,
+                      whole_after=whole_after, death=death,
+                      relay_restart_at=stop_at if relay_restart else None,
+                      daemon_dies_with_relay=relay_restart == 'both',
+                      damage_note=damage_note)
 
 
-def random_starts(tmp_path, show_after, previous_end, linger, partial, quiet, outages,
-                  stop_at, resend_at, restart_at):
-    shop = Shop(tmp_path)
+def random_starts(tmp_path, patch, show_after, previous_end, linger, partial, quiet,
+                  outages, stop_at, resend_at, restart_at, *, whole_after=0, someone=None,
+                  cancel_at=None, death=None, start_fault=None, relay_restart_at=None,
+                  daemon_dies_with_relay=False, damage_note=False):
+    shop = Shop(tmp_path, linked=True, whole_after=whole_after)
+    if damage_note:
+        # The disk loses the note's end while the daemon is down: the next process finds
+        # a note it cannot read.
+        restart = shop.restart_daemon
+
+        def restart_with_a_damaged_note():
+            if os.path.exists(shop.start_record_path):
+                with open(shop.start_record_path, 'r+b') as fh:
+                    fh.truncate(10)
+            restart()
+
+        shop.restart_daemon = restart_with_a_damaged_note
     before = END_STATE.get(previous_end, 'idle')
     if previous_end is not None:
         shop.printer._snapshot = dict(shop.printer._idle(), state=before, file=PREVIOUS,
@@ -411,25 +674,29 @@ def random_starts(tmp_path, show_after, previous_end, linger, partial, quiet, ou
     model = PrinterModel(shop, show_after=show_after, lingering=lingering,
                          print_seconds=30)
     resent = {'done': resend_at is None}
-    real_read = shop.printer._read
-    spells = {'partial': 0}
-
-    def read():
-        snap = real_read()
-        return dict(snap, whole=False) if spells['partial'] else snap
-
-    shop.printer._read = read
+    cancels = []
     shop.online()
     jobs = [shop.send()]
+    shop.printer.start_raises = start_fault
     for at, length in partial:
-        shop.at(at, lambda: spells.update(partial=spells['partial'] + 1))
-        shop.at(at + length, lambda: spells.update(partial=spells['partial'] - 1))
+        # A reconnect: the last connection's picture, then only partial documents for
+        # `length` seconds.
+        shop.at(at, lambda length=length: shop.heard.library.reconnect(length))
     for at, length in quiet:
         shop.printer.quiet(shop, at, length)
     for at, length in outages:
         shop.printer.outage(shop, at, length)
+    if someone is not None:
+        at, length = someone
+        shop.printer.outage(shop, at, 5)
+        shop.printer.someone_prints(shop, at + 1, length, pending=lambda: model.pending)
     if stop_at is not None:
         shop.at(stop_at, lambda: stop_following(shop, jobs[0]))
+    if cancel_at is not None:
+        def cancel_first():
+            _status, code, _message = cancel(shop, jobs[0])
+            cancels.append((jobs[0], code, shop(), list(shop.printer.commanded)))
+        shop.at(cancel_at, cancel_first)
     if resend_at is not None:
         def again():
             status, job_id, _code = resend(shop)
@@ -437,15 +704,42 @@ def random_starts(tmp_path, show_after, previous_end, linger, partial, quiet, ou
             if status == 202:
                 jobs.append(job_id)
         shop.at(resend_at, again)
+    if relay_restart_at is not None:
+        def relay_restarts():
+            shop.restart_relay()
+            shop.status()
+            if daemon_dies_with_relay:
+                raise DaemonDied()              # both halves restart together
+        shop.at(relay_restart_at, relay_restarts)
 
     def die():
         raise DaemonDied()
 
     if restart_at is not None:
         shop.at(restart_at, die)
+    if death is not None:
+        real_save = rl.start_record.save
+        dying = {'armed': True}
+
+        def save(path, **fields):
+            first = dying['armed'] and fields['phase'] == ('sent' if death == 'sent'
+                                                           else 'sending')
+            if first and death in ('gate', 'sent'):
+                dying['armed'] = False
+                raise DaemonDied()
+            real_save(path, **fields)
+            if first:
+                dying['armed'] = False
+                raise DaemonDied()
+
+        patch.setattr(rl.start_record, 'save', save)
+    def over(job_id):
+        # A relay that restarted no longer knows a job it held: over for the caller.
+        return shop.final(job_id) or shop.report(job_id) is None
+
     for _step in range(3600):
         # A second at a time while a job is live; five while all is quiet until the resend.
-        settled = all(shop.final(job_id) for job_id in jobs)
+        settled = all(over(job_id) for job_id in jobs)
         if settled and resent['done']:
             break
         try:
@@ -453,40 +747,33 @@ def random_starts(tmp_path, show_after, previous_end, linger, partial, quiet, ou
             shop.tick()
         except DaemonDied:
             shop.restart_daemon()
+        shop.observe(jobs)
     # A printer slower to show the print than START_SETTLE_SECONDS is past the stated
     # time: the daemon then rightly takes it not to have started the file (or, blind, a
     # left-over end for this print's), and a printer that starts after that can overlap.
     # Every other sequence must not.
     slow = show_after is None or show_after >= rl.START_SETTLE_SECONDS - 5
-    # One start command per file; no start while the printer prints or holds another.
-    assert len(shop.printer.started) == len(set(shop.printer.started))
+    # No start command while the printer prints or holds another start.
     if not (show_after is not None and slow):
         assert model.overlaps == [], model.overlaps
-    for evidence in shop.printer.start_evidence:
-        assert evidence['state'] in ('idle', 'finished', 'error'), evidence
-        assert evidence.get('whole') is not False, evidence
-        assert evidence['report_age_s'] <= rl.FRESH_REPORT_SECONDS, evidence
     # A daemon that could not watch continuously (restarted, or without a whole, fresh
     # picture for a while) takes a left-over end for ours once the command is
     # START_SETTLE_SECONDS old: a real end must be found, not waited on for ever.
-    blind = restart_at is not None or any(
-        length >= rl.LEFTOVER_END_SECONDS for _at, length in partial + quiet + outages)
+    blind = (restart_at is not None or death is not None
+             or whole_after >= rl.LEFTOVER_END_SECONDS or any(
+                 length >= rl.LEFTOVER_END_SECONDS
+                 for _at, length in partial + quiet + outages))
     # The left-over a blind daemon may take: the end the printer showed at a start command.
     blind_end = (('finished', 'error') if (blind and slow and lingering) else ())
+    check_start_path(shop, jobs, shown=model.showed, cancels=cancels,
+                     exempt_done='finished' in blind_end, exempt_end='error' in blind_end,
+                     slow=slow, allow_overlap=show_after is not None and slow,
+                     longer_hold=damage_note)
     for job_id in jobs:
         report = shop.report(job_id)
-        assert report is not None
-        code = (report.get('error') or {}).get('code')
-        name = f'sample_part-{job_id}.gcode.3mf'
-        if report['state'] == 'done':
-            assert name in model.showed or 'finished' in blind_end, \
-                ('done, but the printer never showed the print', report)
-        # No real printer error was injected: an end of that kind would be a left-over.
-        if code in ('delivery.printer_error_at_start', 'delivery.print_failed',
-                    'delivery.print_stopped'):
-            assert 'error' in blind_end, report
-        if code in ('delivery.start_timeout', 'delivery.start_other_file'):
-            assert name not in model.showed or slow, report
+        if report is None:
+            assert relay_restart_at is not None
+            continue
         if report['state'] == 'running':
             assert report['stage'] in ('printing', 'waiting_for_person', 'starting',
                                        'start_not_shown', 'waiting_for_printer',

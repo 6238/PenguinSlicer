@@ -432,6 +432,15 @@ class TestRun(RunTestCase):
         self.assertEqual(FakePrinterLink.instances[-1].disconnects, 1)
         self.assertIn('stopping', self.out.getvalue())
 
+    def test_the_note_of_a_start_lives_in_the_daemons_home(self):
+        """Review 5, defect 3: `run` keeps the note of a start command beside its
+        configuration, so the next run finds it."""
+        self.write_config()
+        self.run_run()
+        self.assertEqual(self.loops[-1].start_record_path,
+                         os.path.join(os.path.dirname(os.path.abspath(self.path)),
+                                      'start.json'))
+
     def test_one_tick_syncs_the_printers_snapshot_with_the_saved_token(self):
         self.write_config()
         self.run_run()

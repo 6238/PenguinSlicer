@@ -110,6 +110,10 @@ class FaultyLink:
         self.flap_period = None
         self.calls = []
         self.delivered = []
+        #: Called with the path of every ask of the start gate, before anything else, and
+        #: once the relay has handled it.
+        self.on_start_ask = None
+        self.on_start_answered = None
 
     def use_app(self, app):
         """The relay restarted: the same address now answers from a new process."""
@@ -138,6 +142,8 @@ class FaultyLink:
         self.calls.append((self.clock(), name))
         if name in self.before:
             self.before.pop(name)()
+        if name == 'start' and self.on_start_ask is not None:
+            self.on_start_ask(path)
         if self.is_down():
             raise requests.ConnectionError('[Errno 111] Connection refused')
         fault = self.plan.get(name, []).pop(0) if self.plan.get(name) else None
@@ -170,6 +176,8 @@ class FaultyLink:
         response = self._deliver(method, path, headers, json, base)
         if fault == 'duplicate':
             response = self._deliver(method, path, headers, json, base)
+        if name == 'start' and self.on_start_answered is not None:
+            self.on_start_answered(path)
         if fault == 'late':
             raise requests.exceptions.ReadTimeout('read timed out')
         if fault == 'reset_after':
@@ -219,6 +227,17 @@ class CountingPrinter(StandInPrinter):
         #: read just before: the evidence it started on.
         self.last_read = None
         self.start_evidence = []
+        #: Every start command the daemon tried to send, whether or not it reached the
+        #: printer, in order; `started` (the stand-in's) is those the printer accepted.
+        self.commanded = []
+        #: A one-shot fault of the next start command: 'before' (the connection drops
+        #: before the command reaches the printer) or 'after' (it reaches the printer, and
+        #: the connection drops before the answer). Either way the call raises.
+        self.start_raises = None
+        #: Every picture the daemon read: (shop time, picture).
+        self.reads = []
+        #: Start commands that reached the printer while it was printing (its own truth).
+        self.busy_starts = []
 
     @property
     def off(self):
@@ -269,7 +288,36 @@ class CountingPrinter(StandInPrinter):
 
     def snapshot(self):
         self.last_read = self._read()
+        self.reads.append((self.clock(), self.last_read))
         return dict(self.last_read)
+
+    def truth(self):
+        """What the printer is doing, whether or not anyone can hear it."""
+        if (self.started_at is not None and self._snapshot['state'] == 'running'
+                and self.clock() - self.started_at >= self.print_seconds):
+            self.finish()
+        return StandInPrinter.snapshot(self)
+
+    def someone_prints(self, shop, at, seconds, name='someone_elses_print',
+                       pending=lambda: False):
+        """Someone starts a print at the printer's own screen `at` seconds from now, while
+        the printer is off the network (so nobody hears it start); it runs for `seconds`,
+        then finishes. Nothing happens if the printer is busy, holds a start it has not
+        begun (`pending`), or is not off just then."""
+        def begin():
+            truth = self.truth()
+            if not self.off or truth['state'] in ('running', 'paused') or pending():
+                return
+            self._snapshot = dict(self._idle(), state='running', file=name, job_name=name,
+                                  percent=10, remaining_min=5, layers=10, stage_code=0,
+                                  stage='printing', stage_label='Printing')
+            shop.at(seconds, end)
+
+        def end():
+            if self._snapshot.get('file') == name and self._snapshot['state'] == 'running':
+                self._snapshot = dict(self._snapshot, state='finished', percent=100)
+
+        shop.at(at, begin)
 
     def _read(self):
         if self.off:
@@ -293,7 +341,14 @@ class CountingPrinter(StandInPrinter):
         return super().upload(local_path, remote_name, **kwargs)
 
     def start(self, remote_name):
+        self.commanded.append(remote_name)
         self.start_evidence.append(self.last_read)
+        if not self.off and self.truth()['state'] in ('running', 'paused'):
+            # The printer's own truth: a print is going on as this command arrives.
+            self.busy_starts.append((remote_name, self.truth()))
+        fault, self.start_raises = self.start_raises, None
+        if fault == 'before':
+            raise OSError('the connection dropped before the command reached the printer')
         if self.off:
             raise OSError('the printer is off')
         accepted = super().start(remote_name)
@@ -302,11 +357,164 @@ class CountingPrinter(StandInPrinter):
         if self.after_start is not None:
             hook, self.after_start = self.after_start, None
             hook()
+        if fault == 'after':
+            raise OSError('the connection dropped after the command reached the printer')
         return accepted
 
 
+#: How each snapshot `state` of the stand-in reads as the H2S's own `gcode_state`.
+_GCODE_STATE = {'idle': 'IDLE', 'running': 'RUNNING', 'paused': 'PAUSE',
+                'finished': 'FINISH', 'error': 'FAILED'}
+#: The fields of a partial status document: figures, never the main state.
+_PARTIAL_FIELDS = ('mc_percent', 'mc_remaining_time', 'layer_num')
+
+
+def h2s_document(snapshot):
+    """The H2S status document that map_status reads back as this stand-in snapshot."""
+    error = snapshot.get('error')
+    code = (int(error[len('PRINT_ERROR_'):], 16)
+            if isinstance(error, str) and error.startswith('PRINT_ERROR_') else 0)
+    stage = snapshot.get('stage_code')
+    state = _GCODE_STATE.get(snapshot.get('state'), 'IDLE')
+    if snapshot.get('state') == 'error' and stage == 255:
+        state = 'IDLE'                                  # idle with an error code set
+    return {'gcode_state': state, 'subtask_name': snapshot.get('job_name') or '',
+            'mc_percent': snapshot.get('percent') or 0,
+            'mc_remaining_time': snapshot.get('remaining_min') or 0,
+            'layer_num': snapshot.get('layer') or 0,
+            'total_layer_num': snapshot.get('layers') or 0,
+            'stg_cur': 255 if stage is None else stage, 'print_error': code, 'hms': []}
+
+
+class _Message:
+    def __init__(self, document):
+        self.payload = json_module.dumps(document).encode()
+
+
+class _ShopMqtt:
+    """bambulabs_api's MQTT client as far as PrinterLink uses it: the two hooks, pushall,
+    and the paho client's disconnect."""
+
+    def __init__(self):
+        self.on_message_handler = None
+        self.on_connect_handler = None
+        self._client = self
+        self.pushalls = 0
+
+    def pushall(self):
+        self.pushalls += 1
+
+    def disconnect(self):
+        pass
+
+
+class ShopLibrary:
+    """bambulabs_api.Printer as the daemon's PrinterLink meets it, over the stand-in's
+    truth: it merges every status document into the last, keeps the last connection's
+    picture across a reconnect, and calls the connect hook on each (re)connect. On a
+    connection the printer's whole document arrives only `whole_after` seconds later
+    (the library asked for it; the printer is slow to answer); until then only partial
+    documents, which never carry the main state. One document a second while the printer
+    speaks; none while its stream is quiet; disconnected while it is off."""
+
+    def __init__(self, shop, truth_printer, whole_after=0):
+        self.shop = shop
+        self.inner = truth_printer
+        self.whole_after = whole_after
+        self.mqtt_client = _ShopMqtt()
+        self.merged = {}
+        self.connected = False
+        self.whole_due = None
+        self.last_document_at = None
+        self._once = None
+
+    def mqtt_start(self):
+        pass
+
+    def mqtt_stop(self):
+        pass
+
+    def reconnect(self, whole_after=None):
+        """The connection drops and comes straight back (a Wi-Fi blip); on this one
+        connection the whole document comes `whole_after` seconds late."""
+        self.connected = False
+        self._once = whole_after
+
+    def mqtt_client_connected(self):
+        self.hear()
+        return self.connected
+
+    def mqtt_dump(self):
+        return {'print': dict(self.merged)}
+
+    def hear(self):
+        now = self.shop()
+        if self.inner.off:
+            self.connected = False
+            return
+        if not self.connected:
+            self.connected = True
+            once, self._once = self._once, None
+            self.whole_due = now + (self.whole_after if once is None else once)
+            if self.mqtt_client.on_connect_handler is not None:
+                self.mqtt_client.on_connect_handler(None, None, None, 0)
+        if self.inner.quiet_spells:
+            return
+        if self.last_document_at is not None and now - self.last_document_at < 1:
+            return
+        self.last_document_at = now
+        document = h2s_document(self.inner.truth())
+        if self.whole_due is not None:
+            if now >= self.whole_due:
+                self.whole_due = None
+            else:
+                document = {key: document[key] for key in _PARTIAL_FIELDS}
+        self.merged.update(document)
+        if self.mqtt_client.on_message_handler is not None:
+            self.mqtt_client.on_message_handler(None, None, _Message({'print': document}))
+
+
+class LinkedPrinter:
+    """The stand-in printer as the daemon hears it through the real PrinterLink over
+    ShopLibrary: what the daemon reads is what PrinterLink makes of the documents. The
+    upload, the delete and the start go to the stand-in directly. One per daemon process:
+    a restarted daemon connects anew."""
+
+    def __init__(self, shop, inner, whole_after=0):
+        from penguin_delivery_daemon.printer import PrinterLink
+        self.inner = inner
+        self.library = ShopLibrary(shop, inner, whole_after)
+        self.link = PrinterLink('127.0.0.1', 'STANDIN0001', 'not-a-code',
+                                printer_factory=lambda *args: self.library,
+                                clock=shop.mono)
+        self.link.connect()
+
+    def snapshot(self):
+        picture = self.link.snapshot()
+        self.inner.last_read = picture
+        self.inner.reads.append((self.inner.clock(), picture))
+        return dict(picture)
+
+    def request_report(self):
+        self.link.request_report()
+
+    def upload(self, *args, **kwargs):
+        return self.inner.upload(*args, **kwargs)
+
+    def delete(self, remote_name):
+        return self.inner.delete(remote_name)
+
+    def start(self, remote_name):
+        return self.inner.start(remote_name)
+
+
 class Shop:
-    def __init__(self, tmp_path, *, daemon_clock_offset=0.0, rand=lambda: 0.5):
+    """`linked`: the daemon hears the printer through the real PrinterLink over
+    ShopLibrary (merged documents, reconnects, partial documents for `whole_after` seconds
+    of each connection), instead of reading the stand-in's snapshot directly."""
+
+    def __init__(self, tmp_path, *, daemon_clock_offset=0.0, rand=lambda: 0.5,
+                 linked=False, whole_after=0):
         self.tmp_path = tmp_path
         self.wall = relay_fakes.FakeClock()
         self.mono = daemon_fakes.FakeClock(now=1000.0 + daemon_clock_offset)
@@ -320,6 +528,16 @@ class Shop:
         self.config = DaemonConfig(backend_url=BASE, pairing_code=relay_fakes.CODE,
                                    path=str(tmp_path / 'config.toml'))
         self.rand = rand
+        self.linked = linked
+        self.whole_after = whole_after
+        self.heard = None
+        #: Every ask of the start gate: {'at', 'job', 'picture'} (the daemon's last read).
+        self.start_asks = []
+        #: When each job's start was granted, by the relay that granted it.
+        self.gate_at = {}
+        self.relay_restarts = []
+        self.link.on_start_ask = self._start_asked
+        self.link.on_start_answered = self._start_answered
         self._depth = 0
         self.logged = []
         self.errors = []
@@ -350,6 +568,7 @@ class Shop:
                                     spool_dir=str(self.tmp_path / 'spool'))
 
     def restart_relay(self):
+        self.relay_restarts.append(self())
         self.app = self.new_relay()
         self.link.use_app(self.app)
         self.pages = self.app.test_client()
@@ -380,14 +599,40 @@ class Shop:
         # second here also ticks every daemon, so a wait with no end must fail early.
         sleep = daemon_fakes.SleepBound(self.job_sleep, 'the shop daemon',
                                         seconds=JOB_SLEEP_LIMIT_SECONDS)
-        return RunLoop(self.config, client, self.printer, clock=self.mono,
+        heard = self.printer
+        if self.linked:
+            self.heard = heard = LinkedPrinter(self, self.printer, self.whole_after)
+        return RunLoop(self.config, client, heard, clock=self.mono,
                        sleep=sleep, rand=self.rand,
                        log=lambda *a: self.logged.append(' '.join(str(x) for x in a)),
                        executor=InlineExecutor(), instance=instance,
-                       download_dir=str(self.tmp_path / 'downloads'), save_token=save_token)
+                       download_dir=str(self.tmp_path / 'downloads'), save_token=save_token,
+                       start_record_path=self.start_record_path)
+
+    @property
+    def start_record_path(self):
+        """The note of a start command, in the daemon's home: it outlives every process."""
+        return str(self.tmp_path / 'start.json')
 
     def restart_daemon(self):
         self.loops = [self.new_daemon()]
+
+    def _start_asked(self, path):
+        job = path.rstrip('/').split('/')[-2]
+        self.start_asks.append({'at': self(), 'job': job, 'picture': self.printer.last_read,
+                                'granted_before': self.relay_granted(job),
+                                'commanded': list(self.printer.commanded)})
+
+    def _start_answered(self, path):
+        job = path.rstrip('/').split('/')[-2]
+        if job not in self.gate_at and self.relay_granted(job):
+            self.gate_at[job] = self()
+
+    def relay_granted(self, job_id):
+        """Has the relay granted this job's start (as far as this relay process knows)?"""
+        record = self.relay._get(relay_fakes.CODE)
+        job = record.job if record is not None else None
+        return bool(job and job['id'] == job_id and job.get('start_granted_to'))
 
     @property
     def relay(self):
@@ -441,6 +686,25 @@ class Shop:
         assert self.drive(seconds, lambda: self.relay.status_for(relay_fakes.CODE)['online']), \
             'never came online'
         assert self.status()['online']
+        if self.linked:
+            # Until the printer's whole document arrives, the relay rightly refuses a send.
+            assert self.drive(seconds, lambda: (self.status().get('status') or {}).get(
+                'state') not in (None, 'unrecognised')), 'no whole picture'
+
+    def observe(self, job_ids):
+        """Note each job's state and stage as the relay reports it now (the property
+        tests' record of what a caller saw, and when)."""
+        for job_id in job_ids:
+            report = self.relay.delivery_report(relay_fakes.CODE, job_id)
+            if report is not None:
+                self.observed.append((self(), job_id, report['state'], report.get('stage'),
+                                      (report.get('error') or {}).get('code')))
+
+    @property
+    def observed(self):
+        if not hasattr(self, '_observed'):
+            self._observed = []
+        return self._observed
 
     def final(self, job_id):
         """Is the delivery job over? Asked every simulated second, so it reads the relay in
@@ -454,3 +718,122 @@ class Shop:
         else:
             report = seen
         return report is not None and report['state'] in ('done', 'failed', 'cancelled')
+
+
+# --- the invariants of the start path, for the property tests ------------------------------
+
+#: The codes whose sentence says the print was not started.
+NOT_STARTED = frozenset({
+    'delivery.cancelled', 'delivery.printer_unreachable_at_start',
+    'delivery.printer_busy_at_start', 'delivery.printer_state_unrecognised_at_start',
+    'delivery.earlier_start_unsettled', 'delivery.start_not_recorded',
+    'delivery.job_not_confirmed', 'delivery.job_not_picked_up'})
+_FREE = ('idle', 'finished', 'error')
+
+
+def file_of(job_id):
+    return f'sample_part-{job_id}.gcode.3mf'
+
+
+def _whole_and_fresh(picture):
+    from penguin_delivery_daemon import run_loop as rl
+    return (picture is not None and picture.get('whole') is not False
+            and picture.get('state') not in ('unreachable', 'unrecognised')
+            and isinstance(picture.get('report_age_s'), (int, float))
+            and picture['report_age_s'] <= rl.FRESH_REPORT_SECONDS)
+
+
+def _going(picture, job_id):
+    stem = file_of(job_id)[:-len('.gcode.3mf')]
+    return picture.get('state') in ('running', 'paused') and stem in (
+        picture.get('job_name'), picture.get('file'))
+
+
+def check_start_path(shop, jobs, *, shown, cancels=(), exempt_done=False, exempt_end=False,
+                     slow=False, allow_overlap=False, longer_hold=False):
+    """The start path's invariants, from what the printer was sent and what everyone was
+    told. `shown`: the files the printer showed as printing (its own truth). `cancels`:
+    (job, error code or None, shop time, the files commanded by then) of each cancel and
+    its answer. `exempt_done` and `exempt_end`: a printer so slow, or a daemon so blind,
+    that the guide's two stated limits allow a done, or an end, without the print shown;
+    `slow` the same for "did not start", and `allow_overlap` for a start command while
+    the printer prints. `longer_hold`: a damaged note, which holds the printer for longer
+    on purpose. Returns nothing; raises AssertionError naming the broken invariant."""
+    from penguin_delivery_daemon import run_loop as rl
+    printer = shop.printer
+    # 1. One start command per file, counting the ones that never reached the printer;
+    #    none while the printer was printing (its own truth).
+    assert len(printer.commanded) == len(set(printer.commanded)), \
+        ('a file was sent two start commands', printer.commanded)
+    if not allow_overlap:
+        assert printer.busy_starts == [], ('a start command while the printer printed',
+                                           printer.busy_starts)
+    # 2. A start command only on a whole, fresh picture of a free printer.
+    for evidence in printer.start_evidence:
+        assert _whole_and_fresh(evidence) and evidence['state'] in _FREE, \
+            ('a start command on a picture that is not whole, fresh and free', evidence)
+    # 3. The gate is asked, before it grants, only on such a picture: every wait comes
+    #    before the gate, where a cancel still ends the job.
+    for ask in shop.start_asks:
+        if (ask['granted_before'] or file_of(ask['job']) in ask['commanded']
+                or shop.gate_at.get(ask['job'], ask['at']) < ask['at']):
+            continue                    # a hold's check that the relay still holds it
+        picture = ask['picture']
+        assert _whole_and_fresh(picture) and picture['state'] in _FREE, \
+            ('the start gate asked while the printer was not free on whole, fresh word', ask)
+    # 4. No final state without evidence, and no sentence claiming a start that did not
+    #    happen (or denying one that did).
+    for job_id in jobs:
+        report = shop.report(job_id)
+        name = file_of(job_id)
+        seen = [entry for entry in shop.observed if entry[1] == job_id]
+        if any(stage == 'printing' for _at, _job, _state, stage, _code in seen):
+            assert name in printer.commanded, ('printing, but no start command', job_id)
+        if report is None:
+            continue
+        code = (report.get('error') or {}).get('code')
+        if code in NOT_STARTED:
+            assert name not in printer.commanded, ('"not started", but it was', report)
+        if code == 'delivery.start_refused':
+            assert name not in printer.started, ('"refused", but the printer took it', report)
+        if report['state'] == 'done':
+            assert name in shown or exempt_done, ('done, never shown', report)
+        if code in ('delivery.printer_error_at_start', 'delivery.print_failed',
+                    'delivery.print_stopped'):
+            assert exempt_end, ('a printer error that never happened', report)
+        if code in ('delivery.start_timeout', 'delivery.start_other_file'):
+            assert name not in shown or slow, ('"did not start", but it printed', report)
+    for job_id, code, at, commanded in cancels:
+        if code == 'delivery.cancel_too_late':
+            assert file_of(job_id) in commanded, \
+                ('"the start command has already been sent", none was', job_id, at)
+    # 5. A hold never holds the printer past START_SETTLE_SECONDS of whole, fresh pictures
+    #    after the gate, nor once the held print has been seen going. (Only while the
+    #    relay that granted the gate runs: after a relay restart the daemon's note holds
+    #    the printer, its time counted from after the restart, which is the safe side.) The
+    #    slack: the daemon looks every PRINTER_POLL_SECONDS, and its word reaches the
+    #    relay at the next sync.
+    slack = rl.PRINTER_POLL_SECONDS + 3
+    for at, job_id, _state, stage, _code in shop.observed:
+        if stage != 'waiting_for_earlier_print' or longer_hold:
+            continue
+        earlier = [(gate, other) for other, gate in shop.gate_at.items()
+                   if other != job_id and gate < at]
+        if not earlier:
+            continue
+        gate, other = max(earlier)
+        if any(gate <= restart <= at for restart in shop.relay_restarts):
+            continue
+        fresh = 0.0
+        previous = None
+        for read_at, picture in printer.reads:
+            if read_at < gate or read_at > at - slack:
+                continue
+            ok = _whole_and_fresh(picture)
+            assert not (ok and _going(picture, other)), \
+                ('still held after the held print was seen going', job_id, other, read_at)
+            if previous is not None and ok and previous[1]:
+                fresh += read_at - previous[0]
+            previous = (read_at, ok)
+        assert fresh <= rl.START_SETTLE_SECONDS, \
+            ('held past the settle time of whole, fresh pictures', job_id, other, fresh)

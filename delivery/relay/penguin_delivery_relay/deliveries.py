@@ -131,7 +131,8 @@ class Delivery:
         #: may be printing, so only the printer's word, or stop_following, ends the job.
         self.gate_passed = False
         #: The daemon said the start command went to the printer (or the printer showed the
-        #: print). Between the gate and this, nobody may be told the print started.
+        #: print). Between the gate and this, nobody may be told the print started, nor that
+        #: the command went: a daemon that died in between cannot know whether it did.
         self.start_sent = False
         #: When the job last had fresh word (not stale), for OUTCOME_UNKNOWN_AFTER_SECONDS.
         self.fresh_at = now
@@ -253,8 +254,9 @@ class Delivery:
             extras = {'bytes_sent': int(sent), 'bytes_total': int(total)}
         elif _number(progress.get('fraction')) is not None:
             fraction = max(0.0, min(1.0, progress['fraction']))
-        if self.gate_passed and (progress.get('start_sent') is True
-                                 or stage == 'start_not_shown'):
+        # Only the daemon's explicit word: a daemon restarted between the gate and the
+        # command reports `start_not_shown` with `start_sent` false, because it cannot know.
+        if self.gate_passed and progress.get('start_sent') is True:
             self.start_sent = True
         waited = _number(progress.get('waited_s'))
         if stage == 'start_not_shown' and waited is not None:
