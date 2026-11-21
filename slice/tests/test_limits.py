@@ -53,7 +53,7 @@ class TestMemoryModel:
         # The model takes volumes only: a part's triangle count cannot change it.
         assert limits.estimate_peak_mb([5_000.0] * 3, False) == limits.estimate_peak_mb([5_000.0] * 3, False)
 
-    @pytest.mark.parametrize("raw, expected", [(None, 900), ("", 900), ("1500", 1500), ("0900", 900),
+    @pytest.mark.parametrize("raw, expected", [(None, 2000), ("", 2000), ("1500", 1500), ("0900", 900),
                                                ("999999", 999999), ("1", 1)])
     def test_ceiling_is_a_setting_with_a_default(self, raw, expected):
         environ = {} if raw is None else {limits.MAX_PEAK_MB_ENV: raw}
@@ -68,7 +68,7 @@ class TestMemoryModel:
         message = str(caught.value)
         assert message.startswith(f"The setting PENGUIN_SLICE_MAX_PEAK_MB is {raw[:40]!r}, which is not a whole "
                                   f"number of megabytes")
-        assert "unset it for the default of 900 MB" in message and len(message) < 300
+        assert "unset it for the default of 2000 MB" in message and len(message) < 300
 
     def test_ceiling_reads_the_process_environment(self, monkeypatch):
         monkeypatch.setenv(limits.MAX_PEAK_MB_ENV, "1234")

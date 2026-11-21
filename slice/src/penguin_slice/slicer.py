@@ -37,11 +37,14 @@ also counts the slice service's own memory at the moment it started Orca (it sur
 fork and exec). A spike after the last sample (Orca ending by itself between two samples
 with no progress message after it) is not seen.
 
-Orca's debug log (ORCA_LOG, at --debug ORCA_LOG_LEVEL) is read in one place,
-orca_log_warnings: when a slice fails with Orca's general reason only, the warnings Orca
-reported while slicing (for example "floating regions") are in that log and nowhere else.
-The log does not say which warning, if any, made the slice fail, so they follow the general
-sentence labelled as warnings that may be unrelated.
+Orca's debug log (ORCA_LOG, at --debug ORCA_LOG_LEVEL) is read in one place, _log_lines,
+for orca_log_warnings and orca_log_conflicts. The warnings Orca reported while slicing (for
+example "floating regions") are all in that log, and result.json holds at most one of them.
+On a good slice plate_warnings gives every one in the sliced file's summary. When a slice
+fails with Orca's general reason only, the log does not say which warning, if any, made it
+fail, so they follow the general sentence labelled as warnings that may be unrelated. When
+Orca refuses a plate because two instances' paths would meet (-101), the log alone names
+the pair, and the sentence names it (_too_close).
 
 A stop is reported only when it is what ended Orca. A run that was sent only SIGTERM but
 ended on another signal (someone else's SIGKILL, a crash), or that was already ending when
@@ -75,6 +78,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .limits import MAX_PEAK_MB_ENV, PLATE_SLICE_TIMEOUT_S, max_peak_mb
+from .plate import TOO_CLOSE_SUPPORTS_REMEDY
 
 PKG = Path(__file__).resolve().parent      # the penguin_slice package directory
 SLICE_ROOT = PKG.parents[1]                # the slice/ project directory (src layout)
@@ -107,8 +111,17 @@ ORCA_LOG_LEVEL = "3"
 # floating regions. ..., message_type=2, flag=32". tests_orca pins this format.
 LOG_WARNING_RE = re.compile(r"cli_status_callback: percent=-?\d+, warning_step=\d+, message=(.*), "
                             r"message_type=-?\d+, flag=-?\d+\s*$")
-MAX_LOG_BYTES = 64 * 1024 * 1024    # the debug log read on a failure, at most
-MAX_LOG_WARNINGS = 5                # warnings kept from it
+# Orca's debug log line naming the two instances whose paths meet, when it refuses a plate
+# with return code -101, as the pinned Orca writes it: "gcode path conflicts found between
+# Elevator_Block_Top #2 and Elevator_Block_Top #1" (instance labels, plate.instance_labels,
+# have no space but the one before "#"). tests_orca pins this format.
+LOG_CONFLICT_RE = re.compile(r"gcode path conflicts found between (\S+ #\d+) and (\S+ #\d+)\s*$")
+MAX_LOG_CONFLICTS = 5               # pairs kept from it for a failure's detail
+MAX_LOG_BYTES = 64 * 1024 * 1024    # the debug log read, at most
+MAX_LOG_WARNINGS = 5                # warnings kept from it for a failure's sentence
+# Warnings a sliced file's summary keeps: two for each instance the plate may hold
+# (limits.MAX_INSTANCES), so no summary grows with what a caller sends.
+MAX_PLATE_WARNINGS = 300
 MAX_WARNING_CHARS = 300             # each cut to this
 DETAIL_LINES = 20
 TAIL_LINES = 200              # lines of Orca's output kept in memory while it runs
@@ -151,11 +164,16 @@ EMPTY_LAYERS_NO_INSTANCE_MESSAGE = ("A part has nothing to print between {low} a
 # plate_3mf.py's name guard catches. -100 is Orca's general slicing failure: its sentence
 # is chosen from Orca's reason (orca_failure), this entry is the fallback.
 ORCA_RETURN_CODES = {
-    -101: ("slice.orca_too_close", "Parts are too close together; spread them out."),
+    -101: ("slice.orca_too_close", "Two instances are too close together: the slicer found that their paths would "
+                                   "meet."),
     -52: ("slice.crosses_edge", "A part crosses the edge of the plate."),
     -100: ("slice.orca_failed", SLICE_FAILED_MESSAGE),
     -50: ("slice.nothing_on_plate", "No part is fully on the plate."),
 }
+# -101's sentence when the debug log names the pair, and the clause added when supports are
+# on (their supports are what met in every refusal measured: slice/README.md, "Spacing").
+TOO_CLOSE_PAIR_MESSAGE = "{first} and {second} are too close together: the slicer found that their paths would meet."
+TOO_CLOSE_SUPPORTS_CLAUSE = ", most likely their supports, which need more room between instances."
 # Orca's reasons, as its result.json and log word them (pinned Orca).
 EMPTY_LAYER_RE = re.compile(r"empty layer between (-?\d+(?:\.\d+)?) and (-?\d+(?:\.\d+)?)")
 OBJECT_RE = re.compile(r"^Object: (.+)$", re.M)
@@ -924,7 +942,7 @@ def _result(archive, output_dir, run, entries=(GCODE_ENTRY,)):
         stop_note = (f"{_stop_detail(run)}, after Orca had written the complete sliced file ({_complete_text(entries)}):"
                      f" the sliced file is delivered")
         if not (Path(output_dir) / RESULT_JSON).is_file():
-            stop_note += "; Orca had not written result.json, so any warnings of its own are not known"
+            stop_note += "; Orca had not written result.json, so its warnings are only those its debug log held by then"
     return SliceResult(output_path=archive, peak_rss_kb=run.peak_kb, wall_s=run.wall_s, memory_note=note,
                        stop_note=stop_note, **summary)
 
@@ -975,6 +993,9 @@ def orca_failure(run, output_dir, supports_on=None):
         _text, error_code, message = said[0]
         return SliceError(message, details, code, error_code=error_code, reason=reason, run=run)
     error_code, message = ORCA_RETURN_CODES.get(code, ("slice.orca_failed", SLICE_FAILED_MESSAGE))
+    if error_code == "slice.orca_too_close":
+        return _too_close(SliceError(message, details, code, error_code=error_code, reason=reason, run=run),
+                          output_dir, supports_on)
     if error_code == "slice.orca_failed":
         # Orca's general failure: the warnings it reported while slicing are in its debug log only.
         logged = orca_log_warnings(output_dir)
@@ -986,27 +1007,109 @@ def orca_failure(run, output_dir, supports_on=None):
     return SliceError(message, details, code, error_code=error_code, reason=reason, run=run)
 
 
-def orca_log_warnings(output_dir):
-    """The warnings Orca reported while slicing, read from its debug log in `output_dir`
-    (LOG_WARNING_RE), in order, each once, at most MAX_LOG_WARNINGS, each cut to
-    MAX_WARNING_CHARS; at most MAX_LOG_BYTES of the log are read. [] when the log is
-    missing, unreadable or holds none: then nothing is said that the log does not say."""
-    found = []
+def _too_close(error, output_dir, supports_on):
+    """Orca's -101 made true and useful: the pair its debug log names (the first in natural
+    order, the others in the detail), the supports named as the likely cause when they are
+    on, and a remedy that includes turning them off."""
+    pairs = orca_log_conflicts(output_dir)
+    if pairs:
+        first, second = pairs[0]
+        error.message = TOO_CLOSE_PAIR_MESSAGE.format(first=first, second=second)
+        error.where = {"instance": first, "other_instance": second}
+        head, _, rest = error.details.partition("\n")
+        error.details = "\n".join([head] + [f"orca debug log: paths meet between {a} and {b}" for a, b in pairs]
+                                  + [rest])
+    if supports_on:
+        error.message = error.message[:-1] + TOO_CLOSE_SUPPORTS_CLAUSE
+        error.remedy = TOO_CLOSE_SUPPORTS_REMEDY
+    return error
+
+
+_DIGITS_RE = re.compile(r"([0-9]+)")
+
+
+def _natural(text):
+    """A sort key that reads runs of the digits 0 to 9 as numbers, "Block #2" before
+    "Block #10", without converting them (a run of any length compares by its length without
+    leading zeros, then by its digits), and breaks ties on the text itself ("007" before
+    "07" before "7"): the order of a set of texts never depends on the order they were found
+    in, and no text makes it fail."""
+    pieces = []
+    for piece in _DIGITS_RE.split(text):
+        if _DIGITS_RE.fullmatch(piece):
+            value = piece.lstrip("0") or "0"
+            pieces.append((0, len(value), value))
+        else:
+            pieces.append((1, 0, piece))
+    return pieces, text
+
+
+def _log_lines(output_dir):
+    """The lines of Orca's debug log in `output_dir`, decoded (bytes that are not UTF-8
+    replaced), each read as at most MAX_LINE_BYTES, at most MAX_LOG_BYTES in all; none when
+    the log is missing or unreadable."""
     try:
         with open(Path(output_dir) / ORCA_LOG, "rb") as fh:
             read = 0
-            while read < MAX_LOG_BYTES and len(found) < MAX_LOG_WARNINGS:
+            while read < MAX_LOG_BYTES:
                 raw = fh.readline(MAX_LINE_BYTES)
                 if not raw:
-                    break
+                    return
                 read += len(raw)
-                match = LOG_WARNING_RE.search(raw.decode("utf-8", errors="replace"))
-                text = match.group(1).strip()[:MAX_WARNING_CHARS] if match else ""
-                if text and text not in found:
-                    found.append(text)
+                yield raw.decode("utf-8", errors="replace")
     except OSError:
-        return []
-    return found
+        return
+
+
+def _warning_text(text):
+    """One warning as a summary or a sentence keeps it, from result.json or the debug log
+    alike: stripped and cut to MAX_WARNING_CHARS."""
+    return text.strip()[:MAX_WARNING_CHARS]
+
+
+def _first_in_order(items, limit, key=_natural):
+    """The first `limit` of `items` (an iterable, read to its end) in the order of `key`,
+    each once; it holds at most 2 x MAX_PLATE_WARNINGS of them at a time, so what it keeps
+    is bounded however many there are, and the same whatever order they come in."""
+    found = set()
+    for item in items:
+        found.add(item)
+        if len(found) > 2 * MAX_PLATE_WARNINGS:
+            found = set(sorted(found, key=key)[:max(limit, MAX_PLATE_WARNINGS)])
+    return sorted(found, key=key)[:limit]
+
+
+def orca_log_warnings(output_dir, limit=None):
+    """The warnings Orca reported while slicing, read from its debug log in `output_dir`
+    (LOG_WARNING_RE, _log_lines), each once (_warning_text), sorted (_natural: Orca's threads
+    log them in an order that changes from run to run), the first `limit` of that order
+    (MAX_LOG_WARNINGS by default) over the whole log read, whatever order Orca logged them
+    in. [] when the log is missing, unreadable or holds none: then nothing is said that the
+    log does not say."""
+    texts = (_warning_text(match.group(1)) for match in map(LOG_WARNING_RE.search, _log_lines(output_dir)) if match)
+    return _first_in_order((text for text in texts if text), MAX_LOG_WARNINGS if limit is None else limit)
+
+
+def _pair_key(pair):
+    return _natural(pair[0]), _natural(pair[1])
+
+
+def orca_log_conflicts(output_dir):
+    """The pairs of instances whose paths Orca found would meet (LOG_CONFLICT_RE), each pair
+    in natural order and once, the first MAX_LOG_CONFLICTS pairs in natural order; [] when
+    the log names none."""
+    pairs = (tuple(sorted(match.groups(), key=_natural))
+             for match in map(LOG_CONFLICT_RE.search, _log_lines(output_dir)) if match)
+    return _first_in_order(pairs, MAX_LOG_CONFLICTS, key=_pair_key)
+
+
+def plate_warnings(output_dir):
+    """The warnings of a sliced plate: result.json's (which the pinned Orca fills with one
+    warning of the plate, a different one from run to run) and every one in the debug log,
+    each once, both through _warning_text, sorted (_natural), the first MAX_PLATE_WARNINGS of
+    that order."""
+    found = {_warning_text(w) for w in _warnings(read_result_json(output_dir))}
+    return _first_in_order(found | set(orca_log_warnings(output_dir, MAX_PLATE_WARNINGS)), MAX_PLATE_WARNINGS)
 
 
 def slice_stl(stl_path, output_dir, timeout_s=DEFAULT_TIMEOUT_S, stop=None, on_progress=None):
@@ -1124,7 +1227,7 @@ def read_summary(archive_path, output_dir):
         layers = int(m.group(1))
 
     return {"print_time_s": meta("prediction"), "filament_g": meta("weight"),
-            "filament_m": used_m, "layer_count": layers, "warnings": _warnings(read_result_json(output_dir))}
+            "filament_m": used_m, "layer_count": layers, "warnings": plate_warnings(output_dir)}
 
 
 def verify_archive(archive, entries=()):

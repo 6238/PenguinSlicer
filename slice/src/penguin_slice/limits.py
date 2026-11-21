@@ -14,9 +14,9 @@ MAX_PART_TRIANGLES = 150_000
 MAX_PART_BYTES = 84 + 50 * MAX_PART_TRIANGLES     # a binary STL of exactly that many triangles
 
 # One plate, one plate configuration. Hex shaft spacers in a grid (slice/README.md, "Plate
-# limits"): 100 peaked at 488 to 513 MB, 150 at 643 to 649 MB, 196 at 815 to 829 MB, 92 %
-# of the 900 MB ceiling. 150 keeps more than a quarter of the ceiling free for small parts;
-# the memory watchdog, not this count, is what protects the machine.
+# limits"): 100 peaked at 488 to 513 MB, 150 at 643 to 649 MB, 196 at 815 to 829 MB. Larger
+# parts cost more an instance (a real 19 mm pulley of 4,608 triangles about 20 MB, so 150 of
+# them pass 2.5 GB); the memory watchdog, not this count, is what protects the machine.
 MAX_INSTANCES = 150
 # Distinct parts the instances use. Not a measured limit: it bounds the upload (instances of
 # one part share one STL file, so the upload is MAX_PARTS x MAX_PART_BYTES at most), and is
@@ -38,10 +38,15 @@ MEMORY_BASE_MB = 170.0
 MEMORY_PER_INSTANCE_MB = 3.0
 MEMORY_PER_CM3_MB = 0.985
 MEMORY_SUPPORTS_FACTOR = 1.4
-# The memory ceiling: a setting (environment variable), 900 MB by default. The slice
-# service's memory watchdog (slicer.run_process) stops an Orca whose processes pass it.
+# The memory ceiling: a setting (environment variable), 2,000 MB by default. The slice
+# service's memory watchdog (slicer.run_process) stops an Orca whose processes pass it. The
+# team's real plates set it (slice/README.md, "The team's real parts", where each figure is
+# given with its plate): the mechanical mentor's target plates peak at up to 1,415 MB with
+# supports on, a full plate of one block at up to 1,410 MB with supports off, all over the
+# old 900 MB. Orca can pass the ceiling by one watchdog interval's rise before it is stopped
+# (slice/README.md, "Sizing the host").
 MAX_PEAK_MB_ENV = "PENGUIN_SLICE_MAX_PEAK_MB"
-DEFAULT_MAX_PEAK_MB = 900
+DEFAULT_MAX_PEAK_MB = 2000
 _PEAK_MB_RE = re.compile(r"[0-9]{1,6}")           # plain ASCII digits only: no "²", no "٣"
 
 # The time model for the expected_s of a progress report: seconds for Orca on a plate, the

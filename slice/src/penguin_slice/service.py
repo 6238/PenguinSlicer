@@ -40,7 +40,7 @@ import numpy as np
 
 from . import limits
 from .mesh import MeshError, orientation_footprints, part_size_mm, part_warnings, read_binary_stl
-from .plate import ORIENTATIONS, check_placement, instance_labels, plate_from_printer
+from .plate import ORIENTATIONS, TOO_CLOSE_SUPPORTS_REMEDY, check_placement, instance_labels, plate_from_printer
 from .plate_3mf import delivered_file_name
 from .plate_configuration import CheckedPart, PlateConfiguration, run_plate_configuration
 from .print_config import ProfileError, choose_profiles, printer_profile, supports_on, validate_overrides
@@ -87,13 +87,15 @@ class PlateConfigurationRefused(Exception):
     too_tall, too_close) when the placement failed, `where` the part and instance when
     known, `error_code` the error report's code."""
 
-    def __init__(self, message, details="", rule=None, where=None, error_code="slice.bad_plate_configuration"):
+    def __init__(self, message, details="", rule=None, where=None, error_code="slice.bad_plate_configuration",
+                 remedy=None):
         super().__init__(message)
         self.message = message
         self.details = details
         self.rule = rule
         self.where = where or {}
         self.error_code = error_code
+        self.remedy = remedy            # when set, replaces the code's remedy (errors.CODES)
 
 
 @dataclass
@@ -307,8 +309,8 @@ def read_plate_configuration(data, base_dir, confine_to=None, environ=None):
     overrides = validate_overrides(data.get("overrides"))
     try:
         profiles = choose_profiles(data.get("printer"), filament, process)
-        plate = plate_from_printer(printer_profile(profiles))
         supports = supports_on(profiles, overrides)
+        plate = plate_from_printer(printer_profile(profiles), supports)
     except ProfileError:
         raise
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
@@ -332,10 +334,13 @@ def read_plate_configuration(data, base_dir, confine_to=None, environ=None):
     if problems:
         first = problems[0]
         index = first["instances"][0]
-        raise PlateConfigurationRefused(first["message"], _listed(problems), rule=first["rule"],
-                                        where={"part": placed[instances[index]["ref"]]["name"],
-                                               "instance": labels[index]},
-                                        error_code=PLACEMENT_CODES[first["rule"]])
+        where = {"part": placed[instances[index]["ref"]]["name"], "instance": labels[index]}
+        remedy = None
+        if first["rule"] == "too_close":
+            where["other_instance"] = labels[first["instances"][1]]
+            remedy = TOO_CLOSE_SUPPORTS_REMEDY if supports else None
+        raise PlateConfigurationRefused(first["message"], _listed(problems), rule=first["rule"], where=where,
+                                        error_code=PLACEMENT_CODES[first["rule"]], remedy=remedy)
     return PlateConfiguration(instances=instances, parts=entries, profiles=profiles, overrides=overrides,
                               filament=filament, process=process, printer=data.get("printer"), labels=labels,
                               supports_on=supports, estimated_peak_mb=limits.estimate_peak_mb(volumes, supports),

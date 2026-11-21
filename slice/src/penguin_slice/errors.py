@@ -9,6 +9,7 @@ slicer.ORCA_RETURN_CODES, the one table of them.
 """
 from .jobs import GENERIC_FAILURE, JobFailure, QueueFull, exception_text
 from .mesh import MeshError
+from .plate import TOO_CLOSE_REMEDY
 from .print_config import OverrideError, ProfileError
 from .service import PlateConfigurationRefused
 from .slicer import UNSTARTABLE_MESSAGE, SliceCancelled, SliceError
@@ -55,8 +56,7 @@ CODES = {
                                   "Move the instance fully onto the plate, or press Arrange, and slice again."),
     "slice.placement_too_tall": ("checking", False, "choose_orientation",
                                  "Lay the part on another face so it is lower, and slice again."),
-    "slice.placement_too_close": ("checking", False, "arrange",
-                                  "Move the instances further apart, or press Arrange, and slice again."),
+    "slice.placement_too_close": ("checking", False, "arrange", TOO_CLOSE_REMEDY),
     "slice.busy": ("queued", True, None,
                    "Wait a minute and slice again."),
     "slice.scratch_unwritable": ("building", True, None,
@@ -76,8 +76,7 @@ CODES = {
                            "Try another orientation or other print settings; if it crashes again, ask a mentor "
                            "to check the part."),
     "slice.orca_killed": ("slicing", True, None, SERVER_REMEDY),
-    "slice.orca_too_close": ("slicing", False, "arrange",
-                             "Move the instances further apart, or press Arrange, and slice again."),
+    "slice.orca_too_close": ("slicing", False, "arrange", TOO_CLOSE_REMEDY),
     "slice.crosses_edge": ("slicing", False, "arrange",
                            "Move the instance fully onto the plate, or press Arrange, and slice again."),
     "slice.empty_layers": ("slicing", False, "enable_supports",
@@ -141,7 +140,8 @@ def error_report(exc):
         detail = f"orca code {exc.code}\n{exc.details}" if exc.code is not None else exc.details
         return _report(exc.error_code, exc.message, detail, exc.where, exc.remedy, exc.no_action)
     if isinstance(exc, _OWN):
-        return _report(exc.error_code, exc.message, exc.details, getattr(exc, "where", None))
+        return _report(exc.error_code, exc.message, exc.details, getattr(exc, "where", None),
+                       getattr(exc, "remedy", None))
     if isinstance(exc, QueueFull):
         return _report("slice.busy", BUSY_MESSAGE, "the job queue is full")
     if isinstance(exc, JobFailure) and exc.__cause__ is not None:

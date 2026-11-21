@@ -13,7 +13,12 @@ import re
 
 from shapely.geometry import Polygon
 
-SPACING_MM = 5.0        # the least distance between two footprints
+# The least distance between two footprints, with supports off and on (slice/README.md,
+# "Spacing"): measured with the pinned Orca on pairs of the team's real parts, every pair
+# tried sliced 1 mm apart with supports off, and with supports on Orca refused pairs up to
+# 8 mm apart (their supports' paths meet, return code -101) and sliced every pair at 8.5 mm.
+SPACING_MM = 5.0
+SPACING_SUPPORTS_MM = 12.0      # 8.5 mm measured, with 3.5 mm to spare
 MARGIN_MM = 3.0         # every footprint stays this far inside the printable area
 EPS_MM = 1e-6
 
@@ -34,6 +39,14 @@ _NOT_NAME_CHAR = re.compile(r'[^A-Za-z0-9_-]')
 OFF_PLATE_MESSAGE = "{label} is not fully on the plate."
 TOO_TALL_MESSAGE = "{label} is taller than the printer can print ({height:g} mm)."
 TOO_CLOSE_MESSAGE = "{label} and {label2} are closer than {spacing:g} mm."
+TOO_CLOSE_SUPPORTS_MESSAGE = ("{label} and {label2} are closer than {spacing:g} mm, the room supports need between "
+                              "instances.")
+# The remedies for two instances too close together, whether the placement check or Orca
+# found them (errors.CODES, slicer.orca_failure).
+TOO_CLOSE_REMEDY = ("Spread the instances out (or press Arrange), or move some instances to a second plate, "
+                    "and slice again.")
+TOO_CLOSE_SUPPORTS_REMEDY = ("Spread the instances out (or press Arrange), turn supports off, or move some instances "
+                             "to a second plate, and slice again.")
 
 
 def _cos_sin(angle):
@@ -56,12 +69,14 @@ def instance_matrix(orientation, angle, offset, x, y):
     return [m[i] + [t[i]] for i in range(3)]
 
 
-def plate_from_printer(printer):
-    """The plate the checks use, from an Orca printer profile."""
+def plate_from_printer(printer, supports=False):
+    """The plate the checks use, from an Orca printer profile; its spacing is
+    SPACING_SUPPORTS_MM when the plate is sliced with supports, else SPACING_MM."""
     corners = [tuple(float(v) for v in corner.lower().split('x')) for corner in printer['printable_area']]
     xs, ys = [c[0] for c in corners], [c[1] for c in corners]
     return {'min': [min(xs), min(ys)], 'max': [max(xs), max(ys)],
-            'height': float(printer['printable_height']), 'margin': MARGIN_MM, 'spacing': SPACING_MM,
+            'height': float(printer['printable_height']), 'margin': MARGIN_MM,
+            'spacing': SPACING_SUPPORTS_MM if supports else SPACING_MM, 'supports': bool(supports),
             'printer': printer.get('name')}
 
 
@@ -105,10 +120,11 @@ def check_placement(instances, parts, plate):
             problems.append({'rule': 'too_tall', 'instances': [i],
                              'message': TOO_TALL_MESSAGE.format(label=labels[i], height=plate['height'])})
     polygons = [Polygon(hull) for hull in hulls]
+    too_close = TOO_CLOSE_SUPPORTS_MESSAGE if plate.get('supports') else TOO_CLOSE_MESSAGE
     for i in range(len(polygons)):
         for j in range(i + 1, len(polygons)):
             if polygons[i].distance(polygons[j]) < plate['spacing'] - EPS_MM:
                 problems.append({'rule': 'too_close', 'instances': [i, j],
-                                 'message': TOO_CLOSE_MESSAGE.format(label=labels[i], label2=labels[j],
-                                                                     spacing=plate['spacing'])})
+                                 'message': too_close.format(label=labels[i], label2=labels[j],
+                                                             spacing=plate['spacing'])})
     return problems

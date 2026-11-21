@@ -87,7 +87,7 @@ Underneath, the interface calls `service.slice_plate_configuration`, and that ca
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `PENGUIN_SLICE_MAX_PEAK_MB` | 900 | The memory ceiling (see "Plate limits"). Unset or empty: the default. Otherwise 1 to 6 plain digits `0` to `9`, not 0; anything else (`²`, `٣`, `1e3`, a space, 30 digits) is refused at start with a message that names the setting. |
+| `PENGUIN_SLICE_MAX_PEAK_MB` | 2000 | The memory ceiling (see "Plate limits"). Unset or empty: the default. Otherwise 1 to 6 plain digits `0` to `9`, not 0; anything else (`²`, `٣`, `1e3`, a space, 30 digits) is refused at start with a message that names the setting. |
 | `PENGUIN_SLICE_ORCA` | `slice/tools/orca/orca-slicer` | The Orca wrapper the service runs. |
 | `PENGUIN_SLICE_ORCA_DEST`, `PENGUIN_SLICE_ORCA_CACHE` | | For `scripts/install-orca.sh` only (see below). |
 
@@ -120,7 +120,7 @@ liblzma5 libmspack0t64 zlib1g
 
 `slicer.py` is the one module that runs Orca and reads what Orca writes: the command
 lines, the environment, Orca's return codes (`ORCA_RETURN_CODES`, the only table of them),
-its reasons in `result.json`, its debug log (`orca_log_warnings`), its progress messages
+its reasons in `result.json`, its debug log (`orca_log_warnings`, `orca_log_conflicts`), its progress messages
 (`ORCA_STAGES`), and the sliced file's entries. A change in a new Orca is absorbed there.
 
 **How Orca is run.** With an allowlisted environment (`PATH`, `TMPDIR`, `LANG`, `USER`,
@@ -181,12 +181,28 @@ and no `result.json` (`slice.orca_unstartable`). Under an address-space limit Or
 `std::bad_alloc` and returns -100 (1 GB), or aborts with SIGABRT after "terminate called
 recursively" (500 MB, reported as a crash: the words do not say memory).
 
-**Orca's debug log.** When Orca fails with only its general reason, the warnings it
-reported while slicing are in its debug log and nowhere else. The service reads them in
-one function, `slicer.orca_log_warnings` (the lines matching `LOG_WARNING_RE`,
-`cli_status_callback: percent=-1, warning_step=7, message=..., message_type=2, flag=32`,
-each once, at most 5, each cut to 300 characters, at most 64 MB of the log read), and only
-for `slice.orca_failed`. The log cannot say which warning, if any, is why the slice failed:
+**Orca's debug log.** Every warning Orca reported while slicing is in its debug log; its
+`result.json` holds at most one of them, and on a plate of several warned instances which
+one changes from run to run (the team's mixed plate warned of four blocks and the pulley,
+and `result.json` named the Elevator Block Top in one slice and the Elevator Block Carriage
+in the next). The service reads the log in one place, `slicer._log_lines` (each line read as
+at most 4 KB, at most 64 MB of the log), for two things. `slicer.orca_log_warnings` takes
+the lines matching `LOG_WARNING_RE`, `cli_status_callback: percent=-1, warning_step=7,
+message=..., message_type=2, flag=32`. `slicer.orca_log_conflicts` takes the line Orca
+writes when it refuses a plate with -101, `gcode path conflicts found between
+Elevator_Block_Top #2 and Elevator_Block_Top #1` (`LOG_CONFLICT_RE`), the one place that
+names the two instances (`result.json` says only "G-code conflicts detected after slicing
+... try moving the wipe tower"). A warning from either source goes through one normaliser
+(stripped, cut to 300 characters), so the same warning in `result.json` and the log is one
+warning. Warnings and pairs are kept each once and sorted with the runs of digits in them
+read as numbers, `#2` before `#10`, without converting them (a run of 5,000 digits is
+fine), ties broken on the text itself (`007` before `07` before `7`), so the order never
+depends on Orca's threads; the whole log is read and the first of that order kept, so a
+plate with more warnings than are kept keeps the same ones every time. After a good slice
+the sliced file's summary carries every warning with `result.json`'s, the first 300
+(`slicer.plate_warnings`).
+When Orca fails with only its general reason (`slice.orca_failed`), the first 5 go into
+the sentence. The log cannot say which warning, if any, is why the slice failed:
 a part that slices soundly warns too, so on a plate where another part fails its warning
 is beside the point. So the sentence keeps the general failure and adds every warning
 found, labelled as possibly unrelated: "The slicer could not slice this plate. It also
@@ -291,10 +307,15 @@ these plates the kernel's `ru_maxrss` of Orca read the same):
 | 150 (13 x 12) | 2 | 643 to 649 | 9.4 | 2.72 | 13 |
 | 196 (14 x 14) | 2 | 815 to 829 | 12.5 to 12.6 | 3.55 | 13 |
 
-`MAX_INSTANCES` is 150: the plate a team needs (100) peaks near half the 900 MB ceiling,
-150 keeps more than a quarter of it free, and 196 comes within 8 % of it. Instances of
-larger parts reach the ceiling sooner; the watchdog stops such a slice with
-`slice.out_of_memory` and its remedy asks for fewer instances. The limits derived from the
+`MAX_INSTANCES` is 150: it was set when the ceiling was 900 MB, which the plate a team
+needs (100) peaked near half of, 150 left more than a quarter of free, and 196 came within
+8 % of. Under the 2,000 MB ceiling (see "The team's real parts" below) 150 spacers use a
+third of it. Instances of larger parts reach the ceiling sooner: the team's pulley (19 mm,
+4,608 triangles) costs about 20 MB an instance, so 50 pulleys peak at 1,074 MB and 150
+passed 2,500 MB and were stopped there; the watchdog stops such a slice with
+`slice.out_of_memory` and its remedy asks for fewer instances. The instance limit is still
+right as it is: no real plate came near it, and it bounds the placement check and the
+plate write, not memory, which the watchdog guards. The limits derived from the
 instance count were checked with it: the upload is bounded by the parts sent
 (`MAX_PARTS x MAX_PART_BYTES`, 188.5 MB), not by the instances, since instances of one
 part share one file. `MAX_PARTS` is that bound on the upload, and what the old limit of 25
@@ -308,6 +329,149 @@ hubs of 20,000 triangles, 0.5 million, slice at 842 MB), so the watchdog decides
 placement check compares every pair (11,175 for 150 instances on one spot, a few
 hundredths of a second) and its refusal's detail lists at most 20 of the problems; the
 time limit (`PLATE_SLICE_TIMEOUT_S`, 240 s) is twenty times what 150 spacers take.
+
+**The team's real parts.** These are the project's first measurements of real parts: the
+eight parts of the team's robot in `tests/fixtures/frc-parts/` (printed and in use; 2,908
+to 39,054 triangles, all watertight, one shell each), on the plates of `tests/frc_parts.py`,
+each instance in the orientation the team prints it in. Measured with the pinned Orca 2.4.2
+and the default set (H2S, 0.6 mm nozzle, PETG), supports off unless the table says on, one
+slice at a time through `service.slice_plate_configuration`, on an aarch64 Linux machine
+with 4 CPUs (peak: the watchdog's reading of Orca's processes, in MB of 1,024 kB as the
+kernel counts and as the ceiling is set; time: Orca's own run; sliced file in millions of
+bytes). The parts alone: three slices each on Fri 2026-11-20 between 17:12 and 18:01 PT at a
+load under 1. The other plates: three slices each (four for the plates with supports on and
+for the mentor's target) on Fri 2026-11-20 between 18:36 and 18:47 PT at a load of 1 to 3:
+
+| Plate | Instances | Supports | Peak (MB) | Orca's time (s) | Sliced file (MB) | Print time, filament |
+|---|---|---|---|---|---|---|
+| Clamp Plate Inner alone | 1 | off | 117 to 118 | 1.0 to 1.3 | 0.16 | 18 min, 7.8 g |
+| Elevator Block Bottom Inner alone | 1 | off | 216 to 218 | 1.4 to 1.5 | 1.10 | 1 h 56 min, 64.0 g |
+| Elevator Block Carriage alone | 1 | off | 181 to 182 | 1.1 to 1.4 | 0.64 | 1 h 7 min, 39.7 g |
+| Elevator Block Top alone | 1 | off | 210 to 212 | 1.3 to 1.4 | 0.91 | 1 h 22 min, 50.2 g |
+| Elevator Top Inner alone | 1 | off | 128 to 129 | 0.6 to 0.7 | 0.41 | 45 min, 26.6 g |
+| Inner Spacer alone | 1 | off | 97 | 0.1 | 0.08 | 11 min, 3.8 g |
+| Outer Clamp alone | 1 | off | 120 to 121 | 0.9 to 1.1 | 0.17 | 18 min, 8.2 g |
+| Pulley v3 alone | 1 | off | 116 to 117 | 0.5 to 0.6 | 0.11 | 18 min, 2.2 g |
+| mixed: one instance of each part | 8 | off | 504 to 513 | 7.4 to 7.7 | 3.70 | 5 h 21 min, 202 g |
+| mixed | 8 | on | 753 to 761 | 9.4 to 12.8 | 4.69 | 6 h 25 min, 216 g |
+| team: 2 blocks, 4 spacers, 3 outer clamps, 3 clamp plates, 4 pulleys | 16 | off | 503 to 510 | 11.0 to 12.3 | 2.91 | 4 h 11 min, 161 g |
+| team | 16 | on | 609 to 613 | 12.0 to 15.2 | 3.34 | 4 h 38 min, 166 g |
+| four-each-a: 2 of each part | 16 | off | 869 to 911 | 13.4 to 17.4 | 6.85 | 10 h 8 min, 403 g |
+| four-each-a | 16 | on | 1,391 to 1,415 | 20.2 to 21.7 | 8.77 | 12 h 18 min, 431 g |
+| four-each-b: four-each-a mirrored | 16 | off | 863 to 915 | 15.4 to 17.7 | 6.87 | 10 h 8 min, 403 g |
+| four-each-b | 16 | on | 1,368 to 1,409 | 20.0 to 22.5 | 8.82 | 12 h 18 min, 431 g |
+
+four-each-a and four-each-b are the mechanical mentor's target, 4 instances of every part
+(32) on two H2S plates, every instance in its printing orientation and none turned; both
+plates slice with supports off and with supports on. Each plate holds 2 instances of every
+part, so the large blocks, which cost the memory, are shared out. On four-each-a two
+columns of an Elevator Block Top, a Bottom Inner and a Carriage (231 mm deep of the 314 mm
+the margins leave) stand with a pulley above each, and beside them two columns of an
+Elevator Top Inner, a Clamp Plate Inner, an Outer Clamp and an Inner Spacer; four-each-b is
+four-each-a mirrored left to right. Every gap is 13 to 14.2 mm, more than the 12 mm
+supports need (see "Spacing" below). The first split put the twelve blocks on one plate,
+6.5 to 10 mm apart in
+columns 313 mm deep; Orca refused it with supports on, and the supports' spacing cannot fit
+there (two Tops and two Bottom Inners in a column are 292 mm of footprints, plus three gaps
+of 12 mm is 328 mm, over the 314 mm), so the split changed, not the target. The heaviest
+target plate peaks at 1,415 MB with supports on, 585 MB under the default ceiling of
+2,000 MB. Full plates of one part, supports off, one slice each on Fri 2026-11-20 between
+17:12 and 18:01 PT, and the heaviest of them spaced for supports, measured with them on
+(the full plates' gaps of 6 to 10 mm are refused with supports on, see "Spacing"):
+
+| Plate | Instances | Supports | Peak (MB) | Orca's time (s) | Sliced file (MB) |
+|---|---|---|---|---|---|
+| Elevator Block Top, 3 x 3 | 9 | off | 1,015 | 12.8 | 7.19 |
+| Elevator Block Bottom Inner, 3 x 4 | 12 | off | 1,410 | 19.1 | 10.8 |
+| Elevator Block Bottom Inner, 3 x 4, 12.5 mm apart, at a 3,000 MB ceiling | 12 | on | 2,307 | 34.3 | 14.1 |
+| Elevator Block Carriage, 3 x 5 | 15 | off | 1,333 | 17.7 | 8.04 |
+| Elevator Top Inner, 5 x 5 | 25 | off | 895 | 13.9 | 8.28 |
+| clamp plates, outer clamps and spacers, 6 x 5 | 30 | off | 502 | 19.9 | 3.19 |
+| Pulley v3 | 25 | off | 583 | 13.7 | 1.89 |
+| Pulley v3 | 50 | off | 1,074 | 27.3 | 3.68 |
+| Pulley v3, 13 x 12 less 6 | 150 | off | over 2,500 (stopped) | | |
+
+So twelve Bottom Inners with supports on and more than about 95 pulleys pass the 2,000 MB
+ceiling: at the default ceiling the twelve Bottom Inners with supports on were stopped with
+`slice.out_of_memory` in each of two slices (after 25.4 and 28.1 s), whose remedy is a
+second plate. The ceiling was not raised for them (see "Sizing the host" below). Every check and
+every slice above accepted every part, and every instance landed where it was placed: its
+first-layer extrusions in the G-code lie within 0.47 mm of the part's own outline on the
+plate (`tests_orca/test_frc_parts.py`; Orca's `bbox_objects` includes the auto brim, up to
+15 mm wide at the blocks).
+
+**Spacing.** Two instances' footprints must be `SPACING_MM` (5 mm) apart with supports
+off and `SPACING_SUPPORTS_MM` (12 mm) with supports on; a plate closer than that is
+refused before Orca runs (`slice.placement_too_close`, naming both instances; with
+supports on the sentence says supports need the room). Measured with the pinned Orca and
+the default set on Fri 2026-11-20 between 18:26 and 18:35 PT, pairs of the real parts side
+by side or one behind the other, the placement check left out, one slice each:
+
+- Supports off: every pair tried slices 1 mm apart (two Tops one behind the other, side by
+  side, and turned 90°; two Bottom Inners; two Elevator Top Inners, also turned 90°; a Top
+  with a Carriage behind it; two pulleys; a Clamp Plate Inner beside an Outer Clamp). 5 mm
+  keeps 4 mm to spare.
+- Supports on: Orca refuses some pairs with -101, its debug log saying "gcode path
+  conflicts found between Elevator_Block_Top #2 and Elevator_Block_Top #1": their tree
+  supports' paths meet. Two Tops one behind the other are refused at 5, 7 and 7.5 mm and
+  slice at 8, 8.5, 9 and 11 mm; a Top with a Carriage behind it is refused at 5 to 7.5 mm
+  and slices from 8 mm; two Elevator Top Inners side by side are refused at 5 to 8 mm and
+  slice at 8.5 and 9 mm, one behind the other refused at 5 and 7 mm and slice from 8 mm.
+  Every other pair tried slices 5 mm apart (Tops side by side, and turned 90°; Bottom
+  Inners and Carriages both ways; a Top in front of a Bottom Inner; an Elevator Top Inner
+  beside a Top; pulleys; clamps; a spacer). So 8.5 mm sliced every pair tried, and
+  `SPACING_SUPPORTS_MM` is 12 mm, 3.5 mm more.
+
+The upstream check slices the tightest pairs exactly the spacing apart, 12 mm with supports
+on and 5 mm with them off (`test_the_placement_checks_spacing_is_enough_for_orca`), and
+pins Orca's refusal of two Tops 5 mm apart with supports on and the log line that names
+them (`test_orca_names_the_pair_whose_supports_meet`). The spacing was measured on these
+parts at the default profiles; another part or setting may need more. When Orca still
+refuses a plate for closeness (`slice.orca_too_close`), the report names the pair from
+Orca's debug log, says the supports are the likely cause when they are on, and offers
+spreading the instances out (or Arrange), turning supports off, or a second plate. A user
+interface that arranges the plate must leave `SPACING_SUPPORTS_MM` when supports are on
+([plate-configuration.md](../contracts/plate-configuration.md)).
+
+The warnings Orca gives for these parts are true, and none of the slice service's part
+warnings is. Every block and the Elevator Top Inner warn "has floating cantilever": in the
+printing orientation each has 2,200 to 3,700 mm2 of faces looking down over pockets and
+holes, 1,425 to 1,440 mm2 of it one ceiling 1.7 mm above the plate, printed as bridges;
+with supports on Orca no longer warns. The pulley warns "has floating regions": inside its
+bore (radius 6.35 mm) a hub ring (radius 3.45 to 4.76 mm) starts 4.76 mm above the plate
+with nothing under it, and joins the rest of the pulley only 0.8 mm higher, through a 45°
+chamfer, so its first layers start in mid-air; the pulley is the same from either flange,
+and on its rim it would need supports all round. The team printed all of them as they are.
+
+**The same plate, sliced again.** Orca's G-code is not byte-identical between slices of
+the same plate, on any number of CPUs. What varies:
+
+- Fields that change in every slice: the time stamp in the G-code's second line, the
+  object ids in its `; printing object ... id:` comments (a memory address), the G-code's
+  checksum (`Metadata/plate_1.gcode.md5`), and in `Metadata/slice_info.config` the
+  `first_layer_time` (uninitialised memory: 0.000000 in one slice,
+  307348170571033591697770805198848.000000 in the next) and the `prediction` (by a second
+  or so). In some slices the order of the objects in `Metadata/model_settings.config`.
+- The extrusions themselves: Orca's threads order and split them differently from slice
+  to slice. Between two separate slices, apart from the fields above, 6,254 to 13,236 of
+  four-each-a's 1,063,416 G-code lines changed with supports on (2,931 to 8,965 of them
+  extruding moves), 7,907 to 8,872 of its 755,749 with supports off, 4,273 to 4,922 of
+  four-each-b's 755,607 with supports off, 1,600 to 7,059 of the mixed plate's 384,804 with
+  supports off and 1,154 to 5,861 of its 537,216 with supports on (two pairs of slices
+  each, Fri 2026-11-20).
+- Pinning Orca to one CPU (`taskset`) does not remove it: of three runs of a test that
+  compared two such slices of the mixed plate on one CPU, one found 1,085 lines different
+  (the print time by 1 s), so that test was removed.
+
+The slice service hands Orca the same plate 3MF every time: the fast suite writes one plate
+configuration twice and compares the entries byte for byte
+(`test_the_slice_service_hands_orca_the_same_plate_every_time`), so the variation is
+Orca's. What is stable, and tested on every run of the upstream check for every plate it
+slices (`test_the_real_parts_slice_through_the_http_interface`): the summary (the layers
+exactly; the print time and the filament within 2 % of the measured values, which they
+kept to within 5 s and 0.01 g in every slice measured), the warnings (exactly the true
+ones, the same list every time) and the placements (every instance's first layer within
+1 mm of its outline, 0.47 mm measured). The prints are the same; the bytes are not.
 
 **The cost of the largest plate to the slice service.** The largest plate configuration
 every check accepts has `MAX_INSTANCES` (150) instances of parts at `MAX_PART_TRIANGLES`
@@ -342,9 +506,9 @@ process filled one arena after another. `serve` calls `mallopt(M_ARENA_MAX, 2)` 
 listens (`__main__.cap_malloc_arenas`; on a C library without `mallopt`, such as macOS's,
 it does nothing). With the cap the peak still rises, by about 4 MB a plate from the 8th
 plate to the 16th; the cause of that rest was not found. The table's 261 MB is the largest
-measured, so a host is sized for 400 MB of the service beside Orca's ceiling (1.3 GB with
-the default 900 MB ceiling). Before the write held only one part's mesh text, the 25-hub
-plate peaked at 438 MB on a fresh process.
+measured; the host is sized for 400 MB of the service (see "Sizing the host" below). Before
+the write held only one part's mesh text, the 25-hub plate peaked at 438 MB on a fresh
+process.
 
 **The memory watchdog** is the guard on memory. While Orca runs, a thread of the slice
 service samples Orca's whole process group (`slicer.group_memory_kb`, from
@@ -356,10 +520,10 @@ memory peaks in spikes shorter than 0.1 s near the end of a slice, while it writ
 sliced file, which a reading of the current figure misses most of the time; the high-water
 mark keeps the spike, and the sample after "All done, Success" (sent once the file is
 written, about 30 ms before Orca exits) reads it. When a sample's peak passes the memory
-ceiling, the setting `PENGUIN_SLICE_MAX_PEAK_MB` (900 MB by default), the watchdog stops
+ceiling, the setting `PENGUIN_SLICE_MAX_PEAK_MB` (2,000 MB by default), the watchdog stops
 Orca as a cancel does (SIGTERM to the group, SIGKILL after the grace time) and the slice
 fails with `slice.out_of_memory`: "This plate is too large to slice: the slicer needed
-more than the 900 MB of memory the print server allows.", with the peak, where it was read
+more than the 2,000 MB of memory the print server allows.", with the peak, where it was read
 and the ceiling in the detail. A slice is reported out of memory only on that stop, on a
 kill with the kernel's `oom_kill` count (cgroup `memory.events`) risen, or when Orca
 prints `bad_alloc`; a kill with neither is `slice.orca_killed`.
@@ -388,6 +552,30 @@ kB (the watchdog's high-water reading of Orca's processes), over the ceiling of 
 sliced file is delivered", or "... and the watchdog stopped Orca only after it had written
 the complete sliced file: ..."), so support can see it. Where the kernel's own limit is
 lower than the ceiling the kernel acts first.
+
+**Sizing the host.** So the ceiling does not bound Orca's memory: the watchdog reads it
+every 0.25 s, Orca can pass the ceiling by as much as it grows between two readings before
+it is stopped, and a plate that passes it in its last moments is delivered above it.
+Measured with the pinned Orca on Fri 2026-11-20 between 18:36 and 18:47 PT, in MB of
+1,024 kB (the ceiling's 2,000 MB is 2,048,000 kB):
+
+- At the default ceiling the twelve Bottom Inners with supports on (see "The team's real
+  parts") were stopped at readings of 2,144,504 and 2,226,800 kB, 94 and 175 MB over the
+  ceiling (a review's slice of a like plate stopped at 2,140,316 kB).
+- The largest rise of Orca's memory between two consecutive readings, over every plate of
+  "The team's real parts" in both supports settings, was 514,268 kB (502 MB: 1,347 to
+  1,861 MB in 0.26 s, on that plate); the mentor's target plates rose by up to 308 MB.
+- So the worst measured is the ceiling plus one such rise: Orca at about 2,500 MB, beside
+  the service's 400 MB, 2,900 MB.
+
+A host gives the slice service 3.5 GB (3,584 MB) with the default ceiling, a fifth above
+that worst case for what was not measured, and more for anything else on it (it was
+1.3 GB with the 900 MB ceiling before Fri 2026-11-20). The ceiling stays at 2,000 MB:
+every plate a team was measured to print, the mentor's target with supports on included
+(1,415 MB at most), peaks well under it. The plates over it (twelve Bottom Inners with
+supports, about 95 pulleys or more) are stopped with a remedy of a second plate; raising
+the ceiling for them would let Orca's worst case pass the 2.5 GB the 5 GB test machine
+allows one Orca.
 
 Measured on an aarch64 Linux machine with the pinned Orca, one slice at a time, before
 the sample after each progress message existed (the peaks were then the higher of the
@@ -422,7 +610,7 @@ or delivered with the note).
    stop that reached Orca is recorded in the slice job's result and its `done` log line as
    `stop_note` ("stopped by the slice service (timeout) with SIGTERM after 2.36 s, after
    Orca had written the complete sliced file (...): the sliced file is delivered", and
-   "Orca had not written result.json, so any warnings of its own are not known" when that
+   "Orca had not written result.json, so its warnings are only those its debug log held by then" when that
    is so). With the real Orca the moment between writing the file and exiting is about
    30 ms; the real-Orca suite holds Orca there and asks a timeout and a watchdog stop.
 2. A stop the slice service sent and that ended Orca: `slice.timeout`,
@@ -619,7 +807,7 @@ sentence, remedy, action, retryable flag and evidence its report must carry.
 | `slice.part_too_large` | checking | A part fits the printer in no orientation. |
 | `slice.placement_off_plate` | checking | A footprint leaves the printable area less the margin. |
 | `slice.placement_too_tall` | checking | An instance is taller than the printable height. |
-| `slice.placement_too_close` | checking | Two footprints are closer than `SPACING_MM` (the detail lists at most 20 such problems). |
+| `slice.placement_too_close` | checking | Two footprints are closer than `SPACING_MM` (5 mm), or `SPACING_SUPPORTS_MM` (12 mm) with supports on (see "Spacing"). The report names both instances (`where`: `instance`, `other_instance`); with supports on the sentence says supports need the room, and the remedy also offers turning supports off. The detail lists at most 20 such problems. |
 | `slice.busy` | queued | The job queue is full. |
 | `slice.scratch_unwritable` | building | The plate 3MF, the process file or Orca's folders cannot be written (a full disk, a folder where an earlier run's sliced file was), or the HTTP interface cannot make a slice job's folder in its work folder (HTTP 500). |
 | `slice.orca_missing` | slicing | No Orca at `PENGUIN_SLICE_ORCA` or `tools/orca`. |
@@ -629,7 +817,7 @@ sentence, remedy, action, retryable flag and evidence its report must carry.
 | `slice.out_of_memory` | slicing | The memory watchdog stopped Orca at the memory ceiling before its sliced file was complete (the detail holds the measured peak); or Orca was killed and the cgroup's `oom_kill` count rose (the kernel's out-of-memory killer); or Orca printed `bad_alloc`. On a plate of one instance the remedy is to split or simplify the part, with no action. |
 | `slice.orca_crashed` | slicing | Orca died on a signal that means it failed (SIGSEGV, SIGABRT, SIGBUS, SIGFPE, SIGILL, SIGTRAP, SIGSYS), also when a stop of the service's was asked at the same moment (the detail says so). |
 | `slice.orca_killed` | slicing | Something else stopped Orca with a signal the service did not send (SIGKILL with the `oom_kill` count unchanged or unreadable, SIGTERM, SIGINT and the rest), also when a stop of the service's was asked at the same moment or Orca ignored the service's SIGTERM (the detail says so). |
-| `slice.orca_too_close` | slicing | Orca's return code -101. |
+| `slice.orca_too_close` | slicing | Orca's return code -101: Orca found that two instances' paths would meet, on a plate the placement check passed. The report names the pair from Orca's debug log when it is there (`where`: `instance`, `other_instance`; the detail lists up to 5 pairs); with supports on the sentence names the supports as the likely cause and the remedy offers turning supports off. The remedy always offers spreading the instances (or Arrange) and a second plate. |
 | `slice.crosses_edge` | slicing | Orca's return code -52: an instance partly off the plate beside others on it. |
 | `slice.empty_layers` | slicing | Orca refused empty layers with supports off: the report names the instance and the height, and offers `enable_supports`. |
 | `slice.empty_layers_with_supports` | slicing | The same with supports on: the part must be repaired, no action. |
@@ -692,7 +880,11 @@ Then look at:
   slices a part known to fail with only Orca's general reason and fails, saying "the debug
   log's format changed: fix slicer.LOG_WARNING_RE and tests/fake_orca.py's LOG_WARNING",
   when the warning is no longer found. Its output prints the error report; the new Orca's
-  `orca.log` for that plate shows the new format.
+  `orca.log` for that plate shows the new format. The log's line naming two instances too
+  close together (`slicer.LOG_CONFLICT_RE`, `fake_orca.CONFLICT`) is pinned by
+  `test_overlapping_instances_are_refused_by_orca` and
+  `test_orca_names_the_pair_whose_supports_meet`, and the placement check's two spacings by
+  `test_the_placement_checks_spacing_is_enough_for_orca`.
 
 When a test fails, fix `slicer.py` (or the flattening script for the catalog) and its
 fast-suite stand-in `tests/fake_orca.py` together, and record what changed in the test.
@@ -751,8 +943,14 @@ check pins the fake's progress lines and its debug log line to the real ones.
 `tests/fixtures/bad_stls/` is the corpus of bad part files, written by
 `tests/fixtures/make_bad_stls.py` (the suite checks the two agree); Hypothesis throws
 random and damaged files at the reader, derandomized so every run sees the same examples.
-`helpers.spacer_stl` and `helpers.spacer_grid` write the reference plate of spacers. To
-rerun one random order, pass the seed: `--randomly-seed=<seed>`.
+`helpers.spacer_stl` and `helpers.spacer_grid` write the reference plate of spacers.
+`tests/fixtures/frc-parts/` holds eight real, printed parts of the team's robot (MIT, see
+[its README](tests/fixtures/frc-parts/README.md)) and `tests/frc_parts.py` their measured
+figures and plates: the fast suite reads and checks all eight (`tests/test_frc_parts.py`;
+reading the 7 MB took 0.17 to 0.19 s in three runs on Fri 2026-11-20, once per worker), and
+the upstream check slices them (`tests_orca/test_frc_parts.py`, about 110 s of the upstream
+check's 144 s on Fri 2026-11-20). To rerun one random order, pass the seed:
+`--randomly-seed=<seed>`.
 
 No test can hang. Every wait on a process, a thread or an event gives up after
 `helpers.FAILSAFE_S` (10 s) with a message naming what never happened, and a test that

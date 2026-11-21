@@ -119,10 +119,11 @@ Each override is optional; its value must be one of the listed values, of the li
 | `MAX_PARTS` | 25 | Different parts the instances on one plate use. It bounds the upload (`MAX_PARTS` x `MAX_PART_BYTES`); it is not a measured limit. |
 | `MAX_PART_TRIANGLES` | 150,000 | Triangles in one part's STL. |
 | `MAX_PART_BYTES` | 7,500,084 | Bytes in one part's STL: a binary STL of `MAX_PART_TRIANGLES` triangles. |
-| `DEFAULT_MAX_PEAK_MB` | 900 | The memory Orca may use while it slices the plate, unless the slice service's setting says otherwise (see Memory). |
+| `DEFAULT_MAX_PEAK_MB` | 2,000 | The memory Orca may use while it slices the plate, unless the slice service's setting says otherwise (see Memory). |
 | `MIN_PART_EXTENT_MM` | 0.1 | A part must be more than this in every direction. |
 | `MARGIN_MM` | 3 | Every footprint stays this far inside the printable area. |
-| `SPACING_MM` | 5 | The least distance between two instances' footprints. |
+| `SPACING_MM` | 5 | The least distance between two instances' footprints, with supports off. |
+| `SPACING_SUPPORTS_MM` | 12 | The least distance between two instances' footprints, with supports on: Orca's supports need more room. A user interface that arranges the plate leaves this distance when supports are on. |
 | `PLATE_SLICE_TIMEOUT_S` | 240 | Seconds Orca may take to slice the plate. |
 
 No instance may be taller than the printer's printable height. A team's 10 by 10 grid of
@@ -176,7 +177,8 @@ is shown:
    orientation (`slice.part_too_large`);
 5. the placement: every footprint inside the margin (`slice.placement_off_plate`), no
    instance too tall (`slice.placement_too_tall`), no two footprints closer than
-   `SPACING_MM` (`slice.placement_too_close`).
+   `SPACING_MM`, or `SPACING_SUPPORTS_MM` when supports are on (`slice.placement_too_close`,
+   whose report names both instances).
 
 A part that passes but has holes in its surface (or faces laid on top of each other), a
 surface facing inwards, or a size that suggests an inch file read as millimetres is

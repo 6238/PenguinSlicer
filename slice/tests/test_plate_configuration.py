@@ -84,7 +84,7 @@ def test_missing_name_fails_left_off(configuration, scratch, names):
 
 def test_slice_error_passes_through(configuration, scratch):
     def refuse(*args, **kwargs):
-        raise SliceError("Parts are too close together; spread them out.", "exit code 155", -101)
+        raise SliceError("Two instances are too close together.", "exit code 155", -101)
 
     with mock.patch.object(plate_configuration, 'slice_plate', refuse), pytest.raises(SliceError) as caught:
         run_plate_configuration(configuration, scratch)

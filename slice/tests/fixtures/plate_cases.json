@@ -12,6 +12,7 @@
   "height": 340,
   "margin": 3.0,
   "spacing": 5.0,
+  "supports": false,
   "printer": "Bambu Lab H2S 0.6 nozzle"
  },
  "parts": {

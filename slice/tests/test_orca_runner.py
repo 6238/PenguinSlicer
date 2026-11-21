@@ -590,7 +590,7 @@ class TestSettle:
                                     f"had written the complete sliced file (it opens, its directory is intact, it "
                                     f"has Metadata/plate_1.gcode and Metadata/plate_1.json, and every entry reads "
                                     f"back with its checksum): the sliced file is delivered; Orca had not written "
-                                    f"result.json, so any warnings of its own are not known")
+                                    f"result.json, so its warnings are only those its debug log held by then")
 
     def test_the_note_on_a_stop_after_the_file_does_not_mention_result_json_when_orca_wrote_it(self, tmp_path):
         archive, out = self.archive(tmp_path)
@@ -1002,8 +1002,9 @@ class TestOrcasDebugLog:
         (out / slicer.ORCA_LOG).write_text(line.format(mushroom) + line.format(self.WARNING) + line.format(mushroom))
         exc = slicer.orca_failure(OrcaExit(156, "run found error, return -100, exit..."), out)
         assert exc.error_code == "slice.orca_failed"
+        # Sorted, not in the log's order, which Orca's threads change from run to run.
         assert exc.message == ("The slicer could not slice this plate. It also warned, though this may not be why it "
-                               f"failed: {mushroom} {self.WARNING}")
+                               f"failed: {self.WARNING} {mushroom}")
         assert "It warned:" not in exc.message
 
     @pytest.mark.parametrize("code", sorted(c for c in slicer.ORCA_RETURN_CODES if c != -100))

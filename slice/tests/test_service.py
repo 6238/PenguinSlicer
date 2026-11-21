@@ -385,10 +385,10 @@ class TestRead:
         assert (job.describe()["estimated_peak_mb"], job.describe()["memory_ceiling_mb"]) == (estimate, 180)
 
     def test_a_solid_block_the_old_estimate_refused_is_read(self, base):
-        (base / "peg.stl").write_bytes(box_stl(100, 100, 100))
+        (base / "peg.stl").write_bytes(box_stl(150, 150, 150))
         job = read_plate_configuration(plate_configuration(instances=[{"ref": "peg", "orientation": "+z", "angle": 0, "x": 170.0,
                                                 "y": 160.0}]), base)
-        assert job.estimated_peak_mb > limits.DEFAULT_MAX_PEAK_MB and job.memory_ceiling_mb == 900
+        assert job.estimated_peak_mb > limits.DEFAULT_MAX_PEAK_MB and job.memory_ceiling_mb == 2000
 
     def test_supports_raise_the_estimate(self, base):
         off = read_plate_configuration(plate_configuration(overrides={"supports": "off"}), base)
@@ -452,7 +452,7 @@ class TestRead:
          "Box #1 is not fully on the plate.", {"part": "Box", "instance": "Box #1"}),
         ([{"ref": "box", "orientation": "+z", "angle": 0, "x": 50.0, "y": 50.0},
           {"ref": "box", "orientation": "+z", "angle": 0, "x": 72.0, "y": 50.0}], "too_close",
-         "Box #1 and Box #2 are closer than 5 mm.", {"part": "Box", "instance": "Box #1"}),
+         "Box #1 and Box #2 are closer than 5 mm.", {"part": "Box", "instance": "Box #1", "other_instance": "Box #2"}),
     ])
     def test_placement_refused_with_its_rule(self, base, instances, rule, message, where):
         error = refused(plate_configuration(instances=instances), base)
@@ -512,7 +512,8 @@ class TestSlice:
         out = tmp_path / "out"
         with pytest.raises(SliceError) as caught:
             slice_plate_configuration(write_plate_configuration(base, plate_configuration(), {}), out)
-        assert (caught.value.code, caught.value.message) == (-101, "Parts are too close together; spread them out.")
+        assert (caught.value.code, caught.value.message) == (
+            -101, "Two instances are too close together: the slicer found that their paths would meet.")
         # Orca's own reason (result.json's error_string) is kept before the scratch folder goes.
         assert caught.value.details == ("exit code 155\norca error_string: too close\n"
                                         "Some objects are too close together")
