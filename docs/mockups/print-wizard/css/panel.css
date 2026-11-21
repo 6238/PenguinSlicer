@@ -278,16 +278,13 @@
 .layer-row { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
 #layer-readout { font-variant-numeric: tabular-nums; }
 .legend { list-style: none; margin: 8px 0 0; padding: 0; font-size: 12px; color: var(--muted); }
-.legend li { display: grid; grid-template-columns: 14px 1fr auto 34px; gap: 6px; align-items: center; padding: 2px 4px; border-radius: 4px; font-variant-numeric: tabular-nums; }
-.legend li.lg-row:not(.fixed) { cursor: pointer; }
-.legend li.lg-row:not(.fixed):hover { background: var(--panel-2); color: var(--ink); }
+.legend li { display: grid; grid-template-columns: 14px 1fr; gap: 6px; align-items: center; padding: 2px 4px; border-radius: 4px; }
+.legend li.lg-row { cursor: pointer; }
+.legend li.lg-row:hover { background: var(--panel-2); color: var(--ink); }
 .legend li.off { opacity: 0.45; }
 .legend li.off .lg-name { text-decoration: line-through; }
-.legend li.fixed { border-top: 1px solid var(--line); margin-top: 2px; padding-top: 4px; }
 .legend .lg-name { color: var(--ink); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.legend .lg-pct { text-align: right; }
 .legend i { width: 14px; height: 4px; border-radius: 2px; display: inline-block; }
-.legend i.none { background: none; }
 .toast { margin: 10px 0; font-size: 12px; color: var(--ink); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
 
 /* ---- Send: the summary card, the plate reminder, the busy printer, the progress ---- */
