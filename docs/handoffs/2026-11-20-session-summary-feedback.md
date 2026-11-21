@@ -98,3 +98,18 @@ section 2.1, section 3 and section 4.1; the rest of section 4 and the mockup are
 review, and no other change may start until that review is finished.
 
 The owner writes the name as **PenguinSlicer**, one word.
+
+## Feedback of Sat 2026-11-21
+
+- **The team's real parts.** Eight STL files of parts from the Popcorn Penguins' robot
+  (`/repos/popcornpenguins/PartsFRC/`) go into the slice service's tests under the MIT
+  licence, keeping the existing test parts. The team's mechanical mentor's target: **4
+  instances of each part on 2 build plates of the H2S**. If that needs more memory, the
+  slicer's memory ceiling is raised.
+- **The whole repository is MIT**, with PenguinCAM's licence text; the copyright holder is
+  "Popcorn Penguins, Inc." Refer to the team as the Popcorn Penguins.
+- **The wizard should look like PenguinCAM:** the panel can be widened by dragging, so
+  the design works at 320 px but is not fixed to it; light mode, not dark; text and
+  control sizes, spacing and alignment as PenguinCAM's. The screenshots and the full
+  points are in [the visual reference](../reference/penguincam-in-onshape/README.md).
+  The mockup is not changed until the owner's review of it is finished.
