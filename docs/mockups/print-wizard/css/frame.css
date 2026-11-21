@@ -12,9 +12,20 @@ body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
 button, select { font: inherit; }
 
 /* ---- scenario strip ---- */
-#scenario { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 6px 10px;
+/* The strip sits above the page, never over it, and is at most a few rows: it can drop to
+   one row (Fewer controls) or hide entirely behind a small tab, so it never hides the panel. */
+#scenario { flex: none; display: flex; flex-direction: column; gap: 4px; padding: 4px 10px; max-height: 40vh; overflow-y: auto;
             background: repeating-linear-gradient(135deg, #fff3b0 0 14px, #ffe98a 14px 28px);
             border-bottom: 2px solid #c9a100; color: #3d3000; font-size: 12px; }
+#scenario[hidden] { display: none; }
+#scenario .sc-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+#scenario .sc-row[hidden] { display: none; }
+#scenario .spacer { flex: 1; }
+#scenario details.sc-how { flex-basis: 100%; background: rgba(255, 255, 255, 0.72); border: 1px solid #c9a100; border-radius: 4px; padding: 2px 8px; line-height: 17px; }
+#scenario details.sc-how summary { cursor: pointer; font-weight: 700; }
+#sc-show { position: fixed; top: 0; right: 60px; z-index: 9000; font-size: 11px; padding: 1px 10px; cursor: pointer;
+           background: #ffe98a; border: 1px solid #c9a100; border-top: 0; border-radius: 0 0 6px 6px; color: #3d3000; }
+#sc-show[hidden] { display: none; }
 #scenario .sc-badge { font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; font-size: 11px;
                       background: #3d3000; color: #ffe98a; padding: 2px 8px; border-radius: 3px; }
 #scenario label { display: inline-flex; align-items: center; gap: 5px; }
@@ -24,10 +35,6 @@ button, select { font: inherit; }
 #sc-armed .armed { background: #3d3000; color: #fff; border-radius: 10px; padding: 1px 4px 1px 9px; font-size: 11px; }
 #sc-armed .armed button { background: none; border: 0; color: #ffe98a; padding: 0 4px; cursor: pointer; }
 #sc-armed .none { color: #6d5d00; font-style: italic; }
-#scenario .sc-how { flex-basis: 100%; margin: 0; background: rgba(255, 255, 255, 0.72); border: 1px solid #c9a100; border-radius: 4px;
-                    padding: 4px 8px; line-height: 17px; }
-#scenario .sc-how[hidden] { display: none; }
-#scenario .sc-how button { margin-left: 6px; padding: 0 8px; }
 
 /* ---- the stand-in Onshape tab ---- */
 #frame { flex: 1; min-height: 0; display: grid; grid-template-rows: 40px 36px 1fr 30px; }
@@ -62,7 +69,6 @@ button, select { font: inherit; }
 #os-right-grip { position: absolute; left: -4px; top: 0; bottom: 0; width: 8px; cursor: ew-resize; z-index: 20; }
 #os-right-grip:hover, #os-right-grip.on { background: rgba(13, 106, 193, 0.35); }
 #scenario .sc-group { font-weight: 700; }
-#os-right-head { height: 30px; flex: none; display: flex; align-items: center; padding: 0 10px; border-bottom: 1px solid var(--f-line); font-weight: 600; }
 #panel-slot { flex: 1; min-height: 0; position: relative; }
 #os-strip { width: 36px; flex: none; background: #fff; border-left: 1px solid var(--f-line); display: flex; flex-direction: column; align-items: center; padding-top: 6px; }
 #os-strip .app { width: 26px; height: 26px; border-radius: 4px; background: var(--f-accent); color: #fff; font-weight: 700; font-size: 12px; display: flex; align-items: center; justify-content: center; }
@@ -75,5 +81,5 @@ button, select { font: inherit; }
 #sa-bar { height: 34px; flex: none; display: flex; align-items: center; gap: 12px; padding: 0 12px; background: #eceff2; border-bottom: 1px solid var(--f-line); }
 #sa-bar .dots i { display: inline-block; width: 10px; height: 10px; border-radius: 5px; background: #c3c8ce; margin-right: 5px; }
 #sa-url { background: #fff; border: 1px solid var(--f-line); border-radius: 12px; padding: 2px 12px; color: var(--f-muted); flex: 0 1 420px; }
-#sa-page { flex: 1; min-height: 0; display: flex; justify-content: center; padding: 0; background: #0f1419; }
-#sa-slot { width: var(--panel-width); max-width: 100%; height: 100%; position: relative; border-left: 1px solid #30363d; border-right: 1px solid #30363d; }
+#sa-page { flex: 1; min-height: 0; display: flex; justify-content: center; padding: 0; background: #f6f8fa; }
+#sa-slot { width: var(--panel-width); max-width: 100%; height: 100%; position: relative; border-left: 1px solid #d0d7de; border-right: 1px solid #d0d7de; }

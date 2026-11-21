@@ -1,19 +1,49 @@
-# PenguinSlicer mockup: decisions and fakes
+# PenguinSlicer mockup: decisions and fakes (version 4)
 
 The mockup is [index.html](index.html) in this folder; serve the folder with any static
 file server and open it. It is a throwaway: its only product is your reactions.
 
-It was built from the CNC wizard (`templates/wizard.html`, `static/wizard.js`,
-`static/wizard.css`), the print branch's wizard (`print/`), the stand-in Part Studio
-(`testbed/host/`), and sections 5 and 6 of the
-[print path restart notes](https://github.com/chondl/PenguinCAM-notes/blob/main/handoffs/2026-10-11-print-path-restart-notes.md). Where
-those sources did not decide something, the mockup had to. Every such decision is listed
-here, each as the choice made and then the alternative rejected.
+It imitates PenguinCAM's wizard (`templates/wizard.html`, `static/wizard.js`,
+`static/wizard.css` in PenguinCAM), and printer delivery as
+[its guide](../../../delivery/README.md) describes it. Where those did not decide
+something, the mockup had to; each such decision is listed below as the choice made.
 
-The third round (Fri 11-20) follows the
-[wizard layout and advanced mode research](../../research/2026-11-19-wizard-layout-and-advanced-mode-research.md)
-and your reactions to the second: no modes on the Layout step, parts that arrive lying
-sensibly, an Arrange that tries harder, and advanced mode that stays in the panel.
+## What changed in version 4
+
+- **It looks like PenguinCAM.** Light, with PenguinCAM's light-theme colours, its font
+  stack at 14 px, its header (the name, then "Config: 6238 (Popcorn Penguins)"), numbered
+  pill step tabs with a check mark after a finished step, the chips row, a bold 18 px step
+  title with a line of instruction, light bordered cards, and Back and Next as two wide
+  buttons pinned to the bottom. Every size, padding and radius is copied from PenguinCAM's
+  CSS. The dark theme is gone, from the panel and from the 3D views.
+- **The panel's width is fluid.** It works at 320 px and uses extra width: from 520 px the
+  Setup fields sit side by side and the figures of a print in one row; from 680 px the parts
+  list has two columns, the Preview legend sits beside the view and the Send step has two
+  columns. The Layout view fills the width and grows with it. The scenario strip keeps its
+  width menu (320, 480, 640, 800 px) and the drag handle (300 to 900 px).
+- **Five steps:** Setup, Parts, Layout, Preview, **Send**. Back and forward always work;
+  leaving the Preview step while it slices leaves the slice running.
+- **The Layout step no longer changes the list of parts:** no Duplicate, Delete, Undo or
+  Redo, and none of their keys. Changing quantities is done on the Parts step.
+- **Send is its own step**, and the step is the confirmation: its Send button sends at
+  once. After sending, the step shows the delivery and print progress. Pausing or stopping
+  a print is done at the printer's screen; the panel says so and offers neither.
+- **A printer-status icon** in the header on every step; a click shows the details.
+- **A busy printer** (another student's print or send) disables Send and says whose, what,
+  how far and when it should finish. Nothing queues.
+- **Coming back to running work:** the scenario strip imitates a page refresh, closing and
+  reopening the panel, and returning two hours later.
+- **Parts that fail to arrive** are a notification, never a broken row: a part Onshape
+  cannot export is not added; a server that cannot be reached is retried quietly first.
+- **No internals in any message**: no route, status code, page id or internal name, in
+  any message or its details. Where details help, they are "For a mentor" and say what is
+  wrong with the part or the plate and where to look in Onshape or at the printer.
+- **Answered by the owner and built in:** a repeat click raises the quantity (M14);
+  changing the profile clears the changes, said beside the menu first (M13); the Send step
+  is the confirmation (M10); pause and stop only at the printer's screen (M12); the Layout
+  view at panel width, growing with it (M8); other instances never move when one is laid
+  down (M9); Cancel slice is disabled while the server cannot be reached (M15).
+- The instance limit is 150, the slice service's.
 
 ## Terms
 
@@ -21,201 +51,318 @@ Each term has one meaning in the mockup and in this file.
 
 | Term | Meaning |
 |---|---|
-| **Setup step, Parts step, Layout step, Preview step** | The wizard's four steps, in that order. |
+| **Setup step, Parts step, Layout step, Preview step, Send step** | The wizard's five steps, in that order. |
 | **part** | One distinct solid, from Onshape or from an uploaded file. |
 | **instance** | One placement of a part on the plate, labelled `Name #n`. |
 | **plate** | The printer's build plate and everything on it. |
+| **plate configuration** | What is sliced: the parts, where each instance sits, the profile and the changes. |
 | **profile** | A team's named set of slicing settings, such as Structural. |
+| **change** | One setting set differently from the profile, on the Setup step or in advanced mode. |
 | **advanced mode** | The view that fills the panel with every slicing setting. |
-| **layer preview** | The layer bar on the Preview step and the toolpaths it shows. |
-| **slicing progress, print progress** | What the panel shows while slicing, and while printing. |
+| **slice job** | One plate configuration being sliced by the slice service. |
+| **delivery job** | One sliced file's way from Send to the end of its print (printer delivery's term). |
+| **printer-status icon** | The small pill at the right of the header: a printer, a dot and a word. |
+| **printer details** | What a click on the printer-status icon opens under the header. |
+| **busy printer** | The printer printing, receiving or waiting for a person on another student's delivery job. |
+| **notification** | A card at the top of a step, closed with ×, that reports something not on a row: a part that did not arrive, a resumed session. It belongs to that step and goes when the student leaves it. |
 | **scenario strip** | The yellow mockup controls above the page. It is not part of the product. |
 | **resting position** | One way an instance can lie on the plate: one flat outside face of its part down, stable (its centre of mass above what touches the plate). |
-| **auto-orient** | Choosing an instance's resting position by a score, with no student input. The Layout step's **Auto-orient** button does it on request. |
-| **Arrange** | Placing every instance on the plate automatically (the Layout step's button). |
-| **rotation handle** | The round handle beside the selection that turns it about the vertical. |
-| **resting-position strip** | A row of small pictures under the 3D view, one per resting position of the selected part. The scenario strip calls it **Pictures under the view**. |
+| **rotation handle** | The round handle beside the selection on the Layout step that turns it about the vertical. |
+| **resting-position strip** | A row of small pictures under the Layout step's 3D view, one per resting position of the selected part. The scenario strip calls it **Pictures under the view**. |
 | **face markers** | Small amber arrows (↓) on the selected instance's candidate faces; a click lays it on that face. The scenario strip calls them **Arrows on the part's faces**. |
 | **box tumbler** | A box around the selected instance whose sides are clicked (or the box dragged) to put that side down. The scenario strip calls it **Box around the part**. |
 | **tip handle** | A second handle (⤵) beside the rotation handle that steps the instance to its next resting position. The scenario strip calls it **Tip handle**. |
-| **Like Onshape, Like a slicer, Top-down first** | The three mouse schemes the research compared, as the scenario strip's **Mouse** menu names them. The research file calls them Scheme O, Scheme S and Scheme T. |
+| **Like Onshape, Like a slicer, Top-down first** | The three mouse schemes, as the scenario strip's **Mouse** menu names them. |
 | **status line** | The one line just above the 3D view on the Layout step: green when every instance fits, red with the first problem when not. |
+| **layer preview** | The 3D view of the sliced plate on the Preview step, with its layer bar. |
+
+The Layout step's two buttons, **Arrange** (place every instance on the plate) and
+**Auto-orient** (lay instances their best way), are named where they are described below;
+they are buttons that may change, not terms.
+
+A student never reads the word "job": what is sliced and printed is a **plate**, named in
+words ("Plate 1, 16 instances"), never by the sliced file's generated name. "Slice job" and
+"delivery job" are terms of this file and of the services, not of the panel.
 
 ## Please react to these
 
-This round's questions, each answerable in a sentence. The options are named here exactly
-as the scenario strip names them. On the Layout step, select an instance, then switch **Lay on
-face**, **Mouse** and **Parts arrive** in the scenario strip; each takes effect at once.
-The number in brackets is the entry in the full list below. (Last round's ten questions are
-in this file's history; any you have not answered still stand.)
+Each answerable in a sentence. The numbers M1 to M16 are the ones you have seen before;
+the questions you answered (M8, M9, M10, M12, M13, M14, M15) are built in and no longer
+listed. New questions start at M17.
 
-1. **Lay on face (35): which one?** *Pictures under the view* (the research's choice),
-   *Arrows on the part's faces*, *Box around the part*, or *Tip handle*? A double-click on a
-   flat face works under all four. Try each on the L Bracket and on the Shooter Hood Rib:
-   they behave differently on a small blocky part and on a long thin one.
-2. **Mouse (34): which one?** *Like Onshape* (right-drag turns the view), *Like a slicer*
-   (drag on empty plate turns it, right-drag slides it), or *Top-down first* (the view
-   starts from above, drag on empty plate slides it, the 3D button tilts it)?
-3. **Parts arrive (32): lying their best way, or as modelled?** Lying their best way, the
-   Shooter Hood Rib arrives flat and the student can put it back as modelled; as modelled,
-   it arrives standing 353 mm tall with an error and an Auto-orient button.
-4. **Advanced mode at 320 px (19, 21):** do the search box, the Common / All settings
-   switch, the tab row and the collapsing subgroups make the settings findable, or is the
-   column still too cramped?
-5. **Advanced mode when the panel is wider (73):** at 560 px the tabs become a rail on the
-   left, at 760 px the subgroups sit in two columns. Onshape offers no dialog, so a panel
-   dragged wider is the only "bigger" there is. Is that enough?
-6. **Arrange and Auto-orient stay two buttons (45, 76):** Arrange decides where instances sit
-   and keeps how each one lies; Auto-orient decides how they lie. Arrange offers to lay
-   instances their best way only when it has checked that more would then fit. Right, or
-   should Arrange always auto-orient first, even if that undoes a way the student chose?
-7. **The status line (75):** the plate's state is one line above the picture, where last
-   round it was a red bar inside the picture that could cover an instance or the rotation
-   handle. Does one line say enough, with the full sentences and their buttons below?
+| # | Question |
+|---|---|
+| M1 | **Lay on face: which one?** *Pictures under the view*, *Arrows on the part's faces*, *Box around the part*, or *Tip handle* (scenario strip, **Lay on face**)? Try each on the L Bracket and on the Shooter Hood Rib. |
+| M2 | **Mouse: which one?** *Like Onshape*, *Like a slicer*, or *Top-down first* (scenario strip, **Mouse**)? |
+| M3 | **Parts arrive: lying their best way, or as modelled** (scenario strip, **Parts arrive**)? |
+| M4 | **Advanced mode at 320 px:** do the search box, the Common / All settings switch, the tab row and the collapsing subgroups make the settings findable? |
+| M5 | **Advanced mode when the panel is wider:** a rail of tabs from 480 px, two columns from 700 px. Enough? |
+| M6 | **Arrange and Auto-orient stay two buttons.** Right, or should Arrange always auto-orient first? |
+| M7 | **The status line** above the Layout view: does one line say enough, with the full sentences below? |
+| M11 | **Print progress on the Send step:** stages (Sending, Starting, Heating, Printing, Done), percent, layer of total, time left, expected finish and sent at. What else would a student standing at the printer want? (The layer preview no longer follows the print; it is on the Preview step.) |
+| M16 | **Orca's other layout tools** (scale, cut, mirror, per-part settings): which, if any, are needed? The mockup has none. |
+| M17 | **Leaving the Preview step while it slices** leaves the slice running, and coming back with the same plate finds it still going or finished; a changed plate starts a new slice. Right, or should leaving stop it (version 3)? |
+| M18 | **A finished slice that was not sent is dropped after two hours away.** It survives a refresh and a reopened panel; after two hours the wizard opens at Setup with an empty plate, and one line says only "The slice of your earlier plate has expired; add its parts again to print it." Is dropping it right, and if so, how long should the server keep it for a student to come back to? |
+| M19 | **When your print ended while you were away,** the wizard opens at Setup with a notification ("Your print finished at …") and your plate is not kept. Should it keep the plate so the same parts can be printed again in one go? |
+| M20 | **Five step tabs at 320 px wrap to two rows,** as PenguinCAM's tabs would; at 420 px and wider they fit one row. Acceptable, or shorten the tabs at narrow widths (for example the number only, with the name on the current tab)? |
+| M21 | **A part still arriving does not hold Next.** If it arrives after the student has moved on, it joins the plate on the Layout step (at once if the student is there, else next time). Right, or should Next wait for arriving parts? |
+| M22 | **Cancel sending** stays on the Send step while the file is on its way, before the printer starts (printer delivery allows a cancel before its start gate). Keep it? |
+| M23 | **Download moved** to the Send step, on the caret beside Send. Right place? |
+| M24 | **"Behind its estimate"** shows when the printer's own finish time is 5 minutes or more later than the slicer's estimate. Is 5 minutes the right threshold, and should the printer-status icon say "late" as it does now? |
+
+## Requirements on printer delivery
+
+Things the mockup shows that printer delivery does not provide yet, or provides only in
+part ([its guide](../../../delivery/README.md)).
+
+1. **Who sent it.** A delivery job carries the Onshape display name of the student who
+   sent it, and `GET /printer/status` returns it for the job going on, so every student's
+   printer details and the busy printer can say "for Alex Chen". Not provided today.
+2. **What it is.** The delivery job carries a one-line description of the plate (for
+   example "8 instances of Gusset Plate"), returned with the job. Today only the file
+   name, which the student did not choose; the panel never shows it.
+3. **Behind its estimate.** The slicer's estimate at send (`expected_s` in the progress
+   report) must be the sliced file's own estimate, kept from the send, so it can be
+   compared with the printer's `remaining_min`. The guide lists `expected_s` but does not
+   say where it comes from.
+4. **Finding my own work after a refresh.** A page that has lost its state finds this
+   student's live delivery job (today: `delivery` in `GET /printer/status` is the team's
+   most recent job; with requirement 1 the page can tell whether it is this student's).
+5. **The end time of the last print**, for "Finished at 3:12 pm" (today
+   `last_result.age_seconds`, ten minutes only, `LAST_RESULT_TTL_SECONDS`). The mockup
+   shows the last print's end for longer; how long is a decision for printer delivery.
+
+Already provided and used as is: paired or not (`paired`), offline (`online`,
+`age_seconds`, `delivery.daemon_silent`), sending (`uploading`, with a fraction),
+starting, printing with percent, layer, total layers and time left, waiting for a person
+with what to do at the printer (`waiting_for_person`, `waiting_label`, `at_the_printer`),
+finished, failed, the job slot (one job; nothing queues; `delivery.printer_busy` refuses a
+send to a busy printer), and cancel before the start gate.
+
+**On the slice service** (not printer delivery): a page that has lost its state finds this
+student's running or finished slice job and its plate configuration, to resume on the
+Preview step. Not provided today.
 
 ## Open facts, not decisions
 
-The research could not verify these; the mockup takes no position on them.
-
-- **How wide the real panel can be dragged.** PenguinCAM's own CNC help says to widen the
-  panel, so a student probably can; Onshape publishes no panel width and no limits. The
-  mockup's drag handle allows 240 to 800 px, the test bed's range, not Onshape's.
-- **Full screen inside Onshape.** Whether Onshape's panel frame allows the browser's full
-  screen (`document.fullscreenEnabled` in the real panel) is untested. The mockup does not
-  offer it.
-- **An element tab beside the panel.** Whether a PenguinCAM element tab and the right panel
-  both survive switching between them is not documented. The mockup does not use one.
-- **Onshape's trackpad and touch gestures.** *Like Onshape* imitates Onshape's mouse; its
-  trackpad and touch gestures were not read in full.
-- **Onshape's default mouse.** The research took Onshape's mapping (right-drag turns the
-  view) from its documentation; nobody checked it in a real Part Studio for this round.
-- **Speed in Onshape.** On an aarch64 Linux machine, auto-orient took 0 to 12 ms per mock
-  part and Arrange about 1.5 s for 23 instances in a software-rendered Chrome (1 s in node);
-  not measured in Chrome inside Onshape, nor on real team parts, whose meshes are larger.
+- **How wide the real panel can be dragged.** The owner widens PenguinCAM's panel by
+  dragging; Onshape publishes no limits. The mockup allows 300 to 900 px.
+- **Full screen inside Onshape**, **an element tab beside the panel**, **Onshape's trackpad
+  gestures** and **Onshape's default mouse**: as in version 3, unverified.
+- **Speed in Onshape** of auto-orient and Arrange on real team parts: unmeasured.
 
 ## Every decision
 
 ### Whole panel
 
-1. The panel's brand reads "PenguinSlicer"; rejected: "PenguinCAM" with a 3D Printing subtitle.
-2. The Setup step has no CNC "Mode" radio group; rejected: keeping the CNC Mode fieldset, as the print branch's page does.
-3. The panel is always the CNC wizard's dark theme; rejected: following Onshape's light or dark theme as the CNC wizard does through `?theme=`.
-4. The standalone context keeps the one-step-at-a-time wizard at the chosen width; rejected: the CNC wizard's full-page 2 x 2 grid of all four steps.
-5. The standalone context shows the team configuration loaded from a saved configuration link, so Send to Printer works there too; rejected: default configuration with no printer when there is no Onshape.
-6. Next is disabled, and the step itself says why, until the step's rules pass (as the print branch does); rejected: the CNC wizard's `alert()` when Next is pressed too early.
-7. A summary row of chips (filament, profile, number of changes, parts and instances, plate area used) grows as the student advances, as in the CNC wizard; rejected: no summary.
-8. A finished step's pill shows a tick in place of its number, so the four pills stay on one row at 320 px; rejected: the CNC wizard's tick after the name, which wraps the row.
+1. The look is PenguinCAM's light theme, copied from its CSS: background `#f6f8fa`, cards
+   `#ffffff`, controls `#eef1f4`, lines `#d0d7de`, text `#1f2328` and `#5a6570`, accent
+   `#2f81f7`; body text 14 px with line height 1.45 in PenguinCAM's font stack; step tabs
+   and chips 12 px with PenguinCAM's paddings; step title 18 px; buttons 8 px by 14 px,
+   radius 6 px; body padding 14 px. Two departures: amber text is `#9a6700` (PenguinCAM's
+   `#d29922` is hard to read on white; the borders keep `#d29922`), and a step tab's hover
+   is light (PenguinCAM's hover is a dark colour in its light theme too).
+2. The header: "PenguinSlicer", the printer-status icon at the right of the same line,
+   "Config: 6238 (Popcorn Penguins)" with the reload glyph, then the step tabs.
+3. The step tabs are PenguinCAM's: number, name, and a check mark after the name of a
+   finished step. A click on a tab goes there when every step before it allows. At 320 px
+   the five tabs wrap to two rows (M20).
+4. A row of chips grows as the student advances: filament, profile and changes from the
+   Parts step; parts and instances from the Layout step; plate area from the Preview step;
+   print time and grams on the Send step.
+5. Next is disabled until the step's rules pass, and the step says why. A part still
+   arriving never holds Next (M21).
+6. The panel's width is fluid; the extra width is used from 520 px and 680 px by
+   container queries on the panel, so dragging the panel wider changes the layout exactly
+   as the window would. Advanced mode keeps its own rail and two columns (M5).
+7. Notifications sit at the top of a step, under the chips, until closed with × or until
+   the student leaves the step.
+8. The scenario strip sits above the page, never over it: three short rows, a **Fewer
+   controls** button that leaves one row, and **Hide strip** that leaves a small tab. The
+   how-to note is folded.
 
 ### Setup step
 
-9. The printer is one line with a live state chip (Idle, Receiving your plate, Printing 38%); rejected: a printer menu, since the team configuration names one printer.
-10. Four filaments are offered with PETG first and marked "(most prints)"; rejected: PETG only, or hiding the others behind advanced mode.
-11. Five team profiles (Structural, Pulley, Camera mount, Draft, Fine), each with a one-line purpose under the menu, valued for the 0.6 mm nozzle; rejected: three generic profiles named by layer height.
-12. The four quick overrides (Infill, Walls, Supports, Brim) and advanced mode edit one shared set of changes: each quick override is a shortcut to one advanced mode setting, and a change made in either place shows in both; rejected: quick overrides as a separate layer applied on top of advanced mode.
-13. A quick override whose setting was set in advanced mode to a value not in its menu shows that value labelled "(advanced mode)"; rejected: showing the menu blank. Every change from the profile, from either place, is listed on the Setup step under "N settings changed from Structural", with Review in advanced mode and Reset all; rejected: a bare "advanced settings in use" flag.
-14. Changing the profile keeps the student's changes on top of the new profile and says so in a sentence under the Profile menu; rejected: clearing the changes on a profile change, or asking first.
-15. Advanced mode covers process settings only (the Quality, Strength, Speed, Support and Others tabs); rejected: also filament and printer settings. It stays inside the panel, in the same browser tab, filling the panel; rejected: a separate browser window or tab (you ruled both out), a dialog (Onshape gives a right-panel application no message that opens one), and an element tab in the document (it would add a tab to every team document that prints and hide the Part Studio while settings change).
-16. Changes in advanced mode last for this page load only and are never saved as a profile; rejected: remembered per student, or saved back to the team configuration.
-17. Advanced mode range-checks a number when it is entered and keeps the previous value with a sentence giving the allowed range; rejected: passing any value through for Orca to refuse.
-18. Reset all in advanced mode asks for a second click ("Reset all 3?"); rejected: resetting at once, or a modal dialog.
-19. The advanced mode search comes first, is always visible, matches a setting's label, subgroup, tab and key, and shows results from every tab whatever the Common / All settings switch says; rejected: searching the open tab only.
-20. Advanced mode has a "Changed only" filter; rejected: no filter (it was not asked for).
-21. Advanced mode is built like Orca's settings column: search, then a **Common / All settings** switch (standing in for Orca's Simple / Advanced / Expert tiers), then the tabs, then Orca's subgroup headings, which collapse. Common shows the 9 to 13 settings per tab teams change most, every subgroup open; All settings adds the rest (still a sample of Orca's), with only the first subgroup open, plus any subgroup holding a change. Each changed setting has an undo arrow (↶) back to the profile's value and says the profile's value under it. The way back is **‹ Setup** at the top and **Back to Setup** at the bottom, beside "Your changes stay for this print"; rejected: a flat list, and tiers named Simple / Advanced / Expert, which would read as a judgement of the student.
-22. Nothing in the mockup locks advanced mode or the quick overrides by team configuration; rejected: honouring an `allow_overrides: false` lock (an open question in the restart notes).
+9. The printer line names the printer with a state chip (Free, Sending 40%, Printing 61%,
+   Waiting, Finished, Failed, Offline) and, while a print runs, for whom and how long is
+   left. With no printer paired it names no printer: a "No printer paired" chip and the
+   model the team's profiles are for. The Layout step's plate line then names the model,
+   not the printer.
+10. Four filaments, PETG first and marked "(most prints)"; five team profiles, each with a
+    one-line purpose.
+11. **Picking another profile clears every change** and uses that profile's own values
+    (M13). While there are changes, a sentence under the Profile menu says so before it
+    happens: "Picking another profile clears your 2 changes and uses that profile's own
+    settings." After the change, one line says what was cleared.
+12. The four quick changes (Infill, Walls, Supports, Brim) and advanced mode edit one
+    shared set of changes, listed under "N settings changed from Structural" with Review
+    in advanced mode and Reset all.
+13. Advanced mode is unchanged from version 3 apart from its colours: inside the panel,
+    filling it; search first; Common / All settings; tabs; collapsing subgroups; undo
+    arrow per change; range checks; Reset all asks once more; changes last for this page
+    load. It covers the panel's header, so its top line repeats "PenguinSlicer" with the
+    printer-status icon, which keeps working there.
 
 ### Parts step
 
-23. In a Part Studio, a click on a part adds it with quantity 1. A click on a part already listed changes nothing: its row flashes and a sentence says to raise the quantity. A ↻ button on each row exports that part again from Onshape to pick up a change made there; rejected: a repeat click raising the quantity, or exporting again.
-24. Clicks in Onshape are taken only while the Parts step is showing, and the page's toolbar says so otherwise; rejected: adding parts from any step.
-25. A part that failed to export blocks Next until the student presses Try again or Remove on its row; rejected: letting Next go ahead without it.
-26. The not-watertight warning sits on that part's row, in amber, and does not block; rejected: a separate warning list above the parts.
-27. In an Assembly, one button adds every distinct part with its instance count as the quantity, leaves out standard content with a sentence naming it, and imports non-printed parts (the hex shaft) for the student to remove; rejected: filtering non-printed parts by name or an Onshape property.
-28. Pressing the assembly button when a part is already listed sets its quantity to the assembly count; rejected: adding the count to the existing quantity.
-29. A plate holds up to 100 instances (`MAX_INSTANCES` in `limits.py`), quantities clamp at 100, and the Parts step shows the limit's own sentence when the total passes it; rejected: splitting the instances across plates automatically.
-30. Each part row shows the part's size as modelled, with its volume in the tooltip; rejected: showing its triangle count, or the volume on the row, which wrapped at 320 px.
-31. The standalone upload accepts STL and 3MF files, by drop or by file chooser; rejected: STL only.
+14. A click on a part in Onshape adds it with quantity 1. **A click on a part already in
+    the list raises its quantity by one and flashes its row** (M14); the line at the top
+    says "Added one more: HTD Pulley 24T: 3 instances." A ↻ on each row brings in a new
+    version of a part changed in Onshape.
+15. A part arriving shows on its row with a thin progress bar ("Arriving from Onshape…").
+16. **Onshape cannot export a part** (a broken part): a notification names the part and
+    says what a mechanical mentor can check in Onshape (one closed solid, not a surface,
+    not several bodies; the Part Studio rebuilds with no red features). The part is not
+    added, Next stays enabled, and there is no Try again. "Your other parts are fine" is
+    said only while the list holds other parts. A second failure of the same part replaces
+    its notification rather than adding another.
+17. **Our server cannot be reached:** the page retries quietly; the row shows the part
+    arriving with progress, then "Taking longer than usual; still trying…" after 4
+    seconds; after 20 seconds of failed retries a notification says the part was not added
+    and to check that the computer is online, then click it again in Onshape (on the
+    standalone page: upload the file again). The list never holds a broken row.
+18. A ↻ that fails keeps the version already in the list and says so in a notification.
+19. A file that cannot be read on the standalone page is a notification and is not added.
+20. The not-watertight warning stays on its row, in amber, and does not block.
+21. In an Assembly, one button adds every distinct part with its count; standard content
+    is left out with a sentence naming it.
+22. A plate holds up to 150 instances, the slice service's limit; quantities clamp there.
+23. A part that arrives after the student left the Parts step joins the plate on the
+    Layout step: at once if the student is there, else the next time it is shown (M21).
 
 ### Layout step
 
-32. A part's instances arrive in its best resting position, chosen in the browser by the research's score (more contact with the plate, less overhang, lower is better), so the Shooter Hood Rib arrives lying flat, 8 mm tall instead of 353 mm. A message says once per part that it was laid down automatically and how tall it stood; a selected instance says "Laid down automatically" with a **Put back as modelled** link. The scenario strip's **Parts arrive** menu switches to arriving as modelled, with Auto-orient on request, so you can compare; rejected: arriving as modelled (last round's choice), and laying every part on its largest flat face, which stands a bracket on its back.
-33. The first visit to the Layout step arranges every instance. Later, a new instance takes the free spot nearest the middle of the instances already there, and a duplicate takes the free spot nearest its original; rejected: the first free spot from the front-left corner, which put new instances far from the group, and parking new instances beside the plate, as the print branch did.
-34. The Layout step has no modes: every operation has its own affordance, always on. By default the mouse is *Like Onshape*: left drag that starts on an instance moves it (a press anywhere inside its outline takes it, through a hole too); right drag, or left drag on empty plate, turns the view; middle drag, Ctrl + right drag or Shift + left drag on empty plate slides it; the wheel zooms toward the pointer; click selects, Shift- or Ctrl-click adds or removes, a click on empty plate clears. The scenario strip's **Mouse** menu switches to *Like a slicer* (left drag on empty plate turns the view, right drag slides it) or *Top-down first* (the view starts straight down, left drag on empty plate slides it, right drag or a **3D** button tilts it). A few lines under the view say the current gestures; rejected: a "move" mode and a "view" mode, and last round's slicer mapping as the default, since right drag slides there where it turns the view in Onshape. Turning the view is slowed to about half the usual rate, because in a view this small a short drag otherwise swings it all the way round.
-35. Laying an instance on a face has no mode either. By default the **resting-position strip** sits directly under the view while instances of one part are selected, and the panel scrolls it into sight when a click selects an instance: a picture of each resting position (up to six), the best first and marked Best, the current one outlined, each with its height and "overhangs" or "too tall" under it, and "as modelled" last when it is not already one of them; a click lays every selected instance that way. The scenario strip's **Lay on face** menu offers three others to compare: **face markers** (an amber arrow on each candidate face of the one selected instance that faces you, the best one green; hover shows the face, a click lays it there; a drag that starts on an arrow still moves the instance; a face turned away from you has no arrow until you turn the view), the **box tumbler** (a box around the one selected instance; hover shades a side and dashes on the plate the outline it would stand on; a click puts that side down; dragging the box rolls it toward the drag; only the parts of the box not hidden behind the instance itself can be clicked) and the **tip handle** (⤵ beside the rotation handle; a click steps to the next resting position, Shift-click the one before). A double-click on a flat face works in all four. Left out: the free rotation ball that snaps to the nearest resting position, the research's costliest option, which competes with turning the view and is hard to steer in a 320 px view; rejected: last round's Lay on face tool, which stayed on until Done.
-36. A face can be lain on when it is flat, on the outside of the part (nothing sticks out past it) and at least 25 mm²; a double-click on any other surface gets a sentence saying why. The resting positions are those faces that leave the part stable, scored, with positions that score the same in every way (the six flats of a hex shaft) shown once; rejected: offering only the six bounding-box faces, except in the box tumbler, which is that option.
-37. An instance that no longer fits where it stood after being laid down moves, turned if need be, to the free spot nearest where it stood, and the message says so. When no spot is free with the other instances where they are (the long rib laid flat among small parts), the whole plate is arranged again, the view zooms out to show it, and the message says so; rejected: leaving it overlapping its neighbours for the student to sort out.
-38. Rotation about the vertical axis uses one round handle beside the selection, as in the CNC wizard, snapping to 45 degrees within 5 degrees and turning a multi-selection about its common centre; rejected: the print branch's Left 90 / Right 90 buttons and angle field.
-39. Duplicate and Delete appear beside the selection's name under the view, only while something is selected; rejected: keeping them in the toolbar, which wrapped to two rows at 320 px. If a duplicate lands out of sight, the view zooms to the instances again.
-40. Duplicate and Delete on the Layout step change that part's quantity on the Parts step, and deleting a part's last instance removes the part; rejected: instances that drift apart from the Parts step's quantities.
-41. Keyboard, with the view focused: Delete removes the selection, Escape clears it, Ctrl or Cmd+A selects every instance, Ctrl+Z undoes, Ctrl+Y or Ctrl+Shift+Z redoes, Ctrl+D duplicates, F zooms to the instances, Ctrl+1 looks from above; rejected: no keyboard shortcuts.
-42. Every broken rule is said twice: its first sentence in the status line just above the 3D view, where the student is looking, and in full under the view with a remedy button (Arrange, or Auto-orient for an instance too tall). Clicking the status line scrolls to the full sentences; clicking a full sentence selects the instances it names; rejected: only red instances with no sentences, and sentences only under the view, where they fell below the fold at 320 px. An instance that is too close to two or more others gets one sentence naming all of them.
-43. The off-plate sentence names the edge (front, back, left, right), with a small marker at the plate's front; rejected: no edge named, or axis names.
-44. The placement rules are `plate.py`'s (5 mm between instances, 3 mm inside the plate edge, 340 mm height), measured on convex hulls, so the hollow side of a curved part is not usable space; rejected: measuring exact outlines.
-45. Arrange runs two packers and keeps the result that leaves fewer instances beside the plate, the smaller pile breaking a tie: last round's shelf packer (largest first, scanning from a corner, turning an instance 90 or 45 degrees when it does not fit) and the research's pile (largest first, each instance tried at the turn that gives its outline the smallest rectangle and a quarter, half and three-quarter turn from it, 45 degrees more only if none fits, every free spot scored by how small and square the pile stays and how near the middle). Either way the group ends in the middle of the plate. Arrange turns instances about the vertical only and keeps each instance's resting position. When instances do not fit it says so in one line ("Arrange placed 16 of 23 instances, turning 14; 7 instances do not fit and wait beside the plate"), and each instance left beside the plate says it did not fit, with Back to Parts in place of an Arrange button that could not help; rejected: one packer only, and auto-orienting every instance first (see question 6 and entry 76).
-46. Orca's other Prepare tab tools (scale, cut, mirror, per-object settings) are left out; auto-orient is now in, as a button and on arrival; rejected: including the others before you say which count as "similar to the orcaslicer UI". The Layout step stays the panel's width; rejected: filling the panel as advanced mode does.
-47. The view opens zoomed to the instances and zooms to them again after Arrange; small buttons in the view switch between "Zoom to instances", "Whole plate" and "Top" (straight down; under *Top-down first*, where the view starts from above, a "3D" button tilts it instead); rejected: always framing the whole plate.
-48. The hint naming the current mouse gestures and the current way to lay an instance down sits below the selection's row and the resting-position strip, with the rest behind "More ways to move and look"; rejected: one long paragraph that pushed the view's messages below the fold, and the hint directly under the view, which pushed the pictures out of sight.
+24. The Layout step does not change the list of parts: no Duplicate, Delete, Undo or Redo,
+    and Delete, Ctrl+D, Ctrl+Z and Ctrl+Y do nothing. The instruction line says to go Back
+    to Parts to change how many of a part.
+25. **The 3D view fills the panel's width and grows as the panel is widened** (M8): square
+    at narrow widths, 4:3 from 520 px, with no height cap. The instruction line starts
+    "↔ Widen the panel for more room", as PenguinCAM's Layout step does.
+26. **Laying an instance down never moves another instance** (M9). An instance that no
+    longer fits where it stood moves to the nearest free spot, turned if need be; if there
+    is none, it waits beside the plate, marked off the plate, and the message says to press
+    Arrange to make room.
+27. Everything else is as version 3: no modes; the mouse schemes (M2); the four ways to lay
+    an instance on a face (M1); auto-orient on arrival (M3); Arrange with its two packers
+    and its offer to lay instances their best way when that fits more (M6); the status
+    line (M7); the rotation handle drawn over everything; the placement rules of the slice
+    service (5 mm apart, 3 mm inside the edge, 340 mm tall).
 
 ### Preview step
 
-49. Entering the Preview step starts the slice, and coming back with the same plate and settings shows the last result without slicing again; rejected: a separate Slice button.
-50. Slicing progress is a card with a ring gauge around a stacked-layers icon, the percentage and stage name, elapsed time ticking every second beside the time left ("about 0:19 left"), a thin bar, and the list of stages with ticks; rejected: a spinner with a percentage only, and showing the expected total, which leaves the student to subtract.
-51. The time left comes from an expected time worked out from the instances, their volume and the layer count; past 130% of that the gauge and the time turn amber with "taking longer than the expected 0:47"; rejected: no expected time.
-52. "Generating support" stays in the stage list, struck through, when Supports is off; rejected: hiding that stage.
-53. Cancel slice is on the slicing progress card at every moment, beside a line saying that slicing runs on the server and that Back also stops it, and leads to a sentence with Slice again and Back to Layout; rejected: a confirmation dialog before cancelling. Leaving the Preview step while slicing (Back or the step bar) stops the slice without a message; rejected: keeping the slice running in the background, or asking first.
-54. A lost connection shows an amber banner with the time it dropped and the reconnect try, freezes the percentage, marks the stage "(last heard)", replaces the time left with "no news since 0:11" while the elapsed time keeps going, and never shows a finished or failed slice until the page reconnects; rejected: failing the slice when the connection drops, and going on showing a time left the page can no longer know.
-55. Each slice failure shows the panel's sentence plus a collapsed "Details for a mentor" with Orca's own words and the page id; rejected: the sentence only, or Orca's words only.
-56. Empty layers with Supports off name the instance and the height and offer "Turn on Supports and slice again", which visibly sets the Supports change (the summary shows "+1 change") and slices again; rejected: the sentence alone.
-57. Empty layers with Supports already on say the mesh is faulty and send the student back to the Parts step to repair the part in CAD and bring it in again; rejected: offering a retry.
-58. The plate-too-large refusal happens before slicing and is measured in plastic volume (the memory model), not triangles; rejected: the plate triangle cap. A plate of one instance gets a different remedy (slice it in Orca on a shop computer), because lowering the quantity cannot help.
-59. The layer preview is a vertical bar inside the right edge of the 3D view with the layer number on its handle, plus - and + buttons and arrow keys; rejected: Orca's two-handle range bar, and a separate full-panel view. Toolpaths are coloured by line type in Orca's colours with a legend of only the types present; each row gives that type's print time and share, a last row the time spent heating, travelling and changing layers, and a click on a row hides that type in the layer preview (and shows it again), as Orca's legend does; rejected: one colour, and the rest of Orca's Preview (the horizontal move slider, the other colour schemes, the G-code window, ticks on the layer bar), which the research found not worth it for "pick a profile and print".
-60. The slice summary shows print time and filament weight large, with instances, layers, layer height and the time the slice took on one quiet line; rejected: six equal tiles, which pushed the layer preview below the fold. The two large figures step aside while a plate is being sent or printed, since the print progress card carries the time.
-61. The final action is the CNC wizard's split button: Send to Printer, with Download on the caret menu. Choosing from the menu changes the button and does nothing else; rejected: acting at once on a menu choice, as the CNC wizard's Drive item does.
-62. Send to Printer opens a confirmation naming the printer, the instances, the print time and the filament, and reminding the student to clear the plate; the print starts on "Send and print". Every "Send again" after a refused or failed send goes through the same confirmation; rejected: sending on the first press.
-63. Print progress is a card at the top of the Preview step: the stage in words with the percentage, the file name, a track of the five stages a print goes through (Sending, Heating, Leveling, Printing, Done) with the current one marked, a bar, and four figures: layer of total, time left, time since it was sent and the expected finish as a time of day. A line says the figures are the printer's own report, a few seconds behind. The layer preview follows the printer's layer until the student moves the bar; rejected: a separate printing step or page, and one status line.
-64. While this page's plate is being sent or printed, the Send to Printer button reads "Sending…" or "Printing…" and cannot be pressed; Download stays on the menu; rejected: letting a second send go out and be refused by the printer.
-65. A busy printer means the plate is not sent, with Send again and Download; rejected: queueing the plate on the printer. An unreachable printer names how long ago the shop computer that talks to the printer last reported; rejected: a generic "printer offline".
-66. A print that fails partway marks the stage it failed in on the track, names the layer and the printer's reason, and offers Send again and Download; rejected: a failure state with no remedy.
-67. The panel has no pause or stop for a running print; the print progress card says to use the printer's screen; rejected: stopping a running print from the panel.
-68. While the file is on its way to the printer the card has **Cancel sending**, and says that nothing prints until the whole file has arrived; cancelling leaves the sliced plate ready to send again; rejected: a send that cannot be taken back once pressed.
-69. A slice that times out says to slice again first (the server may have been busy), and only then to lower the quantities or pick the Draft profile; with one instance on the plate it does not mention quantities; rejected: one sentence for every plate, which told a student with one instance to print fewer.
+28. Entering the Preview step starts the slice; coming back with the same plate shows the
+    result without slicing again.
+29. **Leaving the Preview step while it slices leaves the slice running** on the server
+    (M17); coming back with the same plate shows its progress, and a changed plate cancels
+    it and starts a new one.
+30. Slicing progress is version 3's card: ring gauge, percent and stage, elapsed and time
+    left, bar, list of stages, Cancel slice.
+31. **While the server cannot be reached, Cancel slice is disabled** (M15), with one line
+    saying the server cannot be reached and the slice may still be running.
+32. Each slicing failure is one sentence of what happened and one of what to do, with its
+    buttons, and the Preview step's lead says the slice failed, was stopped at the time
+    limit, was cancelled, or (for a plate too large) was never started. Exactly three
+    messages have "For a mentor" details: the empty-layers and faulty-mesh slice failures
+    (Orca Slicer's own sentence with the heights, and where to look on the part), and the
+    failed print on the Send step (where the printer's screen shows the fault, and what to
+    check in the filament path and the nozzle). No other message has details.
+33. The result: print time and grams, a quiet line of instances, layers and slice time,
+    the 3D layer preview with its layer bar, and the legend of line types, beside the view
+    from 680 px.
+34. Next goes to the Send step once the plate is sliced.
 
-### Added in the third round
+### Send step
 
-70. Every change on the Layout step can be undone and redone: moving, turning, laying down, Arrange, Auto-orient, Duplicate and Delete, with ↶ ↷ buttons beside Arrange and the usual keys. Undo stays within the Layout step: a change on the Parts step that adds or removes instances starts it afresh; rejected: no undo (last round), and undo across steps, which would have to undo quantities on the Parts step.
-71. **Auto-orient** is a button beside Arrange: it lays the selected instances, or every instance when none is selected, in their best resting position. When it changes every instance and they then break a placement rule, it arranges the plate too and says so; rejected: leaving the student to press Arrange after it.
-72. Advanced mode's labels carry no axis letters: Orca's "X-Y hole compensation", "Top Z distance" and "Support/object xy distance" read "Hole compensation", "Gap above support" and "Support/object side gap"; the search still finds them by Orca's key ("xy hole"); rejected: Orca's labels as they are.
-73. Advanced mode follows the panel's width as it changes (watched, not a fixed breakpoint, so it would follow a panel the student drags): a tab row when narrow; from 480 px a rail of tabs on the left; from 700 px the subgroups in two columns; rejected: the same single column at every width.
-74. The mock Onshape page has a drag handle on the panel's left edge, as the CNC help implies Onshape has, limited to the test bed's 240 to 800 px, and the scenario strip's how-to note says the real limits are not known; rejected: only the fixed widths in the Panel width menu.
-75. The Layout step's status line is always there and always one line tall, just above the 3D view: "✓ All 3 instances fit the plate." in green, or the first problem in red with "Fix ↓" or "+2 more ↓"; rejected: last round's red bar inside the picture, which could cover an instance or the rotation handle, and a line that appears only when something is wrong, which would move the picture under a drag.
-76. Arrange and Auto-orient stay two buttons with two meanings: where instances sit, and how they lie. When Arrange leaves instances over and some do not lie their best way, it also tries the plate with every instance laid its best way, and only if fewer instances are then left over does its message offer one button ("Lay them the best way: 3 more fit"). Lying flat usually takes more of the plate, not less, so the offer is rare; rejected: Arrange always auto-orienting first (it would undo a way the student chose, and on the mock assembly it left 7 instances over where keeping them as they lay left 2), and one button that does both.
-77. The rotation handle is drawn over everything in the view, so a tall instance in front of it never hides it; rejected: leaving it on the plate behind the instance, where it disappeared behind a bracket standing on end.
-78. A resting position with much of the part hanging over air is labelled "overhangs", and its tooltip says it will probably need Supports; rejected: "needs supports", which claims more than the mockup's invented threshold knows.
+35. The step shows what will be printed (printer with its state, the instances by part,
+    print time, grams of filament) and a reminder: "Check that the plate is clear and PETG
+    is loaded. Send starts the print at once; nobody is asked again."
+36. **The Send button sends at once** (M10). It is PenguinCAM's final action: a wide blue
+    button with a caret, whose menu offers Download instead (M23). Choosing from the menu
+    changes the button; it does not act.
+37. After sending, the step shows the delivery and print progress at the top: the stage on
+    a track (Sending, Starting, Heating, Printing, Done), percent, layer of total, time
+    left, expected finish (with "N min behind" when late) and sent at. The card names the
+    plate in words ("Plate 1, 16 instances, on Shop H2S"), never by the sliced file's name.
+    The step's lead and the disabled button follow the phase: on its way ("Sending…"),
+    heating ("Heating…"), printing ("Printing…"), waiting for a person ("Waiting for a
+    person…"). While the plate is on its way, **Cancel sending** is offered (M22).
+38. **Pausing or stopping a print is done at the printer's screen** (M12); the card says
+    so, and the panel offers neither.
+39. A print that waits for a person (filament ran out, door open) shows what to do at the
+    printer, in amber; it is never an end.
+40. A finished or failed print says so on the card; Send is enabled again for the same
+    sliced plate.
+41. **A busy printer** (another student's print or send): a card says whose, what, how far
+    (percent, layer), the time left and when it should finish, with "N min behind" when
+    late; Send is disabled; the sliced plate stays ready; nothing queues. Send comes back
+    by itself when the printer is free.
+42. An offline printer and a team with no printer paired each disable Send with one
+    sentence and Download. With no printer paired, nothing on the step names a printer or
+    speaks of reaching one: the lead says no printer is paired, the summary's printer row
+    says "No printer paired", and the button reads "Send to printer".
+
+### The printer-status icon
+
+43. On every step, the right of the header: a printer, a dot and a word. Free (green),
+    Sending 40% (blue, pulsing), Heating or Printing 61% (blue, pulsing), Waiting (amber),
+    Finished (green), Failed (red), Offline and No printer (grey). "· late" follows when a
+    print is 5 minutes or more behind its estimate (M24).
+44. A click opens the printer details under the header: what is printing (the row is
+    labelled Sending, Printing, Printed or Was printing, as the phase is), for whom (the
+    Onshape name, with "(you)" for this student), percent and layer, time left, expected
+    finish, whether it is behind its estimate, and a bar; what to do at the printer while
+    it waits for a person; that pausing or stopping is done at the printer. A click
+    elsewhere, Escape or × closes it.
+
+### Coming back to running work
+
+45. The scenario strip's **Refresh page**, **Close and reopen** and **Come back 2 h later**
+    throw away the page's state; what the server holds stays: this student's slice job and
+    plate configuration, and the printer.
+46. When this student's slice is running, or finished and not sent, the wizard reopens on
+    the Preview step with the parts and layout restored; when this student's delivery job
+    is running, it reopens on the Send step with live progress. A notification says
+    "Back where you were" and, in the past tense, what the plate was doing when the
+    student left ("You had sent your plate to Shop H2S before you left; its progress is
+    below."), so it stays true while the card under it moves on.
+47. Otherwise it starts at Setup. Another student's work shows in the printer-status icon
+    and also on the Setup step, whose printer line **names that student**: "Shop H2S
+    Printing 54% for Alex Chen, 54 min left". The brief asked only for the icon; the name on
+    the Setup step is a choice of this mockup. Keep it, or show the name only in the
+    printer details?
+48. After two hours away, a finished unsent slice is gone (M18), and a one-line
+    notification at Setup says the slice of the earlier plate has expired; a print of this
+    student's that ended meanwhile is reported in a notification at Setup (M19).
 
 ## What is fake and could mislead
 
-1. Toolpaths are generated shapes, not G-code and not Orca's output: walls are each layer's cross-section pushed inward, infill is straight scanlines whatever the pattern, solid and top layers come from comparing neighbouring layers, supports are zig-zags in a grid under downward faces, and brims ring the first layer.
-2. Print time and filament grams are estimates from those fake toolpaths, not Orca's numbers.
-3. Slicing time, stage durations, the time left and the percentage are invented formulas with a random spread. Whether the real slice service can report a percentage at all is not yet known.
-4. The stage names are Orca-like but unverified: nobody has checked what Orca 2.4.2 reports when run headless.
-5. Nothing is exported from Onshape; an export takes a random second or so, and an uploaded file is never read: it becomes the next mock part in turn, under the file's name.
-6. "Not watertight: 14 open edges in 2 places" is a fixed sentence; nothing checks a mesh.
-7. The empty-layer height is 62% of the named instance's height, and the named instance is the not-watertight part if there is one, else the tallest instance.
-8. Armed Layout step errors move instances to make the problem, and armed "too tall" adds a Shooter Hood Rib if there is none; armed "plate too large" lowers the cap for that plate and says so in a mockup note.
-9. The 600 cm³ plate cap is invented; the real cap waits on memory measurements of the plates the team wants to print.
-10. Hulls are thinned to at most 40 points for speed, so placement distances can be off by about 0.2 mm.
-11. The printer, the printer's error code, the other student's file name and the 7-minute last report are invented.
-12. Download saves nothing; it only shows a sentence.
-13. Speeds: at Real-time-ish, slicing runs at clock speed and printing at 60 times; at Fast, slicing runs 6 times and printing 900 times; a lost connection always lasts 8 real seconds.
-14. The page around the panel is not Onshape: its feature list is decorative, its graphics area is simplified, the assembly is the mock parts placed to look like a mechanism (they are not mated and do not fit exactly), and the team configuration link does nothing.
-15. The automatic brim rule (tall and thin, or a small footprint) is invented.
-16. Part sizes and volumes are from the procedural mock geometry, which approximates real FRC parts.
-17. Advanced mode shows about 50 settings under Common and about 95 under All settings, both samples; Orca's five process tabs hold about 295.
-18. Cancel slice works while the connection is lost, which a real page could not promise.
-19. A press inside an instance's outline takes that instance even where the outline is empty (inside the corner of the L Bracket), because the outline is the same filled-in hull the placement rules use.
-20. The expected finish time is this computer's clock plus the invented print time. The stages of a print (Heating, Leveling) and their lengths are invented; the real ones come from the stage code the printer reports.
-21. Cancel sending always works at once. A real cancel has to reach the shop computer and may arrive after the printer has started.
-22. Auto-orient scores the mock parts' flat outside faces only. The research's candidate set is the faces of the part's 3D convex hull, which also include faces that bridge across a part (from an L bracket's foot to the top of its upright); the mockup leaves those out. The score is ours, not Orca's, and was not compared with Orca's on real parts.
-23. The "overhangs" label on a resting position means more than 400 mm² facing down more than 45 degrees, an invented threshold; whether such a part really needs Supports is Orca's to say, and nothing here asks it. Faces inside a mock part where two of its pieces meet (a pulley's flange on its toothed body) are left out of the overhang, a fix for the mock geometry that real exported meshes would not need.
-24. *Top-down first* looks straight down through the same perspective camera as the other schemes; the research describes an orthographic view, in which every instance keeps its size wherever it is.
-25. The box tumbler's box is the part's bounding box as modelled, so an instance laid on a slanted face gets a slanted box, and a side can put an instance on an edge that would not stand on its own.
-26. The panel's drag limits (240 to 800 px) are the test bed's, not Onshape's.
+1. Toolpaths are generated shapes, not Orca's output; print time and grams are estimates
+   from them.
+2. Slicing time, stage durations and percentages are invented formulas.
+3. Nothing is exported from Onshape; an export takes about a second; the server outages
+   last 9 seconds (slow) or 20 (down) on the real clock; an uploaded file is never read.
+4. The printer, Alex Chen, his gusset plate, the waiting reasons, the
+   failure reason and every time are invented. The heating, starting and waiting lengths
+   are invented; a person "resumes at the printer" after 10 mock minutes.
+5. Times of day are this computer's clock plus mock time; at Fast speed a print runs 900
+   times faster and another student's 30 times, so the clock jumps ahead.
+6. The Printer menu in the scenario strip sets the printer outright; a real printer gets
+   there by itself.
+7. "Come back 2 h later" moves the page's clock and the printer forward two hours at once.
+8. The notification after a refresh, and what is restored, imitate requirements on printer
+   delivery and the slice service that do not exist yet.
+9. The plate-volume cap (600 cm³) is invented; armed "plate too large" lowers it for one
+   plate and says so in a mockup note.
+10. Hulls are thinned to 40 points; placement distances can be off by about 0.2 mm.
+11. Download saves nothing.
+12. The page around the panel is not Onshape.
+13. Advanced mode shows a sample of Orca's settings (about 50 Common, 95 All).
+14. Auto-orient scores flat outside faces of the mock parts only; "overhangs" uses an
+    invented threshold.
+15. *Top-down first* uses a perspective camera, not an orthographic one.
+16. Cancel sending always works at once; a real cancel may arrive after the printer has
+    started.
+17. The panel's drag limits (300 to 900 px) are the mockup's, not Onshape's.
+18. Fonts: PenguinCAM's stack starts with the system font, so the mockup renders in each
+    computer's own system font, as PenguinCAM does; screenshots taken on Linux show
+    Liberation Sans or DejaVu Sans, not San Francisco.

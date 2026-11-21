@@ -148,6 +148,14 @@ concerns.
 
 ### 2.3 The mockup
 
+> **Superseded on Fri 11-20 at about 19:00 PT by mockup version 4**, built from the
+> owner's feedback of Sat 2026-11-21: PenguinCAM's light look, a fifth step (Send), the
+> printer-status icon, busy-printer and resume states, and part-arrival failures as
+> notifications. Its design, the questions still open (M1 to M7, M11, M16, and M17 to
+> M24) and what it needs from printer delivery are in its
+> [DECISIONS.md](../mockups/print-wizard/DECISIONS.md), which replaces the rest of this
+> section for review.
+
 **Open it:** [mockups/print-wizard/index.html](../mockups/print-wizard/index.html). In
 the owner's Markdown viewer that link opens the working page
 (`http://127.0.0.1:6249/penguin-slicer/docs/mockups/print-wizard/index.html`); from a
