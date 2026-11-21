@@ -12,7 +12,8 @@
 (function () {
   'use strict';
   var T = THREE;
-  var COL = { accent: 0x2f81f7, danger: 0xf85149, plate: 0x2f3946, grid: 0x3d4857, grid5: 0x5b6979, face: 0x2f81f7 };
+  // Light, as PenguinCAM's light theme (--canvas-bg #f2f4f7, --canvas-grid #c7cfd8).
+  var COL = { accent: 0x2f81f7, danger: 0xd1242f, plate: 0xdde2e8, grid: 0xc7cfd8, grid5: 0xa9b3be, face: 0x2f81f7 };
   var DOWN = new T.Vector3(0, 0, -1);
 
   // Which button does what to the camera, per scheme. OrbitControls swaps ROTATE and PAN
@@ -40,15 +41,15 @@
     var mg = plate.margin, ml = new T.BufferGeometry();
     ml.setAttribute('position', new T.Float32BufferAttribute([mg, mg, 0.05, plate.x - mg, mg, 0.05, plate.x - mg, mg, 0.05, plate.x - mg, plate.y - mg, 0.05,
       plate.x - mg, plate.y - mg, 0.05, mg, plate.y - mg, 0.05, mg, plate.y - mg, 0.05, mg, mg, 0.05], 3));
-    var marginLine = new T.LineSegments(ml, new T.LineDashedMaterial({ color: 0x6b7785, dashSize: 4, gapSize: 3 }));
+    var marginLine = new T.LineSegments(ml, new T.LineDashedMaterial({ color: 0x7d8894, dashSize: 4, gapSize: 3 }));
     marginLine.computeLineDistances();
     scene.add(marginLine);
     var box = new T.LineSegments(new T.EdgesGeometry(new T.BoxGeometry(plate.x, plate.y, plate.height)),
-      new T.LineBasicMaterial({ color: 0x3a4450, transparent: true, opacity: 0.5 }));
+      new T.LineBasicMaterial({ color: 0x9aa5b1, transparent: true, opacity: 0.5 }));
     box.position.set(plate.x / 2, plate.y / 2, plate.height / 2);
     scene.add(box);
     // a front marker so "front edge" in the sentences has a meaning
-    var tri = new T.Mesh(new T.CircleGeometry(5, 3), new T.MeshBasicMaterial({ color: 0x51606f }));
+    var tri = new T.Mesh(new T.CircleGeometry(5, 3), new T.MeshBasicMaterial({ color: 0x8a96a3 }));
     tri.rotation.z = -Math.PI / 2; tri.position.set(plate.x / 2, -8, 0.05);
     scene.add(tri);
   }
@@ -67,7 +68,7 @@
     var renderer = new T.WebGLRenderer({ canvas: canvas, antialias: true, preserveDrawingBuffer: true });
     renderer.setPixelRatio(window.devicePixelRatio || 1);
     var scene = new T.Scene();
-    scene.background = new T.Color(0x0d1116);
+    scene.background = new T.Color(0xf2f4f7);
     var camera = new T.PerspectiveCamera(40, 1, 1, 5000);
     camera.up.set(0, 0, 1);
     lights(scene); makePlate(scene, plate);
@@ -111,9 +112,9 @@
     // the side under the pointer can be shaded on its own.
     var boxMats = [0, 1, 2, 3, 4, 5].map(function () { return new T.MeshBasicMaterial({ color: COL.accent, transparent: true, opacity: 0, depthWrite: false }); });
     var tumbler = new T.Mesh(new T.BoxGeometry(1, 1, 1), boxMats);
-    var tumblerEdges = new T.LineSegments(new T.EdgesGeometry(new T.BoxGeometry(1, 1, 1)), new T.LineBasicMaterial({ color: 0x9cc3ff, transparent: true, opacity: 0.85 }));
+    var tumblerEdges = new T.LineSegments(new T.EdgesGeometry(new T.BoxGeometry(1, 1, 1)), new T.LineBasicMaterial({ color: 0x2f81f7, transparent: true, opacity: 0.85 }));
     tumbler.add(tumblerEdges); tumbler.visible = false; tumbler.renderOrder = 2;
-    var dropLine = new T.LineLoop(new T.BufferGeometry(), new T.LineDashedMaterial({ color: 0x9cc3ff, dashSize: 4, gapSize: 3 }));
+    var dropLine = new T.LineLoop(new T.BufferGeometry(), new T.LineDashedMaterial({ color: 0x2f81f7, dashSize: 4, gapSize: 3 }));
     dropLine.visible = false; scene.add(dropLine);
     var hoverSide = -1;
 
@@ -587,12 +588,10 @@
     canvas.addEventListener('keydown', function (e) {
       var k = e.key, mod = e.ctrlKey || e.metaKey;
       function go(name) { e.preventDefault(); opts.onKey(name); }
-      if (k === 'Delete' || k === 'Backspace') return go('delete');
+      // Version 4: the Layout step does not change the list of parts, and has no undo, so
+      // Delete, Ctrl+D, Ctrl+Z and Ctrl+Y do nothing here.
       if (k === 'Escape') return opts.onKey('escape');
       if (mod && (k === 'a' || k === 'A')) return go('all');
-      if (mod && (k === 'z' || k === 'Z')) return go(e.shiftKey ? 'redo' : 'undo');
-      if (mod && (k === 'y' || k === 'Y')) return go('redo');
-      if (mod && (k === 'd' || k === 'D')) return go('duplicate');
       if (mod && k === '1') return go('top');
       if (!mod && (k === 'f' || k === 'F')) return go('fit');
     });

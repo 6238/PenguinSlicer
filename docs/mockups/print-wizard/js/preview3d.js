@@ -332,7 +332,7 @@
     container.appendChild(canvas);
     var renderer = new T.WebGLRenderer({ canvas: canvas, antialias: true, preserveDrawingBuffer: true });
     renderer.setPixelRatio(window.devicePixelRatio || 1);
-    var scene = new T.Scene(); scene.background = new T.Color(0x0d1116);
+    var scene = new T.Scene(); scene.background = new T.Color(0xf2f4f7);
     var camera = new T.PerspectiveCamera(40, 1, 1, 5000); camera.up.set(0, 0, 1);
     Layout3D.lights(scene); Layout3D.makePlate(scene, plate);
     var controls = new T.OrbitControls(camera, canvas);

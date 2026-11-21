@@ -178,18 +178,30 @@
     setTimeout(function () { gfx.resize(); window.Wizard.resize(); }, 0);
   }
 
-  $('#sc-how-hide').addEventListener('click', function () {
-    $('#sc-how').hidden = true;
-    setTimeout(function () { gfx.resize(); window.Wizard.resize(); }, 0);      // the page below gains its height
+  function relayout() { setTimeout(function () { gfx.resize(); window.Wizard.resize(); }, 0); }   // the page below gains or loses height
+  $('#sc-more').addEventListener('click', function () {
+    var open = this.getAttribute('aria-expanded') !== 'true';
+    this.setAttribute('aria-expanded', open ? 'true' : 'false');
+    this.textContent = open ? 'Fewer controls' : 'More controls';
+    $('#sc-row2').hidden = !open; $('#sc-row3').hidden = !open;
+    relayout();
   });
+  $('#sc-hide').addEventListener('click', function () { $('#scenario').hidden = true; $('#sc-show').hidden = false; relayout(); });
+  $('#sc-show').addEventListener('click', function () { $('#scenario').hidden = false; $('#sc-show').hidden = true; relayout(); });
+  $('#sc-how').addEventListener('toggle', relayout);
   $('#sc-arm').addEventListener('click', function () { window.Wizard.Mock.arm($('#sc-error').value); window.Wizard.armed(); });
+  $('#sc-printer').addEventListener('change', function () { window.Wizard.setPrinter(this.value); });
+  $('#sc-refresh').addEventListener('click', function () { window.Wizard.comeBack('refresh'); });
+  $('#sc-reopen').addEventListener('click', function () { window.Wizard.comeBack('reopen'); });
+  $('#sc-later').addEventListener('click', function () { window.Wizard.comeBack('later'); });
   $('#sc-speed').addEventListener('change', function () { window.Wizard.Mock.speed = this.value; });
   $('#sc-width').addEventListener('change', function () { if (this.value !== 'drag') setWidth(+this.value); });
   $('#sc-lay').addEventListener('change', function () { window.Wizard.setOption('lay', this.value); });
   $('#sc-mouse').addEventListener('change', function () { window.Wizard.setOption('scheme', this.value); });
   $('#sc-arrive').addEventListener('change', function () { window.Wizard.setOption('arrival', this.value); });
-  // A drag handle on the panel's left edge, as Onshape's own panel probably has (PenguinCAM's
-  // CNC help tells users to widen it). The limits here, 240 to 800 px, are the test bed's.
+  // A drag handle on the panel's left edge, as Onshape's own panel has (the owner widens
+  // PenguinCAM's panel this way). The limits here, 300 to 900 px, are the mockup's: 300 px is
+  // PenguinCAM's own minimum width, and the design uses extra width up to about 800 px.
   (function () {
     var grip = $('#os-right-grip'), sel = $('#sc-width'), start = null;
     var opt = document.createElement('option'); opt.value = 'drag'; opt.hidden = true; sel.appendChild(opt);
@@ -199,7 +211,7 @@
     });
     grip.addEventListener('pointermove', function (e) {
       if (!start) return;
-      var w = Math.round(Math.min(800, Math.max(240, start.w + (start.x - e.clientX))));
+      var w = Math.round(Math.min(900, Math.max(300, start.w + (start.x - e.clientX))));
       document.documentElement.style.setProperty('--panel-width', w + 'px');
       var preset = Array.prototype.some.call(sel.options, function (o) { return o.value === String(w); });
       if (preset) sel.value = String(w); else { opt.textContent = w + ' px (dragged)'; sel.value = 'drag'; }
@@ -208,7 +220,11 @@
     grip.addEventListener('pointerup', function () { start = null; grip.classList.remove('on'); });
   })();
   $('#sc-context').addEventListener('change', function () { setContext(this.value); });
-  $('#sc-reset').addEventListener('click', function () { window.Wizard.Mock.armed = []; renderArmed(); setContext($('#sc-context').value); });
+  $('#sc-reset').addEventListener('click', function () {
+    window.Wizard.Mock.armed = []; renderArmed();
+    $('#sc-printer').value = 'idle'; window.Wizard.setPrinter('idle', true);
+    setContext($('#sc-context').value);
+  });
 
   window.Wizard.Mock.onChange = renderArmed;
   window.Wizard.Mock.speed = $('#sc-speed').value;
