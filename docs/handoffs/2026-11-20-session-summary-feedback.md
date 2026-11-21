@@ -113,3 +113,47 @@ The owner writes the name as **PenguinSlicer**, one word.
   control sizes, spacing and alignment as PenguinCAM's. The screenshots and the full
   points are in [the visual reference](../reference/penguincam-in-onshape/README.md).
   The mockup is not changed until the owner's review of it is finished.
+
+## Mockup feedback of Sat 2026-11-21
+
+Recorded only: no work starts on it until the owner says so.
+
+**Keep.** Quantity on each row of the parts list (instances by quantity) and the 3D
+picture of each part. PenguinCAM's parts list has neither; the owner prefers this.
+
+**The wizard's steps.**
+
+- Moving backwards and forwards between steps is an important capability, and it stays.
+- The Layout step does not change the list of parts: no duplicate or delete buttons
+  there. To change how many instances there are, the student goes back to the Parts step
+  and forward again.
+- No undo or redo on the Layout step: expensive, and not needed.
+- Sending to the printer becomes its own step after Preview. It is complicated enough
+  that sharing the Preview step's screen is a problem.
+- The progress shown on the Preview step while slicing is good as it is.
+
+**Printer status always visible.** Once the wizard is open, if a print is already
+running it says so, and whether the print is behind. A small printer-status icon at the
+top of the panel, which expands on a click to give the details, is one way.
+
+**Work already running.** The mockup must show what happens when the page is refreshed,
+the student comes back to the page, or the wizard is closed and opened again while
+something is running, whether started by this user or by another. And what happens when
+a student sends to the printer while another user's print or send is running; how that
+meets the relay and the daemon is to be worked out and shown in the mockup.
+
+**A part that will not export** (screenshot: [export-failed.png](../reference/mockup-v3-feedback/export-failed.png)).
+
+- The mockup's "Details for a mentor" shows an HTTP request, a status code and a page
+  id. Nothing a student sees may mention PenguinSlicer's internals. Any detail must be
+  something a mechanical engineering mentor or a very experienced student understands
+  (for example: what about the part is wrong, and where to look in Onshape).
+- "Try again" makes no sense for a broken part: a part Onshape cannot export is most
+  likely broken in Onshape, so a retry will not help. It is a hard error.
+- **Export failed** (the part or its STL is broken): show a notification, do not add the
+  part to the list, and do not disable Next.
+- **A problem reaching our server** is probably transient: retry quietly in the
+  background, show progress, say when it is taking longer than usual, and report a
+  failure only when the retries have failed.
+- In either case: a notification, the list of parts unchanged, and never a broken entry
+  in the list that disables Next.
