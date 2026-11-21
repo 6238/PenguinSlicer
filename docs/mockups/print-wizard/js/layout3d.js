@@ -3,10 +3,12 @@
  *   select: click an instance; Shift- or Ctrl-click adds or removes; click empty plate clears
  *   move: left drag that starts on an instance (anywhere inside its outline)
  *   turn: drag the round handle beside the selection (snaps every 45 degrees)
- *   lay on a face: double-click a flat face, always; plus one of four ways the scenario strip
- *     picks: the resting-position strip (drawn by wizard.js under the view), face markers
- *     (dots on the selected instance), the box tumbler (a box whose sides are clicked or dragged)
- *     or the tip handle (a second handle that steps to the next resting position)
+ *   lay on a face: double-click a flat face, always; plus one of five ways the scenario strip
+ *     picks: faces on the hull (translucent patches on the selected instance's hull faces, as
+ *     Orca's Lay on face tool; version 5's default), the resting-position strip (drawn by
+ *     wizard.js under the view), face markers (dots on the selected instance), the box tumbler
+ *     (a box whose sides are clicked or dragged) or the tip handle (a second handle that steps
+ *     to the next resting position)
  *   orbit, pan, zoom: one of three mouse schemes the scenario strip picks (O: Onshape's,
  *     S: slicer's, T: top-down first); in all three the wheel zooms toward the pointer. */
 (function () {
@@ -92,7 +94,7 @@
     var meshes = {};          // instance id -> mesh
     var raycaster = new T.Raycaster(), ndc = new T.Vector2();
     var drag = null, faceOverlay = null, hoverInstance = null, hoverKey = null;
-    var scheme = 'O', layOpt = 'strip', tilted = false;
+    var scheme = 'O', layOpt = 'hull', tilted = false;
 
     var handle = new T.Group();
     // The rotation handle is drawn over everything, so a tall instance in front of it (or the
@@ -217,7 +219,51 @@
       tilted = false;
       resetView();
     }
-    function setLayOption(o) { layOpt = o; hoverSide = -1; clearFace(); invalidate(); }
+    function setLayOption(o) { layOpt = o; hoverSide = -1; clearFace(); clearPatches(); invalidate(); }
+
+    /* ------------------------------------------------------------ faces on the hull */
+    // Version 5's "Faces on the hull (like Orca)": while one instance is selected, a translucent
+    // patch in the accent colour on each face MockHullFaces offers; the one under the pointer
+    // is shaded deeper; the face the instance lies on now has none. Patches are children of the
+    // instance's mesh, in the part's own coordinates, so they turn with it.
+    var PATCH_REST = 0.22, PATCH_HOVER = 0.55;
+    var patches = null, hoverPatch = -1;
+    function clearPatches() {
+      if (!patches) return;
+      if (patches.group.parent) patches.group.parent.remove(patches.group);
+      patches.list.forEach(function (p) { p.mesh.material.dispose(); });
+      patches = null; hoverPatch = -1;
+    }
+    function showPatches(one) {
+      if (!patches || patches.id !== one.id || patches.key !== one.partKey) {
+        clearPatches();
+        var hf = MockHullFaces.faces(one.partKey), g = new T.Group(), list = [];
+        hf.faces.forEach(function (f, i) {
+          var m = new T.Mesh(f.geometry, new T.MeshBasicMaterial({ color: COL.accent, transparent: true, opacity: PATCH_REST, depthWrite: false,
+                                                                   polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+          m.renderOrder = 3; m.userData.patch = i; g.add(m); list.push({ mesh: m, face: f });
+        });
+        meshes[one.id].add(g);
+        patches = { id: one.id, key: one.partKey, group: g, list: list };
+      }
+      var q = meshes[one.id].quaternion;
+      patches.list.forEach(function (p, i) {
+        p.mesh.visible = p.face.n.clone().applyQuaternion(q).z > -0.999;
+        p.mesh.material.opacity = i === hoverPatch ? PATCH_HOVER : PATCH_REST;
+      });
+      patches.group.visible = true;
+    }
+    // The patch under the pointer, unless the part (or another instance) is in front of it.
+    function hitPatch() {
+      if (!patches || !patches.group.visible || !meshes[patches.id]) return null;
+      meshes[patches.id].updateMatrixWorld(true);
+      var vis = patches.list.filter(function (p) { return p.mesh.visible; }).map(function (p) { return p.mesh; });
+      var h = raycaster.intersectObjects(vis, false)[0]; if (!h) return null;
+      var part = hitInstance();
+      if (part && part.distance < h.distance - 0.5) return null;
+      var i = h.object.userData.patch;
+      return { i: i, face: patches.list[i].face, instance: instanceById(patches.id) };
+    }
 
     /* ------------------------------------------------------------ instances */
     function instanceMaterial(def) {
@@ -264,6 +310,21 @@
       return { x: (p.x + 1) / 2 * container.clientWidth, y: (1 - p.y) / 2 * container.clientHeight, behind: p.z > 1 };
     }
     var dots = [], tipAt = null;      // where the face markers and the tip handle are, in container px
+    // Whether a hull patch in sight lies under the rotation handle (or close round it) were the
+    // handle at `end`: then a click there would turn the instance instead of laying it down.
+    function patchUnderHandle(end, r) {
+      if (!patches || !patches.group.visible) return false;
+      var saved = raycaster.ray.clone(), under = false, v = new T.Vector2();
+      for (var k = -1; k < 8 && !under; k++) {
+        var p = end.clone();
+        if (k >= 0) { p.x += Math.cos(k * Math.PI / 4) * 2.2 * r; p.y += Math.sin(k * Math.PI / 4) * 2.2 * r; }
+        p.project(camera); v.set(p.x, p.y);
+        raycaster.setFromCamera(v, camera);
+        under = !!hitPatch();
+      }
+      raycaster.ray.copy(saved);
+      return under;
+    }
     function placeHandle() {
       var b = selectionBox();
       handle.visible = stem.visible = selBox.visible = !!b;
@@ -271,9 +332,24 @@
       var dist = camera.position.distanceTo(new T.Vector3(b.cx, b.cy, 0));
       var px = dist * Math.tan(camera.fov * Math.PI / 360) * 2 / Math.max(1, container.clientHeight);
       var r = 7 * px;                                        // about 7 px on screen
-      var reach = Math.abs(handleDir.x) * (b.maxX - b.minX) / 2 + Math.abs(handleDir.y) * (b.maxY - b.minY) / 2;
-      var edge = new T.Vector3(b.cx + handleDir.x * reach, b.cy + handleDir.y * reach, 0.4);
-      var end = new T.Vector3(b.cx + handleDir.x * (reach + 28 * px), b.cy + handleDir.y * (reach + 28 * px), 0.4);
+      // Where the handle goes on side `dir` of the selection. While hull patches show, a side
+      // where the handle would cover one is skipped for the next free one, 45 degrees round;
+      // with no side free the handle is hidden until the patches go.
+      function at(dir) {
+        var reach = Math.abs(dir.x) * (b.maxX - b.minX) / 2 + Math.abs(dir.y) * (b.maxY - b.minY) / 2;
+        return { edge: new T.Vector3(b.cx + dir.x * reach, b.cy + dir.y * reach, 0.4),
+                 end: new T.Vector3(b.cx + dir.x * (reach + 28 * px), b.cy + dir.y * (reach + 28 * px), 0.4) };
+      }
+      var spot = at(handleDir);
+      if (patchUnderHandle(spot.end, r)) {
+        spot = null;
+        for (var k = 1; k < 8 && !spot; k++) {
+          var dir = handleDir.clone().rotateAround(new T.Vector2(), k * Math.PI / 4), s = at(dir);
+          if (!patchUnderHandle(s.end, r)) spot = s;
+        }
+        if (!spot) { handle.visible = stem.visible = false; return null; }
+      }
+      var edge = spot.edge, end = spot.end;
       handle.position.copy(end); handle.scale.setScalar(r);
       handle.quaternion.identity();
       var sp = stem.geometry.attributes.position;
@@ -287,9 +363,14 @@
     }
     // Everything drawn around the selection, redrawn whenever the picture is.
     function placeOverlays() {
+      var moving = drag && (drag.type === 'move' || drag.type === 'rotate') && drag.moved;
+      var one = oneSelected();
+      // faces on the hull: hidden, not rebuilt, while the instance is dragged. Placed before the
+      // rotation handle, which keeps clear of them.
+      if (layOpt === 'hull' && one && meshes[one.id]) { showPatches(one); if (moving) patches.group.visible = false; }
+      else clearPatches();
       var hp = placeHandle();
       overlay.innerHTML = ''; dots = []; tipAt = null;
-      var moving = drag && (drag.type === 'move' || drag.type === 'rotate') && drag.moved;
       // the tip handle: beside the rotation handle, square to its stem
       if (layOpt === 'tip' && hp && !moving) {
         var dx = hp.end.x - hp.edge.x, dy = hp.end.y - hp.edge.y, L = Math.sqrt(dx * dx + dy * dy) || 1;
@@ -299,7 +380,6 @@
       }
       // face markers: one dot per resting position on the one selected instance, on the faces
       // that face the camera; the face it lies on now has none
-      var one = oneSelected();
       if (layOpt === 'markers' && one && !moving && meshes[one.id]) {
         var m = meshes[one.id]; m.updateMatrixWorld();
         var def = MockParts.byKey[one.partKey], R = MockParts.resting(one.partKey), cur = MockParts.restIndex(one.partKey, one.q);
@@ -459,6 +539,9 @@
       if (hitTip(px)) { take({ type: 'tip', back: e.shiftKey }); return; }
       var dot = hitDot(px), hit = hitInstance();
       if (dot) { take(moveFrom(dot.instance.id, MockPlate.derive(dot.instance).height / 2, false)); drag.dot = dot; return; }
+      // a press on a hull patch: a click lays the instance on that face, a drag still moves it
+      var patch = hitPatch();
+      if (patch) { take(moveFrom(patch.instance.id, MockPlate.derive(patch.instance).height / 2, false)); drag.patch = patch; return; }
       var side = hit ? -1 : hitSide();
       if (side >= 0) { take({ type: 'box', side: side, p0: planePoint(0), instance: oneSelected() }); return; }
       var near = hit ? null : hitOutline();
@@ -525,10 +608,14 @@
     }
 
     function hover(px) {
-      var key = null, cursor = 'default', tip = null;
+      var key = null, cursor = 'default', tip = null, patch = null;
       var dot = hitDot(px), hit = hitInstance();
       if (hitHandle()) { key = 'handle'; cursor = 'grab'; tip = 'Drag to turn'; }
       else if (hitTip(px)) { key = 'tip'; cursor = 'pointer'; tip = 'Tip onto its next side (Shift: the one before)'; }
+      else if (!dot && (patch = hitPatch())) {
+        key = 'patch' + patch.i; cursor = 'pointer';
+        tip = 'Lay it on this face: ' + Math.round(patch.face.height) + ' mm tall';
+      }
       else if (dot) {
         key = 'dot' + dot.cand; cursor = 'pointer';
         var cand = MockParts.resting(dot.instance.partKey).list[dot.cand];
@@ -547,6 +634,8 @@
       }
       if (key && key.indexOf('dot') === 0) { if (hoverKey !== key) showFaceOf(dot.instance.id, dot.face); }
       else if (hoverKey && hoverKey.indexOf('dot') === 0) { clearFace(); }
+      var hp = patch ? patch.i : -1;
+      if (hp !== hoverPatch) { hoverPatch = hp; invalidate(); }
       canvas.style.cursor = cursor;
       if (key !== hoverKey) {
         hoverKey = key; invalidate();
@@ -569,6 +658,12 @@
         return;
       }
       if (d.type === 'move' && d.dot && still) { clearFace(); hoverKey = null; hoverTip.hidden = true; layOnCandidate(d.dot.instance, d.dot.cand); return; }
+      if (d.type === 'move' && d.patch && still) {
+        hoverKey = null; hoverPatch = -1; hoverTip.hidden = true;
+        layWorld(d.patch.instance, d.patch.face.n.clone().applyQuaternion(d.patch.instance.q));
+        invalidate();
+        return;
+      }
       if (d.type === 'move' && still && !d.mod) opts.select(d.id, 'only');
       opts.changed(d.moved ? (d.type === 'rotate' ? 'rotate' : 'move') : 'select');
     });
@@ -581,7 +676,7 @@
     });
     canvas.addEventListener('pointerleave', function () {
       if (drag) return;
-      hoverTip.hidden = true; hoverInstance = null; hoverKey = null;
+      hoverTip.hidden = true; hoverInstance = null; hoverKey = null; hoverPatch = -1;
       if (hoverSide >= 0) { hoverSide = -1; }
       clearFace(); invalidate();
     });
@@ -642,6 +737,18 @@
     };
     container.__handle = function () { return handle.visible ? pagePx(handle.position) : null; };
     container.__tip = function () { var r = canvas.getBoundingClientRect(); return tipAt ? { x: r.left + tipAt.x, y: r.top + tipAt.y } : null; };
+    // the hull patches showing: each one's middle on the page, how tall the instance would stand
+    // on it, and whether a press at that middle would take that patch
+    container.__patches = function () {
+      if (!patches || !patches.group.visible) return [];
+      var r = canvas.getBoundingClientRect(), m = meshes[patches.id]; m.updateMatrixWorld(true);
+      return patches.list.map(function (p, i) {
+        if (!p.mesh.visible) return null;
+        var s = toPx(p.face.centre.clone().applyMatrix4(m.matrixWorld)), x = r.left + s.x, y = r.top + s.y;
+        setNdc({ clientX: x, clientY: y }); var h = hitPatch();
+        return { i: i, x: Math.round(x), y: Math.round(y), height: Math.round(p.face.height), area: Math.round(p.face.area), pickable: !!h && h.i === i };
+      }).filter(Boolean);
+    };
     container.__dots = function () { var r = canvas.getBoundingClientRect(); return dots.map(function (d) { return { x: r.left + d.x, y: r.top + d.y, cand: d.cand }; }); };
     // a point on a visible box side that is not covered by the part, or null
     container.__boxSide = function () {

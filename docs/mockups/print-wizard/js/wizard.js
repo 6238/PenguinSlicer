@@ -1,4 +1,4 @@
-/* PenguinSlicer mockup, version 4: the wizard in the panel. Five steps (Setup, Parts,
+/* PenguinSlicer mockup, version 5: the wizard in the panel. Five steps (Parts, Setup,
  * Layout, Preview, Send), advanced mode, mocked export with its two ways to fail, slicing
  * progress, layer preview, the Send step with delivery and print progress, the printer
  * status in the header, coming back to running work, and every armed error from the
@@ -7,7 +7,7 @@
   'use strict';
   var T = THREE, P = MockParts, ST = MockSettings, PL = MockPlate;
   var PLATE = ST.PRINTER.plate;
-  var ORDER = ['setup', 'parts', 'layout', 'preview', 'send'];
+  var ORDER = ['parts', 'setup', 'layout', 'preview', 'send'];     // version 5: Parts first, then Setup
   var MAX_INSTANCES = 150;                                // the slice service's limit (slice/limits.py)
   var PLATE_VOLUME_CAP_CM3 = 600;                         // invented: a volume cap from the memory model
   var SLICE_TIMEOUT_S = 240;                              // print/limits.py PLATE_SLICE_TIMEOUT_S
@@ -39,14 +39,14 @@
   /* ------------------------------------------------------------------ state */
   var S;
   function fresh(ctx) {
-    return { ctx: ctx, step: 'setup', filament: 'petg', profile: 'structural', changes: {}, parts: [], instances: [],
+    return { ctx: ctx, step: ORDER[0], filament: 'petg', profile: 'structural', changes: {}, parts: [], instances: [],
              selected: [], nextId: 1, laidOut: false, problems: [], job: null, result: null, resultSig: null,
              action: 'print', layer: 0, advTab: 'Quality', advSearch: '', advOnlyChanged: false, advTier: 'common', advOpen: {},
              layoutNotes: [], previewMsg: null, undo: [], redo: [], hiddenTypes: {}, notices: [] };
   }
   // The choices made in the scenario strip; they outlast Reset, since they are the owner's,
   // not the student's: how an instance is laid on a face, the mouse scheme, how parts arrive.
-  var Opt = { lay: 'strip', scheme: 'O', arrival: 'auto' };
+  var Opt = { lay: 'hull', scheme: 'O', arrival: 'auto' };
   function profileObj() { return ST.PROFILES.filter(function (p) { return p.id === S.profile; })[0]; }
   function filamentObj() { return ST.FILAMENTS.filter(function (f) { return f.id === S.filament; })[0]; }
   function eff() {
@@ -210,7 +210,7 @@
       li.classList.toggle('active', s === name);
       li.classList.toggle('done', ORDER.indexOf(s) < ORDER.indexOf(name));
     });
-    $('#btn-back').disabled = name === 'setup';
+    $('#btn-back').disabled = name === ORDER[0];
     $('#btn-next').hidden = name === 'send';
     $('#final-action').hidden = name !== 'send';
     $('#do-menu').hidden = true;
@@ -242,11 +242,13 @@
     if (idx < 1) { box.hidden = true; return; }
     box.hidden = false;
     function chip(t, cls) { box.appendChild(el('span', 'chip' + (cls ? ' ' + cls : ''), t)); }
-    chip(filamentObj().type); chip(profileObj().name);
-    var n = changeCount(); if (n) chip('+' + n + ' change' + (n > 1 ? 's' : ''), 'adv');
+    // each chip is what an earlier step decided: the parts from the Parts step (step 1), the
+    // filament, profile and changes from the Setup step (step 2), and so on
+    var parts = S.parts.filter(function (p) { return p.status === 'ready'; }).length;
+    chip(parts + ' part' + (parts === 1 ? '' : 's') + ' · ' + totalInstances() + ' instance' + (totalInstances() === 1 ? '' : 's'));
     if (idx >= 2) {
-      var parts = S.parts.filter(function (p) { return p.status === 'ready'; }).length;
-      chip(parts + ' part' + (parts === 1 ? '' : 's') + ' · ' + totalInstances() + ' instance' + (totalInstances() === 1 ? '' : 's'));
+      chip(filamentObj().type); chip(profileObj().name);
+      var n = changeCount(); if (n) chip('+' + n + ' change' + (n > 1 ? 's' : ''), 'adv');
     }
     if (idx >= 3 && S.instances.length) {
       var b = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
@@ -1091,6 +1093,7 @@
     T: 'Seen from above. Drag an instance to move it, its round handle to turn it. Drag empty space to slide, scroll to zoom, right-drag or 3D to tilt.'
   };
   var LAY_GESTURE = {
+    hull: 'Select an instance: its faces show as pale blue patches; click one to lay it on that face.',
     strip: 'Select an instance to see pictures of the ways it can lie; click one to lay it that way.',
     markers: 'Select an instance, then click an arrow (↓) on one of its faces to lay it on that face.',
     box: 'Select an instance, then click a side of the box around it to put that side down, or drag the box to roll it.',
@@ -1109,7 +1112,7 @@
       'The handle snaps every 45 degrees.',
       'Double-click a flat face to lay the instance down on it.',
       'F zooms to the instances; Ctrl+1 looks from above; Ctrl+A selects every instance; Escape clears the selection.',
-      'To print more or fewer of a part, go Back to the Parts step and change its quantity.'
+      'To print more or fewer of a part, go to the Parts step (tab 1) and change its quantity.'
     ]).forEach(function (t) { ul.appendChild(el('li', null, t)); });
   }
   function doArrange() {
@@ -1437,32 +1440,24 @@
     $('#preview-lead').textContent = 'Sliced. Check the layers, then Next to send it to the printer.';
     updateNext();
   }
-  // The legend, as Orca's for line types: each type's share of the print time, and a click
-  // on a row hides that type in the layer preview (and shows it again).
+  // The legend of the layer preview's colours: each line type's colour and name, nothing more
+  // (version 5 removed each type's time and share of the print). A click on a row hides that
+  // type in the layer preview (and shows it again).
   function renderLegend(r) {
     var lg = $('#legend'); lg.innerHTML = '';
-    var total = r.est.seconds;
-    function short(s) { return s < 60 ? '<1 min' : hm(s); }
-    function pct(s) { var p = s / total * 100; return p < 1 ? '<1%' : Math.round(p) + '%'; }
     Preview3D.TYPES.forEach(function (ty) {
       if (!r.tp.acc[ty.id].pos.length) return;
-      var off = !!S.hiddenTypes[ty.id], secs = r.est.byType[ty.id] || 0;
+      var off = !!S.hiddenTypes[ty.id];
       var li = el('li', 'lg-row' + (off ? ' off' : '')); li.setAttribute('role', 'button'); li.tabIndex = 0;
       li.setAttribute('aria-pressed', off ? 'false' : 'true');
       li.title = (off ? 'Show ' : 'Hide ') + ty.label.toLowerCase() + ' in the layer preview';
       var sw = el('i'); sw.style.background = '#' + ('00000' + ty.color.toString(16)).slice(-6); li.appendChild(sw);
       li.appendChild(el('span', 'lg-name', ty.label));
-      li.appendChild(el('span', 'lg-time', short(secs)));
-      li.appendChild(el('span', 'lg-pct', pct(secs)));
       function flip() { S.hiddenTypes[ty.id] = !S.hiddenTypes[ty.id]; if (viewer) viewer.setVisible(ty.id, !S.hiddenTypes[ty.id]); renderLegend(r); }
       li.addEventListener('click', flip);
       li.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(); } });
       lg.appendChild(li);
     });
-    var other = el('li', 'lg-row fixed');
-    other.appendChild(el('i', 'none')); other.appendChild(el('span', 'lg-name', 'Heating, travel, layer changes'));
-    other.appendChild(el('span', 'lg-time', short(r.est.overhead))); other.appendChild(el('span', 'lg-pct', pct(r.est.overhead)));
-    lg.appendChild(other);
   }
   function setLayer(k) {
     var r = S.result; if (!r) return;
@@ -1853,7 +1848,7 @@
     clearPreview();
     $('#send-live').innerHTML = ''; $('#send-live').removeAttribute('data-key');
     renderPrinterIcon();
-    gotoStep('setup');
+    gotoStep(ORDER[0]);
   }
 
   /* ================================================================== coming back */
@@ -1861,7 +1856,8 @@
   // own state is lost each time; what the server holds is not: this student's slice job (with
   // its plate configuration) and delivery job, and the printer. When this student's slice or
   // send is still running, the wizard opens on that step with the parts and layout restored.
-  // Otherwise it starts at Setup, and the printer-status icon shows what anyone else is doing.
+  // Otherwise it starts at Parts, the first step, and the printer-status icon shows what
+  // anyone else is doing.
   function comeBack(kind) {
     var held = S.job && (S.job.state === 'running' || S.job.state === 'done') ? S.job : null;
     var plate = { ctx: S.ctx, parts: S.parts.filter(function (p) { return p.status === 'ready'; }), instances: S.instances, filament: S.filament,

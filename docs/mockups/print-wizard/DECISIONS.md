@@ -1,4 +1,4 @@
-# PenguinSlicer mockup: decisions and fakes (version 4)
+# PenguinSlicer mockup: decisions and fakes (version 5)
 
 The mockup is [index.html](index.html) in this folder; serve the folder with any static
 file server and open it. It is a throwaway: its only product is your reactions.
@@ -7,6 +7,40 @@ It imitates PenguinCAM's wizard (`templates/wizard.html`, `static/wizard.js`,
 `static/wizard.css` in PenguinCAM), and printer delivery as
 [its guide](../../../delivery/README.md) describes it. Where those did not decide
 something, the mockup had to; each such decision is listed below as the choice made.
+
+## What changed in version 5
+
+- **Lay on face as Orca Slicer does it.** The scenario strip's **Lay on face** menu has a
+  fifth option, *Faces on the hull (like Orca)*, and it is the default. While one instance
+  is selected on the Layout step, each face it can be laid on shows as a translucent patch
+  in PenguinCAM's accent blue, with rounded corners, drawn on the faces of the closed convex
+  shape around the part (its convex hull). The patch under the pointer turns a deeper blue
+  and says how tall the instance would stand; a click lays the instance on that face, and
+  the patches then show the new faces (the face it lies on has none). A drag that starts
+  on a patch still moves the instance, and the rotation handle moves aside so that it never
+  covers a patch. How the faces are found and filtered, and what the
+  mockup adds for round parts, is in
+  [the algorithm note](../../research/2026-11-21-lay-on-face-hull-faces.md).
+- **Round parts are offered their sensible faces only.** Orca's own filters would offer 96
+  thin patches round the HTD Pulley 24T's rim and the Hex Bore Spacer 1in's side and 40
+  along the Shooter Hood Rib's curved edge. One rule of the mockup's own drops them: a face
+  is left out when a neighbouring face of the hull bends away from it by less than 20
+  degrees and is at least half its size. The pulley and the spacer are offered their two
+  end faces; the rib its two sides, its two ends and the face across its inner curve.
+- **Parts first, then Setup.** The steps are Parts, Setup, Layout, Preview, Send; the step
+  keeps the name "Setup", as in PenguinCAM. The wizard opens on the Parts step (after Reset,
+  after two hours away, and whenever there is no running work to go back to); Back is off
+  on the Parts step; the chips row shows the parts from the Setup step on and the filament,
+  profile and changes from the Layout step on. The Layout step's instruction now says to go
+  to the Parts step (tab 1) to change how many of a part, since Back from Layout goes to
+  Setup.
+- **The Preview step no longer breaks the print time down by line type.** The list beside
+  the layer preview gave each line type (outer wall, inner wall, sparse infill and so on)
+  its time and share of the print, plus a row for heating and travel. It is now a plain
+  legend of the layer preview's colours: each line type's colour and name, nothing else.
+  A click on a name still hides that line type in the layer preview, as before.
+- *Pictures under the view* is no longer marked "(recommended)" in the scenario strip,
+  since it is no longer the default; nothing else about the four earlier options changed.
 
 ## What changed in version 4
 
@@ -21,7 +55,8 @@ something, the mockup had to; each such decision is listed below as the choice m
   list has two columns, the Preview legend sits beside the view and the Send step has two
   columns. The Layout view fills the width and grows with it. The scenario strip keeps its
   width menu (320, 480, 640, 800 px) and the drag handle (300 to 900 px).
-- **Five steps:** Setup, Parts, Layout, Preview, **Send**. Back and forward always work;
+- **Five steps:** Setup, Parts, Layout, Preview, **Send** (version 5 puts Parts first,
+  then Setup). Back and forward always work;
   leaving the Preview step while it slices leaves the slice running.
 - **The Layout step no longer changes the list of parts:** no Duplicate, Delete, Undo or
   Redo, and none of their keys. Changing quantities is done on the Parts step.
@@ -51,7 +86,7 @@ Each term has one meaning in the mockup and in this file.
 
 | Term | Meaning |
 |---|---|
-| **Setup step, Parts step, Layout step, Preview step, Send step** | The wizard's five steps, in that order. |
+| **Parts step, Setup step, Layout step, Preview step, Send step** | The wizard's five steps, in that order (steps 1 to 5). |
 | **part** | One distinct solid, from Onshape or from an uploaded file. |
 | **instance** | One placement of a part on the plate, labelled `Name #n`. |
 | **plate** | The printer's build plate and everything on it. |
@@ -69,6 +104,8 @@ Each term has one meaning in the mockup and in this file.
 | **resting position** | One way an instance can lie on the plate: one flat outside face of its part down, stable (its centre of mass above what touches the plate). |
 | **rotation handle** | The round handle beside the selection on the Layout step that turns it about the vertical. |
 | **resting-position strip** | A row of small pictures under the Layout step's 3D view, one per resting position of the selected part. The scenario strip calls it **Pictures under the view**. |
+| **convex hull** | The closed convex shape that wraps a part as tightly as it can, as a rubber skin would; it bridges holes and hollows. |
+| **hull patches** | Translucent rounded patches on the selected instance's faces that lie on its part's convex hull; a click lays it on that face. The scenario strip calls them **Faces on the hull (like Orca)**. |
 | **face markers** | Small amber arrows (↓) on the selected instance's candidate faces; a click lays it on that face. The scenario strip calls them **Arrows on the part's faces**. |
 | **box tumbler** | A box around the selected instance whose sides are clicked (or the box dragged) to put that side down. The scenario strip calls it **Box around the part**. |
 | **tip handle** | A second handle (⤵) beside the rotation handle that steps the instance to its next resting position. The scenario strip calls it **Tip handle**. |
@@ -92,7 +129,7 @@ listed. New questions start at M17.
 
 | # | Question |
 |---|---|
-| M1 | **Lay on face: which one?** *Pictures under the view*, *Arrows on the part's faces*, *Box around the part*, or *Tip handle* (scenario strip, **Lay on face**)? Try each on the L Bracket and on the Shooter Hood Rib. |
+| M1 | **Lay on face: which one?** *Faces on the hull (like Orca)* (the default since version 5), *Pictures under the view*, *Arrows on the part's faces*, *Box around the part*, or *Tip handle* (scenario strip, **Lay on face**)? Try each on the L Bracket, the Shooter Hood Rib and a round part such as the HTD Pulley 24T. |
 | M2 | **Mouse: which one?** *Like Onshape*, *Like a slicer*, or *Top-down first* (scenario strip, **Mouse**)? |
 | M3 | **Parts arrive: lying their best way, or as modelled** (scenario strip, **Parts arrive**)? |
 | M4 | **Advanced mode at 320 px:** do the search box, the Common / All settings switch, the tab row and the collapsing subgroups make the settings findable? |
@@ -102,8 +139,8 @@ listed. New questions start at M17.
 | M11 | **Print progress on the Send step:** stages (Sending, Starting, Heating, Printing, Done), percent, layer of total, time left, expected finish and sent at. What else would a student standing at the printer want? (The layer preview no longer follows the print; it is on the Preview step.) |
 | M16 | **Orca's other layout tools** (scale, cut, mirror, per-part settings): which, if any, are needed? The mockup has none. |
 | M17 | **Leaving the Preview step while it slices** leaves the slice running, and coming back with the same plate finds it still going or finished; a changed plate starts a new slice. Right, or should leaving stop it (version 3)? |
-| M18 | **A finished slice that was not sent is dropped after two hours away.** It survives a refresh and a reopened panel; after two hours the wizard opens at Setup with an empty plate, and one line says only "The slice of your earlier plate has expired; add its parts again to print it." Is dropping it right, and if so, how long should the server keep it for a student to come back to? |
-| M19 | **When your print ended while you were away,** the wizard opens at Setup with a notification ("Your print finished at …") and your plate is not kept. Should it keep the plate so the same parts can be printed again in one go? |
+| M18 | **A finished slice that was not sent is dropped after two hours away.** It survives a refresh and a reopened panel; after two hours the wizard opens at Parts with an empty plate, and one line says only "The slice of your earlier plate has expired; add its parts again to print it." Is dropping it right, and if so, how long should the server keep it for a student to come back to? |
+| M19 | **When your print ended while you were away,** the wizard opens at Parts with a notification ("Your print finished at …") and your plate is not kept. Should it keep the plate so the same parts can be printed again in one go? |
 | M20 | **Five step tabs at 320 px wrap to two rows,** as PenguinCAM's tabs would; at 420 px and wider they fit one row. Acceptable, or shorten the tabs at narrow widths (for example the number only, with the name on the current tab)? |
 | M21 | **A part still arriving does not hold Next.** If it arrives after the student has moved on, it joins the plate on the Layout step (at once if the student is there, else next time). Right, or should Next wait for arriving parts? |
 | M22 | **Cancel sending** stays on the Send step while the file is on its way, before the printer starts (printer delivery allows a cancel before its start gate). Keep it? |
@@ -167,9 +204,10 @@ Preview step. Not provided today.
 3. The step tabs are PenguinCAM's: number, name, and a check mark after the name of a
    finished step. A click on a tab goes there when every step before it allows. At 320 px
    the five tabs wrap to two rows (M20).
-4. A row of chips grows as the student advances: filament, profile and changes from the
-   Parts step; parts and instances from the Layout step; plate area from the Preview step;
-   print time and grams on the Send step.
+4. A row of chips grows as the student advances, each chip saying what an earlier step
+   decided: none on the Parts step; parts and instances from the Setup step on; filament,
+   profile and changes from the Layout step on; plate area from the Preview step on; print
+   time and grams on the Send step.
 5. Next is disabled until the step's rules pass, and the step says why. A part still
    arriving never holds Next (M21).
 6. The panel's width is fluid; the extra width is used from 520 px and 680 px by
@@ -181,7 +219,9 @@ Preview step. Not provided today.
    controls** button that leaves one row, and **Hide strip** that leaves a small tab. The
    how-to note is folded.
 
-### Setup step
+### Setup step (step 2)
+
+The Setup step comes after the Parts step since version 5; the decisions keep their numbers.
 
 9. The printer line names the printer with a state chip (Free, Sending 40%, Printing 61%,
    Waiting, Finished, Failed, Offline) and, while a print runs, for whom and how long is
@@ -203,7 +243,9 @@ Preview step. Not provided today.
     load. It covers the panel's header, so its top line repeats "PenguinSlicer" with the
     printer-status icon, which keeps working there.
 
-### Parts step
+### Parts step (step 1)
+
+The wizard opens on this step: it is step 1 since version 5. Back is off here.
 
 14. A click on a part in Onshape adds it with quantity 1. **A click on a part already in
     the list raises its quantity by one and flashes its row** (M14); the line at the top
@@ -233,8 +275,9 @@ Preview step. Not provided today.
 ### Layout step
 
 24. The Layout step does not change the list of parts: no Duplicate, Delete, Undo or Redo,
-    and Delete, Ctrl+D, Ctrl+Z and Ctrl+Y do nothing. The instruction line says to go Back
-    to Parts to change how many of a part.
+    and Delete, Ctrl+D, Ctrl+Z and Ctrl+Y do nothing. The instruction line says to go to the
+    Parts step (tab 1) to change how many of a part; Back from the Layout step goes to the
+    Setup step.
 25. **The 3D view fills the panel's width and grows as the panel is widened** (M8): square
     at narrow widths, 4:3 from 520 px, with no height cap. The instruction line starts
     "↔ Widen the panel for more room", as PenguinCAM's Layout step does.
@@ -242,8 +285,8 @@ Preview step. Not provided today.
     longer fits where it stood moves to the nearest free spot, turned if need be; if there
     is none, it waits beside the plate, marked off the plate, and the message says to press
     Arrange to make room.
-27. Everything else is as version 3: no modes; the mouse schemes (M2); the four ways to lay
-    an instance on a face (M1); auto-orient on arrival (M3); Arrange with its two packers
+27. Everything else is as version 3: no modes; the mouse schemes (M2); the ways to lay an
+    instance on a face (M1; five since version 5, see decision 49); auto-orient on arrival (M3); Arrange with its two packers
     and its offer to lay instances their best way when that fits more (M6); the status
     line (M7); the rotation handle drawn over everything; the placement rules of the slice
     service (5 mm apart, 3 mm inside the edge, 340 mm tall).
@@ -267,8 +310,9 @@ Preview step. Not provided today.
     failed print on the Send step (where the printer's screen shows the fault, and what to
     check in the filament path and the nozzle). No other message has details.
 33. The result: print time and grams, a quiet line of instances, layers and slice time,
-    the 3D layer preview with its layer bar, and the legend of line types, beside the view
-    from 680 px.
+    the 3D layer preview with its layer bar, and a legend of the layer preview's colours
+    (each line type's colour and name only; a click on one hides that line type), beside
+    the view from 680 px.
 34. Next goes to the Send step once the plate is sliced.
 
 ### Send step
@@ -325,14 +369,41 @@ Preview step. Not provided today.
     "Back where you were" and, in the past tense, what the plate was doing when the
     student left ("You had sent your plate to Shop H2S before you left; its progress is
     below."), so it stays true while the card under it moves on.
-47. Otherwise it starts at Setup. Another student's work shows in the printer-status icon
-    and also on the Setup step, whose printer line **names that student**: "Shop H2S
+47. Otherwise it starts at the Parts step, step 1. Another student's work shows in the
+    printer-status icon, which is on every step and so is the first thing seen, and also on
+    the Setup step (step 2), whose printer line **names that student**: "Shop H2S
     Printing 54% for Alex Chen, 54 min left". The brief asked only for the icon; the name on
     the Setup step is a choice of this mockup. Keep it, or show the name only in the
     printer details?
 48. After two hours away, a finished unsent slice is gone (M18), and a one-line
-    notification at Setup says the slice of the earlier plate has expired; a print of this
-    student's that ended meanwhile is reported in a notification at Setup (M19).
+    notification on the Parts step says the slice of the earlier plate has expired; a print
+    of this student's that ended meanwhile is reported in a notification on the Parts step
+    (M19).
+
+### Lay on face: faces on the hull (version 5)
+
+49. *Faces on the hull (like Orca)*, the default way to lay an instance on a face, follows
+    Orca Slicer's Lay on face tool as [the algorithm note](../../research/2026-11-21-lay-on-face-hull-faces.md)
+    describes it: the faces of the part's convex hull, with Orca's filters (at least 5 mm²,
+    no sliver corners, the 254 largest), plus one rule of the mockup's own for round parts
+    (a face is left out when a neighbouring hull face bends away from it by less than 20
+    degrees and is at least half its size). Choices the brief left open:
+    - **Opening it is selecting one instance**, as with the arrows and the box: no button
+      and no mode (decision 27 keeps the Layout step free of modes). With two or more
+      instances selected, no patches show, as Orca shows them for one instance only.
+    - **Colours:** PenguinCAM's accent blue `#2f81f7` at 22% opacity, 55% under the pointer.
+      Orca's near-white patches would not show on the light theme's pale parts.
+    - **Only the patches in sight are drawn and clickable:** a patch behind the part, or
+      behind another instance, is hidden by it. Orca draws every patch over the part.
+    - **The face the instance lies on has no patch.**
+    - **The rotation handle keeps clear of the patches:** while patches show, the handle
+      moves round the selection, 45 degrees at a time, to the first side where it covers
+      no patch in sight (and is hidden if no side is free), so a click on a patch always
+      lays the instance down and a click on the handle always turns it.
+    - No test of whether the instance would tip over on a face, as in Orca. So a face the
+      part would fall off is offered too: by hand arithmetic, the end of the L Bracket's base
+      (5 mm tall) with the bracket's centre of mass about 10 mm up. The real wizard should
+      test it (the auto-orient code already does).
 
 ## What is fake and could mislead
 
@@ -366,3 +437,6 @@ Preview step. Not provided today.
 18. Fonts: PenguinCAM's stack starts with the system font, so the mockup renders in each
     computer's own system font, as PenguinCAM does; screenshots taken on Linux show
     Liberation Sans or DejaVu Sans, not San Francisco.
+19. The hull patches are worked out from the mock parts' generated meshes, in the browser,
+    the first time a part is selected; real exported meshes are finer and less regular, and
+    the round-part rule has been tried on these seven parts only.

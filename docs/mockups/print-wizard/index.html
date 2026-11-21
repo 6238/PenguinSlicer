@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- PenguinSlicer: a click-through requirements mockup of the 3D printing wizard, version 4.
+<!-- PenguinSlicer: a click-through requirements mockup of the 3D printing wizard, version 5.
      Everything is faked in this page: no server, no slicing, no Onshape, no printer.
      The yellow scenario strip at the top is a mockup control, not part of the product. -->
 <html lang="en">
@@ -96,7 +96,8 @@
       <span class="sc-group">Layout step, options to compare:</span>
       <label>Lay on face
         <select id="sc-lay">
-          <option value="strip" selected>Pictures under the view (recommended)</option>
+          <option value="hull" selected>Faces on the hull (like Orca)</option>
+          <option value="strip">Pictures under the view</option>
           <option value="markers">Arrows on the part's faces</option>
           <option value="box">Box around the part</option>
           <option value="tip">Tip handle</option>
@@ -174,8 +175,8 @@
       </div>
       <div class="config-info" id="config-info"></div>
       <ol id="stepbar" aria-label="Steps">
-        <li data-step="setup" data-num="1" class="active" role="button" tabindex="0">Setup</li>
-        <li data-step="parts" data-num="2" role="button" tabindex="0">Parts</li>
+        <li data-step="parts" data-num="1" class="active" role="button" tabindex="0">Parts</li>
+        <li data-step="setup" data-num="2" role="button" tabindex="0">Setup</li>
         <li data-step="layout" data-num="3" role="button" tabindex="0">Layout</li>
         <li data-step="preview" data-num="4" role="button" tabindex="0">Preview</li>
         <li data-step="send" data-num="5" role="button" tabindex="0">Send</li>
@@ -188,7 +189,7 @@
       <div id="notices" aria-live="polite"></div>
 
       <!-- ===== SETUP ===== -->
-      <section class="step" data-step="setup">
+      <section class="step" data-step="setup" hidden>
         <h2>Setup</h2>
         <p class="lead">Pick the filament and the profile; change a setting only if this print needs it.</p>
         <div class="field"><span>Printer</span>
@@ -219,7 +220,7 @@
       </section>
 
       <!-- ===== PARTS ===== -->
-      <section class="step" data-step="parts" hidden>
+      <section class="step" data-step="parts">
         <h2>Parts</h2>
         <div id="parts-onshape">
           <div id="select-status" class="select-status">Click a part in Onshape&hellip;</div>
@@ -243,7 +244,7 @@
       <!-- ===== LAYOUT ===== -->
       <section class="step" data-step="layout" hidden>
         <h2>Layout</h2>
-        <p class="lead" id="layout-lead">&harr; Widen the panel for more room. Drag to move, drag the round handle to turn. To change how many of a part, go Back to Parts.</p>
+        <p class="lead" id="layout-lead">&harr; Widen the panel for more room. Drag to move, drag the round handle to turn. To change how many of a part, go to the Parts step (tab 1).</p>
         <div id="layout-toolbar">
           <button type="button" class="btn small" id="btn-arrange" title="Place every instance on the plate automatically">Arrange</button>
           <button type="button" class="btn small" id="btn-orient" title="Lay the selected instances, or every instance when none is selected, the best way">Auto-orient</button>
@@ -317,7 +318,7 @@
               </div>
             </div>
             <div>
-              <ul id="legend" class="legend" aria-label="Line types and their print time"></ul>
+              <ul id="legend" class="legend" aria-label="Line types"></ul>
               <p class="hint" style="margin-top:8px">Click a line type to hide it. Drag the bar on the right to see the plate built up layer by layer. Drag to turn the view, right-drag to pan, scroll to zoom.</p>
             </div>
           </div>
@@ -383,6 +384,7 @@
   <script src="vendor/three.min.js"></script>
   <script src="vendor/OrbitControls.js"></script>
   <script src="js/parts.js"></script>
+  <script src="js/hullfaces.js"></script>
   <script src="js/settings.js"></script>
   <script src="js/plate.js"></script>
   <script src="js/layout3d.js"></script>
