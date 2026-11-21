@@ -69,7 +69,8 @@ class TestPlateConfigurationDocument:
             assert value == actual, name
         assert {row[0].strip("`") for row in rows} == {
             "MAX_INSTANCES", "MAX_PARTS", "MAX_PART_TRIANGLES", "MAX_PART_BYTES",
-            "DEFAULT_MAX_PEAK_MB", "MIN_PART_EXTENT_MM", "MARGIN_MM", "SPACING_MM", "PLATE_SLICE_TIMEOUT_S"}
+            "DEFAULT_MAX_PEAK_MB", "MIN_PART_EXTENT_MM", "MARGIN_MM", "SPACING_MM", "SPACING_SUPPORTS_MM",
+            "PLATE_SLICE_TIMEOUT_S"}
 
     def test_memory_model_is_stated_with_the_codes_numbers(self):
         model = section(PLATE_CONFIGURATION_DOC, "### Memory")

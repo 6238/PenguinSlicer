@@ -164,7 +164,7 @@ class TestReports:
 class TestFailure:
     def test_a_failure_carries_its_error_report(self):
         def worker(job_id, payload, context):
-            raise SliceError("Parts are too close together; spread them out.", "detail", -101,
+            raise SliceError("Two instances are too close together.", "detail", -101,
                              error_code="slice.orca_too_close", reason="too close")
         pool, logs = make_pool(worker)
         job_id = pool.submit(describe={"instances": 2})

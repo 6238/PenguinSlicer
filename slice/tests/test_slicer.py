@@ -19,6 +19,10 @@ from penguin_slice.slicer import (OrcaExit, SliceCancelled, SliceError, build_co
                                   slice_stl, stl_bounds)
 
 
+TOO_CLOSE = "Two instances are too close together: the slicer found that their paths would meet."
+LOG_LINE = "cli_status_callback: percent=-1, warning_step=7, message={}, message_type=2, flag=32\n"
+
+
 def fake_run_factory(returncode=0, write_archive=True, write_result_json=True, stdout="log line", stopped=None,
                      result=None):
     """A stand-in for slicer.run_process that writes what Orca writes and returns its exit."""
@@ -246,6 +250,83 @@ class TestReadSummary:
         assert summary["warnings"] == []
         assert summary["layer_count"] == 50
 
+    def test_every_warning_in_the_debug_log_is_kept_once_in_one_order(self, out):
+        """The pinned Orca's result.json keeps one warning of a plate, a different one from
+        run to run (the real parts' mixed plate); its debug log has them all, in the order
+        its threads reached them. The summary gives each once, sorted with the instance
+        numbers read as numbers (#2 before #10), the same every time."""
+        import fake_orca
+        out.mkdir()
+        make_archive(out / "x.gcode.3mf")
+        data = json.loads((FIXTURES / "result.json").read_text())
+        data["sliced_plates"][0]["warning_message"] = "It seems object Block #10 has floating cantilever."
+        (out / "result.json").write_text(json.dumps(data))
+        names = ["Pulley #2", "Block #10", "Block #2", "Pulley #2", "Block #1"]
+        (out / slicer.ORCA_LOG).write_text("".join(fake_orca.LOG_WARNING.format(name=n) + "\n" for n in names))
+        regions = "has floating regions. Please re-orient the object or enable support generation."
+        assert read_summary(out / "x.gcode.3mf", out)["warnings"] == [
+            f"It seems object Block #1 {regions}", f"It seems object Block #2 {regions}",
+            "It seems object Block #10 has floating cantilever.", f"It seems object Block #10 {regions}",
+            f"It seems object Pulley #2 {regions}"]
+
+    def test_the_warnings_of_a_plate_are_bounded(self, out, monkeypatch):
+        out.mkdir()
+        make_archive(out / "x.gcode.3mf")
+        line = "cli_status_callback: percent=-1, warning_step=7, message=warning {}, message_type=2, flag=32\n"
+        (out / slicer.ORCA_LOG).write_text("".join(line.format(i) for i in range(12)))
+        monkeypatch.setattr(slicer, "MAX_PLATE_WARNINGS", 10)
+        found = read_summary(out / "x.gcode.3mf", out)["warnings"]
+        assert found == [f"warning {i}" for i in range(10)]
+
+    def test_a_long_warning_in_both_sources_is_listed_once(self, out):
+        """result.json and the debug log go through one normaliser: a warning over
+        MAX_WARNING_CHARS is cut alike in both, so it is one warning, not two."""
+        out.mkdir()
+        make_archive(out / "x.gcode.3mf")
+        long = "It seems object Block #1 has " + "a very long reason " * 30
+        (out / "result.json").write_text(json.dumps({"sliced_plates": [{"warning_message": f" {long} "}]}))
+        (out / slicer.ORCA_LOG).write_text(LOG_LINE.format(long))
+        assert read_summary(out / "x.gcode.3mf", out)["warnings"] == [long.strip()[:slicer.MAX_WARNING_CHARS]]
+
+    def test_a_run_of_thousands_of_digits_neither_fails_nor_misorders(self, out):
+        """Python refuses int() of a run over 4,300 digits; the sort key never converts."""
+        out.mkdir()
+        make_archive(out / "x.gcode.3mf")
+        (out / "result.json").write_text(json.dumps({"sliced_plates": [{"warning_message": "9" * 5000}]}))
+        (out / slicer.ORCA_LOG).write_text(LOG_LINE.format("8" * 299) + LOG_LINE.format("10"))
+        assert read_summary(out / "x.gcode.3mf", out)["warnings"] == ["10", "8" * 299, "9" * 300]
+        assert sorted(["9" * 5000, "1" + "0" * 5000, "007"], key=slicer._natural) == ["007", "9" * 5000,
+                                                                                        "1" + "0" * 5000]
+
+    @pytest.mark.parametrize("order", [(0, 1, 2), (2, 1, 0), (1, 0, 2), (2, 0, 1)])
+    def test_warnings_that_differ_only_in_leading_zeros_come_in_one_order(self, out, order):
+        out.mkdir()
+        make_archive(out / "x.gcode.3mf")
+        texts = ["Block 7", "Block 007", "Block 07"]
+        (out / slicer.ORCA_LOG).write_text("".join(LOG_LINE.format(texts[i]) for i in order))
+        assert read_summary(out / "x.gcode.3mf", out)["warnings"] == ["Block 007", "Block 07", "Block 7"]
+        # A strict order, so no tie is left to the order of a set (which PYTHONHASHSEED sets).
+        assert slicer._natural("Block 007") < slicer._natural("Block 07") < slicer._natural("Block 7")
+
+    def test_past_the_bound_the_warnings_kept_are_the_first_in_order_not_the_first_logged(self, out, monkeypatch):
+        """Which warnings a long list keeps must not depend on the order Orca's threads logged
+        them in: the whole log is read and the first MAX_PLATE_WARNINGS in order are kept."""
+        out.mkdir()
+        make_archive(out / "x.gcode.3mf")
+        monkeypatch.setattr(slicer, "MAX_PLATE_WARNINGS", 10)
+        for order in (range(35), reversed(range(35))):
+            (out / slicer.ORCA_LOG).write_text("".join(LOG_LINE.format(f"warning {i}") for i in order))
+            assert read_summary(out / "x.gcode.3mf", out)["warnings"] == [f"warning {i}" for i in range(10)]
+
+    def test_the_pairs_orca_found_too_close_are_read_in_one_order_and_bounded(self, out, monkeypatch):
+        out.mkdir()
+        monkeypatch.setattr(slicer, "MAX_PLATE_WARNINGS", 3)          # the reader's bound, to reach it
+        lines = [f"gcode path conflicts found between Block #{i + 1} and Block #{i}\n" for i in range(12, 0, -1)]
+        (out / slicer.ORCA_LOG).write_text("noise\n" + "".join(lines + lines) + "gcode path conflicts found between "
+                                           "a b and c\n")
+        assert slicer.orca_log_conflicts(out) == [(f"Block #{i}", f"Block #{i + 1}") for i in range(1, 6)]
+        assert slicer.orca_log_conflicts(out / "missing") == []
+
     def test_warnings_beside_entries_of_other_shapes_are_kept(self, out):
         out.mkdir()
         make_archive(out / "x.gcode.3mf")
@@ -419,7 +500,7 @@ class TestPlateSlice:
         assert not (out / slicer.PLATE_ARCHIVE).exists()
 
     @pytest.mark.parametrize("code, error_code, message", [
-        (-101, "slice.orca_too_close", "Parts are too close together; spread them out."),
+        (-101, "slice.orca_too_close", TOO_CLOSE),
         (-52, "slice.crosses_edge", "A part crosses the edge of the plate."),
         (-100, "slice.orca_failed", "The slicer could not slice this plate."),
         (-50, "slice.nothing_on_plate", "No part is fully on the plate."),
@@ -437,7 +518,7 @@ class TestPlateSlice:
 
     def test_code_table_is_the_four_known_codes(self):
         assert slicer.ORCA_RETURN_CODES == {
-            -101: ("slice.orca_too_close", "Parts are too close together; spread them out."),
+            -101: ("slice.orca_too_close", TOO_CLOSE),
             -52: ("slice.crosses_edge", "A part crosses the edge of the plate."),
             -100: ("slice.orca_failed", "The slicer could not slice this plate."),
             -50: ("slice.nothing_on_plate", "No part is fully on the plate."),

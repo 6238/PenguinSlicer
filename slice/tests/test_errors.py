@@ -23,7 +23,7 @@ from penguin_slice.slicer import OrcaExit
 
 REQUIRED = {"code": str, "message": str, "remedy": str, "retryable": bool, "detail": str}
 OPTIONAL = {"where": dict, "action": str}
-WHERE_KEYS = {"part", "instance", "height_mm", "stage"}
+WHERE_KEYS = {"part", "instance", "other_instance", "height_mm", "stage"}
 STAGES = {"checking", "queued", "building", "slicing", "saving", "fetching"}
 
 
@@ -96,10 +96,11 @@ def profile_unreadable(scene):
 
 
 def over_the_memory_ceiling(instances):
-    """The memory watchdog stops a stand-in Orca whose processes read 950 MB. Bounded: with
-    the watchdog's stop removed this fails in FAILSAFE_S and kills the stand-in."""
+    """The memory watchdog stops a stand-in Orca whose processes read 2,050 MB, over the
+    default ceiling. Bounded: with the watchdog's stop removed this fails in FAILSAFE_S and
+    kills the stand-in."""
     def produce(scene):
-        scene.monkeypatch.setattr(slicer, "MEMORY_READER", lambda pgid: (950 * 1024, 950 * 1024))
+        scene.monkeypatch.setattr(slicer, "MEMORY_READER", lambda pgid: (2050 * 1024, 2050 * 1024))
         install_fake_orca(scene.tmp, scene.monkeypatch, "hang")
         try:
             _returned, raised, finished = bounded(lambda: scene.slice(plate_configuration(instances=instances)))
@@ -195,6 +196,11 @@ TWO = [{"ref": "box", "orientation": "+z", "angle": 0, "x": 50.0, "y": 50.0},
        {"ref": "box", "orientation": "+z", "angle": 0, "x": 70.0, "y": 50.0}]
 SPACED = [dict(TWO[0]), dict(TWO[1], x=80.0)]
 SERVER = "Slice again; if it fails again, ask a mentor to check the print server."
+# Written out, not imported, so a change to the remedies fails a test.
+TOO_CLOSE_REMEDY = ("Spread the instances out (or press Arrange), or move some instances to a second plate, and "
+                    "slice again.")
+TOO_CLOSE_SUPPORTS_REMEDY = ("Spread the instances out (or press Arrange), turn supports off, or move some instances "
+                             "to a second plate, and slice again.")
 ASCII_BOX = b"solid box\n facet normal 0 0 1\n  outer loop\n   vertex 0 0 0\n" + b" " * 100 + b"\nendsolid box\n"
 LOOSE = (FIXTURES / "bad_stls" / "single_triangle.stl").read_bytes()
 EMPTY_LAYERS = "Box #1 has nothing to print between 9.9 and 11.34 mm high, so the layers above would start in mid-air."
@@ -278,8 +284,7 @@ EXPECTED = {
         "Box #1 is taller than the printer can print (340 mm)."),
     "slice.placement_too_close": Expected(
         lambda s: s.read(plate_configuration(instances=TWO)), "Box #1 and Box #2 are closer than 5 mm.", "checking", False,
-        "arrange", "Move the instances further apart, or press Arrange, and slice again.",
-        "Box #1 and Box #2 are closer than 5 mm."),
+        "arrange", TOO_CLOSE_REMEDY, "Box #1 and Box #2 are closer than 5 mm."),
     "slice.busy": Expected(
         busy, "The slicer is busy, try again in a minute.", "queued", True, None, "Wait a minute and slice again.",
         "the job queue is full"),
@@ -300,10 +305,10 @@ EXPECTED = {
         cancelled, "The slice was cancelled.", "slicing", True, None, "Send the slice again when you want it.",
         "stopped by the slice service (cancel) with SIGTERM"),
     "slice.out_of_memory": Expected(
-        over_the_memory_ceiling(SPACED), "This plate is too large to slice: the slicer needed more than the 900 MB "
+        over_the_memory_ceiling(SPACED), "This plate is too large to slice: the slicer needed more than the 2,000 MB "
                                          "of memory the print server allows.", "slicing", False,
         "lower_quantities", "Remove some instances or the largest part and print them on a second plate.",
-        "Orca's processes reached a peak of 972,800 kB (the watchdog's high-water reading of Orca's processes)"),
+        "Orca's processes reached a peak of 2,099,200 kB (the watchdog's high-water reading of Orca's processes)"),
     "slice.orca_crashed": Expected(
         fake_orca("segv"), "The slicer crashed while slicing this plate.", "slicing", False, None,
         "Try another orientation or other print settings; if it crashes again, ask a mentor to check the part.",
@@ -312,8 +317,8 @@ EXPECTED = {
         fake_orca("sigterm"), "Something on the print server stopped the slicer before it finished.", "slicing",
         True, None, SERVER, "ended by signal 15 (SIGTERM), not sent by the slice service"),
     "slice.orca_too_close": Expected(
-        fake_orca("refuse"), "Parts are too close together; spread them out.", "slicing", False, "arrange",
-        "Move the instances further apart, or press Arrange, and slice again.",
+        fake_orca("refuse"), "Two instances are too close together: the slicer found that their paths would meet.",
+        "slicing", False, "arrange", TOO_CLOSE_REMEDY,
         "orca code -101\nexit code 155\norca error_string: too close\nSome objects are too close together"),
     "slice.crosses_edge": Expected(
         lambda s: s.orca_exit(204, -52), "A part crosses the edge of the plate.", "slicing", False, "arrange",
@@ -447,6 +452,47 @@ def test_with_supports_on_no_action_is_offered_that_cannot_help(tmp_path, monkey
     assert "action" not in report and "Supports" not in report["remedy"]
 
 
+def test_with_supports_on_the_placement_check_asks_for_the_supports_spacing(tmp_path, monkeypatch):
+    """SPACED is 10 mm apart: enough with supports off, refused with them on, before Orca
+    runs, with both instances named and a remedy that offers turning supports off."""
+    scene = Scene(tmp_path, monkeypatch)
+    with pytest.raises(service_module.PlateConfigurationRefused) as caught:
+        scene.read(plate_configuration(instances=SPACED, overrides={"supports": "on"}))
+    report = error_report(caught.value)
+    assert report["code"] == "slice.placement_too_close"
+    assert report["message"] == "Box #1 and Box #2 are closer than 12 mm, the room supports need between instances."
+    assert report["where"] == {"part": "Box", "instance": "Box #1", "other_instance": "Box #2", "stage": "checking"}
+    assert (report["remedy"], report["action"]) == (TOO_CLOSE_SUPPORTS_REMEDY, "arrange")
+    scene.read(plate_configuration(instances=SPACED))                                   # supports off: passes
+    scene.read(plate_configuration(instances=[TWO[0], dict(TWO[1], x=82.0)], overrides={"supports": "on"}))  # 12 mm
+
+
+PAIR_MEETS = "Box #1 and Box #2 are too close together: the slicer found that their paths would meet"
+ANY_MEETS = "Two instances are too close together: the slicer found that their paths would meet"
+SUPPORTS_CLAUSE = ", most likely their supports, which need more room between instances."
+
+
+@pytest.mark.parametrize("mode, supports, message, where, remedy", [
+    ("refuse_logged", "off", PAIR_MEETS + ".", {"instance": "Box #1", "other_instance": "Box #2"}, TOO_CLOSE_REMEDY),
+    ("refuse_logged", "on", PAIR_MEETS + SUPPORTS_CLAUSE, {"instance": "Box #1", "other_instance": "Box #2"},
+     TOO_CLOSE_SUPPORTS_REMEDY),
+    ("refuse", "on", ANY_MEETS + SUPPORTS_CLAUSE, {}, TOO_CLOSE_SUPPORTS_REMEDY),
+])
+def test_orcas_too_close_names_the_pair_from_its_debug_log(mode, supports, message, where, remedy, tmp_path,
+                                                           monkeypatch):
+    """Orca's -101 for a plate the checks passed: the pair its debug log names (its line
+    names the second instance first), the supports as the likely cause when they are on."""
+    scene = Scene(tmp_path, monkeypatch)
+    install_fake_orca(tmp_path, monkeypatch, mode)
+    with pytest.raises(slicer.SliceError) as caught:
+        scene.slice(plate_configuration(instances=[TWO[0], dict(TWO[1], x=95.0)], overrides={"supports": supports}))
+    report = error_report(caught.value)
+    assert_report_shape(report)
+    assert (report["code"], report["message"], report["remedy"]) == ("slice.orca_too_close", message, remedy)
+    assert report["where"] == dict(where, stage="slicing")
+    assert ("orca debug log: paths meet between Box #1 and Box #2" in report["detail"]) is bool(where)
+
+
 def test_out_of_memory_on_a_plate_of_one_instance_does_not_say_remove_instances(tmp_path, monkeypatch):
     scene = Scene(tmp_path, monkeypatch)
     with pytest.raises(slicer.SliceError) as caught:
@@ -479,7 +525,7 @@ def test_with_two_parts_orcas_reason_names_none(tmp_path, monkeypatch):
     ("slice.part_unreadable", {"part": "Box"}), ("slice.part_too_small", {"part": "Box"}),
     ("slice.part_too_detailed", {"part": "Box"}), ("slice.part_too_large", {"part": "Box"}),
     ("slice.part_no_volume", {"part": "Box"}), ("slice.part_not_binary", {"part": "Box"}),
-    ("slice.placement_too_close", {"part": "Box", "instance": "Box #1"}),
+    ("slice.placement_too_close", {"part": "Box", "instance": "Box #1", "other_instance": "Box #2"}),
     ("slice.placement_too_tall", {"part": "Box", "instance": "Box #1"}),
     ("slice.left_off_plate", {"instance": "Box #1"}),
 ])

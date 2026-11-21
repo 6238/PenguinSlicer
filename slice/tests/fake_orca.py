@@ -13,6 +13,7 @@ Modes:
     ok            slice every object, sending Orca's progress messages first;
     drop          leave the last object out with exit 0, as Orca does with an instance off the plate;
     refuse        refuse the plate with return code -101 (exit status 155);
+    refuse_logged the same, its debug log naming the last and first objects as the pair whose paths meet;
     garbled       refuse as `refuse` does, printing a line that is not UTF-8 first;
     empty_layers  refuse with -100 and the empty-layer warning Orca writes into result.json;
     general       refuse with -100 and only Orca's general error_string;
@@ -68,6 +69,8 @@ PRINT_EMPTY = "The print is empty. The model is not printable with current print
 # A warning in Orca's debug log, as the pinned Orca writes it at --debug 3 (tests_orca pins it).
 LOG_WARNING = ("cli_status_callback: percent=-1, warning_step=7, message=It seems object {name} has floating "
                "regions. Please re-orient the object or enable support generation., message_type=2, flag=32")
+# The debug log's line for a -101, as the pinned Orca writes it (tests_orca pins it).
+CONFLICT = "gcode path conflicts found between {} and {}"
 LOADER = ("orca-slicer: error while loading shared libraries: libpangoft2-1.0.so.0: cannot open shared object file: "
           "No such file or directory")
 # The stand-in, and the child it can start, end themselves after this long whatever they
@@ -150,6 +153,11 @@ def main(argv):
     if mode == "garbled":
         sys.stdout.buffer.write(b"Br\xe4cket is too close\n")     # Latin-1, not UTF-8
         sys.stdout.flush()
+        mode = "refuse"
+    if mode == "refuse_logged":
+        log = Path(argv[argv.index("--logfile") + 1])
+        log.write_text("gcode path conflicts check takes 0.08 secs.\n" + CONFLICT.format(names[-1], names[0]) + "\n"
+                       + "plate 1: found slicing result conflict!\n")
         mode = "refuse"
     if mode == "refuse":
         (out / "result.json").write_text(json.dumps({"return_code": -101, "error_string": "too close"}))

@@ -64,7 +64,7 @@ def test_the_contract_lists_the_fields_this_test_expects():
     assert {f: req for f, (_t, req) in fields.items()} == {
         'code': 'yes', 'message': 'yes', 'where': 'no', 'remedy': 'yes', 'action': 'no',
         'retryable': 'yes', 'detail': 'yes'}
-    assert where_keys() == {'part', 'instance', 'height_mm', 'stage'}
+    assert where_keys() == {'part', 'instance', 'other_instance', 'height_mm', 'stage'}
 
 
 def test_the_example_is_itself_a_valid_report_whatever_its_values():

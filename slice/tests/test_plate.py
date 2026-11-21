@@ -68,12 +68,39 @@ def test_quarter_turns_are_exact(angle, expected):
 def test_plate_from_default_printer():
     result = plate.plate_from_printer(default_printer_profile())
     assert result == {'min': [0, 0], 'max': [340, 320], 'height': 340, 'margin': 3.0, 'spacing': 5.0,
-                      'printer': 'Bambu Lab H2S 0.6 nozzle'}
+                      'supports': False, 'printer': 'Bambu Lab H2S 0.6 nozzle'}
     assert result == CASES['plate']
 
 
+def test_with_supports_the_plate_asks_for_the_larger_spacing():
+    result = plate.plate_from_printer(default_printer_profile(), supports=True)
+    assert (result['spacing'], result['supports']) == (plate.SPACING_SUPPORTS_MM, True)
+    assert plate.SPACING_SUPPORTS_MM > plate.SPACING_MM
+
+
+@pytest.mark.parametrize('supports, gap, message', [
+    (False, 4.9, 'Square #1 and Square #2 are closer than 5 mm.'),
+    (False, 5.0, None),
+    (True, 5.0, 'Square #1 and Square #2 are closer than {s:g} mm, the room supports need between instances.'),
+    (True, 'spacing', None),
+])
+def test_the_spacing_depends_on_supports(supports, gap, message):
+    """Two 20 mm squares side by side, `gap` mm apart: refused below the plate's spacing,
+    with the sentence that says supports need the room when they are on."""
+    plate_ = plate.plate_from_printer(default_printer_profile(), supports=supports)
+    gap = plate.SPACING_SUPPORTS_MM if gap == 'spacing' else gap
+    square = {'hull': [[-10, -10], [10, -10], [10, 10], [-10, 10]], 'height': 5, 'offset': [0, 0, 0]}
+    parts = {'sq': {'name': 'Square', 'footprints': {'+z': square}}}
+    instances = [{'ref': 'sq', 'orientation': '+z', 'angle': 0, 'x': 100.0, 'y': 100.0},
+                 {'ref': 'sq', 'orientation': '+z', 'angle': 0, 'x': 120.0 + gap, 'y': 100.0}]
+    problems = plate.check_placement(instances, parts, plate_)
+    expected = [] if message is None else [{'rule': 'too_close', 'instances': [0, 1],
+                                           'message': message.format(s=plate.SPACING_SUPPORTS_MM)}]
+    assert problems == expected
+
+
 def test_constants():
-    assert (plate.SPACING_MM, plate.MARGIN_MM, plate.EPS_MM) == (5.0, 3.0, 1e-6)
+    assert (plate.SPACING_MM, plate.SPACING_SUPPORTS_MM, plate.MARGIN_MM, plate.EPS_MM) == (5.0, 12.0, 3.0, 1e-6)
 
 
 def test_instance_hull_rotates_then_moves():

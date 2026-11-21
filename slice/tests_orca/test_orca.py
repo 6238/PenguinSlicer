@@ -233,18 +233,26 @@ def test_interleaved_parts_each_land_where_their_own_instance_is_placed(tmp_path
 
 
 def test_overlapping_instances_are_refused_by_orca(tmp_path, stls):
-    """Protects: return code -101 and its error_string."""
+    """Protects: return code -101, its error_string, and the debug log's line naming the pair
+    (slicer.LOG_CONFLICT_RE)."""
     parts = {"a": make_part(stls, "Box", (20, 20, 10))}
     instances = [{"ref": "a", "orientation": "+z", "angle": 0, "x": 100.0, "y": 100.0},
               {"ref": "a", "orientation": "+z", "angle": 0, "x": 110.0, "y": 100.0}]
     write_plate_3mf(tmp_path / "plate.3mf", instances, parts)
     exc, report = slice_failure(tmp_path / "plate.3mf", DEFAULT_PROFILES, tmp_path / "out")
     assert exc.code == -101 and report["code"] == "slice.orca_too_close"
-    assert report["detail"].splitlines()[:3] == [
-        "orca code -101", "exit code 155", "orca error_string: G-code conflicts detected after slicing. Please make "
+    assert report["where"] == {"instance": "Box #1", "other_instance": "Box #2", "stage": "slicing"}
+    assert report["message"] == ("Box #1 and Box #2 are too close together: the slicer found that their paths would "
+                                 "meet.")
+    assert report["detail"].splitlines()[:4] == [
+        "orca code -101", "exit code 155", "orca debug log: paths meet between Box #1 and Box #2",
+        "orca error_string: G-code conflicts detected after slicing. Please make "
         "sure the 3mf file can be successfully sliced in the latest Orca Slicer. If the file slices normally in Orca "
         "Slicer, try moving the wipe tower further from other models, as we use more conservative parameters for "
         "it during upload."]
+    import fake_orca                                   # the fast suite's stand-in writes the same line
+    logged = (tmp_path / "out" / "orca.log").read_text(errors="replace").splitlines()
+    assert {fake_orca.CONFLICT.format("Box #2", "Box #1"), fake_orca.CONFLICT.format("Box #1", "Box #2")} & set(logged)
 
 
 def test_the_only_instance_across_the_edge_gives_minus_50(tmp_path):
