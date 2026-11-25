@@ -7,6 +7,8 @@ on [contracts/](contracts/README.md).
 
 - The repository is `6238/PenguinSlicer` on GitHub. Every change reaches `main` through a
   pull request from a branch; never commit or push to `main` directly.
+- Start from [the plan](docs/plans/penguin-slicer-plan.md): the terms, the standing
+  requirements, where each component stands and the phases of work.
 - Specs, plans, research, the mockup and the build records live under `docs/`
   (`docs/plans/`, `docs/research/`, `docs/mockups/`, `docs/handoffs/`,
   `docs/orchestration/`).
@@ -19,7 +21,10 @@ on [contracts/](contracts/README.md).
 
 ## Terms
 
-One name per thing, in code, documents and the sentences students read: an **instance** is
+One name per thing, in code, documents and the sentences users read: the **user** is the
+person using PenguinSlicer, and an **administrator** is whoever edits the configuration
+(never "student", "mentor" or "team" for either; FRC Team 6238, the Popcorn Penguins, is
+named as such); an **instance** is
 one placement of a part on the plate (a part printed once has one instance); a **plate
 configuration** is what to slice (the parts, where each instance sits, the profiles and
 settings), a description, not work; a **slice job** is one plate configuration being

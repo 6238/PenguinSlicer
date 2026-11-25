@@ -126,7 +126,7 @@ Each override is optional; its value must be one of the listed values, of the li
 | `SPACING_SUPPORTS_MM` | 12 | The least distance between two instances' footprints, with supports on: Orca's supports need more room. A user interface that arranges the plate leaves this distance when supports are on. |
 | `PLATE_SLICE_TIMEOUT_S` | 240 | Seconds Orca may take to slice the plate. |
 
-No instance may be taller than the printer's printable height. A team's 10 by 10 grid of
+No instance may be taller than the printer's printable height. A user's 10 by 10 grid of
 small spacers is 100 instances of one part: well inside every limit.
 
 ### Memory

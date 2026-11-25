@@ -50,7 +50,7 @@ never needs to know the printer, filament, plate or nozzle.
 | `filament_g` | number or null | The filament used, in grams. |
 | `layer_count` | integer or null | The number of layers. |
 | `warnings` | array of strings | Orca's warnings for the plate, each as Orca wrote it, each once, sorted with the numbers in them read as numbers (`Block #2` before `Block #10`) so the same plate gives the same list every time; at most 300. Read from Orca's `result.json` and its debug log (the `result.json` of the pinned Orca holds only one of them). Empty when there are none. When a timeout or the memory watchdog stopped Orca after it wrote the sliced file but before it wrote `result.json`, the list holds only the warnings its debug log had by then (the slice service's log says so in `stop_note`). |
-| `part_warnings` | array of objects | The slice service's own warnings about the parts, found when the plate configuration arrived; empty when there are none. Each has `code` (for example `slice.part_not_watertight`; the guide lists them), `message` (a sentence for the student), `where` (`part`) and `detail` (the evidence for the log). |
+| `part_warnings` | array of objects | The slice service's own warnings about the parts, found when the plate configuration arrived; empty when there are none. Each has `code` (for example `slice.part_not_watertight`; the guide lists them), `message` (a sentence for the user), `where` (`part`) and `detail` (the evidence for the log). |
 
 A number Orca did not report is `null` rather than a failure: the sliced file is still
 good.

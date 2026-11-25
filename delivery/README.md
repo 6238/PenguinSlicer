@@ -3,21 +3,59 @@
 Printer delivery takes a sliced file (`.gcode.3mf`) and gets it printed on a shop's Bambu
 Lab printer, reporting how the print goes. It has two halves:
 
-- **The relay** runs on the server. It holds each team's delivery jobs and the printer's
+- **The relay** runs on the server. It holds each pairing code's delivery jobs and the printer's
   last status in memory, pairs with a daemon, and answers the caller.
 - **The daemon** runs on **the daemon's computer** (the computer next to the printer, on
   the printer's network, that runs the daemon). It connects outward to the relay, downloads the sliced file, uploads it to the printer and starts
   it. It opens no port. It is a plain Python program that runs on Windows, macOS or Linux.
 
 The **caller** is the application that runs the relay and asks it to deliver sliced files:
-it signs its users in, knows their team's pairing code, and holds the sliced file. Printer
-delivery knows nothing of slicing, of how the caller signs anyone in, or of where the
-caller keeps a team's configuration.
+it signs its users in, knows the pairing code of the printer they may use, and holds the
+sliced file. Printer delivery knows nothing of slicing, of how the caller signs anyone in,
+or of where the caller keeps the configuration (the settings an administrator keeps for
+everyone who uses PenguinSlicer, the pairing code among them).
 
 This began as a port of the printer relay and daemon from PenguinCAM's
 `feature/onshape-test-bed` branch (commit `da39282`); the hardening since is described in
 each section below, and the two faults the first hardware test found are fixed (see
 [The two faults of the first hardware test](#the-two-faults-of-the-first-hardware-test)).
+
+## Where it stands
+
+The phases named here are those of [the plan](../docs/plans/penguin-slicer-plan.md).
+
+**Built and tested** (on `main` after pull request 5): the relay and the daemon, their
+pairing, delivery jobs with progress reports through the whole delivery and the print,
+cancellation up to the start command, the rules for deciding a start, the hold after a
+start command, restarts of either half, the log lines, and `make upgrade-printer-library`
+with the upstream check. They are tested by the fast suite, by the property tests' random
+sequences of faults on both links, and against the simulated printer over real sockets.
+
+**Not done:**
+
+- **Never run against the real printer by this code.** Every status sequence the
+  simulated printer plays is invented from the one status document the first hardware
+  test saved, at 0 percent. The timed rule after a start command rests on two limits that
+  only the H2S can settle ([Two limits that wait for the real printer](#two-limits-that-wait-for-the-real-printer)),
+  and everything in
+  [Before trusting it at the H2S](#before-trusting-it-at-the-h2s-what-a-hardware-session-must-confirm)
+  is unconfirmed.
+- **Never run on Windows.** Tests fake each platform-dependent choice.
+- **Daemon telemetry is not designed.** It is planned: a protocol by which the daemon
+  sends messages about its own state to the server, where they are kept. Today both
+  halves write structured log lines only.
+- Not handled, by design: stopping a print that is already running (it is stopped at the
+  printer), checking the printer's certificate (the daemon accepts any), and resuming an
+  in-flight delivery job after a relay restart.
+
+**What the phases still need from it.** Phases 1 to 4 need nothing from it. Phase 5 (the
+real printer) needs the session at the H2S, daemon telemetry designed and built, a relay
+running where the daemon can reach it, and what the wizard's Send step and printer-status
+icon need that the relay does not give today: who sent the print going on, the end time of
+the last print, and a way for a page that has lost its state to find its user's delivery
+job (listed in the mockup's [DECISIONS.md](../docs/mockups/print-wizard/DECISIONS.md)).
+Some sentences of its error and progress reports, and the caller interface's `Team`, still
+use the old words for users; changing them is a change of its own, with its tests.
 
 ## Layout
 
@@ -97,8 +135,8 @@ only. The home directory below is a scratch folder; any empty one will do.
 
    It connects to the simulated printer and prints a pairing code such as `B6MQ-DN77`.
    `--printer-ports` is for the simulated printer only; a real printer uses its own.
-3. **The relay**, with a stand-in caller that signs every request in as one team with
-   that pairing code (development mode, plain HTTP; never for a real shop):
+3. **The relay**, with a stand-in caller that signs every request in with that pairing
+   code (development mode, plain HTTP; never for a real shop):
 
    ```
    uv run python -m together.relay_server --code B6MQ-DN77
@@ -174,8 +212,8 @@ stand-in printer instead of the simulated one, and checks it end to end.
 ## How the relay and the daemon pair
 
 The **pairing code** is eight symbols of Crockford base32 without I, L, O and U (forty
-random bits), shown as `7K3M-Q9XW`. The daemon's `pair` command makes it. A mentor gives
-it to the caller, which keeps it with the team. Everywhere a code is read it is normalised
+random bits), shown as `7K3M-Q9XW`. The daemon's `pair` command makes it. An
+administrator gives it to the caller, which keeps it in the configuration. Everywhere a code is read it is normalised
 first (upper case, no dash or spaces, O read as 0, I and L as 1).
 
 ```mermaid
@@ -183,7 +221,7 @@ sequenceDiagram
     participant C as Caller
     participant R as Relay
     participant D as Daemon
-    C->>R: GET /printer/status (the team's pairing code)
+    C->>R: GET /printer/status (the user's pairing code)
     Note over R: the code is now presented
     D->>R: POST /printer/daemon/pair {code}
     R-->>D: {token}, signed with the relay's secret key
@@ -361,12 +399,12 @@ grows with what a daemon or a caller sends.
 
 | Route | Answers |
 |---|---|
-| `GET /printer/status` | `paired`, `waiting`, `online`, `age_seconds`, `status` (the printer's snapshot plus `display_name`), `job` (the job slot), `last_result` (`{ok, reason, age_seconds, error_report, cancelled}`, ten minutes, `LAST_RESULT_TTL_SECONDS`), `delivery` (the latest progress report of the team's most recent delivery job), `code`. 120 a minute per team (`STATUS_LIMIT`) |
-| `POST /printer/jobs` `{token}` | `202 {ok, job_id}`, or a refusal with its error report. 10 a minute per team (`JOBS_LIMIT`) |
+| `GET /printer/status` | `paired`, `waiting`, `online`, `age_seconds`, `status` (the printer's snapshot plus `display_name`), `job` (the job slot), `last_result` (`{ok, reason, age_seconds, error_report, cancelled}`, ten minutes, `LAST_RESULT_TTL_SECONDS`), `delivery` (the latest progress report of the pairing code's most recent delivery job), `code`. 120 a minute per pairing code (`STATUS_LIMIT`) |
+| `POST /printer/jobs` `{token}` | `202 {ok, job_id}`, or a refusal with its error report. 10 a minute per pairing code (`JOBS_LIMIT`) |
 | `GET /printer/jobs/<id>` | The delivery job's latest progress report: what a caller that connects late gets at once. `404 delivery.job_unknown` when the relay has none |
 | `GET /printer/jobs/<id>/events` | The progress reports as a server-sent event stream (`event: progress`, `id:` the sequence): the latest at once, then each new one, ending after a final state; a comment line every 15 s (`STREAM_HEARTBEAT_SECONDS`) of quiet |
 | `POST /printer/jobs/<id>/cancel` | `200` cancelled at once (still queued); `202` cancelling (the daemon holds it; it ends `cancelled` once the daemon has stopped); `409 delivery.start_being_sent` once the start was granted, until the daemon says the command went; `409 delivery.cancel_too_late` after that; `409 delivery.already_finished` |
-| `POST /printer/jobs/<id>/stop-following` | `200 {ok, outcome: "stopped", progress}`: a job past the start gate whose report is stale ends `failed`, `delivery.outcome_unknown`, and its slot is freed; `409 delivery.still_reporting` while the printer reports the print; `409 delivery.start_not_shown_yet` while it answers but has not shown it yet; `409 delivery.not_started` before the gate; `409 delivery.already_finished`; `404 delivery.job_unknown`. 10 a minute per team (`JOBS_LIMIT`) |
+| `POST /printer/jobs/<id>/stop-following` | `200 {ok, outcome: "stopped", progress}`: a job past the start gate whose report is stale ends `failed`, `delivery.outcome_unknown`, and its slot is freed; `409 delivery.still_reporting` while the printer reports the print; `409 delivery.start_not_shown_yet` while it answers but has not shown it yet; `409 delivery.not_started` before the gate; `409 delivery.already_finished`; `404 delivery.job_unknown`. 10 a minute per pairing code (`JOBS_LIMIT`) |
 
 A success stays in `last_result` for its ten minutes (`LAST_RESULT_TTL_SECONDS`). A
 failure is cleared when a later
@@ -813,7 +851,8 @@ asking) and every daemon exchange (pair, sync, ack, start, download, ping) has a
 So does every refused request, on every route: its line names the route, the refusal
 (`error=not_signed_in`, `identity_unreadable`, `rate_limited`, `https_required`,
 `token_invalid`, `not_paired`, `file_unknown`, `job_unknown` and the send's refusals) and
-the team when it is known, for example
+`team`, the team number the caller passed with the request's identity, when it is known,
+for example
 `printer-delivery request=events printer=- status=401 team=- job=j8f3a2c1 error=not_signed_in`.
 `printer` is eight hex digits of a hash of the pairing code, never the code; no line
 holds a pairing code, a token, a download token or an access code.
@@ -841,7 +880,7 @@ it on purpose.
 |---|---|---|
 | `delivery.no_session` | `identify` answered None | no |
 | `delivery.identity_unreadable` | `identify` raised or returned something that is not a `Team`, on a send | no |
-| `delivery.not_paired` | The team has no pairing code | no |
+| `delivery.not_paired` | The request's identity has no pairing code | no |
 | `delivery.sliced_file_missing` | `find_sliced_file` found nothing, the token was not a string, or the `path` is not a file (`action`: `slice_again`) | no |
 | `delivery.sliced_file_unreadable` | `find_sliced_file` raised or returned the wrong type, or the `stream` failed while copied | yes |
 | `delivery.sliced_file_too_old` | Sliced more than forty minutes (`SLICE_MAX_AGE_SECONDS`) before the send (`action`: `slice_again`) | no |
@@ -855,7 +894,7 @@ it on purpose.
 | `delivery.job_in_flight` | A job is already waiting to start | yes |
 | `delivery.rate_limited` | Over a caller route's limit | yes |
 | `delivery.relay_failed` | An exception escaped a route | yes |
-| `delivery.job_unknown` | No such delivery job for this team, perhaps because the relay restarted | no |
+| `delivery.job_unknown` | No such delivery job for this pairing code, perhaps because the relay restarted | no |
 | `delivery.cancel_too_late` | Cancel after the daemon said the start command went to the printer, or after the printer showed the print | no |
 | `delivery.start_being_sent` | Cancel after the start gate passed and before the daemon said the command went: it may already have gone (also for as long as a daemon restarted in between cannot know whether it did). The remedy says to stop the print on the printer's screen if it starts, else to wait for the job's report to end before sending again | no |
 | `delivery.already_finished` | Cancel or stop-following after a final state | no |
@@ -905,17 +944,21 @@ app = create_app(
 relay_of(app).relay.note_code(code)                  # optional: present a code at sign-in
 ```
 
-`identify(request)` answers who is asking: a `Team`, or `None` (401). If it raises or
-returns anything else, a status poll reads as a team with no pairing code and a send is
-refused with `delivery.identity_unreadable`.
+`identify(request)` answers who is asking: a `Team`, or `None` (401). `Team` is the
+code's name for a request's identity: the pairing code it may use (the only field the
+relay trusts), with a team number and a user name passed through to the log and events.
+The name is one of the old words that are still to change in the code. If `identify`
+raises or returns anything else, a status poll reads as an identity with no pairing code
+and a send is refused with `delivery.identity_unreadable`.
 
 `find_sliced_file(token, team)` turns the token the caller's page posted into a
 `SlicedFile`, or `None` (404). It is asked only for a non-empty string. If it raises or
 returns anything but a well-formed `SlicedFile`, the send is refused with
 `delivery.sliced_file_unreadable`.
 
-**The caller's duty: `find_sliced_file` must return `None` for a token that belongs to
-another team.** The relay cannot know who owns a send token. It passes the very `Team`
+**The caller's duty: `find_sliced_file` must return `None` for a token that the
+request's identity may not use** (a sliced file made for the users of another pairing
+code). The relay cannot know who owns a send token. It passes the very `Team`
 that `identify` answered for the request; everything else is keyed on the pairing code.
 
 A `SlicedFile` has exactly one of `path` (a file the caller owns and keeps until the job
@@ -1115,7 +1158,7 @@ H2S, with `record` running, settles these:
       This sets `LEFTOVER_END_SECONDS` (2 min) and checks the end rule of
       [How a start is decided](#how-a-start-is-decided).
 - [ ] **How long the H2S takes to show the print after the start command**, for a small
-      file and the largest the team prints. It sets `START_SLOW_SECONDS` (60 s, when the
+      file and the largest the Popcorn Penguins print. It sets `START_SLOW_SECONDS` (60 s, when the
       stage becomes `start_not_shown`) and `START_SETTLE_SECONDS` (5 min of fresh reports
       without the print before "did not start" and before another start can go), which
       must stay well above it.
@@ -1143,6 +1186,33 @@ H2S, with `record` running, settles these:
       confirmed, with the answer.
 - [ ] A print shows its stages in order and `remaining_min` is minutes.
 - [ ] A cancel during the upload removes the partial file from the printer's list.
+
+**What the session needs beyond `record`.** `record` captures prints started some other
+way (from the printer's screen, or from Bambu's own slicer), which is what the simulated
+printer needs. The lines above about what the H2S reports after a start command need a
+print started by the daemon, and that needs a relay the daemon can reach, the daemon's
+`run` command and a sliced file to send. `pair` with no `--backend` points the daemon at
+`https://penguincam.popcornpenguins.com`, where no relay for it runs, so a relay must be
+started somewhere the daemon can reach (`uv run python -m together.relay_server`, as in
+[Try it on one machine](#try-it-on-one-machine)) and its address given to `pair`. Whether
+`record` and `run` can be connected to the printer at the same time is not known. So the
+session has two parts: recording prints started at the printer, and a print started by
+the daemon with recording, which is prepared as a written walk and tried against the
+simulated printer first.
+
+**On the daemon's computer.** Nothing here has run on Windows, the likely daemon's
+computer for the first session; on Windows the commands take `py` in place of `python`.
+This list comes from the builder of the hardening and was not checked by a review:
+
+- [ ] `py -m pip install .\delivery\daemon` works in a fresh Python 3.11 or newer.
+- [ ] `py -m penguin_delivery_daemon pair` writes
+      `%LOCALAPPDATA%\PenguinDelivery\config.toml` and prints the run command.
+- [ ] `py -m penguin_delivery_daemon run` connects, logs "paired with the relay" and the
+      idle line, and Ctrl-C stops it cleanly.
+- [ ] `status` and `record --seconds 10` run.
+- [ ] Discovery of the printer (UDP port 2021) under the Windows firewall: allowed, or the
+      typed address used instead.
+- [ ] A delivery job whose file name holds `:` or `?` uploads under a safe name.
 
 ## The two faults of the first hardware test
 

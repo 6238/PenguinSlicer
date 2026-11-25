@@ -8,16 +8,16 @@ in any other shape (a bare exception, an exit code, a log line only) is a bug.
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `code` | string | yes | A stable name for this failure, `component.what`, for example `slice.empty_layers`. Tests and support refer to it. It never changes once released. |
-| `message` | string | yes | What happened, in one sentence a student understands. No codes, no jargon. |
+| `message` | string | yes | What happened, in one sentence a user understands. No codes, no jargon. |
 | `where` | object | no | What the failure is about, when known. Any of `part` (name), `instance` (name), `other_instance` (the second instance's name, for a failure about two instances, such as two too close together), `height_mm`, `stage`. |
 | `remedy` | string | yes | What to do next, in one sentence. |
 | `action` | string | no | The name of the single action that fixes it, when one exists, for example `enable_supports`. A user interface may offer it as a button. |
 | `retryable` | boolean | yes | Whether the same request may succeed if sent again unchanged. |
-| `detail` | string | yes | The underlying evidence for the server log: the tool's own words, the exit code, the printer's status. Never shown to a student as it is. May be empty only when there is truly none. |
+| `detail` | string | yes | The underlying evidence for the server log: the tool's own words, the exit code, the printer's status. Never shown to a user as it is. May be empty only when there is truly none. |
 
 ## Rules
 
-- `message` and `remedy` are complete sentences and never blame the student.
+- `message` and `remedy` are complete sentences and never blame the user.
 - `remedy` never proposes an action that cannot help.
 - `detail` is captured before any cleanup removes its source.
 - No field ever holds a secret: no token, access code or pairing code.

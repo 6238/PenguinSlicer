@@ -1,7 +1,8 @@
 # Owner's feedback on the session summary (working notes)
 
 Temporary file. It collects the owner's feedback on
-[the session summary](2026-11-20-penguin-slicer-session-summary.md), given in pieces from
+the session summary of Fri 2026-11-20 (since deleted; its content is in
+[the plan](../plans/penguin-slicer-plan.md) and the components' guides), given in pieces from
 Fri 2026-11-20. Nothing is to be rewritten until the owner says the review is finished.
 Delete this file once the changes are made.
 
