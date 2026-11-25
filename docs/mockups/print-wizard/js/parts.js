@@ -310,10 +310,17 @@
   }
   function isModelled(q) { return DOWN.clone().applyQuaternion(q.clone().invert()).dot(DOWN) > 0.999; }
 
-  // The documents the mock Onshape tab can show.
-  var PART_STUDIO = { name: 'Intake v3', tab: 'Part Studio 1', parts: ['bracket', 'pulley', 'camera', 'spacer', 'gusset', 'rib', 'shaft'] };
+  // The documents the mock Onshape tab can show, each with its units (Onshape's units of the
+  // Part Studio or Assembly, which the wizard gives the parts picked there). Part Studio 1 is
+  // in inches; the camera mount, a bought camera's mount drawn in millimetres, has its own
+  // metric Part Studio. The Assembly is in inches, so every part picked there is in inches.
+  var PART_STUDIOS = [
+    { id: 'ps1', name: 'Intake v3', tab: 'Part Studio 1', units: 'in', parts: ['bracket', 'pulley', 'spacer', 'gusset', 'rib', 'shaft'] },
+    { id: 'ps2', name: 'Intake v3', tab: 'Camera Mount (mm)', units: 'mm', parts: ['camera'] }
+  ];
+  var PART_STUDIO = PART_STUDIOS[0];
   var ASSEMBLY = {
-    name: 'Intake v3', tab: 'Assembly 1',
+    name: 'Intake v3', tab: 'Assembly 1', units: 'in',
     instances: [
       { key: 'bracket', count: 4 }, { key: 'pulley', count: 2 }, { key: 'camera', count: 1 },
       { key: 'spacer', count: 6 }, { key: 'gusset', count: 2 }, { key: 'rib', count: 2 }, { key: 'shaft', count: 2 }
@@ -321,6 +328,6 @@
     standardContent: [{ name: 'Socket Head Cap Screw #10-32 x 0.5', count: 16 }, { name: 'Flanged Bearing 1/2in Hex', count: 4 }]
   };
 
-  window.MockParts = { LIB: LIB, byKey: byKey, PART_STUDIO: PART_STUDIO, ASSEMBLY: ASSEMBLY,
+  window.MockParts = { LIB: LIB, byKey: byKey, PART_STUDIO: PART_STUDIO, PART_STUDIOS: PART_STUDIOS, ASSEMBLY: ASSEMBLY,
                        resting: resting, restIndex: restIndex, isModelled: isModelled, DOWN: DOWN };
 })();

@@ -73,7 +73,9 @@ button, select { font: inherit; }
 #os-strip { width: 36px; flex: none; background: #fff; border-left: 1px solid var(--f-line); display: flex; flex-direction: column; align-items: center; padding-top: 6px; }
 #os-strip .app { width: 26px; height: 26px; border-radius: 4px; background: var(--f-accent); color: #fff; font-weight: 700; font-size: 12px; display: flex; align-items: center; justify-content: center; }
 #os-tabs { display: flex; align-items: stretch; background: #e9ebee; border-top: 1px solid var(--f-line); }
-#os-tabs .tab { padding: 0 14px; display: flex; align-items: center; background: #fff; border-right: 1px solid var(--f-line); font-weight: 600; }
+#os-tabs .tab { padding: 0 14px; display: flex; align-items: center; background: #e9ebee; border-right: 1px solid var(--f-line); font-weight: 400; cursor: pointer; }
+#os-tabs .tab.on { background: #fff; font-weight: 600; cursor: default; }
+#os-tabs .tab[hidden] { display: none; }
 
 /* ---- standalone: a plain browser page ---- */
 #standalone { flex: 1; min-height: 0; display: flex; flex-direction: column; background: #dfe3e8; }

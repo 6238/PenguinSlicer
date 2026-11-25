@@ -10,7 +10,7 @@
  *      largest of the rest are kept (the filters and figures Orca uses);
  *   4. our own rule for round parts: a face is dropped when a neighbouring hull face bends
  *      away from it by under 20 degrees and is at least half its size. Those are the thin
- *      facets of a round side (a pulley's rim), not faces a student would choose.
+ *      facets of a round side (a pulley's rim), not faces a user would choose.
  * Each face kept is drawn as a patch: its outline drawn in 10% toward its middle, its corners
  * rounded by corner cutting, raised 0.1 mm off the face. Worked out in the browser the first
  * time a part's faces are asked for, and timed. */

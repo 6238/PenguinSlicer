@@ -1,19 +1,29 @@
-/* PenguinSlicer mockup: printer, filaments, the team's profiles and the advanced mode
- * settings. Labels follow Orca Slicer's process tabs (Quality, Strength, Speed, Support,
- * Others); keys are Orca's setting keys. Values are plausible for a 0.6 mm nozzle H2S. */
+/* PenguinSlicer mockup: printer, filaments, the profiles of each filament (the
+ * configuration lists them per filament) and the advanced mode settings. Labels follow Orca
+ * Slicer's process sections (Quality, Strength, Speed, Support, Others); keys are Orca's
+ * setting keys. Values are plausible for a 0.6 mm nozzle H2S. Also the units every length
+ * on the Layout and Preview steps is shown in (MockUnits). */
 (function () {
   'use strict';
 
+  // spacing: the slice service's gap between instances, 12 mm with supports on and 5 mm
+  // with them off (the wizard sets it from the Settings step's Supports before each check)
   var PRINTER = {
     name: 'Shop H2S', model: 'Bambu Lab H2S 0.6 nozzle',
-    plate: { x: 340, y: 320, height: 340, margin: 3, spacing: 5 }   // printable_area, printable_height; plate.py
+    plate: { x: 340, y: 320, height: 340, margin: 3, spacing: 5, spacingOff: 5, spacingOn: 12 }   // printable_area, printable_height; plate.py
   };
 
+  // color: the colour the layer preview draws the parts in (the configuration's colour of
+  // the spool; invented here). profiles: this filament's profiles, by id, the first is the default.
   var FILAMENTS = [
-    { id: 'petg', name: 'Bambu PETG HF', type: 'PETG', density: 1.27, gPerM: 3.04 },
-    { id: 'petgcf', name: 'Bambu PETG-CF', type: 'PETG-CF', density: 1.25, gPerM: 2.99 },
-    { id: 'pla', name: 'Bambu PLA Basic', type: 'PLA', density: 1.26, gPerM: 3.01 },
-    { id: 'tpu', name: 'Generic TPU 95A', type: 'TPU', density: 1.22, gPerM: 2.92 }
+    { id: 'petg', name: 'Bambu PETG HF', type: 'PETG', density: 1.27, gPerM: 3.04, color: 0xe8792b,
+      profiles: ['structural', 'pulley', 'camera', 'draft', 'fine'] },
+    { id: 'petgcf', name: 'Bambu PETG-CF', type: 'PETG-CF', density: 1.25, gPerM: 2.99, color: 0x4a4f57,
+      profiles: ['cf-stiff', 'cf-light', 'cf-draft'] },
+    { id: 'pla', name: 'Bambu PLA Basic', type: 'PLA', density: 1.26, gPerM: 3.01, color: 0x2f9e5b,
+      profiles: ['pla-fit', 'pla-jig', 'pla-display'] },
+    { id: 'tpu', name: 'Generic TPU 95A', type: 'TPU', density: 1.22, gPerM: 2.92, color: 0xc2416a,
+      profiles: ['tpu-bumper', 'tpu-grip'] }
   ];
 
   function opt(list) { return list.map(function (v) { return Array.isArray(v) ? { value: v[0], text: v[1] } : { value: v, text: String(v) }; }); }
@@ -83,8 +93,8 @@
     { key: 'reduce_infill_retraction', group: 'Others', sub: 'Advanced', label: 'Reduce infill retraction', type: 'bool' },
     { key: 'gcode_label_objects', group: 'Others', sub: 'G-code output', label: 'Label objects', type: 'bool' }
   ];
-  // The rest, shown when advanced mode's switch says "All settings" (more: true). Still a
-  // sample: Orca's tabs hold about 105, 50, 42, 50 and 48 settings (research 2026-11-19, A).
+  // More settings (more: true, kept apart since version 6 shows them all). Still a sample:
+  // Orca's sections hold about 105, 50, 42, 50 and 48 settings (research 2026-11-19, A).
   function more(list) { list.forEach(function (s) { s.more = true; SETTINGS.push(s); }); }
   more([
     { key: 'initial_layer_line_width', group: 'Quality', sub: 'Line width', label: 'First layer', type: 'num', unit: 'mm', min: 0.4, max: 1.2, step: 0.01 },
@@ -182,10 +192,44 @@
     profile('pulley', 'Pulley', 'pulleys, gears and spacers', { layer_height: 0.18, initial_layer_print_height: 0.25, wall_loops: 4, sparse_infill_density: 60, sparse_infill_pattern: 'cubic', seam_position: 'back', outer_wall_speed: 80, xy_hole_compensation: 0.1 }),
     profile('camera', 'Camera mount', 'stiff, accurate mounts', { layer_height: 0.24, wall_loops: 4, sparse_infill_density: 30, sparse_infill_pattern: 'gyroid', precise_outer_wall: true }),
     profile('draft', 'Draft', 'fit checks and test prints', { layer_height: 0.42, initial_layer_print_height: 0.42, wall_loops: 2, sparse_infill_density: 15, top_shell_layers: 3, bottom_shell_layers: 2, outer_wall_speed: 200 }),
-    profile('fine', 'Fine', 'small or detailed parts', { layer_height: 0.18, initial_layer_print_height: 0.25, wall_loops: 3, sparse_infill_density: 20, outer_wall_speed: 80, ironing_type: 'top' })
+    profile('fine', 'Fine', 'small or detailed parts', { layer_height: 0.18, initial_layer_print_height: 0.25, wall_loops: 3, sparse_infill_density: 20, outer_wall_speed: 80, ironing_type: 'top' }),
+    profile('cf-stiff', 'Stiff bracket', 'stiff brackets and arms', { layer_height: 0.24, wall_loops: 4, sparse_infill_density: 35, sparse_infill_pattern: 'gyroid', outer_wall_speed: 120 }),
+    profile('cf-light', 'Light and stiff', 'large light panels', { layer_height: 0.28, wall_loops: 3, sparse_infill_density: 15, sparse_infill_pattern: 'gyroid' }),
+    profile('cf-draft', 'CF draft', 'quick fit checks in CF', { layer_height: 0.36, initial_layer_print_height: 0.36, wall_loops: 2, sparse_infill_density: 15 }),
+    profile('pla-fit', 'Fit check', 'trying a fit before the real print', { layer_height: 0.36, initial_layer_print_height: 0.36, wall_loops: 2, sparse_infill_density: 10, top_shell_layers: 3, bottom_shell_layers: 2 }),
+    profile('pla-jig', 'Jig', 'drilling and assembly jigs', { layer_height: 0.24, wall_loops: 3, sparse_infill_density: 20 }),
+    profile('pla-display', 'Display', 'parts people look at', { layer_height: 0.16, initial_layer_print_height: 0.24, wall_loops: 3, sparse_infill_density: 15, ironing_type: 'top', outer_wall_speed: 80 }),
+    profile('tpu-bumper', 'Bumper', 'bumpers and soft stops', { layer_height: 0.24, wall_loops: 3, sparse_infill_density: 20, sparse_infill_pattern: 'gyroid', outer_wall_speed: 40, inner_wall_speed: 40, sparse_infill_speed: 40, travel_speed: 200 }),
+    profile('tpu-grip', 'Grip pad', 'thin grippy pads', { layer_height: 0.2, wall_loops: 2, sparse_infill_density: 15, outer_wall_speed: 30, inner_wall_speed: 30, sparse_infill_speed: 30, travel_speed: 200 })
   ];
 
-  // The four quick overrides on the Setup step, each a shortcut to one advanced setting.
+  // Lengths on the Layout and Preview steps (sizes, spacing, heights) are shown in the
+  // layout units: inches when every part on the plate is in inches, otherwise millimetres.
+  // The plate's size and every slicer setting stay in millimetres. Inches are written the
+  // way a US machinist reads them: decimal inches to three places (2.000 × 2.000 × 0.188 in).
+  var MockUnits = {
+    unit: 'mm',
+    inch: function (mm) { return (mm / 25.4).toFixed(3); },
+    // one length; mmDigits is how many decimals millimetres get (0 by default)
+    len: function (mm, mmDigits, unit) {
+      unit = unit || MockUnits.unit;
+      return unit === 'in' ? MockUnits.inch(mm) + ' in' : (+mm.toFixed(mmDigits || 0)) + ' mm';
+    },
+    // a size, a × b × c, in the units given (a part's own units on the Parts step)
+    size: function (sz, unit) {
+      unit = unit || MockUnits.unit;
+      if (unit === 'in') return MockUnits.inch(sz.x) + ' × ' + MockUnits.inch(sz.y) + ' × ' + MockUnits.inch(sz.z) + ' in';
+      return sz.x + ' × ' + sz.y + ' × ' + sz.z + ' mm';
+    },
+    // a footprint, a × b
+    area: function (a, b, unit) {
+      unit = unit || MockUnits.unit;
+      return unit === 'in' ? MockUnits.inch(a) + ' × ' + MockUnits.inch(b) + ' in' : Math.round(a) + ' × ' + Math.round(b) + ' mm';
+    }
+  };
+  window.MockUnits = MockUnits;
+
+  // The four quick changes on the Settings step, each a shortcut to one advanced setting.
   var QUICK = {
     infill: { key: 'sparse_infill_density', label: 'Infill', choices: [15, 25, 40, 60, 100], text: function (v) { return v + ' %'; } },
     walls: { key: 'wall_loops', label: 'Walls', choices: [2, 3, 4, 6], text: function (v) { return String(v); } },
@@ -201,6 +245,13 @@
     return String(v) + (s.unit ? ' ' + s.unit : '');
   }
 
+  var profileById = {}; PROFILES.forEach(function (p) { profileById[p.id] = p; });
+  function profilesOf(filamentId) {
+    var f = FILAMENTS.filter(function (x) { return x.id === filamentId; })[0];
+    return f.profiles.map(function (id) { return profileById[id]; });
+  }
+
   window.MockSettings = { PRINTER: PRINTER, FILAMENTS: FILAMENTS, SETTINGS: SETTINGS, GROUPS: GROUPS, PROFILES: PROFILES,
+                          profileById: profileById, profilesOf: profilesOf,
                           QUICK: QUICK, byKey: byKey, formatValue: formatValue, ORCA_COUNT: ORCA_COUNT };
 })();

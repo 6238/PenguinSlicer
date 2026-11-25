@@ -17,6 +17,7 @@
     { id: 'support', label: 'Support', color: 0x3ccb5a },
     { id: 'brim', label: 'Brim', color: 0x1fae91 }
   ];
+  var SUPPORT_COLOR = 0xb4bac2;      // supports and their interface: a light grey that still shows on the light view
 
   /* --------------------------------------------------- one part in one orientation */
   function makeGroup(partKey, q, d) {
@@ -367,12 +368,15 @@
       ghosts.forEach(function (m) { scene.remove(m); }); ghosts = [];
       needs = true;
     }
-    function show(res, instances) {
+    // Version 6: two colours, not one per line type. Every line of the parts (walls, infill,
+    // surfaces, brim) in the filament's colour; supports, with their interface, light grey.
+    function show(res, instances, partColor) {
       clear(); result = res;
       TYPES.forEach(function (t) {
         var a = res.acc[t.id]; if (!a.pos.length) return;
         var g = new T.BufferGeometry(); g.setAttribute('position', new T.Float32BufferAttribute(a.pos, 3));
-        var l = new T.LineSegments(g, new T.LineBasicMaterial({ color: t.color }));
+        var col = partColor == null ? t.color : t.id === 'support' ? SUPPORT_COLOR : partColor;
+        var l = new T.LineSegments(g, new T.LineBasicMaterial({ color: col }));
         lines[t.id] = l; scene.add(l);
       });
       frameView(instances);
@@ -399,5 +403,5 @@
              reset: function (instances) { frameView(instances); } };
   }
 
-  window.Preview3D = { TYPES: TYPES, generate: generate, estimate: estimate, createViewer: createViewer };
+  window.Preview3D = { TYPES: TYPES, SUPPORT_COLOR: SUPPORT_COLOR, generate: generate, estimate: estimate, createViewer: createViewer };
 })();
