@@ -11,7 +11,7 @@ The owner's direction:
 
 - The Layout step's way of laying an instance on a face should copy what Orca does. The
   mockup shows it from version 5.
-- A round part, such as a pulley, is not a box. The student should be offered the faces
+- A round part, such as a pulley, is not a box. The user should be offered the faces
   that make sense (a pulley's end faces), not a patch on each thin facet round its rim.
   The mockup need not solve this fully; the real wizard must.
 - Orca Slicer is AGPL and PenguinSlicer is MIT: copy the method, never the code.

@@ -3,6 +3,8 @@
 3D printing for FRC shops: take parts, lay them out on a plate, slice them with Orca Slicer
 on a server, and send the result to the shop's printer.
 
+Where the work stands and what comes next is in [the plan](docs/plans/penguin-slicer-plan.md).
+
 The repository holds four components. Each is developed as its own project: it has its own
 folder, its own tests and its own guide, and it runs without the other three.
 

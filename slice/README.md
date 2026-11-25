@@ -6,8 +6,51 @@ and process profiles with setting overrides), runs Orca Slicer headless, and ret
 [sliced file](../contracts/sliced-file.md) (`.gcode.3mf`) with its summary. Slicing one
 plate configuration is one slice job. Every failure becomes an
 [error report](../contracts/error-report.md); a running slice job sends
-[progress reports](../contracts/progress-report.md). It knows nothing of Onshape, teams,
+[progress reports](../contracts/progress-report.md). It knows nothing of Onshape, users,
 web sessions or printers.
+
+## Where it stands
+
+The phases named here are those of [the plan](../docs/plans/penguin-slicer-plan.md).
+
+**Built and tested** (on `main` after pull request 12): the HTTP interface, the checks on
+every part before Orca runs, slicing with the pinned Orca 2.4.2, Orca's own stages and
+percentage as progress, cancellation, abandonment and cleanup that leave no Orca and no
+files, the memory watchdog at a 2,000 MB memory ceiling, Orca's reasons read from its
+`result.json` and its debug log, one log line per slice job transition, and
+`make upgrade-orca` with the upstream check. The fast suite covers every branch of the
+package. The real-Orca suite slices 100 spacers in a 10 by 10 grid and the eight real
+parts of the Popcorn Penguins' robot, alone and on mixed plates. The other reference
+plates (a plate of several different functional parts, a full plate of small instances,
+one, two and three large organic parts, and those with supports on) were measured with
+`scripts/measure_plate.py` (see [Plate limits](#plate-limits)).
+
+**Not built or not known:**
+
+- Orca 2.5.x cannot be taken yet (see
+  [Taking a new upstream version](#taking-a-new-upstream-version)).
+- A part whose first layer is empty gets only the general sentence, since the pinned Orca
+  writes its reason to no file; only a patch to Orca could surface it, and there is none.
+- Parts that intersect themselves are not detected before slicing; the expected time is
+  only within about a factor of two; the peak in the log can be under Orca's true peak for
+  an Orca that fails between two of the watchdog's samples.
+- Not measured: the disk held by finished slice jobs, which keep their uploads and sliced
+  file for an hour; CPU time; how many slices a host can run at once. Every measurement is
+  from aarch64 Linux machines: almost all from one with 4 CPUs, and nine plates of the
+  memory model's fit from another.
+
+**What the phases still need from it.** Phase 2 (the wizard outside Onshape) needs, each
+open until that phase's design spec settles it: settings beyond the four overrides, for advanced
+mode; the profiles the wizard offers, per filament; where parts in inches are scaled to
+millimetres; the sliced file in a form the Preview step can draw; a way for a page that
+has lost its state to find its slice job; and a way for the wizard's page to reach the HTTP
+interface (it sends no cross-origin headers). Phase 3 (AWS) needs a host chosen and
+measured: 3.5 GB per slice service process (see "Sizing the host" under
+[Plate limits](#plate-limits)), one Orca at a time per slice service process, a client
+kept on the slice service process that accepted its slice job, and the memory and time
+models refitted on that host. Some sentences of its error reports and some code comments
+still name the user with the old words; changing them is a change of its own, with its
+tests.
 
 ## Use
 
@@ -183,7 +226,7 @@ recursively" (500 MB, reported as a crash: the words do not say memory).
 
 **Orca's debug log.** Every warning Orca reported while slicing is in its debug log; its
 `result.json` holds at most one of them, and on a plate of several warned instances which
-one changes from run to run (the team's mixed plate warned of four blocks and the pulley,
+one changes from run to run (the Popcorn Penguins' mixed plate warned of four blocks and the pulley,
 and `result.json` named the Elevator Block Top in one slice and the Elevator Block Carriage
 in the next). The service reads the log in one place, `slicer._log_lines` (each line read as
 at most 4 KB, at most 64 MB of the log), for two things. `slicer.orca_log_warnings` takes
@@ -294,7 +337,7 @@ bytes of one part, and each part's size against the plate and the printer. Memor
 nothing before slicing, and neither do the triangles of the whole plate: the memory
 watchdog, not the instance count, is what protects the machine.
 
-**The instances.** A team may print as many as 100 small spacers in a 10 by 10 grid. The
+**The instances.** A user may print as many as 100 small spacers in a 10 by 10 grid. The
 reference plate is that: 100 instances of one hex shaft spacer (for a 3/8 inch hex shaft,
 1/8 inch thick, round outside and 5/8 inch across; 216 triangles, `helpers.spacer_stl`),
 22 mm apart, measured with the pinned Orca and the default set, one slice at a time, on an
@@ -307,10 +350,11 @@ these plates the kernel's `ru_maxrss` of Orca read the same):
 | 150 (13 x 12) | 2 | 643 to 649 | 9.4 | 2.72 | 13 |
 | 196 (14 x 14) | 2 | 815 to 829 | 12.5 to 12.6 | 3.55 | 13 |
 
-`MAX_INSTANCES` is 150: it was set when the ceiling was 900 MB, which the plate a team
+`MAX_INSTANCES` is 150: it was set when the ceiling was 900 MB, which the plate a user
 needs (100) peaked near half of, 150 left more than a quarter of free, and 196 came within
-8 % of. Under the 2,000 MB ceiling (see "The team's real parts" below) 150 spacers use a
-third of it. Instances of larger parts reach the ceiling sooner: the team's pulley (19 mm,
+8 % of. Under the 2,000 MB ceiling (see "The Popcorn Penguins' real parts" below) 150
+spacers use a third of it. Instances of larger parts reach the ceiling sooner: the Popcorn
+Penguins' pulley (19 mm,
 4,608 triangles) costs about 20 MB an instance, so 50 pulleys peak at 1,074 MB and 150
 passed 2,500 MB and were stopped there; the watchdog stops such a slice with
 `slice.out_of_memory` and its remedy asks for fewer instances. The instance limit is still
@@ -330,17 +374,18 @@ placement check compares every pair (11,175 for 150 instances on one spot, a few
 hundredths of a second) and its refusal's detail lists at most 20 of the problems; the
 time limit (`PLATE_SLICE_TIMEOUT_S`, 240 s) is twenty times what 150 spacers take.
 
-**The team's real parts.** These are the project's first measurements of real parts: the
-eight parts of the team's robot in `tests/fixtures/frc-parts/` (printed and in use; 2,908
-to 39,054 triangles, all watertight, one shell each), on the plates of `tests/frc_parts.py`,
-each instance in the orientation the team prints it in. Measured with the pinned Orca 2.4.2
+**The Popcorn Penguins' real parts.** These are the project's first measurements of real
+parts: the eight parts of the robot of the Popcorn Penguins (FRC Team 6238) in
+`tests/fixtures/frc-parts/` (printed and in use; 2,908 to 39,054 triangles, all
+watertight, one shell each), on the plates of `tests/frc_parts.py`, each instance in the
+orientation the Popcorn Penguins print it in. Measured with the pinned Orca 2.4.2
 and the default set (H2S, 0.6 mm nozzle, PETG), supports off unless the table says on, one
 slice at a time through `service.slice_plate_configuration`, on an aarch64 Linux machine
 with 4 CPUs (peak: the watchdog's reading of Orca's processes, in MB of 1,024 kB as the
 kernel counts and as the ceiling is set; time: Orca's own run; sliced file in millions of
 bytes). The parts alone: three slices each on Fri 2026-11-20 between 17:12 and 18:01 PT at a
 load under 1. The other plates: three slices each (four for the plates with supports on and
-for the mentor's target) on Fri 2026-11-20 between 18:36 and 18:47 PT at a load of 1 to 3:
+for the Popcorn Penguins' target) on Fri 2026-11-20 between 18:36 and 18:47 PT at a load of 1 to 3:
 
 | Plate | Instances | Supports | Peak (MB) | Orca's time (s) | Sliced file (MB) | Print time, filament |
 |---|---|---|---|---|---|---|
@@ -354,14 +399,14 @@ for the mentor's target) on Fri 2026-11-20 between 18:36 and 18:47 PT at a load 
 | Pulley v3 alone | 1 | off | 116 to 117 | 0.5 to 0.6 | 0.11 | 18 min, 2.2 g |
 | mixed: one instance of each part | 8 | off | 504 to 513 | 7.4 to 7.7 | 3.70 | 5 h 21 min, 202 g |
 | mixed | 8 | on | 753 to 761 | 9.4 to 12.8 | 4.69 | 6 h 25 min, 216 g |
-| team: 2 blocks, 4 spacers, 3 outer clamps, 3 clamp plates, 4 pulleys | 16 | off | 503 to 510 | 11.0 to 12.3 | 2.91 | 4 h 11 min, 161 g |
-| team | 16 | on | 609 to 613 | 12.0 to 15.2 | 3.34 | 4 h 38 min, 166 g |
+| `team` (its name in `tests/frc_parts.py`): 2 blocks, 4 spacers, 3 outer clamps, 3 clamp plates, 4 pulleys | 16 | off | 503 to 510 | 11.0 to 12.3 | 2.91 | 4 h 11 min, 161 g |
+| `team` | 16 | on | 609 to 613 | 12.0 to 15.2 | 3.34 | 4 h 38 min, 166 g |
 | four-each-a: 2 of each part | 16 | off | 869 to 911 | 13.4 to 17.4 | 6.85 | 10 h 8 min, 403 g |
 | four-each-a | 16 | on | 1,391 to 1,415 | 20.2 to 21.7 | 8.77 | 12 h 18 min, 431 g |
 | four-each-b: four-each-a mirrored | 16 | off | 863 to 915 | 15.4 to 17.7 | 6.87 | 10 h 8 min, 403 g |
 | four-each-b | 16 | on | 1,368 to 1,409 | 20.0 to 22.5 | 8.82 | 12 h 18 min, 431 g |
 
-four-each-a and four-each-b are the mechanical mentor's target, 4 instances of every part
+four-each-a and four-each-b are the Popcorn Penguins' target, 4 instances of every part
 (32) on two H2S plates, every instance in its printing orientation and none turned; both
 plates slice with supports off and with supports on. Each plate holds 2 instances of every
 part, so the large blocks, which cost the memory, are shared out. On four-each-a two
@@ -441,7 +486,8 @@ with supports on Orca no longer warns. The pulley warns "has floating regions": 
 bore (radius 6.35 mm) a hub ring (radius 3.45 to 4.76 mm) starts 4.76 mm above the plate
 with nothing under it, and joins the rest of the pulley only 0.8 mm higher, through a 45°
 chamfer, so its first layers start in mid-air; the pulley is the same from either flange,
-and on its rim it would need supports all round. The team printed all of them as they are.
+and on its rim it would need supports all round. The Popcorn Penguins printed all of them
+as they are.
 
 **The same plate, sliced again.** Orca's G-code is not byte-identical between slices of
 the same plate, on any number of CPUs. What varies:
@@ -559,20 +605,20 @@ it is stopped, and a plate that passes it in its last moments is delivered above
 Measured with the pinned Orca on Fri 2026-11-20 between 18:36 and 18:47 PT, in MB of
 1,024 kB (the ceiling's 2,000 MB is 2,048,000 kB):
 
-- At the default ceiling the twelve Bottom Inners with supports on (see "The team's real
-  parts") were stopped at readings of 2,144,504 and 2,226,800 kB, 94 and 175 MB over the
+- At the default ceiling the twelve Bottom Inners with supports on (see "The Popcorn
+  Penguins' real parts") were stopped at readings of 2,144,504 and 2,226,800 kB, 94 and 175 MB over the
   ceiling (a review's slice of a like plate stopped at 2,140,316 kB).
 - The largest rise of Orca's memory between two consecutive readings, over every plate of
-  "The team's real parts" in both supports settings, was 514,268 kB (502 MB: 1,347 to
-  1,861 MB in 0.26 s, on that plate); the mentor's target plates rose by up to 308 MB.
+  "The Popcorn Penguins' real parts" in both supports settings, was 514,268 kB (502 MB:
+  1,347 to 1,861 MB in 0.26 s, on that plate); the target plates rose by up to 308 MB.
 - So the worst measured is the ceiling plus one such rise: Orca at about 2,500 MB, beside
   the service's 400 MB, 2,900 MB.
 
 A host gives the slice service 3.5 GB (3,584 MB) with the default ceiling, a fifth above
 that worst case for what was not measured, and more for anything else on it (it was
 1.3 GB with the 900 MB ceiling before Fri 2026-11-20). The ceiling stays at 2,000 MB:
-every plate a team was measured to print, the mentor's target with supports on included
-(1,415 MB at most), peaks well under it. The plates over it (twelve Bottom Inners with
+every measured plate of the Popcorn Penguins' parts that they print, their target with
+supports on included (1,415 MB at most), peaks well under it. The plates over it (twelve Bottom Inners with
 supports, about 95 pulleys or more) are stopped with a remedy of a second plate; raising
 the ceiling for them would let Orca's worst case pass the 2.5 GB the 5 GB test machine
 allows one Orca.
@@ -614,7 +660,7 @@ or delivered with the note).
    is so). With the real Orca the moment between writing the file and exiting is about
    30 ms; the real-Orca suite holds Orca there and asks a timeout and a watchdog stop.
 2. A stop the slice service sent and that ended Orca: `slice.timeout`,
-   `slice.out_of_memory`, or `cancelled`. A cancel (the student's, an abandoned slice
+   `slice.out_of_memory`, or `cancelled`. A cancel (the user's, an abandoned slice
    job's, a shutdown's) discards even a complete file. A stop is sent only while Orca is
    still running (checked with `waitid`, without reaping Orca, before the SIGTERM, so a
    stop asked after Orca ended by itself is never sent or reported); of two, the first
@@ -647,7 +693,8 @@ their measured peak. Refitting it belongs with the choice of hosting, on that ho
 measurements. It was fitted as the upper envelope of these measurements
 (`scripts/measure_plate.py --fit` reprints it), peak resident memory of Orca from `wait4`,
 one slice at a time on an aarch64 Linux machine with 4 CPUs, pinned Orca 2.4.2, the
-default set:
+default set (the figures of these eight plates are the builder's; no review measured them
+again):
 
 | Plate | Instances | Volume (cm3) | Supports | Peak (MB) | Estimate (MB) | Seconds | Sliced file (MB) |
 |---|---|---|---|---|---|---|---|
@@ -724,8 +771,8 @@ started is reported
 `cancelled` only after its Orca and every child are gone, or `failed` when it had already
 failed (a watchdog stop or a timeout asked first is the one reported, and so is a crash or
 someone else's kill that ended Orca before the cancel's SIGTERM could). A cancel the
-student asked for before the final report always discards the sliced file, even one Orca
-finished at the same instant (the student asked not to have it; the `cancelled` log line
+user asked for before the final report always discards the sliced file, even one Orca
+finished at the same instant (the user asked not to have it; the `cancelled` log line
 names it in `file_discarded`); cancelling a finished slice job changes nothing and answers
 `finished`; an unknown slice job answers `unknown`; cancelling twice answers `cancelling`
 twice and is logged once.
@@ -733,7 +780,7 @@ twice and is logged once.
 **Cleanup.** A slice job nobody follows is cancelled `ABANDON_GRACE_S` (120 s) after its
 last subscriber left, or after it was submitted if none ever came; a subscriber that
 returns in time keeps it. When every subscriber has gone and the grace time has passed,
-nobody is waiting for the file, and the slice job ends `cancelled` like a student's
+nobody is waiting for the file, and the slice job ends `cancelled` like a user's
 cancel: a slice that finishes at that instant is discarded too, and a subscriber who comes
 back later finds `cancelled`. Its `cancelling` and `cancelled` log lines carry
 `"cancel_reason": "abandoned"`, and the `cancelled` line `file_discarded` when a finished
@@ -898,7 +945,8 @@ so going back is quick). `git diff -- slice/` then shows nothing but what you me
 keep.
 
 **What happened when the command was run to other versions and back** (on an aarch64
-Linux machine, with 2.4.2 pinned, Thu 2026-11-19):
+Linux machine, with 2.4.2 pinned, Thu 2026-11-19; the commands were run by the builders
+only, and the reviewers read them without running them):
 
 - **Up to 2.5.1** (released Sat 2026-11-14), `make -C slice upgrade-orca VERSION=2.5.1`:
   GitHub's digests read, the release downloaded, verified and installed, the pin moved.
@@ -944,7 +992,7 @@ check pins the fake's progress lines and its debug log line to the real ones.
 `tests/fixtures/make_bad_stls.py` (the suite checks the two agree); Hypothesis throws
 random and damaged files at the reader, derandomized so every run sees the same examples.
 `helpers.spacer_stl` and `helpers.spacer_grid` write the reference plate of spacers.
-`tests/fixtures/frc-parts/` holds eight real, printed parts of the team's robot (MIT, see
+`tests/fixtures/frc-parts/` holds eight real, printed parts of the Popcorn Penguins' robot (MIT, see
 [its README](tests/fixtures/frc-parts/README.md)) and `tests/frc_parts.py` their measured
 figures and plates: the fast suite reads and checks all eight (`tests/test_frc_parts.py`;
 reading the 7 MB took 0.17 to 0.19 s in three runs on Fri 2026-11-20, once per worker), and
