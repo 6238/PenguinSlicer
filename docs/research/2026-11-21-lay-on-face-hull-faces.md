@@ -167,6 +167,6 @@ the browser compiling the code.
 | Shooter Hood Rib | 548 | 192 | 1.5 | 3.1 |
 | 1/2in Hex Shaft | 12 | 20 | 0.2 | 1.0 |
 
-The hull's cost grows with corners times hull triangles; an exported team part with tens
+The hull's cost grows with corners times hull triangles; an exported real part with tens
 of thousands of corners would need a faster hull (one that keeps, for each triangle, the
 corners outside it) or a Web Worker.

@@ -11,7 +11,7 @@ instance.
 | Term | Meaning |
 |---|---|
 | **resting position** | One way an instance can lie on the plate: one face of the part's 3D convex hull down, stable (its centre of mass above that face). |
-| **auto-orient** | Choosing an instance's resting position by a score, with no student input. |
+| **auto-orient** | Choosing an instance's resting position by a score, with no user input. |
 | **Arrange** | Placing every instance on the plate automatically (the mockup's existing button). |
 | **rotation handle** | The mockup's existing round handle that turns the selection about the vertical axis. |
 | **resting-position strip** | A row of small pictures under the 3D view, one per resting position of the selected part. |
@@ -26,7 +26,7 @@ instance.
   message; its message list has nothing of the kind. Build advanced mode as a full-height
   view inside the panel, organised like Orca's own settings column (search first, tabs,
   subgroup headings, a common/all switch, per-setting revert), and let it use extra width
-  when the student drags the panel wider, which PenguinCAM's own help says is possible.
+  when the user drags the panel wider, which PenguinCAM's own help says is possible.
 - **B.** Port the idea, not the code (Orca and Tweaker-3 are AGPL/GPL, PenguinCAM is MIT):
   candidates from the faces of the part's 3D convex hull, score by bed contact, overhang
   area and height, keep stable ones. About 110 ms for 100,000 triangles in node; it lays the
@@ -68,14 +68,14 @@ has exactly these messages an application can send: `applicationInit`, `showMess
   ([restart notes](https://github.com/chondl/PenguinCAM-notes/blob/main/handoffs/2026-10-11-print-path-restart-notes.md), the row "Panel
   width 320 px"), and the test bed lets `?panel=` try 240 to 800 px
   (`testbed/host/local.js:236-238`).
-- **The student can probably drag the panel wider.** PenguinCAM's own CNC wizard tells users
+- **The user can probably drag the panel wider.** PenguinCAM's own CNC wizard tells users
   "↔ Widen the panel for easier layout" (`static/wizard.js:1029`), and its user guide says
   "Widen the panel for more room to work" (`static/docs/usage.html:210`). I found no Onshape
   page that states it or gives the limits.
 
 ### An application element tab in the same document
 
-Onshape allows one element tab extension per application; a student adds it from
+Onshape allows one element tab extension per application; a user adds it from
 Insert new tab > Applications, and it becomes a tab of the CAD document with its own
 element id ([Element Tab](https://onshape-public.github.io/docs/app-dev/messages/element-tab/)).
 The panel could switch to it with `openAnotherElementInCurrentWorkspace`, given that id.
@@ -83,10 +83,10 @@ Both pages would be frames of the same PenguinCAM origin under the same Onshape 
 they could share state through the server or a `BroadcastChannel` (storage is partitioned
 by top-level site, which is the same for both).
 
-Not recommended: it adds a tab to the team's CAD document for every document that prints,
-which every team member then sees in the document and its versions; the student has to
+Not recommended: it adds a tab to the CAD document for every document that prints, which
+everyone who works in the document then sees in it and its versions; the user has to
 create it once per document; and switching to it hides the Part Studio and the panel, so the
-student loses sight of the plate while changing settings. Whether the panel's page survives
+user loses sight of the plate while changing settings. Whether the panel's page survives
 the switch is not documented.
 
 ### The browser's full-screen request (untested, cheap to test)
@@ -124,7 +124,7 @@ For the mockup, at panel width:
 - An undo arrow on each changed setting, beside the existing "Changed only" filter.
 - When the panel is wider than about 480 px: tabs move to a vertical rail on the left and
   labels sit beside their values, one setting per row, as in Orca's column. Use a
-  `ResizeObserver` on the panel, not a media query, so it follows a panel the student drags.
+  `ResizeObserver` on the panel, not a media query, so it follows a panel the user drags.
 
 **How the mockup imitates it honestly:** keep advanced mode inside the panel, and add a
 drag handle on the panel's left edge in the mock Onshape page (as the CNC help implies
@@ -182,7 +182,7 @@ AGPL code into MIT PenguinCAM; write our own small score instead.
 ### Where the simple score goes wrong
 
 - **Parts that need supports whichever way they lie** (a bracket with a boss on each side):
-  the score still picks the least overhang, but the student should be told supports will be
+  the score still picks the least overhang, but the user should be told supports will be
   needed; show "needs supports" on that resting position.
 - **Round parts** (pulleys, spacers): many hull faces of a cylinder are thin strips with
   tiny contact; the stability and 25 mm² rules drop them, leaving the two flat ends, which
@@ -190,8 +190,8 @@ AGPL code into MIT PenguinCAM; write our own small score instead.
 - **Strength:** the score knows nothing of load. Layer lines run parallel to the plate, so a
   thin rib standing on its end breaks along a layer; lying flat is both the best score and
   the strong way for the hood rib. A part whose load runs vertically as modelled (a tall
-  standoff) would be weakened by the default; only the student knows. This is why the
-  student must be able to pick another resting position easily (section D).
+  standoff) would be weakened by the default; only the user knows. This is why the
+  user must be able to pick another resting position easily (section D).
 - **Appearance faces:** Orca weights overhang on outer faces; we have no such marking.
 - **Lying flat can make an instance too wide for the plate:** the rib's chord is 353 mm and the
   plate is 340 x 320 mm, so the flat rib fits only turned diagonally. Arrange must try
@@ -210,7 +210,7 @@ first-fit selection (`Arrange.cpp:8-9`, `366-367`).
   implementation is for convex shapes only (`Arrange.cpp:43`).
 - **Order:** priority, bed temperature, extruder, then largest area first
   (`Arrange.cpp:806-820`).
-- **Rotations:** off by default (`Arrange.hpp:121`). When the student ticks "Auto rotate for
+- **Rotations:** off by default (`Arrange.hpp:121`). When the user ticks "Auto rotate for
   arrangement" (`GLCanvas3D.cpp:5939`), each item starts at its smallest-bounding-rectangle
   angle, is turned to fit if too big for the bed (`Arrange.cpp:997-1007`), and the placer
   tries 0, 45, 90 and 135 degrees (`Arrange.cpp:296-297`).
@@ -291,7 +291,7 @@ button and a "Select face to align to the build plate" toggle that is a mode
 Bambu Studio share Orca's lay-on-face tool. So no slicer studied lays a part on a face
 without a mode.
 
-**Onshape**, which the students use every day: right drag rotates the view, wheel zooms,
+**Onshape**, which the users use every day: right drag rotates the view, wheel zooms,
 middle drag or Ctrl + right drag pans, F or a double click of the wheel zooms to fit, and
 the view cube gives standard views
 ([Onshape help: view navigation](https://cad.onshape.com/help/Content/View/view_navigation_and_the_view_cube.htm)).
@@ -320,7 +320,7 @@ keyboard shortcuts.
   (`GCodeViewer.cpp:2798-2808`). C shows the G-code text window.
 
 **Worth taking for "pick a profile and print":** time per line type in the legend, and a
-click on a legend row to hide it (the student sees at once that supports take a third of
+click on a legend row to hide it (the user sees at once that supports take a third of
 the time, or hides supports to see the part). **Not worth it:** the two-thumb range (one
 thumb is enough), the horizontal slider, the other colour schemes, the G-code window, and
 slider ticks (pauses for inserts would need G-code editing the panel does not offer).
@@ -333,11 +333,11 @@ sorted by the auto-orient score and capped at 6.
 
 | Option | How it works (mouse / touch) | At 320 px | Many small faces, curves | With moving and orbiting | Build cost |
 |---|---|---|---|---|---|
-| **1. Tip handle** | A second small handle beside the rotation handle; a click steps to the next resting position, Shift-click the previous. Touch: tap. | One more 24 px target; fine. | Blind: the student cannot see the next position before it happens; 6 steps to cycle. | Its own hit target, as the rotation handle; no conflict. | Low |
+| **1. Tip handle** | A second small handle beside the rotation handle; a click steps to the next resting position, Shift-click the previous. Touch: tap. | One more 24 px target; fine. | Blind: the user cannot see the next position before it happens; 6 steps to cycle. | Its own hit target, as the rotation handle; no conflict. | Low |
 | **2. Box tumbler** | A box around the selected instance; a click on a side puts that side down; dragging a corner rolls it 90 degrees. Touch: tap a side. Read by eye: the side under the pointer is shaded and its outline dropped onto the plate, no axis letters. | Box lines cross neighbours and the part; cluttered for small instances. | Only six axis-aligned positions: misses slanted faces (a gusset's long edge), works for the rib. This is the old "Lay flat in six orientations". | A click inside the box but on the part is ambiguous: move or tumble. Needs a drag threshold and box sides only at the edges. | Medium |
 | **3. Face markers** | On the selected instance only, a dot on each candidate face's centre; hover shows the face; one click lays the instance there. Touch: tap a dot (28 px hit area). | Dots crowd on an instance 40 px across; faces on the far side need an orbit first. | Six dots at most; curved parts get few or none, which is honest. | Dots are their own targets; a drag starting on a dot still moves the instance after 4 px. | Low to medium (the mockup already finds faces and draws patches) |
 | **4. Resting-position strip** | Under the view, while one part's instances are selected: up to 6 pictures of the part in each resting position, the auto-orient choice first and marked "Best", the current one outlined, a line under each ("8 mm tall", "needs supports"). Click or tap applies to every selected instance of that part. | Five 52 px pictures fit one row; legible whatever the zoom. | Same short list; each picture shows the whole part, so no aiming at faces. | Outside the 3D view: no conflict at all. | Medium (an off-screen three.js render per position, cached per part) |
-| **5. Free rotation ball** | Drag a ring or ball on the selected instance to turn it freely; on release it snaps to the nearest resting position. Touch: one-finger drag on the ring. | Too small to control well; a 3D drag in a 320 px view is fiddly. | Snap handles curves, but the student steers blind between positions. | Competes with orbiting; needs exact hit testing on the ring. | High |
+| **5. Free rotation ball** | Drag a ring or ball on the selected instance to turn it freely; on release it snaps to the nearest resting position. Touch: one-finger drag on the ring. | Too small to control well; a 3D drag in a 320 px view is fiddly. | Snap handles curves, but the user steers blind between positions. | Competes with orbiting; needs exact hit testing on the ring. | High |
 
 Also seen: a right-click (long-press) menu on a face, "Lay on this face" (no mode, but
 hidden, and long-press fights the drag); the current double-click on a flat face (no mode,
@@ -348,7 +348,7 @@ a shortcut and the Lay on face tool removed. It needs no aiming in a small view,
 same with a mouse, a trackpad and a finger, shows the auto-orient result and its
 alternatives as one thing, carries the "needs supports" warning, and cannot collide with
 moving or orbiting. **If the owner wants it on the part itself, option 3** is the next best:
-it keeps the action where the student looks, at the cost of crowding on small instances.
+it keeps the action where the user looks, at the cost of crowding on small instances.
 Option 1 is the cheapest fallback.
 
 ### Three complete schemes
@@ -371,7 +371,7 @@ rules (decision 42). The schemes differ in how buttons and gestures are shared.
 | Lay on a face | Strip under the view; double-click a flat face | same | Tap in the strip | Double-click needs no press-hold, so it does not fight a drag. |
 | Orbit | Right drag anywhere; left drag on empty plate | Drag on empty plate | One-finger drag on empty | Right drag is Onshape's; left drag on empty is for trackpads and touch. |
 | Pan | Middle drag, Ctrl + right drag, or Shift + left drag on empty | Shift + drag on empty | Two-finger drag | Ctrl + right is Onshape's. |
-| Zoom | Wheel, toward the pointer | Two-finger scroll or pinch | Pinch | The wheel over the view does not scroll the panel; the student scrolls the panel beside the view. |
+| Zoom | Wheel, toward the pointer | Two-finger scroll or pinch | Pinch | The wheel over the view does not scroll the panel; the user scrolls the panel beside the view. |
 | Fit view | "Zoom to instances" and "Whole plate" buttons; F | same | Buttons | F is Onshape's zoom to fit. |
 | Top-down view | A "Top" button beside the fit buttons; Ctrl+1 as in Orca | same | Button | — |
 | Duplicate, delete | Buttons by the name; Del; Ctrl+D duplicates | same | Buttons | Orca's Ctrl+D deletes all; not imitated. |
@@ -383,7 +383,7 @@ rules (decision 42). The schemes differ in how buttons and gestures are shared.
 **Scheme S (slicer's mouse).** As the mockup works today: left drag on empty orbits, right
 drag or Shift drag pans, wheel zooms, Ctrl- or Shift-click adds, with the strip in place of
 the Lay on face tool. Cheapest (a few lines change), but right drag pans where Onshape
-orbits, so a student's hand does the wrong thing half the time.
+orbits, so a user's hand does the wrong thing half the time.
 
 **Scheme T (top-down first).** The view opens looking straight down, orthographic, like the
 CNC wizard: left drag on empty pans, wheel or pinch zooms, and a "3D" button (or right
@@ -402,7 +402,7 @@ the "3D" button is close to a view mode.
 | Zoom | Wheel, pinch | Wheel, pinch |
 | Select, add, deselect, fit, undo, arrange, duplicate, delete | As Scheme O | As Scheme O |
 
-**What a student must be told (Scheme O):** one line under the view, "Drag an instance to move
+**What a user must be told (Scheme O):** one line under the view, "Drag an instance to move
 it, drag the round handle to turn it, pick how it lies below. Right-drag to look around."
 **What they discover unaided:** selecting, dragging, the wheel, the strip (it is visible),
 the handle (it appears on selection), and orbiting and panning, which match Onshape.
@@ -425,7 +425,7 @@ pan.
 
 ## Not verified
 
-- That the student can drag Onshape's right panel wider, and its minimum and maximum
+- That the user can drag Onshape's right panel wider, and its minimum and maximum
   widths: inferred from PenguinCAM's own help text, not from Onshape.
 - Whether Onshape's panel frame allows full screen (`document.fullscreenEnabled`).
 - Whether an element tab's page and the right panel both survive switching between them.
@@ -438,6 +438,6 @@ pan.
   Chrome inside Onshape; the 3D convex hull time for 100,000 triangles was not measured.
 - That three.js r128's `examples/js/math/ConvexHull.js` is the non-module build the mockup
   can load as is (from memory of the three.js tree, not checked).
-- The pile arrange's results on real team parts; only the mockup's procedural parts were
+- The pile arrange's results on real parts; only the mockup's procedural parts were
   tried.
 - How well the simple score agrees with Orca's on real parts; no side-by-side run was made.
