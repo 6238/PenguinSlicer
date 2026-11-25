@@ -135,6 +135,12 @@
     S.notices.push({ kind: kind, what: what, todo: todo, key: key || ('n' + Math.random()) });
     renderNotices();
   }
+  // A notification that stops being true goes away when its state ends.
+  function dropNotice(key) {
+    var n = S.notices.length;
+    S.notices = S.notices.filter(function (m) { return m.key !== key; });
+    if (S.notices.length !== n) renderNotices();
+  }
   function renderNotices() {
     var box = $('#notices'); box.innerHTML = '';
     S.notices.forEach(function (n) {
@@ -238,6 +244,7 @@
   // or finished. A changed plate starts a new slice (see enterPreview).
   function gotoStep(name) {
     if (S.step !== name) { S.notices = []; S.lastNoteOn = null; }    // a notification belongs to the step it was given on; so does the last-print note
+    if (S.step === 'layout' && name !== 'layout') layHint = null;   // so does the Layout step's message ("Arranged 5 instances.")
     S.step = name;
     closePrinterPop(); closeChangesPop(); clearWhy(); closeLayoutHelp();
     $all('#wizard .step').forEach(function (s) { s.hidden = s.getAttribute('data-step') !== name; });
@@ -1272,7 +1279,7 @@
   // armed layout errors: applied now if on the Layout step, else when it is next entered
   function applyLayoutArms() {
     if (S.step !== 'layout' || !S.instances.length) return;
-    var c0 = S.instances[0], d0, note = null;
+    var c0 = S.instances[0], d0, note = null, refitAfterArm = false;
     if (Mock.take('too_close')) {
       if (S.instances.length < 2) { var p = partById(c0.partId), n = newInstance(p); n.q = c0.q.clone(); S.instances.push(n); p.qty++; }
       // put one instance 2 mm from another: the pair and the side that break no other rule.
@@ -1297,9 +1304,13 @@
             for (var g = 2; g >= -40; g -= 1) {
               a.x = keepA[0]; a.y = keepA[1]; b.x = a.x + dir[0] * (hx + g); b.y = a.y + dir[1] * (hy + g);
               var sh = intoPlate(a, b); a.x += sh[0]; a.y += sh[1]; b.x += sh[0]; b.y += sh[1];
-              var ps = PL.check(S.instances, PLATE, instanceLabel), wanted = ps.filter(function (p) { return p.rule === 'too_close'; }).length;
+              // wanted: this pair too close but not touching, so the option shows "… mm apart",
+              // never "overlap"; an overlap anywhere else weighs heavily against the spot
+              var ps = PL.check(S.instances, PLATE, instanceLabel), wanted = ps.filter(function (p) {
+                return p.rule === 'too_close' && p.gap > 0 && p.instances.indexOf(a.id) >= 0 && p.instances.indexOf(b.id) >= 0; }).length;
               if (!wanted) continue;
-              var score = ps.length - wanted;
+              var overlaps = ps.filter(function (p) { return p.rule === 'too_close' && p.gap === 0; }).length;
+              var score = ps.length - wanted + 100 * overlaps;
               if (!pick || score < pick.score) pick = { score: score, a: a, b: b, sa: [a.x, a.y], sb: [b.x, b.y] };
               break;
             }
@@ -1308,6 +1319,7 @@
         });
       });
       if (pick) { pick.a.x = pick.sa[0]; pick.a.y = pick.sa[1]; pick.b.x = pick.sb[0]; pick.b.y = pick.sb[1]; }
+      refitAfterArm = true;                 // the pair may have moved out of the picture
     }
     if (Mock.take('off_plate')) {
       var c = S.instances[S.instances.length - 1], d = PL.derive(c);
@@ -1327,7 +1339,7 @@
       layHint = null;
     }
     recheck();
-    if (editor) { editor.sync(); renderLayoutSide(); updateNext(); updateSummary(); }
+    if (editor) { editor.sync(); if (refitAfterArm) editor.resetView(); renderLayoutSide(); updateNext(); updateSummary(); }
   }
 
   /* ================================================================== Preview step */
@@ -1858,6 +1870,8 @@
   function renderSend() {
     var r = S.result, why = sendBlocked(), j = PRN.job, mineLive = j && j.mine && isLive(j), mineEnded = j && j.mine && !isLive(j);
     sendKey = [why, j && j.phase, j && j.mine, !!r, printerStatus().key].join('|');
+    // "Back where you were … its progress is below" holds only while this user's print runs
+    if (!mineLive) dropNotice('resumed-send');
     var live = $('#send-live'), sum = $('#send-summary'), pr = $('#send-printer');
     // "Downloaded the sliced file of …" belongs to the slice it was said of
     var toast = $('#send-toast'); if (!toast.hidden && toast.getAttribute('data-sig') !== S.resultSig) toast.hidden = true;
@@ -1923,6 +1937,7 @@
   function sendToPrinter() {
     if (!sliceReady() || sendBlocked()) return;
     $('#send-errors').innerHTML = ''; $('#send-toast').hidden = true;
+    dropNotice('cancel-send');            // "nothing will print" stops being true
     var r = S.result;
     PRN.job = newPrintJob({ mine: true, who: ME, plate: plateName(r.instances.length), what: plural(r.instances.length, 'instance', 'instances') + ': ' + partsLine().join(', '),
                             layers: r.tp.layers, total: r.est.seconds, failAt: Mock.take('print_fail') ? 0.38 : null, waitAt: Mock.take('print_wait') ? 0.3 : null });
@@ -2068,7 +2083,7 @@
       // under it moves on (a slice finishes, a print goes from sending to done), this does not.
       notify('info', sending ? 'Back where you were. You had sent your plate to ' + ST.PRINTER.name + ' before you left; its progress is below.'
                              : slicing ? 'Back where you were. Your plate was still slicing when you left; see below.' : 'Back where you were. Your plate was sliced and ready to send when you left.',
-        null, 'resumed');
+        null, sending ? 'resumed-send' : 'resumed');
     } else {
       // version 7: a print that finished is the one-line note (below), not a notification
       if (j && j.mine && j.phase === 'failed' && kind === 'later') {

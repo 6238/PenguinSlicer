@@ -3,7 +3,8 @@
  *   select: click an instance; Shift- or Ctrl-click adds or removes; click empty plate clears
  *   move: left drag that starts on an instance (anywhere inside its outline)
  *   turn: drag the round handle beside the selection, freely with an angle readout; Shift
- *     turns in 45-degree steps. The handle is bound to the instance (version 7).
+ *     snaps the instance's orientation on the plate to multiples of 45 degrees. The handle is
+ *     bound to the instance (version 7).
  *   lay on a face: double-click a flat face, always; plus one of five ways the scenario strip
  *     picks: faces on the hull (translucent patches on the selected instance's hull faces, as
  *     Orca's Lay on face tool; version 5's default; since version 7 also patches on the sides
@@ -397,9 +398,10 @@
       else clearPatches();
       var hp = placeHandle();
       overlay.innerHTML = ''; dots = []; tipAt = null;
-      // the angle readout beside the handle while it is dragged ("↻ 37°")
+      // the angle readout beside the handle while it is dragged ("↺ 37°"): the first selected
+      // instance's orientation on the plate, the angle Shift snaps
       if (hp && drag && drag.type === 'rotate' && drag.moved) {
-        var ro = document.createElement('span'); ro.className = 'turn-readout'; ro.textContent = turnText(drag.turn || 0);
+        var ro = document.createElement('span'); ro.className = 'turn-readout'; ro.textContent = turnText((drag.ang0 || 0) + (drag.turn || 0));
         ro.style.left = (hp.end.x + 14) + 'px'; ro.style.top = (hp.end.y - 22) + 'px'; overlay.appendChild(ro);
       }
       // the tip handle: beside the rotation handle, square to its stem
@@ -564,7 +566,9 @@
         // the pivot, the radius and the handle's angle are fixed for the whole drag
         var lh = lastHandle, p0 = planePoint(0.4) || lh.end, pv = lh.pivot;
         opts.begin();
+        var first = selectedInstances()[0];
         take({ type: 'rotate', pivot: pv.clone(), a0: Math.atan2(p0.y - pv.y, p0.x - pv.x), h0: lh.a, turn: 0, shift: e.shiftKey,
+               ang0: first ? plateAngle(first.q) : 0,
                R0: Math.hypot(lh.end.x - pv.x, lh.end.y - pv.y),
                snap: selectedInstances().map(function (c) {
                  // where the part's own middle is, so the instance turns rigidly about the pivot
@@ -604,8 +608,8 @@
         if (drag.type === 'move') {
           var p = planePoint(drag.z); if (!p || !drag.p0) return;
           var dx = p.x - drag.p0.x, dy = p.y - drag.p0.y;
-          drag.snap.forEach(function (s) { s.c.x = s.x + dx; s.c.y = s.y + dy; });
-          opts.changed('live');
+          drag.snap.forEach(function (s) { s.c.x = s.x + dx; s.c.y = s.y + dy; if (meshes[s.c.id]) placeMesh(s.c); });
+          opts.changed('live'); invalidate();
         } else if (drag.type === 'rotate') {
           var q = planePoint(0.4); if (!q) return;
           drag.lastA = Math.atan2(q.y - drag.pivot.y, q.x - drag.pivot.x);
@@ -621,9 +625,25 @@
       if (drag) return;
       hover(px);
     });
+    // An instance's orientation on the plate: the angle about the vertical between its
+    // orientation and the same lay-down reached straight from the part as modelled (the
+    // shortest tilt that puts the same face down). 0 is square to the plate as laid; the
+    // result is in (-pi, pi].
+    function plateAngle(q) {
+      var local = DOWN.clone().applyQuaternion(q.clone().invert());
+      var rest = new T.Quaternion().setFromUnitVectors(local.normalize(), DOWN);
+      var r = q.clone().multiply(rest.invert());          // a turn about the vertical only
+      var a = 2 * Math.atan2(r.z, r.w);
+      while (a > Math.PI) a -= 2 * Math.PI;
+      while (a <= -Math.PI) a += 2 * Math.PI;
+      return a;
+    }
     // Turn the selection by the pointer's angle round the pivot since the drag began: freely, or
-    // with Shift in steps of 45 degrees (version 7). Each instance turns rigidly about the pivot,
-    // and the handle (placeHandle) turns with it through the same angle.
+    // with Shift so that the first selected instance's orientation on the plate lands on a
+    // multiple of 45 degrees, the others turning by the same angle (fix round 1 of version 7).
+    // Each instance turns rigidly about the pivot, and the handle (placeHandle) turns with it
+    // through the same angle. The meshes move here, before the frame is drawn, so the handle
+    // and the instance never part for a frame.
     function applyTurn(d) {
       if (d.lastA == null) return;
       if (d.prevA == null) { d.prevA = d.a0; d.raw = 0; }
@@ -631,7 +651,8 @@
       while (da > Math.PI) da -= 2 * Math.PI;
       while (da < -Math.PI) da += 2 * Math.PI;
       d.raw += da; d.prevA = d.lastA;
-      var step = Math.PI / 4, turn = d.shift ? Math.round(d.raw / step) * step : d.raw;
+      var step = Math.PI / 4, turn = d.raw;
+      if (d.shift) turn = Math.round((d.ang0 + d.raw) / step) * step - d.ang0;
       d.turn = turn;
       var cs = Math.cos(turn), sn = Math.sin(turn), rz = new T.Quaternion().setFromAxisAngle(new T.Vector3(0, 0, 1), turn);
       d.snap.forEach(function (s) {
@@ -639,6 +660,7 @@
         s.c.q = rz.clone().multiply(s.q); s.c.d = null;
         var off = MockPlate.derive(s.c).offset;
         s.c.x = d.pivot.x + vx * cs - vy * sn + off[0]; s.c.y = d.pivot.y + vx * sn + vy * cs + off[1];
+        if (meshes[s.c.id]) placeMesh(s.c);
       });
       opts.changed('live');
       invalidate();
@@ -651,7 +673,10 @@
     window.addEventListener('keydown', onShift);
     window.addEventListener('keyup', onShift);
     function turnText(rad) {
-      var deg = Math.round(rad * 180 / Math.PI);
+      var deg = Math.round(rad * 180 / Math.PI) % 360;
+      if (deg > 180) deg -= 360;
+      if (deg <= -180) deg += 360;
+      if (deg === 0) return '0°';
       return (deg > 0 ? '↺ ' : '↻ ') + Math.abs(deg) + '°';    // ↺ anticlockwise, ↻ clockwise, seen from above
     }
     // Which vertical side of the box a drag across the plate rolls the instance onto.
@@ -815,6 +840,8 @@
       var l = meshes[s.id].worldToLocal(handle.position.clone());
       return { x: +l.x.toFixed(2), y: +l.y.toFixed(2), z: +l.z.toFixed(2), bound: !!bound, turn: drag && drag.type === 'rotate' ? +((drag.turn || 0) * 180 / Math.PI).toFixed(2) : null };
     };
+    // for the walk: an instance's orientation on the plate, in degrees
+    container.__plateAngle = function (instanceId) { var c = instanceById(instanceId); return c ? +(plateAngle(c.q) * 180 / Math.PI).toFixed(2) : null; };
     container.__tip = function () { var r = canvas.getBoundingClientRect(); return tipAt ? { x: r.left + tipAt.x, y: r.top + tipAt.y } : null; };
     // the hull patches showing: each one's middle on the page, how tall the instance would stand
     // on it, and whether a press at that middle would take that patch

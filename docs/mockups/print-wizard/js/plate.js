@@ -116,9 +116,12 @@
       }
       var d = derive(c);
       if (d.height > plate.height + EPS) {
-        // version 7: the instance's height in its part's units, the printer's limit in millimetres
+        // a comparison is made in one unit: the instance's height in millimetres, as the
+        // printer's limit is, with its part's own units in brackets when they are inches
+        // ("stands 352.7 mm (13.885 in) tall; the printer prints up to 340 mm")
         var U = window.MockUnits, own = plate.unitsOf ? plate.unitsOf(c) : 'mm';
-        problems.push({ rule: 'too_tall', instances: [c.id], message: labelOf(c) + ' stands ' + U.len(d.height, 0, own) +
+        var h = own === 'in' ? U.len(d.height, 1, 'mm') + ' (' + U.len(d.height, 0, 'in') + ')' : U.len(d.height, 0, 'mm');
+        problems.push({ rule: 'too_tall', instances: [c.id], message: labelOf(c) + ' stands ' + h +
           ' tall; the printer prints up to ' + U.len(plate.height, 0, 'mm') + '. Lay it down another way, or press Auto-orient.' });
       }
     });
@@ -129,7 +132,7 @@
             bi.maxY + plate.spacing < bj.minY || bj.maxY + plate.spacing < bi.minY) continue;
         var dist = polyDistance(hulls[i], hulls[j]);
         if (dist < plate.spacing - EPS) {
-          problems.push({ rule: 'too_close', instances: [instances[i].id, instances[j].id], message: dist === 0
+          problems.push({ rule: 'too_close', instances: [instances[i].id, instances[j].id], gap: dist, message: dist === 0
             ? labelOf(instances[i]) + ' and ' + labelOf(instances[j]) + ' overlap. Drag one away, or press Arrange.'
             : labelOf(instances[i]) + ' and ' + labelOf(instances[j]) + ' are ' + window.MockUnits.len(dist, 1, 'mm') + ' apart; instances need ' +
               window.MockUnits.len(plate.spacing, 0, 'mm') + ' between them' + (plate.supportsOn == null ? '' : plate.supportsOn ? ' with supports on' : ' with supports off') +

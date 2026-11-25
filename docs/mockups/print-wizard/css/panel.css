@@ -50,7 +50,9 @@
   #stepbar li:hover::before { border-color: var(--muted); color: var(--ink); }
   #stepbar li.done::before { content: "\2713"; background: #dafbe1; border-color: #aceebb; color: var(--ok); }
   #stepbar li.active::before { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-  #stepbar li:focus-visible { outline-offset: 2px; border-radius: 11px; }
+  /* the focus ring goes round the circle, not the circle and the line beside it */
+  #stepbar li:focus-visible { outline: none; }
+  #stepbar li:focus-visible::before { outline: 2px solid var(--accent); outline-offset: 2px; }
   #stepbar li .sn { display: none; }
   #stepbar li.active .sn { display: inline; margin-left: 6px; font-weight: 600; color: var(--ink); white-space: nowrap; }
   /* the line to the next circle */
@@ -107,7 +109,8 @@
 /* version 7: the plate summary is two lines of text; only "+2 changes" is a pill */
 #wiz-summary { display: flex; flex-direction: column; gap: 2px; margin-bottom: 14px; font-size: 12px; line-height: 1.45; color: var(--muted); }
 #wiz-summary .sum-line { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#wiz-summary .sum-set { display: flex; align-items: center; gap: 8px; overflow: visible; }
+/* as tall as the "+2 changes" pill always, so nothing moves when the pill comes or goes */
+#wiz-summary .sum-set { display: flex; align-items: center; gap: 8px; overflow: visible; min-height: calc(12px * 1.45 + 4px); }
 #wiz-summary .sum-text { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #wiz-summary .sum-set .chip { flex: none; padding: 1px 8px; }
 #wiz-summary .chip { font-size: 12px; line-height: 1.45; color: var(--muted); background: var(--panel-2); border: 1px solid var(--line); padding: 3px 9px; border-radius: 999px; white-space: nowrap; }

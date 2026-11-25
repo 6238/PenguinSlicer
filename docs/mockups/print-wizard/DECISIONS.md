@@ -18,8 +18,10 @@ Built from the owner's review of version 6 (Wed 2026-11-25). Nothing else change
 - **The rotation handle is bound to the instance** (decision 62). Dragged, it sits on a
   circle round the selection at the radius it had when the drag started and turns with the
   instance through the same angle, so the two never part; it never hops to another side
-  while dragged. Turning is free, with a readout beside the handle ("↺ 37°"); **Shift**
-  turns in 45° steps. The tooltip says "Drag to turn · Shift: 45° steps". Version 6's
+  while dragged. Turning is free, with a readout beside the handle ("↺ 37°") giving the
+  instance's orientation on the plate; **Shift** snaps that orientation to multiples of
+  45° (0, 45, 90…), as CAD programs do, so an instance turned at an odd angle can be
+  squared again. The tooltip says "Drag to turn · Shift: 45° steps". Version 6's
   5-degree catch round each 45° is gone.
 - **Round parts can be stood on their rim** (decision 61): where no kept hull face points
   within 30° of a side of the part's bounding box, a **bounding-box patch** lies on that
@@ -32,8 +34,11 @@ Built from the owner's review of version 6 (Wed 2026-11-25). Nothing else change
   change a quantity.
 - **Printer and plate figures are always in millimetres** (decisions 54 and 55): the line
   under the view ("Shop H2S: plate 340 × 320 mm, up to 340 mm tall, 12 mm apart"), the
-  spacing in errors and the layer readout on the Preview step. Only a part's own size (and
-  an instance's height) follows its part's units. This settles M27 and M28.
+  spacing in errors and the layer readout on the Preview step. A comparison is made in one
+  unit: the too-tall error gives the instance's height in millimetres, with its own units
+  in brackets when they are inches ("stands 352.7 mm (13.885 in) tall; the printer prints
+  up to 340 mm"). Otherwise only a part's own size (and the selected instance's height)
+  follows its part's units. This settles M27 and M28.
 - **The printer is Free as soon as a print finishes**; the icon never says "Finished"
   (decision 43). The printer details add "Last print finished 11:25 am (Alex Chen)"; the
   user's own print that finished is one line, "Your print finished at 11:25 am.", not a
@@ -146,7 +151,7 @@ Each term has one meaning in the mockup and in this file.
 | **printer details** | What a click on the printer-status icon opens, joined to it. |
 | **last-print note** | The one line "Your print finished at 11:25 am." for the user whose print finished (decision 60). |
 | **busy printer** | The printer printing, receiving or waiting for a person on another user's delivery job. |
-| **notification** | A card at the top of a step, closed with ×, that reports something not on a row: a part that did not arrive, a resumed session. It belongs to that step and goes when the user leaves it. |
+| **notification** | A card at the top of a step, closed with ×, that reports something not on a row: a part that did not arrive, a resumed session. It belongs to that step and goes when the user leaves it, or as soon as it stops being true. |
 | **scenario strip** | The yellow mockup controls above the page. It is not part of the product. |
 | **resting position** | One way an instance can lie on the plate: one flat outside face of its part down, stable (its centre of mass above what touches the plate). |
 | **rotation handle** | The round handle beside the selection on the Layout step that turns it about the vertical. |
@@ -266,7 +271,8 @@ Onshape's default units, whichever the API gives.
    in Material's compact stepper: five small circles joined by a line, a check in each done
    step, the current one filled in the accent blue with its name beside it, so the header
    stays one row and the content the user works with stays high in the panel. Every circle
-   stays clickable and has its step's name as its tooltip ("3. Layout"). A click on a tab
+   stays clickable and has its step's name as its tooltip ("3. Layout"); focused by
+   keyboard, the ring goes round the circle alone. A click on a tab
    goes there when every step before it allows. When one does not, one line under the tabs
    names the step and why ("Layout first: 23 instances are closer than 12 mm with supports
    on."); it goes at the next move, or after a few seconds.
@@ -276,7 +282,8 @@ Onshape's default units, whichever the API gives.
    instances ("1 part · 1 instance"); the second the filament and profile ("PETG ·
    Structural"), then the "+2 changes" pill. The filament and profile are cut with an
    ellipsis when too long, never wrapped (their full names are the tooltip); the pill stays
-   whole. There is no plate area and no print time and grams (the Send step states those).
+   whole. The second line is as tall as the pill even without it, so nothing below moves
+   when the pill comes or goes. There is no plate area and no print time and grams (the Send step states those).
    **The "+1 change" pill is a button** on every step where it shows. A click opens the
    change details joined to the pill, as the printer details are joined to their icon: one
    plain-text line per change in the changes box's wording ("Quality › Resolution: 0.014
@@ -332,7 +339,9 @@ Onshape's default units, whichever the API gives.
     laid down automatically say nothing of how it lies now (the view shows it). What is
     said is a move the wizard made that the user did not ask for: "L Bracket #1 no longer
     fitted where it stood, so it was moved to the nearest free spot.", an instance left
-    beside the plate, or "Arranged the plate again to make room." after Auto-orient.
+    beside the plate, or "Arranged the plate again to make room." after Auto-orient. Such a
+    message, and "Arranged 5 instances, turning 5." after Arrange, goes when the user
+    leaves the Layout step (fix round 1 of version 7).
 
 ### Parts step (step 1)
 
@@ -383,15 +392,19 @@ The wizard opens on this step. Back is off here.
     heights and spacing to 1 mm, distances to 0.1 mm).
 54. **A part's own size follows its units** (version 7, replacing version 6's layout
     units): the selected instance's footprint and height on the Layout step, the hull
-    patches' and bounding-box patches' tooltips ("Lay it on this side: 1.732 in tall"), the
-    resting-position strip, and an instance's height in a too-tall error are in the units
-    of its part.
+    patches' and bounding-box patches' tooltips ("Lay it on this side: 1.732 in tall") and
+    the resting-position strip are in the units of its part. **A comparison is made in one
+    unit** (the owner, fix round 1 of version 7): where a part's figure is set against a
+    printer's, as in the too-tall error, the part's figure is in millimetres too, with its
+    own units in brackets when they are inches ("Shooter Hood Rib #1 stands 352.7 mm
+    (13.885 in) tall; the printer prints up to 340 mm."). The too-tall error is the only
+    such message in the mockup.
 55. **Printer and plate figures are always in millimetres** (version 7, the owner; settles
     M27 and M28), as Bambu Lab gives them: the line under the Layout view ("Shop H2S: plate
     340 × 320 mm, up to 340 mm tall, 12 mm apart"), the spacing and distances in errors
     ("… are 3.2 mm apart; instances need 12 mm between them with supports on."), the
-    printer's limit in a too-tall error ("… stands 13.885 in tall; the printer prints up to
-    340 mm."), a height above the plate in a slicing error, and the layer readout on the
+    printer's limit in a too-tall error, and the instance's height beside it ("… stands
+    352.7 mm (13.885 in) tall; the printer prints up to 340 mm."; decision 54), a height above the plate in a slicing error, and the layer readout on the
     Preview step ("134 / 134 · 40.2 mm").
 56. **Slicer settings are always in millimetres** (layer height, line width, hole
     compensation and the rest), as in Orca Slicer and the profiles, whatever the parts'
@@ -538,7 +551,10 @@ Called Setup until version 5; the decisions keep their numbers.
     left, expected finish and sent at. The card names the plate in words ("Plate 1, 16
     instances, on Shop H2S"), never by the sliced file's name. The disabled button follows
     the phase ("Sending…", "Heating…", "Printing…", "Waiting for a person…"). While the
-    plate is on its way, **Cancel sending** is offered (M22).
+    plate is on its way, **Cancel sending** is offered (M22). Cancelling leaves the
+    notification "Sending cancelled. Nothing reached Shop H2S and nothing will print. Your
+    sliced plate is still here."; it goes when the plate is sent again (fix round 1 of
+    version 7).
 38. **Pausing or stopping a print is done at the printer's screen** (M12); the panel offers
     neither. Since version 6 the card no longer says so.
 39. A print that waits for a person (filament ran out, door open) shows what to do at the
@@ -593,6 +609,8 @@ Called Setup until version 5; the decisions keep their numbers.
     Preview step with the parts and layout restored; when this user's delivery job is
     running, it reopens on the Send step with live progress. A notification says "Back
     where you were" and, in the past tense, what the plate was doing when the user left.
+    On the Send step it says the progress is below, so it goes when this user's print
+    ends, finished or failed (fix round 1 of version 7).
 47. Otherwise it starts at the Parts step. Another user's work shows in the printer-status
     icon, which is on every step and so is the first thing seen; their name is in the
     printer details only.
@@ -656,11 +674,19 @@ Called Setup until version 5; the decisions keep their numbers.
     handle stays where the turn left it, fixed to the first selected instance (it follows
     a move too), until the selection changes or the instance is laid down; it moves clear
     of hull patches only when no drag is going on (when the drag ends, or when patches
-    appear). **Turning is free;** a small readout beside the handle shows the turn while
-    dragging, "↺ 37°" anticlockwise and "↻ 37°" clockwise as seen from above. **Holding
-    Shift** (the usual modifier for constraining angles in CAD and drawing programs) turns
-    in steps of 45° from where the drag started; pressing or letting go of Shift mid-drag
-    takes effect at once. The handle's tooltip is "Drag to turn · Shift: 45° steps"; the
+    appear). The instance's mesh moves before the frame is drawn, so the handle and the
+    dashed selection box never lead it by a frame, in a turn or in a move. **Turning is
+    free;** a small readout beside the handle shows, while dragging, the first selected
+    instance's **orientation on the plate**: "↺ 37°" anticlockwise and "↻ 37°" clockwise
+    as seen from above, "0°" square. The orientation is the angle about the vertical
+    between the instance and the same face-down position reached straight from the part as
+    modelled, so 0° is the part's own axes square to the plate's. **Holding Shift** (the
+    usual modifier for constraining angles in CAD and drawing programs) snaps that
+    orientation to multiples of 45° (0, 45, 90…), as CAD programs do, not the angle turned
+    since the drag began (the owner, fix round 1 of version 7), so an instance turned at
+    an odd angle can be squared again; in a selection of several, the first selected
+    instance's orientation snaps and the others turn by the same angle. Pressing or letting
+    go of Shift mid-drag takes effect at once. The handle's tooltip is "Drag to turn · Shift: 45° steps"; the
     Layout step's "?" list says "Hold Shift while turning to turn in 45° steps."
 
 ## What is fake and could mislead
