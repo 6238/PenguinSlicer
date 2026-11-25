@@ -116,10 +116,10 @@
       }
       var d = derive(c);
       if (d.height > plate.height + EPS) {
-        // heights in the layout units; the printer's limit also in millimetres when in inches
-        var U = window.MockUnits, lim = U.len(plate.height) + (U.unit === 'in' ? ' (' + plate.height + ' mm)' : '');
-        problems.push({ rule: 'too_tall', instances: [c.id], message: labelOf(c) + ' stands ' + U.len(d.height) +
-          ' tall; the printer prints up to ' + lim + '. Lay it down another way, or press Auto-orient.' });
+        // version 7: the instance's height in its part's units, the printer's limit in millimetres
+        var U = window.MockUnits, own = plate.unitsOf ? plate.unitsOf(c) : 'mm';
+        problems.push({ rule: 'too_tall', instances: [c.id], message: labelOf(c) + ' stands ' + U.len(d.height, 0, own) +
+          ' tall; the printer prints up to ' + U.len(plate.height, 0, 'mm') + '. Lay it down another way, or press Auto-orient.' });
       }
     });
     for (var i = 0; i < instances.length; i++) {
@@ -131,8 +131,8 @@
         if (dist < plate.spacing - EPS) {
           problems.push({ rule: 'too_close', instances: [instances[i].id, instances[j].id], message: dist === 0
             ? labelOf(instances[i]) + ' and ' + labelOf(instances[j]) + ' overlap. Drag one away, or press Arrange.'
-            : labelOf(instances[i]) + ' and ' + labelOf(instances[j]) + ' are ' + window.MockUnits.len(dist, 1) + ' apart; instances need ' +
-              window.MockUnits.len(plate.spacing) + ' between them' + (plate.supportsOn == null ? '' : plate.supportsOn ? ' with supports on' : ' with supports off') +
+            : labelOf(instances[i]) + ' and ' + labelOf(instances[j]) + ' are ' + window.MockUnits.len(dist, 1, 'mm') + ' apart; instances need ' +
+              window.MockUnits.len(plate.spacing, 0, 'mm') + ' between them' + (plate.supportsOn == null ? '' : plate.supportsOn ? ' with supports on' : ' with supports off') +
               '. Drag one away, or press Arrange.' });
         }
       }

@@ -1,8 +1,8 @@
 /* PenguinSlicer mockup: printer, filaments, the profiles of each filament (the
  * configuration lists them per filament) and the advanced mode settings. Labels follow Orca
  * Slicer's process sections (Quality, Strength, Speed, Support, Others); keys are Orca's
- * setting keys. Values are plausible for a 0.6 mm nozzle H2S. Also the units every length
- * on the Layout and Preview steps is shown in (MockUnits). */
+ * setting keys. Values are plausible for a 0.6 mm nozzle H2S. Also how lengths are written
+ * (MockUnits). */
 (function () {
   'use strict';
 
@@ -203,10 +203,10 @@
     profile('tpu-grip', 'Grip pad', 'thin grippy pads', { layer_height: 0.2, wall_loops: 2, sparse_infill_density: 15, outer_wall_speed: 30, inner_wall_speed: 30, sparse_infill_speed: 30, travel_speed: 200 })
   ];
 
-  // Lengths on the Layout and Preview steps (sizes, spacing, heights) are shown in the
-  // layout units: inches when every part on the plate is in inches, otherwise millimetres.
-  // The plate's size and every slicer setting stay in millimetres. Inches are written the
-  // way a US machinist reads them: decimal inches to three places (2.000 × 2.000 × 0.188 in).
+  // Version 7: printer and plate figures (the plate, the height limit, spacing, layer
+  // heights) and every slicer setting are in millimetres, the default unit here; a part's own
+  // size (and an instance's height) is given its part's units by the caller. Inches are
+  // written the way a US machinist reads them: decimal inches to three places (2.000 × 2.000 × 0.188 in).
   var MockUnits = {
     unit: 'mm',
     inch: function (mm) { return (mm / 25.4).toFixed(3); },

@@ -19,7 +19,9 @@
 
 ## Read first
 
-1. **The feedback:** [the owner's feedback on version 6](../../handoffs/2026-11-25-mockup-v6-feedback.md).
+1. **The feedback:** the owner's feedback on version 6, a handoff note of Wed 2026-11-25
+   (deleted once built: its points are in [DECISIONS.md](../../mockups/print-wizard/DECISIONS.md),
+   "What changed in version 7", and listed one by one in [the result](result.md)).
    Every bullet is a requirement.
 2. The mockup and its `DECISIONS.md`; the version 6 records in
    [mockup-v6](../mockup-v6/) (brief, review, fix) for what was just done.

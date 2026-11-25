@@ -11,6 +11,9 @@
  *   4. our own rule for round parts: a face is dropped when a neighbouring hull face bends
  *      away from it by under 20 degrees and is at least half its size. Those are the thin
  *      facets of a round side (a pulley's rim), not faces a user would choose.
+ *   5. version 7, ours: a side of the part's bounding box that no kept face points within 30
+ *      degrees of (a pulley's rim) gets a patch lying on the box, so the part can be stood on
+ *      its rim.
  * Each face kept is drawn as a patch: its outline drawn in 10% toward its middle, its corners
  * rounded by corner cutting, raised 0.1 mm off the face. Worked out in the browser the first
  * time a part's faces are asked for, and timed. */
@@ -25,6 +28,7 @@
   var FACES_OFFERED_CAP = 254;             // at most this many faces, the largest (Orca's figure)
   var BEND_DEG = 20;               // ours: a neighbour bending away less than this ...
   var BEND_SHARE = 0.5;            // ... and at least this share of the face's size makes it a facet of a round side
+  var COVER_DEG = 30;              // ours, version 7: a box side with no kept face this near is uncovered
   var SHRINK = 0.9, ROUNDINGS = 4, LIFT = 0.1;
 
   /* ------------------------------------------------------------ the distinct corners */
@@ -229,15 +233,39 @@
       var lo = Infinity; P.forEach(function (v) { lo = Math.min(lo, n.dot(v)); });
       return { n: n.clone(), area: g.area, width: g.width, height: g.d - lo, centre: centre, geometry: geo };
     });
+    // 5. version 7, ours: bounding-box patches. A side of the part's bounding box (six, in the
+    //    part's own frame) is uncovered when no kept face's outward normal is within 30 degrees
+    //    of it (half a degree more for rounding, so a hex shaft's flats, exactly 30 degrees off,
+    //    count). Each uncovered side gets a patch lying on the box, drawn as a face's patch is;
+    //    laid on it, the part rests on its rim. Boxy parts cover all six and get none.
+    var cosCover = Math.cos((COVER_DEG + 0.5) * Math.PI / 180), sz = def.size, half = [sz.x / 2, sz.y / 2, sz.z / 2];
+    var sides = [], uncovered = [];
+    [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]].forEach(function (a, i) {
+      var n = new T.Vector3().fromArray(a), k = Math.floor(i / 2);
+      var near = 0; kept.forEach(function (g) { near = Math.max(near, g.n.dot(n)); });
+      if (near >= cosCover) return;
+      uncovered.push(['+x', '-x', '+y', '-y', '+z', '-z'][i]);
+      var axes = [0, 1, 2].filter(function (j) { return j !== k; });
+      var u = new T.Vector3(), w = new T.Vector3(); u.setComponent(axes[0], 1); w.crossVectors(n, u);
+      var hu = half[axes[0]], hw = half[axes[1]];
+      // the side's rectangle in (u, w), anticlockwise seen from outside ((u, w, n) is right-handed)
+      var poly = [[-hu, -hw], [hu, -hw], [hu, hw], [-hu, hw]];
+      var pt = patch(poly), lift = half[k] + LIFT;
+      function to3(p) { return new T.Vector3().addScaledVector(u, p[0]).addScaledVector(w, p[1]).addScaledVector(n, lift); }
+      var centre = to3(pt.middle), ring = pt.ring.map(to3), arr = new Float32Array(ring.length * 9);
+      ring.forEach(function (q, r) { var b = ring[(r + 1) % ring.length]; arr.set([centre.x, centre.y, centre.z, q.x, q.y, q.z, b.x, b.y, b.z], r * 9); });
+      var geo = new T.BufferGeometry(); geo.setAttribute('position', new T.BufferAttribute(arr, 3));
+      sides.push({ n: n, area: 4 * hu * hw, width: 2 * Math.min(hu, hw), height: 2 * half[k], centre: centre, geometry: geo, box: true, side: i, nearestDeg: +(Math.acos(Math.min(1, near)) * 180 / Math.PI).toFixed(1) });
+    });
     var ms = performance.now() - t0;
     cache[key] = {
-      faces: faces, ms: ms,
+      faces: faces, boxSides: sides, ms: ms,
       record: { corners: P.length, hullTriangles: tris.length, hullFaces: groups.length, orcaOffers: orca.length, offered: faces.length,
-                dropped: groups.filter(function (g) { return g.dropped; }).length, round: orca.length - faces.length,
+                dropped: groups.filter(function (g) { return g.dropped; }).length, round: orca.length - faces.length, uncovered: uncovered,
                 faces: orca.map(function (g) { return { area: +g.area.toFixed(1), width: +g.width.toFixed(1), share: +g.share.toFixed(3), bend: +g.bend.toFixed(1), round: !!g.round }; }) }
     };
     return cache[key];
   }
 
-  window.MockHullFaces = { faces: compute, BEND_DEG: BEND_DEG, BEND_SHARE: BEND_SHARE };
+  window.MockHullFaces = { faces: compute, BEND_DEG: BEND_DEG, BEND_SHARE: BEND_SHARE, COVER_DEG: COVER_DEG };
 })();

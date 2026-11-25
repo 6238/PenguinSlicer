@@ -2,10 +2,12 @@
  * modes: every operation has its own affordance, always on.
  *   select: click an instance; Shift- or Ctrl-click adds or removes; click empty plate clears
  *   move: left drag that starts on an instance (anywhere inside its outline)
- *   turn: drag the round handle beside the selection (snaps every 45 degrees)
+ *   turn: drag the round handle beside the selection, freely with an angle readout; Shift
+ *     turns in 45-degree steps. The handle is bound to the instance (version 7).
  *   lay on a face: double-click a flat face, always; plus one of five ways the scenario strip
  *     picks: faces on the hull (translucent patches on the selected instance's hull faces, as
- *     Orca's Lay on face tool; version 5's default), the resting-position strip (drawn by
+ *     Orca's Lay on face tool; version 5's default; since version 7 also patches on the sides
+ *     of its bounding box that no face covers, such as a pulley's rim), the resting-position strip (drawn by
  *     wizard.js under the view), face markers (dots on the selected instance), the box tumbler
  *     (a box whose sides are clicked or dragged) or the tip handle (a second handle that steps
  *     to the next resting position)
@@ -108,7 +110,14 @@
     stem.renderOrder = 9;
     var selBox = new T.LineSegments(new T.BufferGeometry(), new T.LineDashedMaterial({ color: COL.accent, dashSize: 3, gapSize: 2 }));
     scene.add(handle); scene.add(stem); scene.add(selBox);
-    var handleDir = new T.Vector2(0, 1);
+    // Version 7: the rotation handle is bound to the instance. handleAng is the side of the
+    // selection it sits on (radians, from +x, seen from above). While it is dragged it sits on a
+    // circle round the selection at the radius it had when the drag started and turns with the
+    // instance through the same angle; after a drag it stays where the drag left it, fixed to
+    // the first selected instance (bound), until the selection changes or the instance is laid
+    // down. It moves clear of hull patches only when no drag is going on.
+    var handleAng = Math.PI / 2, bound = null, lastHandle = null;
+    var GAP_PX = 28;
 
     // The box tumbler: a box around the selected instance, its sides clickable. Six materials so
     // the side under the pointer can be shaded on its own.
@@ -237,8 +246,9 @@
     function showPatches(one) {
       if (!patches || patches.id !== one.id || patches.key !== one.partKey) {
         clearPatches();
+        // version 7: the faces, then the bounding-box patches of the sides no face covers
         var hf = MockHullFaces.faces(one.partKey), g = new T.Group(), list = [];
-        hf.faces.forEach(function (f, i) {
+        hf.faces.concat(hf.boxSides).forEach(function (f, i) {
           var m = new T.Mesh(f.geometry, new T.MeshBasicMaterial({ color: COL.accent, transparent: true, opacity: PATCH_REST, depthWrite: false,
                                                                    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
           m.renderOrder = 3; m.userData.patch = i; g.add(m); list.push({ mesh: m, face: f });
@@ -328,28 +338,44 @@
     function placeHandle() {
       var b = selectionBox();
       handle.visible = stem.visible = selBox.visible = !!b;
-      if (!b) return null;
+      if (!b) { lastHandle = null; return null; }
       var dist = camera.position.distanceTo(new T.Vector3(b.cx, b.cy, 0));
       var px = dist * Math.tan(camera.fov * Math.PI / 360) * 2 / Math.max(1, container.clientHeight);
       var r = 7 * px;                                        // about 7 px on screen
-      // Where the handle goes on side `dir` of the selection. While hull patches show, a side
-      // where the handle would cover one is skipped for the next free one, 45 degrees round;
-      // with no side free the handle is hidden until the patches go.
-      function at(dir) {
-        var reach = Math.abs(dir.x) * (b.maxX - b.minX) / 2 + Math.abs(dir.y) * (b.maxY - b.minY) / 2;
-        return { edge: new T.Vector3(b.cx + dir.x * reach, b.cy + dir.y * reach, 0.4),
-                 end: new T.Vector3(b.cx + dir.x * (reach + 28 * px), b.cy + dir.y * (reach + 28 * px), 0.4) };
+      function dirOf(a) { return new T.Vector2(Math.cos(a), Math.sin(a)); }
+      // Where the handle goes on side `a` of the selection when nothing binds it: just outside
+      // the selection's box that way. While hull patches show, a side where the handle would
+      // cover one is skipped for the next free one, 45 degrees round; with no side free the
+      // handle is hidden until the patches go.
+      function at(a) {
+        var dir = dirOf(a), reach = Math.abs(dir.x) * (b.maxX - b.minX) / 2 + Math.abs(dir.y) * (b.maxY - b.minY) / 2;
+        return { a: a, end: new T.Vector3(b.cx + dir.x * (reach + GAP_PX * px), b.cy + dir.y * (reach + GAP_PX * px), 0.4) };
       }
-      var spot = at(handleDir);
-      if (patchUnderHandle(spot.end, r)) {
-        spot = null;
-        for (var k = 1; k < 8 && !spot; k++) {
-          var dir = handleDir.clone().rotateAround(new T.Vector2(), k * Math.PI / 4), s = at(dir);
-          if (!patchUnderHandle(s.end, r)) spot = s;
+      var spot = null, rotating = drag && drag.type === 'rotate';
+      if (rotating) {
+        // on the circle of the drag's start, turned with the instance through the same angle
+        var ang = drag.h0 + drag.turn;
+        spot = { a: ang, end: new T.Vector3(drag.pivot.x + Math.cos(ang) * drag.R0, drag.pivot.y + Math.sin(ang) * drag.R0, 0.4) };
+      } else {
+        var sel = selectedInstances();
+        if (bound && (!sel.length || sel[0].id !== bound.id || !meshes[bound.id])) bound = null;
+        if (bound) {
+          meshes[bound.id].updateMatrixWorld(true);
+          var e = bound.local.clone().applyMatrix4(meshes[bound.id].matrixWorld); e.z = 0.4;
+          spot = { a: Math.atan2(e.y - b.cy, e.x - b.cx), end: e };
+        } else spot = at(handleAng);
+        if (patchUnderHandle(spot.end, r)) {
+          var a0 = spot.a; spot = null;
+          for (var k = 1; k < 8 && !spot; k++) { var s = at(a0 + k * Math.PI / 4); if (!patchUnderHandle(s.end, r)) spot = s; }
+          if (!spot) { handle.visible = stem.visible = false; lastHandle = null; return null; }
+          // patches pushed it to another side: it stays there, unbound
+          bound = null; handleAng = spot.a;
         }
-        if (!spot) { handle.visible = stem.visible = false; return null; }
       }
-      var edge = spot.edge, end = spot.end;
+      var end = spot.end, d2 = dirOf(spot.a);
+      // the stem points from the handle back toward the middle of the selection
+      var edge = new T.Vector3(end.x - d2.x * GAP_PX * px, end.y - d2.y * GAP_PX * px, 0.4);
+      lastHandle = { end: end.clone(), a: spot.a, pivot: new T.Vector2(b.cx, b.cy) };
       handle.position.copy(end); handle.scale.setScalar(r);
       handle.quaternion.identity();
       var sp = stem.geometry.attributes.position;
@@ -371,6 +397,11 @@
       else clearPatches();
       var hp = placeHandle();
       overlay.innerHTML = ''; dots = []; tipAt = null;
+      // the angle readout beside the handle while it is dragged ("↻ 37°")
+      if (hp && drag && drag.type === 'rotate' && drag.moved) {
+        var ro = document.createElement('span'); ro.className = 'turn-readout'; ro.textContent = turnText(drag.turn || 0);
+        ro.style.left = (hp.end.x + 14) + 'px'; ro.style.top = (hp.end.y - 22) + 'px'; overlay.appendChild(ro);
+      }
       // the tip handle: beside the rotation handle, square to its stem
       if (layOpt === 'tip' && hp && !moving) {
         var dx = hp.end.x - hp.edge.x, dy = hp.end.y - hp.edge.y, L = Math.sqrt(dx * dx + dy * dy) || 1;
@@ -499,7 +530,7 @@
     // its orientation; the wizard then checks the plate, moves the instance if it must, and says so.
     function layWorld(instance, wn, what) {
       wn = wn.clone().normalize();
-      if (wn.z < -0.999) { opts.hint(opts.labelFor(instance.id) + ' already lies on that ' + (what || 'face') + '.'); return false; }
+      if (wn.z < -0.999) return false;            // version 7: no "already lies on that face"
       opts.begin();
       instance.q = new T.Quaternion().setFromUnitVectors(wn, DOWN).multiply(instance.q); instance.d = null; instance.auto = false;
       opts.select(instance.id, 'only');
@@ -529,11 +560,17 @@
       canvas.focus();
       var base = { sx: e.clientX, sy: e.clientY, moved: false, mod: mod };
       function take(d) { e.preventDefault(); controls.enabled = false; drag = Object.assign(base, d); canvas.setPointerCapture(e.pointerId); }
-      if (hitHandle()) {
-        var b = selectionBox(), p0 = planePoint(0.4);
+      if (hitHandle() && lastHandle) {
+        // the pivot, the radius and the handle's angle are fixed for the whole drag
+        var lh = lastHandle, p0 = planePoint(0.4) || lh.end, pv = lh.pivot;
         opts.begin();
-        take({ type: 'rotate', pivot: new T.Vector2(b.cx, b.cy), a0: Math.atan2(p0.y - b.cy, p0.x - b.cx),
-               snap: selectedInstances().map(function (c) { return { c: c, x: c.x, y: c.y, q: c.q.clone() }; }) });
+        take({ type: 'rotate', pivot: pv.clone(), a0: Math.atan2(p0.y - pv.y, p0.x - pv.x), h0: lh.a, turn: 0, shift: e.shiftKey,
+               R0: Math.hypot(lh.end.x - pv.x, lh.end.y - pv.y),
+               snap: selectedInstances().map(function (c) {
+                 // where the part's own middle is, so the instance turns rigidly about the pivot
+                 var d = MockPlate.derive(c);
+                 return { c: c, mx: c.x - d.offset[0], my: c.y - d.offset[1], q: c.q.clone() };
+               }) });
         return;
       }
       if (hitTip(px)) { take({ type: 'tip', back: e.shiftKey }); return; }
@@ -571,18 +608,9 @@
           opts.changed('live');
         } else if (drag.type === 'rotate') {
           var q = planePoint(0.4); if (!q) return;
-          var a = Math.atan2(q.y - drag.pivot.y, q.x - drag.pivot.x), deg = (a - drag.a0) * 180 / Math.PI;
-          var snapped = Math.round(deg / 45) * 45;
-          if (Math.abs(snapped - deg) <= 5) deg = snapped;
-          handleDir.set(q.x - drag.pivot.x, q.y - drag.pivot.y).normalize();
-          var rad = deg * Math.PI / 180, cs = Math.cos(rad), sn = Math.sin(rad);
-          var rz = new T.Quaternion().setFromAxisAngle(new T.Vector3(0, 0, 1), rad);
-          drag.snap.forEach(function (s) {
-            var vx = s.x - drag.pivot.x, vy = s.y - drag.pivot.y;
-            s.c.x = drag.pivot.x + vx * cs - vy * sn; s.c.y = drag.pivot.y + vx * sn + vy * cs;
-            s.c.q = rz.clone().multiply(s.q); s.c.d = null;
-          });
-          opts.changed('live');
+          drag.lastA = Math.atan2(q.y - drag.pivot.y, q.x - drag.pivot.x);
+          drag.shift = e.shiftKey;
+          applyTurn(drag);
         } else if (drag.type === 'box') {
           var side = rollSide(drag);
           if (side !== hoverSide) { hoverSide = side; invalidate(); }
@@ -593,6 +621,39 @@
       if (drag) return;
       hover(px);
     });
+    // Turn the selection by the pointer's angle round the pivot since the drag began: freely, or
+    // with Shift in steps of 45 degrees (version 7). Each instance turns rigidly about the pivot,
+    // and the handle (placeHandle) turns with it through the same angle.
+    function applyTurn(d) {
+      if (d.lastA == null) return;
+      if (d.prevA == null) { d.prevA = d.a0; d.raw = 0; }
+      var da = d.lastA - d.prevA;
+      while (da > Math.PI) da -= 2 * Math.PI;
+      while (da < -Math.PI) da += 2 * Math.PI;
+      d.raw += da; d.prevA = d.lastA;
+      var step = Math.PI / 4, turn = d.shift ? Math.round(d.raw / step) * step : d.raw;
+      d.turn = turn;
+      var cs = Math.cos(turn), sn = Math.sin(turn), rz = new T.Quaternion().setFromAxisAngle(new T.Vector3(0, 0, 1), turn);
+      d.snap.forEach(function (s) {
+        var vx = s.mx - d.pivot.x, vy = s.my - d.pivot.y;
+        s.c.q = rz.clone().multiply(s.q); s.c.d = null;
+        var off = MockPlate.derive(s.c).offset;
+        s.c.x = d.pivot.x + vx * cs - vy * sn + off[0]; s.c.y = d.pivot.y + vx * sn + vy * cs + off[1];
+      });
+      opts.changed('live');
+      invalidate();
+    }
+    // Shift pressed or let go during a turn takes effect at once, without waiting for the pointer.
+    function onShift(e) {
+      if (e.key !== 'Shift' || !drag || drag.type !== 'rotate' || !drag.moved) return;
+      drag.shift = e.type === 'keydown'; applyTurn(drag);
+    }
+    window.addEventListener('keydown', onShift);
+    window.addEventListener('keyup', onShift);
+    function turnText(rad) {
+      var deg = Math.round(rad * 180 / Math.PI);
+      return (deg > 0 ? '↺ ' : '↻ ') + Math.abs(deg) + '°';    // ↺ anticlockwise, ↻ clockwise, seen from above
+    }
     // Which vertical side of the box a drag across the plate rolls the instance onto.
     function rollSide(d) {
       var p = planePoint(0); if (!p || !d.p0 || !d.instance) return -1;
@@ -610,23 +671,23 @@
     function hover(px) {
       var key = null, cursor = 'default', tip = null, patch = null;
       var dot = hitDot(px), hit = hitInstance();
-      if (hitHandle()) { key = 'handle'; cursor = 'grab'; tip = 'Drag to turn'; }
+      if (hitHandle()) { key = 'handle'; cursor = 'grab'; tip = 'Drag to turn · Shift: 45° steps'; }
       else if (hitTip(px)) { key = 'tip'; cursor = 'pointer'; tip = 'Tip onto its next side (Shift: the one before)'; }
       else if (!dot && (patch = hitPatch())) {
         key = 'patch' + patch.i; cursor = 'pointer';
-        tip = 'Lay it on this face: ' + MockUnits.len(patch.face.height) + ' tall';
+        tip = 'Lay it on this ' + (patch.face.box ? 'side' : 'face') + ': ' + MockUnits.len(patch.face.height, 0, opts.unitsOf ? opts.unitsOf(patch.instance.id) : 'mm') + ' tall';
       }
       else if (dot) {
         key = 'dot' + dot.cand; cursor = 'pointer';
         var cand = MockParts.resting(dot.instance.partKey).list[dot.cand];
-        tip = 'Lay it on this face: ' + MockUnits.len(cand.height) + ' tall' + (dot.cand === 0 ? ', the best way' : '') + (cand.supports ? ', with overhangs' : '');
+        tip = 'Lay it on this face: ' + MockUnits.len(cand.height, 0, opts.unitsOf ? opts.unitsOf(dot.instance.id) : 'mm') + ' tall' + (dot.cand === 0 ? ', the best way' : '') + (cand.supports ? ', with overhangs' : '');
       } else {
         var side = hit ? -1 : hitSide();
         if (side !== hoverSide) { hoverSide = side; invalidate(); }
         if (side >= 0) {
           key = 'side' + side; cursor = 'pointer';
           var one = oneSelected(), sz = MockParts.byKey[one.partKey].size;
-          tip = 'Put this side down: ' + MockUnits.len([sz.x, sz.y, sz.z][Math.floor(side / 2)]) + ' tall';
+          tip = 'Put this side down: ' + MockUnits.len([sz.x, sz.y, sz.z][Math.floor(side / 2)], 0, opts.unitsOf ? opts.unitsOf(one.id) : 'mm') + ' tall';
         } else {
           var over = hit ? null : hitOutline(), id = hit ? hit.object.userData.instanceId : (over ? over.id : null);
           if (id) { key = 'instance:' + id; cursor = 'move'; tip = opts.labelFor(id); }
@@ -664,6 +725,16 @@
         invalidate();
         return;
       }
+      if (d.type === 'rotate' && d.moved) {
+        // the handle stays where the turn left it, fixed to the first selected instance
+        var first = d.snap[0] && d.snap[0].c, ang = d.h0 + (d.turn || 0);
+        handleAng = ang;
+        if (first && meshes[first.id]) {
+          placeMesh(first); meshes[first.id].updateMatrixWorld(true);
+          var endW = new T.Vector3(d.pivot.x + Math.cos(ang) * d.R0, d.pivot.y + Math.sin(ang) * d.R0, 0.4);
+          bound = { id: first.id, local: meshes[first.id].worldToLocal(endW) };
+        }
+      }
       if (d.type === 'move' && still && !d.mod) opts.select(d.id, 'only');
       opts.changed(d.moved ? (d.type === 'rotate' ? 'rotate' : 'move') : 'select');
     });
@@ -691,7 +762,7 @@
       if (!mod && (k === 'f' || k === 'F')) return go('fit');
     });
 
-    function resetHandle() { handleDir.set(0, 1); invalidate(); }
+    function resetHandle() { handleAng = Math.PI / 2; bound = null; invalidate(); }
     // Whether an instance's middle is comfortably inside the picture (not at its edge or behind
     // the view buttons), so an instance that was just added is never left out of sight.
     function inView(instanceId) {
@@ -736,6 +807,14 @@
                dist: +camera.position.distanceTo(controls.target).toFixed(1) };
     };
     container.__handle = function () { return handle.visible ? pagePx(handle.position) : null; };
+    // for the walk: the handle's place in the first selected instance's own frame (it must not
+    // change while the instance turns), and the angle of the turn going on
+    container.__handleLocal = function () {
+      var s = selectedInstances()[0]; if (!s || !meshes[s.id] || !handle.visible) return null;
+      meshes[s.id].updateMatrixWorld(true);
+      var l = meshes[s.id].worldToLocal(handle.position.clone());
+      return { x: +l.x.toFixed(2), y: +l.y.toFixed(2), z: +l.z.toFixed(2), bound: !!bound, turn: drag && drag.type === 'rotate' ? +((drag.turn || 0) * 180 / Math.PI).toFixed(2) : null };
+    };
     container.__tip = function () { var r = canvas.getBoundingClientRect(); return tipAt ? { x: r.left + tipAt.x, y: r.top + tipAt.y } : null; };
     // the hull patches showing: each one's middle on the page, how tall the instance would stand
     // on it, and whether a press at that middle would take that patch
@@ -745,9 +824,16 @@
       return patches.list.map(function (p, i) {
         if (!p.mesh.visible) return null;
         var s = toPx(p.face.centre.clone().applyMatrix4(m.matrixWorld)), x = r.left + s.x, y = r.top + s.y;
-        setNdc({ clientX: x, clientY: y }); var h = hitPatch();
-        return { i: i, x: Math.round(x), y: Math.round(y), height: Math.round(p.face.height), area: Math.round(p.face.area), pickable: !!h && h.i === i };
+        setNdc({ clientX: Math.round(x), clientY: Math.round(y) }); var h = hitHandle() ? null : hitPatch();
+        return { i: i, x: Math.round(x), y: Math.round(y), height: Math.round(p.face.height), area: Math.round(p.face.area), box: !!p.face.box, n: p.face.n.toArray().map(function (v) { return +v.toFixed(3); }), pickable: !!h && h.i === i };
       }).filter(Boolean);
+    };
+    // what a press at a page position would take first, in onDown's order
+    container.__pressAt = function (x, y) {
+      setNdc({ clientX: x, clientY: y });
+      if (hitHandle()) return 'handle';
+      var p = hitPatch(); if (p) return 'patch ' + p.i;
+      var h = hitInstance(); return h ? 'instance ' + h.object.userData.instanceId : 'nothing';
     };
     container.__dots = function () { var r = canvas.getBoundingClientRect(); return dots.map(function (d) { return { x: r.left + d.x, y: r.top + d.y, cand: d.cand }; }); };
     // a point on a visible box side that is not covered by the part, or null

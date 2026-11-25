@@ -1,8 +1,9 @@
 # Lay on face: the faces on the hull, as Orca Slicer finds them
 
-Fri 2026-11-20, Pacific time. What Orca Slicer's "Lay on face" tool does, in our own words, and what the
-wizard mockup (version 5, [its decisions](../mockups/print-wizard/DECISIONS.md)) does
-with it. Orca Slicer is AGPL and PenguinSlicer is MIT: this note describes the method; the
+Fri 2026-11-20, Pacific time; bounding-box patches added Wed 2026-11-25. What Orca
+Slicer's "Lay on face" tool does, in our own words, and what the wizard mockup (version 5,
+and the bounding-box patches of version 7, [its decisions](../mockups/print-wizard/DECISIONS.md))
+does with it. Orca Slicer is AGPL and PenguinSlicer is MIT: this note describes the method; the
 mockup's code (`docs/mockups/print-wizard/js/hullfaces.js`) was written from this note, and
 no Orca code, comment or constant name is in the repository.
 
@@ -23,6 +24,13 @@ bends away from it by less than 20 degrees and is at least half its size.** On t
 mock parts it leaves the pulley and the spacer their two end faces, drops the 40 facets
 of the rib's curved edge, and changes nothing on the other four parts. Finding a part's
 faces takes 0.2 to 10 ms in the browser.
+
+That rule left a pulley no way to stand on its rim, so since mockup version 7 (Wed
+2026-11-25) a second rule of the mockup's own adds **bounding-box patches**: a side of the
+part's bounding box that no kept face points within 30 degrees of gets a patch lying on the
+box, and a click stands the part on that side. The pulley and the spacer gain four each
+(their rims), the rib three, the four boxy parts none. See
+[Bounding-box patches](#bounding-box-patches-version-7) below.
 
 ## How Orca finds the faces
 
@@ -127,6 +135,68 @@ Two simpler rules were tried on the numbers above and fail:
   mass over the contact area) and could share it.
 - **Several bodies in one part,** as Orca merges its model parts' hulls first.
 
+## Bounding-box patches (version 7)
+
+The owner, reviewing mockup version 6: round parts can be laid on edge. The round-part rule
+leaves a pulley only its two end faces, so it cannot be stood on its rim; where the kept
+faces leave a direction with no flat face, the box's side that way gets a patch.
+
+### The rule
+
+Take the part's axis-aligned bounding box in its own coordinates (the frame the patches
+turn with, so the box is the instance's, whatever its turn on the plate). For each of the
+box's six sides, find the kept face whose outward normal is nearest that side's outward
+direction. **The side is uncovered when that nearest face is more than 30 degrees away**
+(the mockup allows half a degree more for rounding, so a face exactly 30 degrees off
+covers). Each uncovered side gets a patch: the side's rectangle drawn in 10% toward its
+middle and rounded as a face's patch is, 0.1 mm outside the box, in the hull patches' blue
+and opacity. A click turns the instance so that side's direction points straight down,
+which leaves the part resting on whatever touches the plate that way: a pulley's rim, a
+spacer's round side. A side with a flat face near it needs no patch, since that face's own
+patch already lays the part that way.
+
+Thirty degrees is the half-way angle of a hexagon: a hex part's flats are 60 degrees
+apart, so each box side has a flat within 30 degrees of it and the part gets no box patch,
+which is right (it lies on a flat). A round side, whose facets are all dropped, leaves the
+sides across it with nothing nearer than the end faces, 90 degrees off.
+
+### What it gives on the mockup's parts
+
+Counted in the browser:
+
+| Part | Kept faces | Uncovered sides (nearest face) | Box patches |
+|---|---|---|---|
+| L Bracket | 7 | none | 0 |
+| HTD Pulley 24T | 2 | ±x, ±y (90°) | 4, its rim |
+| Camera Mount | 7 | none | 0 |
+| Hex Bore Spacer 1in | 2 | ±x, ±y (90°) | 4, its round side |
+| Gusset Plate | 7 | none | 0 |
+| Shooter Hood Rib | 5 | +y, its outer curve (90°); ±z, its ends (36°) | 3 |
+| 1/2in Hex Shaft | 8 | none (the flats nearest ±z are exactly 30° off) | 0 |
+
+The rib's two end patches stand it on an end, 353 mm tall, which the height check then
+refuses with its usual error. Whether a slanted end like the rib's (36 degrees off) should
+count as covering is a question for the owner (M29 in [the decisions](../mockups/print-wizard/DECISIONS.md)).
+
+### What the real wizard would need beyond it
+
+- **The right box.** An axis-aligned box in the part's own frame suits parts modelled
+  square to their axes, as Onshape parts usually are. A round part modelled at an angle (a
+  pulley on a tilted shaft in a Part Studio) has a box whose sides do not meet its rim
+  square; the real wizard should use the axis of the round side (the direction the dropped
+  facets all lie square to) and offer directions round it, or a box aligned to the part's
+  principal axes.
+- **Where it rests.** Laid on a box side, a part rests on what touches the plate, which for
+  a round side is a line: it would roll. The real wizard should test stability (as for the
+  faces), and say nothing more: a pulley on its rim prints, with supports or a brim.
+- **More than six directions.** A part whose round side spans less than a half-turn (a
+  rib's curve, a rounded corner) has directions between the box's sides that a user might
+  want; six are enough for the mockup's question.
+- **Covering by more than one face.** The 30-degree test looks at the nearest face only; a
+  side with two faces 35 degrees off on either side (a roof shape) gets a patch, though
+  either face would do. The real wizard might count a side as covered when the faces near
+  it span it.
+
 ## What the mockup does
 
 Written afresh in `docs/mockups/print-wizard/js/hullfaces.js` and drawn by
@@ -139,16 +209,19 @@ Written afresh in `docs/mockups/print-wizard/js/hullfaces.js` and drawn by
 - **Faces:** hull triangles joined across edges while their normals are within 0.25
   degrees of the first triangle's (looser than Orca's 0.06 degrees to absorb the mock
   meshes' single-precision rounding; no round side here is that fine).
-- **Filters:** Orca's four, with Orca's values; then the rule for round parts.
+- **Filters:** Orca's four, with Orca's values; then the rule for round parts; then (since
+  version 7) the bounding-box patches of the uncovered sides.
 - **Patch:** the outline drawn in 10% toward its centre of area, then rounded by four
   passes of corner cutting (each side replaced by the points a quarter and three quarters
   along it), raised 0.1 mm. Drawn in PenguinCAM's accent blue at 22% opacity, 55% under
   the pointer. Unlike Orca, a patch is hidden behind the part, the face the instance lies
   on has no patch, a drag that starts on a patch moves the instance, and the rotation
   handle moves round the selection to a side where it covers no patch in sight (hidden if
-  no side is free), so a click on a patch always lays the instance down.
-- **Click:** the instance turns so the face's normal points down, then the Layout step's
-  usual follow-up (a free spot if needed, one sentence saying how tall it now stands).
+  no side is free; since version 7 only while it is not being dragged), so a click on a
+  patch always lays the instance down.
+- **Click:** the instance turns so the face's normal (or the box side's direction) points
+  down, then the Layout step's usual follow-up: a free spot if needed. Since version 7
+  nothing is said about how it lies now; only a move the wizard made is said.
 
 ## Time to find the faces
 

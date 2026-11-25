@@ -1,4 +1,4 @@
-/* PenguinSlicer mockup, version 6: the wizard in the panel. Five steps (Parts, Settings,
+/* PenguinSlicer mockup, version 7: the wizard in the panel. Five steps (Parts, Settings,
  * Layout, Preview, Send), advanced mode, mocked export with its two ways to fail, slicing
  * progress, layer preview, the Send step with delivery and print progress, the printer
  * status in the header, coming back to running work, and every armed error from the
@@ -54,11 +54,14 @@
   function profileObj() { return ST.profileById[S.profile]; }
   function filamentObj() { return ST.FILAMENTS.filter(function (f) { return f.id === S.filament; })[0]; }
   function readyParts() { return S.parts.filter(function (p) { return p.status === 'ready'; }); }
-  // The layout units: inches when every part on the plate is in inches, else millimetres.
-  // And the spacing the slice service requires for the Settings step's supports setting.
+  // Version 7 (the owner): printer and plate figures (the plate, the height limit, spacing,
+  // layer heights) are always in millimetres, so MockUnits' default stays 'mm'; only a part's
+  // own size follows its part's units (unitsOf). And the spacing the slice service requires
+  // for the Settings step's supports setting.
+  function unitsOf(c) { var p = c && partById(c.partId); return p && p.units === 'in' ? 'in' : 'mm'; }
+  PLATE.unitsOf = unitsOf;
   function syncPlateRules() {
-    var rp = readyParts();
-    U.unit = rp.length && rp.every(function (p) { return p.units === 'in'; }) ? 'in' : 'mm';
+    U.unit = 'mm';
     var on = !!eff().enable_support;
     PLATE.supportsOn = on; PLATE.spacing = on ? PLATE.spacingOn : PLATE.spacingOff;
   }
@@ -234,7 +237,7 @@
   // slice running on the server; coming back to it with the same plate finds it still going,
   // or finished. A changed plate starts a new slice (see enterPreview).
   function gotoStep(name) {
-    if (S.step !== name) S.notices = [];     // a notification belongs to the step it was given on
+    if (S.step !== name) { S.notices = []; S.lastNoteOn = null; }    // a notification belongs to the step it was given on; so does the last-print note
     S.step = name;
     closePrinterPop(); closeChangesPop(); clearWhy(); closeLayoutHelp();
     $all('#wizard .step').forEach(function (s) { s.hidden = s.getAttribute('data-step') !== name; });
@@ -253,7 +256,7 @@
     if (name === 'layout') enterLayout();
     if (name === 'preview') enterPreview();
     if (name === 'send') renderSend();
-    updateNext(); updateSummary(); renderNotices();
+    updateNext(); updateSummary(); renderNotices(); renderLastPrint();
   }
   function updateNext() {
     if (S.step !== 'send') $('#btn-next').disabled = !canLeave(S.step);
@@ -277,29 +280,26 @@
     box.innerHTML = '';
     if (idx < 1) { box.hidden = true; closeChangesPop(); return; }
     box.hidden = false;
-    function chip(t, cls) { var c = el('span', 'chip' + (cls ? ' ' + cls : ''), t); box.appendChild(c); return c; }
-    // The Settings and Layout steps show the same chips (the owner, version 6): parts and
-    // instances, filament, profile and changes, updated at once as a choice changes.
+    // Version 7 (the owner): the plate summary is two lines of text, not a row of chips, on
+    // every step from Settings on. First line: parts and instances. Second line: filament and
+    // profile, cut with an ellipsis when too long (never wrapped), then the "+2 changes" pill,
+    // which stays whole and opens the change details. No plate area, no time and grams.
     var parts = readyParts().length;
-    chip(parts + ' part' + (parts === 1 ? '' : 's') + ' · ' + totalInstances() + ' instance' + (totalInstances() === 1 ? '' : 's'));
-    chip(filamentObj().type); chip(profileObj().name);
+    box.appendChild(el('div', 'sum-line', parts + ' part' + (parts === 1 ? '' : 's') + ' · ' + totalInstances() + ' instance' + (totalInstances() === 1 ? '' : 's')));
+    var line2 = el('div', 'sum-line sum-set'), set = filamentObj().type + ' · ' + profileObj().name, st = el('span', 'sum-text', set);
+    st.title = filamentObj().name + ' · ' + profileObj().name;
+    line2.appendChild(st); box.appendChild(line2);
     var n = changeCount();
     if (n) {
-      // the "+1 change" chip opens the change details, joined to it as the printer details are
+      // the "+1 change" pill opens the change details, joined to it as the printer details are
       var cb = el('button', 'chip adv chg-chip', '+' + n + ' change' + (n > 1 ? 's' : '')); cb.type = 'button'; cb.id = 'chg-chip';
       cb.setAttribute('aria-expanded', $('#chg-pop').hidden ? 'false' : 'true'); cb.setAttribute('aria-controls', 'chg-pop');
       cb.classList.toggle('open', !$('#chg-pop').hidden);
       cb.title = 'The settings changed from ' + profileObj().name;
       cb.addEventListener('click', toggleChangesPop);
-      box.appendChild(cb);
+      line2.appendChild(cb);
       if (!$('#chg-pop').hidden) renderChangesPop();
     } else closeChangesPop();
-    if (idx >= 3 && S.instances.length) {
-      var b = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
-      S.instances.forEach(function (c) { var h = PL.bbox(PL.worldHull(c)); b.minX = Math.min(b.minX, h.minX); b.maxX = Math.max(b.maxX, h.maxX); b.minY = Math.min(b.minY, h.minY); b.maxY = Math.max(b.maxY, h.maxY); });
-      chip(U.area(b.maxX - b.minX, b.maxY - b.minY) + ' of plate');
-    }
-    if (idx >= 4 && S.result) chip(hm(S.result.est.seconds) + ' · ' + Math.round(S.result.est.grams) + ' g');
   }
   // One line per change, in the changes box's wording: "Quality › Resolution: 0.014 mm (profile 0.012 mm)".
   // A setting that has a quick change is named in the quick change's words ("Support ›
@@ -342,14 +342,14 @@
     box.innerHTML = '';
     var p = el('p', 'config-status');
     p.appendChild(document.createTextNode('Config: '));
-    var a = el('a', null, '6238 (Popcorn Penguins)'); a.href = '#'; a.title = 'Open the configuration (mockup: does nothing)';
+    var a = el('a', null, '6238 (Popcorn Penguins)'); a.href = '#'; a.title = 'Open the configuration';
     a.addEventListener('click', function (e) { e.preventDefault(); });
     p.appendChild(a);
     var r = el('a', 'config-refresh', '↻'); r.href = '#'; r.title = S.ctx === 'standalone' ? 'Reload the configuration' : 'Reload the configuration from Onshape';
     r.addEventListener('click', function (e) { e.preventDefault(); });
     p.appendChild(r);
     box.appendChild(p);
-    if (S.ctx === 'standalone') box.appendChild(el('p', 'config-status-reason', 'Loaded from your saved configuration link.'));
+    // version 7: no "Loaded from your saved configuration link." (the name says enough)
   }
 
   function fillSelect(sel, options, value) {
@@ -454,7 +454,7 @@
       var row = $('#adv-row-' + key);
       if (row) { row.scrollIntoView({ block: 'center' }); row.classList.add('flash'); var inp = $('#adv-' + key); if (inp) inp.focus({ preventScroll: true }); }
       S.advFocus = null;
-    } else $('#adv-back').focus();
+    } else ($('#adv-body button') || $('#adv-done')).focus();     // the first section's heading or name
   }
   function closeAdvanced() {
     $('#advanced').hidden = true; setCoveredInert(false); placePrinterIcon(false); advResetArmed = false; renderSetup(); updateSummary();
@@ -516,7 +516,6 @@
       if (open) { var rows = el('div', 'adv-rows'); g.rows.forEach(function (s) { rows.appendChild(advRow(s, v[s.key], pv[s.key])); }); box.appendChild(rows); }
       into.appendChild(box);
     });
-    into.appendChild(el('div', 'adv-mock', 'Mockup note: a sample of ' + ST.SETTINGS.filter(function (s) { return s.group === section; }).length + ' of Orca’s about ' + ST.ORCA_COUNT[section] + ' ' + section + ' settings; the product lists every one, taken from Orca’s own definitions.'));
   }
   // Every action in advanced mode redraws it; focus goes back to the control with the same id
   // (a Reset link that is gone hands it to its setting's control), so the keyboard keeps its place.
@@ -531,7 +530,7 @@
     renderAdvancedBody(body, scroll);
     if (fid) {
       var f = document.getElementById(fid) || (fid.indexOf('adv-reset-') === 0 ? document.getElementById('adv-' + fid.slice(10)) : null);
-      if (f && f.disabled) f = $('#adv-back');
+      if (f && f.disabled) f = $('#adv-done');
       if (f && f !== document.activeElement) f.focus({ preventScroll: true });
     }
   }
@@ -624,13 +623,12 @@
     return row;
   }
   function bindAdvanced() {
-    $('#adv-back').addEventListener('click', closeAdvanced);
     $('#adv-done').addEventListener('click', closeAdvanced);
     $('#adv-reset-all').addEventListener('click', function () {
       if (!advResetArmed) { advResetArmed = true; renderAdvanced(); return; }
       advResetArmed = false; S.changes = {}; renderAdvanced();
     });
-    $('#advanced').addEventListener('keydown', function (e) { if (e.key === 'Escape') closeAdvanced(); });
+    // version 7: Escape no longer closes advanced mode; "Back to Settings" at the bottom is the only way back
     if (window.ResizeObserver) new ResizeObserver(fitAdvanced).observe($('#advanced'));
   }
 
@@ -813,7 +811,6 @@
         var key = keys[next++ % keys.length];
         addPart(key, { fileName: f.name || (P.byKey[key].name.replace(/\s+/g, '_') + '.stl') });
       });
-      setPartsNote(msg('info', 'Mockup: each file you choose becomes one of the mock parts; the file itself is not read.', null));
     }
     dz.addEventListener('click', function () { input.click(); });
     dz.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } });
@@ -882,16 +879,8 @@
     });
     // Undo works within the Layout step; a change made on the Parts step starts afresh.
     if (fresh.length || S.instances.length !== before + fresh.length) { S.undo = []; S.redo = []; }
-    // say once per part that it was laid down automatically, and how much lower it now stands
-    var told = [];
-    fresh.forEach(function (c) {
-      var p = partById(c.partId);
-      if (!c.auto || p.autoTold) return;
-      p.autoTold = true;
-      told.push(p.name + ' (' + U.len(PL.derive(c).height) + ' tall instead of ' + U.len(P.resting(c.partKey).modelled.height) + ')');
-    });
-    // a consequence the user cannot see otherwise: the part does not lie as it was modelled
-    if (told.length) layHint = msg('ok', 'Laid down automatically: ' + told.join(', ') + '.', null);
+    // Version 7 (the owner: no text about orientation): nothing is said when a part arrives laid
+    // down automatically; the view shows it, and its selection's "Put back as modelled" undoes it.
     if (!S.laidOut || fresh.length === S.instances.length) {
       var res = PL.bestArrange(S.instances, PLATE); S.laidOut = true;
       S.layoutNotes = arrangeNote(res);
@@ -938,18 +927,19 @@
     c.q = new T.Quaternion().setFromUnitVectors(wn.normalize(), P.DOWN).multiply(c.q); c.d = null;
     return true;
   }
-  // After instances were laid another way: find each a free spot if it needs one, then one
-  // sentence on what happened.
-  function afterLay(instances, what) {
+  // After instances were laid another way: find each a free spot if it needs one. Version 7
+  // (the owner: no text about orientation): nothing is said of how it lies now, which the view
+  // shows; only a move the wizard made, or an instance left beside the plate, is said.
+  function afterLay(instances) {
     var how = instances.map(function (c) { recheck(); return settle(c); });
-    var c0 = instances[0], h = U.len(PL.derive(c0).height);
-    var head = instances.length === 1 ? instanceLabel(c0) + ' now lies ' + what + ': ' + h + ' tall.'
-                                   : instances.length + ' instances of ' + partById(c0.partId).name + ' now lie ' + what + ': ' + h + ' tall.';
+    var c0 = instances[0];
     var parked = how.filter(function (h) { return h === 'parked'; }).length, moved = how.filter(Boolean).length - parked;
-    layHint = msg(parked ? 'warn' : 'ok', head, parked
-      ? (instances.length === 1 ? 'It needs more room lying this way and no spot on the plate is free, so it waits beside the plate. The other instances stay where you put them; press Arrange to make room.'
-                                : parked + ' need more room lying this way and wait beside the plate. The other instances stay where you put them; press Arrange to make room.')
-      : moved ? (instances.length === 1 ? 'It no longer fitted where it stood, so it was moved' + (how[0] === 'turned' ? ' and turned' : '') + ' to the nearest free spot.' : moved + ' no longer fitted where they stood and moved to the nearest free spots.') : null);
+    layHint = parked
+      ? msg('warn', instances.length === 1 ? instanceLabel(c0) + ' no longer fits on the plate and waits beside it.' : parked + ' instances no longer fit on the plate and wait beside it.',
+            'No spot on the plate is free for ' + (parked === 1 ? 'it' : 'them') + ' lying this way. The other instances stay where you put them; press Arrange to make room.')
+      : moved ? msg('ok', instances.length === 1 ? instanceLabel(c0) + ' no longer fitted where it stood, so it was moved' + (how[0] === 'turned' ? ' and turned' : '') + ' to the nearest free spot.'
+                                               : moved + ' instances no longer fitted where they stood and moved to the nearest free spots.', null)
+      : null;
     if (parked) needRefit = true;
     recheck(); scheduleLayoutRender();
   }
@@ -961,9 +951,9 @@
       if (cand && turnToRest(c, cand)) changed.push(c);
       if (cand) c.auto = what === 'auto';
     });
-    if (!changed.length) { layHint = msg('info', (instances.length === 1 ? instanceLabel(instances[0]) + ' already lies' : 'They already lie') + ' that way.', null); scheduleLayoutRender(); return; }
+    if (!changed.length) { layHint = null; scheduleLayoutRender(); return; }       // version 7: no "already lies that way"
     pushUndo(snap);
-    afterLay(changed, what === 'auto' ? 'its best way' : what === 'modelled' ? 'as modelled' : 'that way');
+    afterLay(changed);
   }
   // Auto-orient: the selection, or every instance when nothing is selected. When every instance
   // changes at once, the plate is arranged again after (as Orca's Q then A).
@@ -973,11 +963,12 @@
     if (!whole) return layInstances(list, function (c) { return P.resting(c.partKey).list[0]; }, 'auto');
     var snap = snapshot(), changed = 0;
     list.forEach(function (c) { var best = P.resting(c.partKey).list[0]; if (best && turnToRest(c, best)) changed++; if (best) c.auto = true; });
-    if (!changed) { layHint = msg('info', 'Every instance already lies its best way.', null); scheduleLayoutRender(); return; }
+    if (!changed) { layHint = null; scheduleLayoutRender(); return; }
     pushUndo(snap); recheck();
     var res = null;
     if (S.problems.some(function (p) { return p.rule !== 'too_tall'; })) { res = PL.bestArrange(S.instances, PLATE); S.layoutNotes = arrangeNote(res); needRefit = true; }
-    layHint = msg('ok', 'Auto-orient laid ' + plural(changed, 'instance', 'instances') + (changed === 1 ? ' its' : ' their') + ' best way' + (res ? ', then arranged the plate to make room.' : '.'), null);
+    // version 7: nothing about how they lie now; only that the plate was arranged again, which moved everything
+    layHint = res ? msg('ok', 'Arranged the plate again to make room.', null) : null;
     recheck(); scheduleLayoutRender();
   }
   // The tip handle: each selected instance steps to its next resting position (Shift: the one before).
@@ -991,12 +982,10 @@
       var next = i < 0 ? (back ? n - 1 : 0) : (i + (back ? n - 1 : 1)) % n;
       if (next !== i && turnToRest(c, R[next])) { c.auto = false; changed.push(c); }
     });
-    if (!changed.length) { layHint = msg('info', instanceLabel(list[0]) + ' has only one way to lie flat.', null); scheduleLayoutRender(); return; }
+    if (!changed.length) { layHint = null; scheduleLayoutRender(); return; }
     pushUndo(snap);
-    var c0 = changed[0], k = P.restIndex(c0.partKey, c0.q), n0 = P.resting(c0.partKey).list.length;
-    afterLay(changed, 'on its ' + ordinal(k + 1) + ' of ' + n0 + ' sides' + (k === 0 ? ' (the best)' : ''));
+    afterLay(changed);
   }
-  function ordinal(n) { return ['first', 'second', 'third', 'fourth', 'fifth', 'sixth'][n - 1] || n + 'th'; }
   // One error for every instance that is too close: one pair is named; more say how many,
   // with one Arrange button. Every instance in it stays marked in the view.
   // The spacing follows the Settings step's supports setting (12 mm on, 5 mm off). Turning
@@ -1010,7 +999,7 @@
       var ids = [];
       close.forEach(function (p) { p.instances.forEach(function (id) { if (ids.indexOf(id) < 0) ids.push(id); }); });
       close = [{ rule: 'too_close', instances: ids,
-                 message: ids.length + ' instances are closer than ' + U.len(PLATE.spacing) + ' with supports ' + (PLATE.supportsOn ? 'on' : 'off') + '. Press Arrange, or drag them apart.' }];
+                 message: ids.length + ' instances are closer than ' + U.len(PLATE.spacing, 0, 'mm') + ' with supports ' + (PLATE.supportsOn ? 'on' : 'off') + '. Press Arrange, or drag them apart.' }];
     }
     S.problems = rest.concat(close);
   }
@@ -1044,9 +1033,10 @@
 
   function enterLayout() {
     enterLayoutData();
-    // the plate's size in millimetres, as Bambu Lab gives it; the height limit and spacing in the layout units
-    $('#layout-info').textContent = (PRN.paired ? ST.PRINTER.name : 'The ' + ST.PRINTER.model) + ': plate ' + PLATE.x + ' × ' + PLATE.y + ' mm, instances up to ' +
-      U.len(PLATE.height) + ' tall, at least ' + U.len(PLATE.spacing) + ' apart (supports ' + (PLATE.supportsOn ? 'on' : 'off') + ').';
+    // version 7 (the owner): every figure of the printer and the plate in millimetres, whatever
+    // the parts' units: "Shop H2S: plate 340 × 320 mm, up to 340 mm tall, 12 mm apart"
+    $('#layout-info').textContent = (PRN.paired ? ST.PRINTER.name : 'The ' + ST.PRINTER.model) + ': plate ' + PLATE.x + ' × ' + PLATE.y + ' mm, up to ' +
+      U.len(PLATE.height, 0, 'mm') + ' tall, ' + U.len(PLATE.spacing, 0, 'mm') + ' apart';
     if (!editor) {
       editor = Layout3D.create($('#layout-view'), {
         plate: PLATE,
@@ -1054,6 +1044,7 @@
         isSelected: function (id) { return S.selected.indexOf(id) >= 0; },
         isBad: isBad,
         labelFor: function (id) { var c = instanceById(id); return c ? instanceLabel(c) : ''; },
+        unitsOf: function (id) { return unitsOf(instanceById(id)); },
         select: function (id, how) {
           if (how === 'none') S.selected = [];
           else if (how === 'only') S.selected = [id];
@@ -1112,7 +1103,7 @@
     $('#layout-selrow').classList.toggle('has-sel', sel.length > 0);
     var beside = S.instances.filter(isParked).length, onPlate = S.instances.length - beside;
     if (!sel.length) s.textContent = plural(onPlate, 'instance', 'instances') + ' on the plate' + (beside ? ', ' + beside + ' beside it.' : '.');
-    else if (sel.length === 1) { var d = PL.derive(sel[0]); s.innerHTML = ''; s.appendChild(el('strong', null, instanceLabel(sel[0]))); s.appendChild(document.createTextNode(' ' + U.area(d.w, d.l) + ', ' + U.len(d.height) + ' tall')); }
+    else if (sel.length === 1) { var d = PL.derive(sel[0]); s.innerHTML = ''; s.appendChild(el('strong', null, instanceLabel(sel[0]))); var un = unitsOf(sel[0]); s.appendChild(document.createTextNode(' ' + U.area(d.w, d.l, un) + ', ' + U.len(d.height, 0, un) + ' tall')); }
     else { s.innerHTML = ''; s.appendChild(el('strong', null, sel.length + ' instances')); s.appendChild(document.createTextNode(' move and turn together')); }
     renderOrientLine(sel); renderStrip(sel); renderGestures();
     $('#btn-tilt').hidden = Opt.scheme !== 'T'; $('#btn-top').hidden = Opt.scheme === 'T';
@@ -1155,19 +1146,16 @@
     var same = sel.length && sel.every(function (c) { return c.partKey === sel[0].partKey; });
     box.hidden = !same;
     if (!same) return;
-    var modelled = sel.every(function (c) { return P.isModelled(c.q); }), auto = sel.every(function (c) { return c.auto; });
+    var modelled = sel.every(function (c) { return P.isModelled(c.q); });
     var best = P.resting(sel[0].partKey).list[0];
     function link(t, fn) { var b = el('button', 'linkish', t); b.type = 'button'; b.addEventListener('click', fn); box.appendChild(b); }
-    if (auto && !modelled) {
-      box.appendChild(el('span', 'auto-chip', 'Laid down automatically'));
-      link('Put back as modelled', function () { layInstances(sel, function () { return P.resting(sel[0].partKey).modelled; }, 'modelled'); });
-    } else if (!modelled) {
-      box.appendChild(document.createTextNode('Laid down by you. '));
+    // Version 7 (the owner: no text about orientation): the controls only, no sentence beside
+    // them, and nothing at all when the instance lies as modelled and that is its best way.
+    if (!modelled) {
       link('Put back as modelled', function () { layInstances(sel, function () { return P.resting(sel[0].partKey).modelled; }, 'modelled'); });
     } else if (best && !best.modelled) {
-      box.appendChild(document.createTextNode('As modelled. '));
       link('Lay it the best way', function () { autoOrient(sel.map(function (c) { return c.id; })); });
-    } else box.appendChild(document.createTextNode('As modelled, which is already its best way.'));
+    } else box.hidden = true;
   }
   // The resting-position strip: under the view, while the selection is instances of one part,
   // a picture of each way that part can lie, the auto-orient choice first and marked Best,
@@ -1178,7 +1166,7 @@
     if (box.hidden) return;
     var key = sel[0].partKey;
     if (sel.some(function (c) { return c.partKey !== key; })) { box.appendChild(el('div', 'hint', 'Select instances of one part to choose how they lie.')); return; }
-    var R = P.resting(key), cur = P.restIndex(key, sel[0].q);
+    var R = P.resting(key), cur = P.restIndex(key, sel[0].q), un = unitsOf(sel[0]);     // heights in the part's units
     if (sel.some(function (c) { return P.restIndex(key, c.q) !== cur; })) cur = -2;
     var nWays = R.list.length + (R.modelledListed ? 0 : 1);
     box.appendChild(el('div', 'rs-head', nWays === 1 ? 'It can lie flat only this way.' : 'The ' + nWays + ' ways ' + (sel.length > 1 ? 'they' : 'it') + ' can lie. Click one to lay ' + (sel.length > 1 ? 'them' : 'it') + ' that way:'));
@@ -1191,12 +1179,12 @@
       var img = el('img'); img.alt = ''; img.src = restThumb(key, it.i, c.q); b.appendChild(img);
       if (it.i === 0) b.appendChild(el('span', 'rs-best', 'Best'));
       var tall = c.height > PLATE.height;
-      b.appendChild(el('span', 'rs-line', U.len(c.height) + ' tall'));
+      b.appendChild(el('span', 'rs-line', U.len(c.height, 0, un) + ' tall'));
       if (it.i === 'm') b.appendChild(el('span', 'rs-line', 'as modelled'));
       if (tall) b.appendChild(el('span', 'rs-line bad', 'too tall'));
       else if (c.supports) b.appendChild(el('span', 'rs-line warn', 'overhangs'));
-      function sq(a) { return U.unit === 'in' ? (a / 645.16).toFixed(2) + ' in²' : Math.round(a) + ' mm²'; }
-      b.title = (it.i === 0 ? 'The best way, chosen automatically: ' : it.i === 'm' ? 'As modelled: ' : '') + U.len(c.height) + ' tall, ' + sq(c.contact) + ' on the plate' + (c.overhang > 1 ? ', ' + sq(c.overhang) + ' over air' : '') + (c.supports ? '. Much of it hangs over air, so it will probably need Supports.' : '');
+      function sq(a) { return un === 'in' ? (a / 645.16).toFixed(2) + ' in²' : Math.round(a) + ' mm²'; }
+      b.title = (it.i === 0 ? 'The best way, chosen automatically: ' : it.i === 'm' ? 'As modelled: ' : '') + U.len(c.height, 0, un) + ' tall, ' + sq(c.contact) + ' on the plate' + (c.overhang > 1 ? ', ' + sq(c.overhang) + ' over air' : '') + (c.supports ? '. Much of it hangs over air, so it will probably need Supports.' : '');
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
       b.addEventListener('click', function () { layInstances(sel, function () { return c; }, it.i === 0 ? 'auto' : it.i === 'm' ? 'modelled' : 'pick'); });
       row.appendChild(b);
@@ -1235,10 +1223,9 @@
     var ul = $('#layout-more'); ul.innerHTML = '';
     MORE[Opt.scheme].concat([
       'Shift- or Ctrl-click adds an instance to the selection; drag one to move them all.',
-      'The handle snaps every 45 degrees.',
+      'Hold Shift while turning to turn in 45° steps.',
       'Double-click a flat face to lay the instance down on it.',
-      'F zooms to the instances; Ctrl+1 looks from above; Ctrl+A selects every instance; Escape clears the selection.',
-      'To print more or fewer of a part, go to the Parts step (tab 1) and change its quantity.'
+      'F zooms to the instances; Ctrl+1 looks from above; Ctrl+A selects every instance; Escape clears the selection.'
     ]).forEach(function (t) { ul.appendChild(el('li', null, t)); });
   }
   function doArrange() {
@@ -1335,10 +1322,10 @@
         S.parts.push(part); rib = newInstance(part); rib.q = new T.Quaternion(); rib.auto = false; S.instances.push(rib);
         var ribOthers = S.instances.filter(function (x) { return x !== rib; }), ribMid = PL.centre(ribOthers, PLATE);
         if (!PL.placeNear(rib, ribOthers, PLATE, ribMid[0], ribMid[1])) PL.place(rib, ribOthers, PLATE);
-        note = msg('info', 'Mockup: added a ' + part.name + ' standing up, to show the height rule.', null);
-      } else { rib.q = new T.Quaternion(); rib.d = null; rib.auto = false; note = msg('info', 'Mockup: stood ' + instanceLabel(rib) + ' up as modelled, to show the height rule.', null); }
+      } else { rib.q = new T.Quaternion(); rib.d = null; rib.auto = false; }
+      // version 7: no "Mockup: …" note in the panel; the scenario strip's option says what it does
+      layHint = null;
     }
-    if (note) layHint = note;
     recheck();
     if (editor) { editor.sync(); renderLayoutSide(); updateNext(); updateSummary(); }
   }
@@ -1385,7 +1372,7 @@
                           : 'This part alone is more than the server can slice, so it cannot be printed from here. Slice it in Orca Slicer on your own computer.',
         instances.length > 1 ? [['Back to Parts', function () { gotoStep('parts'); }, 'primary'], ['Back to Layout', function () { gotoStep('layout'); }]]
                           : [['Back to Parts', function () { gotoStep('parts'); }]]));
-      if (forced) $('#preview-errors').appendChild(msg('info', 'Mockup: the cap was lowered for this plate to show the message. The mockup’s real cap is ' + PLATE_VOLUME_CAP_CM3 + ' cm³.', null));
+      // version 7: the lowered cap is said by the scenario strip's option, not in the panel
       return;
     }
     // which failure, if any, this slice will meet
@@ -1497,7 +1484,7 @@
     $('#slice-card').hidden = true;
     var box = $('#preview-errors'); box.innerHTML = '';
     var sus = job.suspect, label = sus ? instanceLabel(sus) : 'An instance', h = sus ? PL.derive(sus).height : 40;
-    var z1 = +(h * 0.62).toFixed(2), z2 = +(z1 + 0.72).toFixed(2), zr = U.len(z1, 1);
+    var z1 = +(h * 0.62).toFixed(2), z2 = +(z1 + 0.72).toFixed(2), zr = U.len(z1, 1, 'mm');      // a height on the plate: millimetres
     var name = sus && partById(sus.partId) ? partById(sus.partId).name : 'the part';
     // The details: Orca Slicer's own sentence (in millimetres, as Orca writes it), which names
     // the heights; nothing of PenguinSlicer's.
@@ -1532,7 +1519,7 @@
     setSetting('enable_support', true);
     recheck();
     if (S.problems.length) {
-      layHint = msg('info', 'Not sliced: with Supports on, instances need ' + U.len(PLATE.spacing) + ' between them.', null);
+      layHint = msg('info', 'Not sliced: with Supports on, instances need ' + U.len(PLATE.spacing, 0, 'mm') + ' between them.', null);
       gotoStep('layout'); return;
     }
     startSlice(); updateSummary();
@@ -1601,8 +1588,8 @@
     $('#ls-fill').style.height = (frac * 100) + '%';
     var z = r.tp.zs[k] || 0;
     $('#ls-label').textContent = 'Layer ' + (k + 1);
-    // short enough to stay on one line at 320 px in inches
-    $('#layer-readout').textContent = (k + 1) + ' / ' + r.tp.layers + ' · ' + U.len(z, 1);
+    // version 7: a layer's height is a printer figure, always in millimetres
+    $('#layer-readout').textContent = (k + 1) + ' / ' + r.tp.layers + ' · ' + U.len(z, 1, 'mm');
     var sl = $('#layer-slider');
     sl.setAttribute('aria-valuemin', '1'); sl.setAttribute('aria-valuemax', String(r.tp.layers)); sl.setAttribute('aria-valuenow', String(k + 1));
     sl.setAttribute('aria-valuetext', 'Layer ' + (k + 1) + ' of ' + r.tp.layers + ', ' + U.len(z, 1) + ' high');
@@ -1657,7 +1644,7 @@
     if (!S.result) return;
     if (a === 'download') {
       var t = $('#send-toast'); t.hidden = false; t.setAttribute('data-sig', S.resultSig);
-      t.textContent = 'Downloaded the sliced file of ' + plateName(S.result.instances.length) + ' (' +(0.4 + S.result.instances.length * 0.21).toFixed(1) + ' MB). Mockup: no file is saved.';
+      t.textContent = 'Downloaded the sliced file of ' + plateName(S.result.instances.length) + ' (' +(0.4 + S.result.instances.length * 0.21).toFixed(1) + ' MB).';
       return;
     }
     sendToPrinter();
@@ -1722,6 +1709,16 @@
     if (j.failAt && f >= j.failAt) { j.phase = 'failed'; return; }
     if (f >= 1) { j.phase = 'finished'; j.layer = j.layers; }
   }
+  // Version 7 (the owner): the printer reports that a print ended; it cannot tell whether a
+  // person has cleared the plate. So a print that finished leaves the printer Free (ruling R8);
+  // what remains is one line, "Last print finished 11:25 am (Alex Chen)" in the printer details
+  // and "Your print finished at 11:25 am." for its sender, until another plate is sent or 12
+  // hours after it finished, whichever comes first (M19).
+  var LAST_PRINT_KEEP_MS = 12 * 3600 * 1000;
+  function lastFinished() {
+    var j = PRN.job;
+    return j && j.phase === 'finished' && j.endedAt && nowMs() - j.endedAt.getTime() < LAST_PRINT_KEEP_MS ? j : null;
+  }
   function remainingS(j) { return j.phase === 'upload' || j.phase === 'starting' ? j.prep + j.total : Math.max(0, (j.prep + j.total - j.t) * j.slowBy); }
   function finishAt(j) { return new Date(j.sentAt.getTime() + (j.el + remainingS(j)) * 1000); }
   // One reading of the printer for the header icon and the Send step. Version 6 shows no
@@ -1730,12 +1727,12 @@
     var j = PRN.job;
     if (!PRN.paired) return { key: 'none', short: 'No printer', title: 'No printer paired', chip: 'off' };
     if (!PRN.online) return { key: 'offline', short: 'Offline', title: ST.PRINTER.name + ' is not answering', chip: 'off' };
-    if (!j) return { key: 'idle', short: 'Free', title: ST.PRINTER.name + ' is free', chip: '' };
+    // a print that finished: Free at once, never "Finished" (version 7)
+    if (!j || j.phase === 'finished') return { key: 'idle', short: 'Free', title: ST.PRINTER.name + ' is free', chip: '' };
     if (j.phase === 'upload' || j.phase === 'starting') return { key: 'sending', short: 'Sending ' + Math.floor(j.up * 100) + '%', title: 'Sending to ' + ST.PRINTER.name, chip: 'busy' };
     if (j.phase === 'prepare') return { key: 'printing', short: 'Heating', title: ST.PRINTER.name + ' is getting ready to print', chip: 'busy' };
     if (j.phase === 'printing') return { key: 'printing', short: 'Printing ' + Math.floor(j.pct) + '%', title: ST.PRINTER.name + ' is printing', chip: 'busy' };
     if (j.phase === 'waiting') return { key: 'waiting', short: 'Waiting', title: ST.PRINTER.name + ' is waiting for a person: ' + j.waitingFor.label.toLowerCase(), chip: 'wait' };
-    if (j.phase === 'finished') return { key: 'finished', short: 'Finished', title: 'The last print finished', chip: '' };
     return { key: 'failed', short: 'Failed', title: 'The last print failed', chip: 'bad' };
   }
   // Why Send cannot send now, or null.
@@ -1749,13 +1746,22 @@
   // tick: only figures moved. The Send step is then rebuilt only when what it shows changes
   // (a stage, whose print it is, why Send waits), so no button is replaced under the pointer.
   var sendKey = '';
+  // The user's own last print: one line, "Your print finished at 11:25 am.", not a card. It
+  // shows on the Send step, and on whichever step opens when the user comes back (S.lastNoteOn),
+  // until another plate is sent or 12 hours after the print finished.
+  function renderLastPrint() {
+    var p = $('#last-print'), lf = lastFinished();
+    var show = !!lf && lf.mine && (S.step === 'send' || S.lastNoteOn === S.step);
+    p.hidden = !show;
+    p.textContent = show ? 'Your print finished at ' + clockTime(lf.endedAt) + '.' : '';
+  }
   function printerChanged(tick) {
-    renderPrinterIcon();
+    renderPrinterIcon(); renderLastPrint();
     if (S.step === 'send') {
       var j = PRN.job, k = [sendBlocked(), j && j.phase, j && j.mine, !!S.result, printerStatus().key].join('|');
       if (!tick || k !== sendKey) renderSend();
       else {
-        if (j && j.mine) renderPrintCard($('#send-live'), j);
+        if (j && j.mine && j.phase !== 'finished') renderPrintCard($('#send-live'), j);
         var bc = document.querySelector('#send-printer .busy-card'); if (bc && j && !j.mine) bc.parentNode.replaceChild(busyCard(j), bc);
       }
     }
@@ -1779,12 +1785,17 @@
     pop.appendChild(head);
     if (st.key === 'none') {
       var p = el('div', 'pp-note', 'PenguinSlicer needs to be paired with a printer. ');
-      var a = el('a', null, 'How to pair a printer'); a.href = PAIRING_DOC; a.title = 'Documentation (mockup: the page is still to be written)';
+      var a = el('a', null, 'How to pair a printer'); a.href = PAIRING_DOC; a.title = 'Documentation';
       a.addEventListener('click', function (e) { e.preventDefault(); });
       p.appendChild(a); pop.appendChild(p); placePrinterPop(); return;
     }
     if (st.key === 'offline') { pop.appendChild(el('div', 'pp-note', 'Not heard from for ' + PRN.heardAgoMin + ' minutes.')); placePrinterPop(); return; }
-    if (!j) { pop.appendChild(el('div', 'pp-note', 'Nothing is printing.')); placePrinterPop(); return; }
+    if (!j || j.phase === 'finished') {
+      pop.appendChild(el('div', 'pp-note', 'Nothing is printing.'));
+      var lf = lastFinished();
+      if (lf) pop.appendChild(el('div', 'pp-note', 'Last print finished ' + clockTime(lf.endedAt) + ' (' + (lf.mine ? 'you' : lf.who) + ')'));
+      placePrinterPop(); return;
+    }
     var g = el('dl', 'pp-grid'), sending = j.phase === 'upload' || j.phase === 'starting';
     var who = j.mine ? j.who + ' (you)' : j.who;
     if (sending) {
@@ -1852,7 +1863,10 @@
     var toast = $('#send-toast'); if (!toast.hidden && toast.getAttribute('data-sig') !== S.resultSig) toast.hidden = true;
     // the progress of this user's own plate, at the top, once sent (version 6: no line under
     // the step title; the print card, the busy card or the message says where things stand)
-    if (j && j.mine) renderPrintCard(live, j); else { live.innerHTML = ''; live.removeAttribute('data-key'); }
+    // version 7: a print of this user's that finished is no card but the one-line note above
+    // (#last-print), and the new plate's Send is offered below it
+    if (j && j.mine && j.phase !== 'finished') renderPrintCard(live, j); else { live.innerHTML = ''; live.removeAttribute('data-key'); }
+    renderLastPrint();
     // what will be printed
     sum.innerHTML = '';
     if (!r) { sum.appendChild(msg('info', 'Nothing sliced yet.', 'The plate is sliced on the Preview step.', [['Back to Preview', function () { gotoStep('preview'); }]])); pr.innerHTML = ''; return; }
@@ -1881,7 +1895,7 @@
           'An administrator pairs the printer once, from the computer beside it. Meanwhile, download the file and print it from Orca Slicer or Bambu Studio. ',
           [['Download the sliced file', function () { doAction('download'); }]]);
         // the same link as the printer details give
-        var a = el('a', null, 'How to pair a printer'); a.href = PAIRING_DOC; a.title = 'Documentation (mockup: the page is still to be written)';
+        var a = el('a', null, 'How to pair a printer'); a.href = PAIRING_DOC; a.title = 'Documentation';
         a.addEventListener('click', function (e) { e.preventDefault(); });
         nm.querySelector('.todo').appendChild(a); pr.appendChild(nm);
       }
@@ -1971,7 +1985,6 @@
       box.appendChild(ua);
     }
     if (j.phase === 'waiting') box.appendChild(msg('warn', j.waitingFor.label + '.', j.waitingFor.todo));
-    if (j.phase === 'finished') box.appendChild(msg('ok', 'The print finished: layer ' + j.layers + ' of ' + j.layers + '.', null));
     if (j.phase === 'failed') box.appendChild(msg('error', 'The print stopped at layer ' + j.layer + ' of ' + j.layers + ' (' + Math.floor(j.pct) + '%): the printer reported a filament tangle or a clogged nozzle.',
       'Clear the plate and check the filament path at the printer, then send the plate again from here. The sliced file is still here.', null,
       'The printer’s screen shows the fault and its own help for it. Check the filament path from the spool to the nozzle, and the nozzle for a clog.'));
@@ -2057,21 +2070,36 @@
                              : slicing ? 'Back where you were. Your plate was still slicing when you left; see below.' : 'Back where you were. Your plate was sliced and ready to send when you left.',
         null, 'resumed');
     } else {
-      if (j && j.mine && !isLive(j) && kind === 'later') {
-        notify(j.phase === 'finished' ? 'ok' : 'error', j.phase === 'finished' ? 'Your print finished at ' + clockTime(j.endedAt) + '.' : 'Your print stopped at ' + clockTime(j.endedAt) + ', at layer ' + j.layer + ' of ' + j.layers + '.',
+      // version 7: a print that finished is the one-line note (below), not a notification
+      if (j && j.mine && j.phase === 'failed' && kind === 'later') {
+        notify('error', 'Your print stopped at ' + clockTime(j.endedAt) + ', at layer ' + j.layer + ' of ' + j.layers + '.',
           'Your parts were not kept; add them again to print again.', 'resumed');
       }
       // a finished slice that was never sent does not outlast two hours away (M18); say so in one line
       var sentIt = j && j.mine && j.sliceSig === plate.resultSig;
       if (kind === 'later' && plate.result && plate.resultSig && !sentIt) notify('info', 'The slice of your earlier plate has expired; add its parts again to print it.', null, 'expired');
     }
+    // the user's own print that finished: its one-line note shows on whichever step opened
+    S.lastNoteOn = S.step; renderLastPrint();
+  }
+  // The scenario strip's "12 hours later": the clock moves on with the panel left open. A print
+  // still running ends; a print that finished more than 12 hours ago loses its line and note.
+  function twelveHoursLater() {
+    var j = PRN.job;
+    if (j) for (var k = 0; k < 4000 && isLive(j); k++) stepPrint(j, 18);
+    var add = LAST_PRINT_KEEP_MS + 60000;
+    // at Fast speed a print's own clock runs ahead of the page's: move on past its end too
+    if (j && j.endedAt) add = Math.max(add, j.endedAt.getTime() + LAST_PRINT_KEEP_MS + 60000 - nowMs());
+    clockOffsetMs += add;
+    printerChanged();
+    if (S.step === 'send') renderSend();
   }
 
   bindNav(); bindSetup(); bindAdvanced(); bindParts(); bindLayout(); bindPreview();
 
   window.Wizard = {
     Mock: Mock, reset: reset, onOnshapeSelect: onOnshapeSelect, setOption: setOption,
-    setPrinter: setPrinter, comeBack: comeBack,
+    setPrinter: setPrinter, comeBack: comeBack, twelveHoursLater: twelveHoursLater,
     armed: function () { if (S.step === 'layout') applyLayoutArms(); },
     state: function () { return S; },
     printer: function () { return PRN; },
