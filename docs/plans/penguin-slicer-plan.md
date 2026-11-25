@@ -62,7 +62,7 @@ code.
 | **simulated printer** | A program that answers the daemon as an H2S would, over real network connections, from scripted status documents. |
 | **recording** | A file of status documents saved from the real printer by the daemon's `record` command. |
 | **daemon telemetry** | Messages the daemon sends about its own state to the server, where they are kept. Not designed. |
-| **wizard** | The step-by-step user interface: the Parts, Setup, Layout, Preview and Send steps, with its server side. It works from 320 px, the narrowest width it must work at, and lays out wider when it has more room. |
+| **wizard** | The step-by-step user interface: the Parts, Settings, Layout, Preview and Send steps, with its server side. It works from 320 px, the narrowest width it must work at, and lays out wider when it has more room. |
 | **the wizard's server side** | The part of the wizard that runs on the server: it serves the wizard's pages and calls the slice service (phase 2), signs users in through Onshape (phase 4) and calls the relay as its caller (phase 5). |
 | **advanced mode** | The wizard's view that fills the panel with every slicing setting. |
 | **printer-status icon** | The small pill at the right of the wizard's header that shows the printer's state; a click shows its details. |

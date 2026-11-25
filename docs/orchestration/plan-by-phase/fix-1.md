@@ -63,6 +63,8 @@ findings of [review 1](review-1.md). The plan is [penguin-slicer-plan.md](../../
   the eight plates' memory figures are the builder's, unmeasured by a review.
 - **Found while fixing:** the plan's term **wizard** named a "Settings" step; the step is
   Setup ([DECISIONS.md](../../mockups/print-wizard/DECISIONS.md)). Corrected.
+  Reverted by the orchestrator: the owner renamed step 2 "Settings" on Tue 2026-11-24,
+  and mockup version 6 makes the change in `DECISIONS.md`.
 
 ## Taste
 
