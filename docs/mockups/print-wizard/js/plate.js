@@ -116,8 +116,10 @@
       }
       var d = derive(c);
       if (d.height > plate.height + EPS) {
-        problems.push({ rule: 'too_tall', instances: [c.id], message: labelOf(c) + ' stands ' + Math.round(d.height) +
-          ' mm tall; the printer prints up to ' + plate.height + ' mm. Lay it down another way, or press Auto-orient.' });
+        // heights in the layout units; the printer's limit also in millimetres when in inches
+        var U = window.MockUnits, lim = U.len(plate.height) + (U.unit === 'in' ? ' (' + plate.height + ' mm)' : '');
+        problems.push({ rule: 'too_tall', instances: [c.id], message: labelOf(c) + ' stands ' + U.len(d.height) +
+          ' tall; the printer prints up to ' + lim + '. Lay it down another way, or press Auto-orient.' });
       }
     });
     for (var i = 0; i < instances.length; i++) {
@@ -129,8 +131,9 @@
         if (dist < plate.spacing - EPS) {
           problems.push({ rule: 'too_close', instances: [instances[i].id, instances[j].id], message: dist === 0
             ? labelOf(instances[i]) + ' and ' + labelOf(instances[j]) + ' overlap. Drag one away, or press Arrange.'
-            : labelOf(instances[i]) + ' and ' + labelOf(instances[j]) + ' are ' + dist.toFixed(1) + ' mm apart; instances need ' +
-              plate.spacing + ' mm between them. Drag one away, or press Arrange.' });
+            : labelOf(instances[i]) + ' and ' + labelOf(instances[j]) + ' are ' + window.MockUnits.len(dist, 1) + ' apart; instances need ' +
+              window.MockUnits.len(plate.spacing) + ' between them' + (plate.supportsOn == null ? '' : plate.supportsOn ? ' with supports on' : ' with supports off') +
+              '. Drag one away, or press Arrange.' });
         }
       }
     }

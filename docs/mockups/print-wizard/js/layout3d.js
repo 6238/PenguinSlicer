@@ -614,19 +614,19 @@
       else if (hitTip(px)) { key = 'tip'; cursor = 'pointer'; tip = 'Tip onto its next side (Shift: the one before)'; }
       else if (!dot && (patch = hitPatch())) {
         key = 'patch' + patch.i; cursor = 'pointer';
-        tip = 'Lay it on this face: ' + Math.round(patch.face.height) + ' mm tall';
+        tip = 'Lay it on this face: ' + MockUnits.len(patch.face.height) + ' tall';
       }
       else if (dot) {
         key = 'dot' + dot.cand; cursor = 'pointer';
         var cand = MockParts.resting(dot.instance.partKey).list[dot.cand];
-        tip = 'Lay it on this face: ' + Math.round(cand.height) + ' mm tall' + (dot.cand === 0 ? ', the best way' : '') + (cand.supports ? ', with overhangs' : '');
+        tip = 'Lay it on this face: ' + MockUnits.len(cand.height) + ' tall' + (dot.cand === 0 ? ', the best way' : '') + (cand.supports ? ', with overhangs' : '');
       } else {
         var side = hit ? -1 : hitSide();
         if (side !== hoverSide) { hoverSide = side; invalidate(); }
         if (side >= 0) {
           key = 'side' + side; cursor = 'pointer';
           var one = oneSelected(), sz = MockParts.byKey[one.partKey].size;
-          tip = 'Put this side down: ' + Math.round([sz.x, sz.y, sz.z][Math.floor(side / 2)]) + ' mm tall';
+          tip = 'Put this side down: ' + MockUnits.len([sz.x, sz.y, sz.z][Math.floor(side / 2)]) + ' tall';
         } else {
           var over = hit ? null : hitOutline(), id = hit ? hit.object.userData.instanceId : (over ? over.id : null);
           if (id) { key = 'instance:' + id; cursor = 'move'; tip = opts.labelFor(id); }

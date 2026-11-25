@@ -1,18 +1,19 @@
-/* PenguinSlicer mockup, version 5: the wizard in the panel. Five steps (Parts, Setup,
+/* PenguinSlicer mockup, version 6: the wizard in the panel. Five steps (Parts, Settings,
  * Layout, Preview, Send), advanced mode, mocked export with its two ways to fail, slicing
  * progress, layer preview, the Send step with delivery and print progress, the printer
  * status in the header, coming back to running work, and every armed error from the
  * scenario strip. Everything here is fake: no request leaves the page. */
 (function () {
   'use strict';
-  var T = THREE, P = MockParts, ST = MockSettings, PL = MockPlate;
+  var T = THREE, P = MockParts, ST = MockSettings, PL = MockPlate, U = MockUnits;
   var PLATE = ST.PRINTER.plate;
-  var ORDER = ['parts', 'setup', 'layout', 'preview', 'send'];     // version 5: Parts first, then Setup
+  // 'setup' is the Settings step's internal name (it was called Setup until version 5)
+  var ORDER = ['parts', 'setup', 'layout', 'preview', 'send'];
   var MAX_INSTANCES = 150;                                // the slice service's limit (slice/limits.py)
   var PLATE_VOLUME_CAP_CM3 = 600;                         // invented: a volume cap from the memory model
   var SLICE_TIMEOUT_S = 240;                              // print/limits.py PLATE_SLICE_TIMEOUT_S
   var TOO_MANY_INSTANCES_MESSAGE = 'Up to ' + MAX_INSTANCES + ' instances per plate; print the rest on a second plate.';
-  var ME = 'Sam Rivera', OTHER = 'Alex Chen';             // Onshape names: this student, and another
+  var ME = 'Sam Rivera', OTHER = 'Alex Chen';             // Onshape names: this user, and another
   var RETRY_SLOW_S = 4, RETRY_GIVE_UP_S = 20;             // our server: "taking longer" after 4 s, give up after 20 s
 
   function $(s) { return document.querySelector(s); }
@@ -39,16 +40,28 @@
   /* ------------------------------------------------------------------ state */
   var S;
   function fresh(ctx) {
-    return { ctx: ctx, step: ORDER[0], filament: 'petg', profile: 'structural', changes: {}, parts: [], instances: [],
+    return { ctx: ctx, step: ORDER[0], filament: 'petg', profile: ST.profilesOf('petg')[0].id, changes: {}, parts: [], instances: [],
              selected: [], nextId: 1, laidOut: false, problems: [], job: null, result: null, resultSig: null,
-             action: 'print', layer: 0, advTab: 'Quality', advSearch: '', advOnlyChanged: false, advTier: 'common', advOpen: {},
-             layoutNotes: [], previewMsg: null, undo: [], redo: [], hiddenTypes: {}, notices: [] };
+             action: 'print', layer: 0, advTab: 'Quality', advOpen: {}, advFocus: null,
+             layoutNotes: [], previewMsg: null, undo: [], redo: [], notices: [] };
   }
   // The choices made in the scenario strip; they outlast Reset, since they are the owner's,
-  // not the student's: how an instance is laid on a face, the mouse scheme, how parts arrive.
+  // not the user's: how an instance is laid on a face, the mouse scheme, how parts arrive.
   var Opt = { lay: 'hull', scheme: 'O', arrival: 'auto' };
-  function profileObj() { return ST.PROFILES.filter(function (p) { return p.id === S.profile; })[0]; }
+  // The configuration (the one the header names), set once by an administrator: the units
+  // an uploaded file is read in. Inches unless the configuration says millimetres.
+  var Config = { uploadUnits: 'in' };
+  function profileObj() { return ST.profileById[S.profile]; }
   function filamentObj() { return ST.FILAMENTS.filter(function (f) { return f.id === S.filament; })[0]; }
+  function readyParts() { return S.parts.filter(function (p) { return p.status === 'ready'; }); }
+  // The layout units: inches when every part on the plate is in inches, else millimetres.
+  // And the spacing the slice service requires for the Settings step's supports setting.
+  function syncPlateRules() {
+    var rp = readyParts();
+    U.unit = rp.length && rp.every(function (p) { return p.units === 'in'; }) ? 'in' : 'mm';
+    var on = !!eff().enable_support;
+    PLATE.supportsOn = on; PLATE.spacing = on ? PLATE.spacingOn : PLATE.spacingOff;
+  }
   function eff() {
     var v = {}, pv = profileObj().values;
     Object.keys(pv).forEach(function (k) { v[k] = pv[k]; });
@@ -69,7 +82,7 @@
   }
   function totalInstances() { return S.parts.reduce(function (a, p) { return a + (p.status === 'ready' ? p.qty : 0); }, 0); }
   function docName() { return S.ctx === 'standalone' ? 'Upload' : P.PART_STUDIO.name; }
-  // A plate is named to a student in words ("Plate 1, 16 instances"), never by the sliced
+  // A plate is named to a user in words ("Plate 1, 16 instances"), never by the sliced
   // file's generated name. The mockup has one plate per Part Studio, so it is always Plate 1.
   function plateName(n) { return 'Plate 1, ' + n + ' instance' + (n === 1 ? '' : 's'); }
 
@@ -88,17 +101,16 @@
   }
   function clock(s) { s = Math.max(0, Math.floor(s)); return Math.floor(s / 60) + ':' + ('0' + s % 60).slice(-2); }
   function hm(s) { s = Math.round(s / 60); var h = Math.floor(s / 60), m = s % 60; return h ? h + ' h ' + m + ' min' : m + ' min'; }
-  function sizeText(sz) { return sz.x + ' × ' + sz.y + ' × ' + sz.z + ' mm'; }
-  function clockTime(d) {                               // a time of day, as a student reads a clock
+  function clockTime(d) {                               // a time of day, as anyone reads a clock
     var h = d.getHours(), m = d.getMinutes(), pm = h >= 12; h = h % 12 || 12;
     return h + ':' + ('0' + m).slice(-2) + (pm ? ' pm' : ' am');
   }
 
   /* ------------------------------------------------------------------ messages */
-  // what happened; what to do next; remedy buttons; optional words for a mentor. The mentor's
-  // words say what is wrong with the part or the plate and where to look in Onshape or at the
-  // printer; never a route, a status code, a page id or anything else inside PenguinSlicer.
-  function msg(kind, what, todo, acts, mentor) {
+  // what happened; what to do next; remedy buttons; optional details, folded. The details say
+  // what is wrong with the part or the plate and where to look in Onshape or at the printer;
+  // never a route, a status code, a page id or anything else inside PenguinSlicer.
+  function msg(kind, what, todo, acts, details) {
     var d = el('div', 'msg ' + kind);
     d.appendChild(el('div', 'what', what));
     if (todo) d.appendChild(el('div', 'todo', todo));
@@ -107,13 +119,13 @@
       acts.forEach(function (x) { a.appendChild(btn(x[0], x[1], x[2])); });
       d.appendChild(a);
     }
-    if (mentor) {
-      var det = el('details'); det.appendChild(el('summary', null, 'For a mentor'));
-      det.appendChild(el('div', null, mentor)); d.appendChild(det);
+    if (details) {
+      var det = el('details'); det.appendChild(el('summary', null, 'Details'));
+      det.appendChild(el('div', null, details)); d.appendChild(det);
     }
     return d;
   }
-  // A notification: at the top of the step, until the student closes it (×) or it is replaced.
+  // A notification: at the top of the step, until the user closes it (×) or it is replaced.
   // Used when something happened that is not on a row of a list: a part that did not arrive.
   function notify(kind, what, todo, key) {
     S.notices = S.notices.filter(function (n) { return !key || n.key !== key; });
@@ -194,16 +206,37 @@
   function navigateTo(name) {
     var target = ORDER.indexOf(name), cur = ORDER.indexOf(S.step);
     if (target === cur) return;
-    if (target > cur) { for (var i = cur; i < target; i++) { if (i === 2) enterLayoutData(); if (!canLeave(ORDER[i])) return; } }
+    if (target > cur) {
+      for (var i = cur; i < target; i++) {
+        if (i === 2) enterLayoutData();
+        if (!canLeave(ORDER[i])) { sayWhy(ORDER[i]); return; }
+      }
+    }
     gotoStep(name);
   }
+  // A click on a later step tab that an earlier step holds back: one line under the tabs,
+  // where the user is looking, says which step and why. It goes at the next move, or after a while.
+  var STEP_NAME = { parts: 'Parts', setup: 'Settings', layout: 'Layout', preview: 'Preview', send: 'Send' };
+  var whyTimer = null;
+  function sayWhy(step) {
+    var why;
+    if (step === 'parts') why = totalInstances() > MAX_INSTANCES ? 'a plate holds up to ' + MAX_INSTANCES + ' instances.' : S.parts.length ? 'no part has arrived yet.' : 'add a part.';
+    else if (step === 'layout') {
+      var p = S.problems;
+      why = !S.instances.length ? 'there are no instances.' : p[0].message.split('. ')[0] + '.' + (p.length > 1 ? ' (+' + (p.length - 1) + ' more)' : '');
+    } else if (step === 'preview') why = 'the plate is not sliced yet.';
+    var line = $('#step-why'); line.hidden = false;
+    line.textContent = STEP_NAME[step] + ' first: ' + why;
+    clearTimeout(whyTimer); whyTimer = setTimeout(clearWhy, 8000);
+  }
+  function clearWhy() { clearTimeout(whyTimer); var line = $('#step-why'); if (line) { line.hidden = true; line.textContent = ''; } }
   // Moving back and forth always works. Leaving the Preview step while it slices leaves the
   // slice running on the server; coming back to it with the same plate finds it still going,
   // or finished. A changed plate starts a new slice (see enterPreview).
   function gotoStep(name) {
     if (S.step !== name) S.notices = [];     // a notification belongs to the step it was given on
     S.step = name;
-    closePrinterPop();
+    closePrinterPop(); closeChangesPop(); clearWhy(); closeLayoutHelp();
     $all('#wizard .step').forEach(function (s) { s.hidden = s.getAttribute('data-step') !== name; });
     $all('#stepbar li').forEach(function (li) {
       var s = li.getAttribute('data-step');
@@ -212,8 +245,8 @@
     });
     $('#btn-back').disabled = name === ORDER[0];
     $('#btn-next').hidden = name === 'send';
-    $('#final-action').hidden = name !== 'send';
-    $('#do-menu').hidden = true;
+    $('#final-action').hidden = name !== 'send'; $('#wiz-nav').classList.toggle('on-send', name === 'send');
+    $('#do-menu').hidden = true; $('#btn-do-caret').setAttribute('aria-expanded', 'false');
     $('#wiz-body').scrollTop = 0;
     if (name === 'setup') renderSetup();
     if (name === 'parts') renderParts();
@@ -228,78 +261,117 @@
     if (S.action === 'download') { b.textContent = 'Download the sliced file'; b.disabled = !ready; }
     else {
       var mine = PRN.job && PRN.job.mine && isLive(PRN.job);
-      // while this student's plate is on its way or printing, the button says so and cannot send again
+      // while this user's plate is on its way or printing, the button says so and cannot send again
       var ph = mine ? PRN.job.phase : null;
       b.textContent = mine ? (ph === 'upload' || ph === 'starting' ? 'Sending…' : ph === 'prepare' ? 'Heating…' : ph === 'waiting' ? 'Waiting for a person…' : 'Printing…')
         : PRN.paired ? 'Send to ' + ST.PRINTER.name : 'Send to printer';
       b.disabled = !ready || !!why;
     }
     $('#btn-do-caret').disabled = !ready;
+    // the menu's Send item has the button's own label ("Send to Shop H2S")
+    $('#do-print').textContent = PRN.paired ? 'Send to ' + ST.PRINTER.name : 'Send to printer';
   }
   function updateSummary() {
     var box = $('#wiz-summary'), idx = ORDER.indexOf(S.step);
+    syncPlateRules();
     box.innerHTML = '';
-    if (idx < 1) { box.hidden = true; return; }
+    if (idx < 1) { box.hidden = true; closeChangesPop(); return; }
     box.hidden = false;
-    function chip(t, cls) { box.appendChild(el('span', 'chip' + (cls ? ' ' + cls : ''), t)); }
-    // each chip is what an earlier step decided: the parts from the Parts step (step 1), the
-    // filament, profile and changes from the Setup step (step 2), and so on
-    var parts = S.parts.filter(function (p) { return p.status === 'ready'; }).length;
+    function chip(t, cls) { var c = el('span', 'chip' + (cls ? ' ' + cls : ''), t); box.appendChild(c); return c; }
+    // The Settings and Layout steps show the same chips (the owner, version 6): parts and
+    // instances, filament, profile and changes, updated at once as a choice changes.
+    var parts = readyParts().length;
     chip(parts + ' part' + (parts === 1 ? '' : 's') + ' · ' + totalInstances() + ' instance' + (totalInstances() === 1 ? '' : 's'));
-    if (idx >= 2) {
-      chip(filamentObj().type); chip(profileObj().name);
-      var n = changeCount(); if (n) chip('+' + n + ' change' + (n > 1 ? 's' : ''), 'adv');
-    }
+    chip(filamentObj().type); chip(profileObj().name);
+    var n = changeCount();
+    if (n) {
+      // the "+1 change" chip opens the change details, joined to it as the printer details are
+      var cb = el('button', 'chip adv chg-chip', '+' + n + ' change' + (n > 1 ? 's' : '')); cb.type = 'button'; cb.id = 'chg-chip';
+      cb.setAttribute('aria-expanded', $('#chg-pop').hidden ? 'false' : 'true'); cb.setAttribute('aria-controls', 'chg-pop');
+      cb.classList.toggle('open', !$('#chg-pop').hidden);
+      cb.title = 'The settings changed from ' + profileObj().name;
+      cb.addEventListener('click', toggleChangesPop);
+      box.appendChild(cb);
+      if (!$('#chg-pop').hidden) renderChangesPop();
+    } else closeChangesPop();
     if (idx >= 3 && S.instances.length) {
       var b = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
       S.instances.forEach(function (c) { var h = PL.bbox(PL.worldHull(c)); b.minX = Math.min(b.minX, h.minX); b.maxX = Math.max(b.maxX, h.maxX); b.minY = Math.min(b.minY, h.minY); b.maxY = Math.max(b.maxY, h.maxY); });
-      chip(Math.round(b.maxX - b.minX) + ' × ' + Math.round(b.maxY - b.minY) + ' mm of plate');
+      chip(U.area(b.maxX - b.minX, b.maxY - b.minY) + ' of plate');
     }
     if (idx >= 4 && S.result) chip(hm(S.result.est.seconds) + ' · ' + Math.round(S.result.est.grams) + ' g');
   }
+  // One line per change, in the changes box's wording: "Quality › Resolution: 0.014 mm (profile 0.012 mm)".
+  // A setting that has a quick change is named in the quick change's words ("Support ›
+  // Supports: On (tree, auto)"), so the menu and the changes box say the same thing.
+  function changeLine(k) {
+    var s = ST.byKey[k], q = s.quick ? ST.QUICK[s.quick] : null;
+    function val(v) { return q ? q.text(v) : ST.formatValue(s, v); }
+    return s.group + ' › ' + (q ? q.label : s.label) + ': ' + val(S.changes[k]) + ' (profile ' + val(profileObj().values[k]) + ')';
+  }
+  // The change details: plain text, no links, joined to the chip like a tab opened from it.
+  function renderChangesPop() {
+    var pop = $('#chg-pop'), chipEl = $('#chg-chip'); if (!chipEl) { closeChangesPop(); return; }
+    pop.innerHTML = '';
+    var ul = el('ul'); Object.keys(S.changes).forEach(function (k) { ul.appendChild(el('li', null, changeLine(k))); });
+    pop.appendChild(ul);
+    // under the chip, its left edge on the chip's; kept inside the panel when the chip sits far right
+    var wrap = pop.parentNode, wr = wrap.getBoundingClientRect(), cr = chipEl.getBoundingClientRect();
+    pop.style.top = (cr.bottom - wr.top - 1) + 'px';
+    var left = cr.left - wr.left, w = Math.min(wr.width, 380);
+    pop.style.width = w + 'px';
+    if (left + w > wr.width) { pop.style.left = Math.max(0, wr.width - w) + 'px'; pop.classList.add('shifted'); }
+    else { pop.style.left = left + 'px'; pop.classList.remove('shifted'); }
+  }
+  function toggleChangesPop(e) {
+    e.stopPropagation();
+    var pop = $('#chg-pop'), open = pop.hidden;
+    closePrinterPop();
+    pop.hidden = !open;
+    var c = $('#chg-chip'); if (c) { c.setAttribute('aria-expanded', open ? 'true' : 'false'); c.classList.toggle('open', open); }
+    if (open) renderChangesPop();
+  }
+  function closeChangesPop() {
+    var pop = $('#chg-pop'); if (pop) pop.hidden = true;
+    var c = $('#chg-chip'); if (c) { c.setAttribute('aria-expanded', 'false'); c.classList.remove('open'); }
+  }
 
-  /* ================================================================== Setup step */
+  /* ================================================================== Settings step */
   function renderConfig() {
     var box = $('#config-info');
     box.innerHTML = '';
     var p = el('p', 'config-status');
     p.appendChild(document.createTextNode('Config: '));
-    var a = el('a', null, '6238 (Popcorn Penguins)'); a.href = '#'; a.title = 'Open PenguinCAM-config.yaml (mockup: does nothing)';
+    var a = el('a', null, '6238 (Popcorn Penguins)'); a.href = '#'; a.title = 'Open the configuration (mockup: does nothing)';
     a.addEventListener('click', function (e) { e.preventDefault(); });
     p.appendChild(a);
-    var r = el('a', 'config-refresh', '↻'); r.href = '#'; r.title = 'Reload team configuration from Onshape';
+    var r = el('a', 'config-refresh', '↻'); r.href = '#'; r.title = S.ctx === 'standalone' ? 'Reload the configuration' : 'Reload the configuration from Onshape';
     r.addEventListener('click', function (e) { e.preventDefault(); });
     p.appendChild(r);
     box.appendChild(p);
-    if (S.ctx === 'standalone') box.appendChild(el('p', 'config-status-reason', 'Loaded from your saved team configuration link.'));
-  }
-
-  function renderPrinterLine() {
-    var box = $('#p-printer'); if (!box) return; box.innerHTML = '';
-    // With no printer paired, the line names no printer, only the model the team's profiles slice for.
-    if (!PRN.paired) { box.appendChild(el('span', 'pstate off', 'No printer paired')); box.appendChild(el('span', 'model', '(the profiles are for a ' + ST.PRINTER.model + ')')); return; }
-    box.appendChild(el('span', null, ST.PRINTER.name));
-    box.appendChild(el('span', 'model', ST.PRINTER.model));
-    var st = printerStatus(), j = PRN.job;
-    box.appendChild(el('span', 'pstate ' + st.chip, st.short));
-    if (j && isLive(j) && PRN.online && PRN.paired) box.appendChild(el('span', 'model', 'for ' + (j.mine ? 'you' : j.who) + ', ' + hm(remainingS(j)) + ' left'));
+    if (S.ctx === 'standalone') box.appendChild(el('p', 'config-status-reason', 'Loaded from your saved configuration link.'));
   }
 
   function fillSelect(sel, options, value) {
     sel.innerHTML = '';
-    options.forEach(function (o) { var op = el('option', null, o.text); op.value = o.value; sel.appendChild(op); });
+    options.forEach(function (o) { var op = el('option', null, o.text); op.value = o.value; if (o.title) op.title = o.title; sel.appendChild(op); });
     sel.value = value;
   }
 
+  // The Settings step: filament, the profiles of that filament, four quick changes, and either
+  // the Advanced mode button or, once a setting is changed, the changes box in its place.
   function renderSetup() {
-    renderConfig(); renderPrinterLine();
-    fillSelect($('#p-filament'), ST.FILAMENTS.map(function (f) { return { value: f.id, text: f.name + (f.id === 'petg' ? ' (most prints)' : '') }; }), S.filament);
-    fillSelect($('#p-profile'), ST.PROFILES.map(function (p) { return { value: p.id, text: p.name }; }), S.profile);
-    $('#p-profile-about').textContent = 'For ' + profileObj().about + '. ' + ST.formatValue(ST.byKey.layer_height, profileObj().values.layer_height) + ' layers.';
-    // Picking another profile clears every change. Said here, beside the menu, before it happens.
+    renderConfig();
+    fillSelect($('#p-filament'), ST.FILAMENTS.map(function (f) { return { value: f.id, text: f.name }; }), S.filament);
+    fillSelect($('#p-profile'), ST.profilesOf(S.filament).map(function (p) { return { value: p.id, text: p.name, title: 'For ' + p.about }; }), S.profile);
+    // Changing the filament (which changes the profile) or the profile clears every change.
+    // A caution says so under the Profile menu from the first change until they are cleared.
     var nc = changeCount(), clr = $('#p-profile-clears');
-    clr.hidden = !nc;
-    clr.textContent = nc ? 'Picking another profile clears your ' + (nc === 1 ? 'change' : nc + ' changes') + ' and uses that profile’s own settings.' : '';
+    clr.hidden = !nc; clr.innerHTML = '';
+    if (nc) {
+      clr.appendChild(el('span', 'caution-icon', '⚠')); clr.lastChild.setAttribute('aria-hidden', 'true');
+      clr.appendChild(document.createTextNode('Changing the filament or the profile clears your ' + (nc === 1 ? 'change' : nc + ' changes') + '.'));
+    }
     var v = eff(), pv = profileObj().values;
     Object.keys(ST.QUICK).forEach(function (qk) {
       var q = ST.QUICK[qk], s = ST.byKey[q.key], sel = $('#ov-' + qk);
@@ -311,34 +383,34 @@
       sel.classList.toggle('changed', changed);
       sel.title = s.label + ' in advanced mode';
     });
+    // The changes box (yellow) takes the Advanced mode button's place once a setting is
+    // changed: its one button is Advanced mode, and each line opens advanced mode at that setting.
     var n = changeCount(), box = $('#adv-effect');
-    box.hidden = !n; box.innerHTML = '';
+    box.hidden = !n; box.innerHTML = ''; $('#adv-entry').hidden = !!n;
     if (n) {
-      var head = el('div'); head.innerHTML = '<strong>' + n + ' setting' + (n > 1 ? 's' : '') + ' changed from ' + profileObj().name + '</strong> for this print:';
-      box.appendChild(head);
+      box.appendChild(el('strong', null, n + ' setting' + (n > 1 ? 's' : '') + ' changed from ' + profileObj().name));
       var ul = el('ul');
       Object.keys(S.changes).forEach(function (k) {
-        var s = ST.byKey[k];
-        ul.appendChild(el('li', null, s.group + ' › ' + s.label + ': ' + ST.formatValue(s, S.changes[k]) + ' (profile ' + ST.formatValue(s, pv[k]) + ')'));
+        var li = el('li'), a = el('button', 'linkish', changeLine(k)); a.type = 'button'; a.id = 'chg-line-' + k;
+        a.title = 'Open advanced mode at ' + ST.byKey[k].label;
+        a.addEventListener('click', function () { openAdvanced(k); });
+        li.appendChild(a); ul.appendChild(li);
       });
       box.appendChild(ul);
-      var row = el('div', 'row');
-      row.appendChild(btn('Review in advanced mode', openAdvanced));
-      row.appendChild(btn('Reset all', function () { S.changes = {}; $('#setup-notes').hidden = true; renderSetup(); updateSummary(); }));
-      box.appendChild(row);
+      var ab = btn('Advanced mode', function () { openAdvanced(); }); ab.id = 'adv-effect-btn';
+      box.appendChild(ab);
     }
-    $('#setup-hint').textContent = 'Your team’s configuration lists these printers, filaments and profiles; a mentor changes them there.';
   }
 
   function bindSetup() {
-    $('#p-filament').addEventListener('change', function () { S.filament = this.value; $('#setup-notes').hidden = true; updateSummary(); });
+    // A filament has its own profiles: changing it picks that filament's first profile, and
+    // so, like changing the profile, clears every change.
+    $('#p-filament').addEventListener('change', function () {
+      S.filament = this.value; S.profile = ST.profilesOf(S.filament)[0].id; S.changes = {};
+      renderSetup(); updateSummary();
+    });
     $('#p-profile').addEventListener('change', function () {
-      var n = changeCount();
-      S.profile = this.value;
-      S.changes = {};
-      var notes = $('#setup-notes');
-      notes.hidden = !n;
-      notes.textContent = n ? 'Cleared your ' + (n === 1 ? 'change' : n + ' changes') + ': this print uses ' + profileObj().name + ' as it is.' : '';
+      S.profile = this.value; S.changes = {};
       renderSetup(); updateSummary();
     });
     Object.keys(ST.QUICK).forEach(function (qk) {
@@ -353,7 +425,7 @@
         renderSetup(); updateSummary();
       });
     });
-    $('#btn-advanced').addEventListener('click', openAdvanced);
+    $('#btn-advanced').addEventListener('click', function () { openAdvanced(); });
   }
 
   /* ================================================================== advanced mode */
@@ -366,85 +438,152 @@
     row.appendChild($('#pstat'));
     if (inAdvanced) row.appendChild(pop); else $('#wiz-header').appendChild(pop);
   }
-  function openAdvanced() { placePrinterIcon(true); $('#advanced').hidden = false; S.advSearch = ''; $('#adv-search').value = ''; renderAdvanced(); fitAdvanced(); $('#adv-search').focus(); }
-  function closeAdvanced() { $('#advanced').hidden = true; placePrinterIcon(false); advResetArmed = false; renderSetup(); updateSummary(); }
+  // openAdvanced(key): with a setting's key (a line of the changes box), advanced mode opens
+  // at that setting: its section and group open, the setting scrolled into sight and flashed.
+  // What opened advanced mode (a line of the changes box, by its setting's key, or the button),
+  // so that closing it puts focus back there. While it is open, what it covers is inert.
+  var advOpener = null;
+  function setCoveredInert(on) { ['#wiz-header', '#wiz-body', '#wiz-nav'].forEach(function (s) { $(s).inert = on; }); }
+  function openAdvanced(key) {
+    advOpener = key || 'button';
+    setCoveredInert(true);
+    placePrinterIcon(true); $('#advanced').hidden = false;
+    if (key) { var s = ST.byKey[key]; S.advTab = s.group; S.advOpen[s.group + '|' + s.sub] = true; S.advFocus = key; }
+    fitAdvanced(); renderAdvanced();
+    if (key) {
+      var row = $('#adv-row-' + key);
+      if (row) { row.scrollIntoView({ block: 'center' }); row.classList.add('flash'); var inp = $('#adv-' + key); if (inp) inp.focus({ preventScroll: true }); }
+      S.advFocus = null;
+    } else $('#adv-back').focus();
+  }
+  function closeAdvanced() {
+    $('#advanced').hidden = true; setCoveredInert(false); placePrinterIcon(false); advResetArmed = false; renderSetup(); updateSummary();
+    // back to the line that opened it if it is still there, else to whichever Advanced mode button shows
+    var to = (advOpener && advOpener !== 'button' && document.getElementById('chg-line-' + advOpener)) ||
+             (!$('#adv-entry').hidden ? $('#btn-advanced') : document.getElementById('adv-effect-btn'));
+    advOpener = null;
+    if (to) to.focus();
+  }
   // Advanced mode follows the panel's width (a ResizeObserver, not a media query, so it also
-  // follows a panel the student drags wider): a row of tabs when narrow, a rail of tabs on
-  // the left from 480 px, and the groups in two columns from 700 px.
+  // follows a panel the user drags wider): an accordion of the five sections below 480 px, a
+  // rail of section names down the left from 480 px. The groups are always one column.
   function fitAdvanced() {
     var a = $('#advanced'), w = a.clientWidth;
     if (!w) return;
-    a.classList.toggle('wide', w >= 480);
-    a.classList.toggle('xwide', w >= 700);
+    var wide = w >= 480;
+    if (a.classList.contains('wide') !== wide) { a.classList.toggle('wide', wide); if (!a.hidden) renderAdvanced(); }
   }
-  function inTier(s) { return S.advTier === 'all' || !s.more; }
+  var CHEVRON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M8.59 16.59 13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>';
+  var UNFOLD_MORE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 5.83 15.17 9l1.41-1.41L12 3 7.41 7.59 8.83 9zm0 12.34L8.83 15l-1.41 1.41L12 21l4.59-4.59L15.17 15z"/></svg>';
+  var UNFOLD_LESS = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7.41 18.59 8.83 20 12 16.83 15.17 20l1.41-1.41L12 14zm9.18-13.18L15.17 4 12 7.17 8.83 4 7.41 5.41 12 10z"/></svg>';
+  function chevron(open) { var c = el('span', 'chev' + (open ? ' open' : '')); c.innerHTML = CHEVRON; return c; }
+  // the groups of one section, in Orca's order
+  function sectionGroups(section) {
+    var groups = [], cur = null;
+    ST.SETTINGS.forEach(function (s) {
+      if (s.group !== section) return;
+      if (!cur || cur.sub !== s.sub) { cur = { group: s.group, sub: s.sub, rows: [] }; groups.push(cur); }
+      cur.rows.push(s);
+    });
+    return groups;
+  }
+  function changedIn(rows) { return rows.filter(function (s) { return S.changes.hasOwnProperty(s.key); }).length; }
+  function changedInSection(section) { return Object.keys(S.changes).filter(function (k) { return ST.byKey[k].group === section; }).length; }
+  // A group starts closed, as in Orca Slicer, unless it holds a changed setting.
+  function groupOpen(g) { var k = g.group + '|' + g.sub; return S.advOpen.hasOwnProperty(k) ? S.advOpen[k] : changedIn(g.rows) > 0; }
+  // Expand all / Collapse all: one icon button for the open section's groups.
+  function expandButton(section) {
+    var groups = sectionGroups(section), allOpen = groups.every(groupOpen);
+    var b = el('button', 'icon-btn adv-expand'); b.type = 'button'; b.id = 'adv-expand';
+    b.innerHTML = allOpen ? UNFOLD_LESS : UNFOLD_MORE;
+    b.title = allOpen ? 'Collapse all' : 'Expand all'; b.setAttribute('aria-label', b.title + ' in ' + section);
+    b.addEventListener('click', function (e) { e.stopPropagation(); groups.forEach(function (g) { S.advOpen[g.group + '|' + g.sub] = !allOpen; }); renderAdvanced(); });
+    return b;
+  }
+  function countText(n) { return n ? n + ' changed' : ''; }
+  function renderGroups(section, into) {
+    var pv = profileObj().values, v = eff();
+    sectionGroups(section).forEach(function (g) {
+      var key = g.group + '|' + g.sub, open = groupOpen(g), ch = changedIn(g.rows);
+      var box = el('div', 'adv-grp' + (open ? ' open' : ''));
+      var head = el('button', 'adv-sub' + (ch ? ' has-changes' : '')); head.type = 'button'; head.id = 'adv-grp-' + idPart(key); head.setAttribute('aria-expanded', open ? 'true' : 'false');
+      head.appendChild(chevron(open));
+      // the group's name, and its changed count only when a setting in it is changed: "Precision · 1 changed"
+      head.appendChild(el('span', 'nm', g.sub));
+      if (ch) head.appendChild(el('span', 'ct', '· ' + countText(ch)));
+      head.addEventListener('click', function () { S.advOpen[key] = !open; renderAdvanced(); });
+      box.appendChild(head);
+      if (open) { var rows = el('div', 'adv-rows'); g.rows.forEach(function (s) { rows.appendChild(advRow(s, v[s.key], pv[s.key])); }); box.appendChild(rows); }
+      into.appendChild(box);
+    });
+    into.appendChild(el('div', 'adv-mock', 'Mockup note: a sample of ' + ST.SETTINGS.filter(function (s) { return s.group === section; }).length + ' of Orca’s about ' + ST.ORCA_COUNT[section] + ' ' + section + ' settings; the product lists every one, taken from Orca’s own definitions.'));
+  }
+  // Every action in advanced mode redraws it; focus goes back to the control with the same id
+  // (a Reset link that is gone hands it to its setting's control), so the keyboard keeps its place.
   function renderAdvanced() {
-    var pv = profileObj().values, v = eff(), n = changeCount();
+    var n = changeCount(), body = $('#adv-body'), keep = body.querySelector('.adv-list');
+    var scroll = keep ? keep.scrollTop : 0;
+    var act = document.activeElement, fid = act && $('#advanced').contains(act) ? act.id : null;
     $('#adv-sub').textContent = profileObj().name + (n ? ', ' + n + ' changed' : ', no changes');
     var ra = $('#adv-reset-all'); ra.disabled = !n; ra.textContent = advResetArmed ? 'Reset all ' + n + '?' : 'Reset all';
     ra.classList.toggle('primary', advResetArmed);
-    $all('#adv-tier button').forEach(function (b) { var on = b.getAttribute('data-tier') === S.advTier; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
-    var tabs = $('#adv-tabs'); tabs.innerHTML = '';
-    ST.GROUPS.forEach(function (g) {
-      var b = el('button', g === S.advTab && !S.advSearch ? 'on' : '', g); b.type = 'button'; b.setAttribute('role', 'tab');
-      var cnt = Object.keys(S.changes).filter(function (k) { return ST.byKey[k].group === g; }).length;
-      if (cnt) b.appendChild(el('span', 'n', String(cnt)));
-      b.addEventListener('click', function () { S.advTab = g; S.advSearch = ''; $('#adv-search').value = ''; renderAdvanced(); });
-      tabs.appendChild(b);
-    });
-    var list = $('#adv-list'); list.innerHTML = '';
-    var q = S.advSearch.trim().toLowerCase();
-    // Search and "Changed only" look through every setting, whatever the Common/All switch says.
-    var rows = ST.SETTINGS.filter(function (s) {
-      if (S.advOnlyChanged && !S.changes.hasOwnProperty(s.key)) return false;
-      if (q) return (s.label + ' ' + s.sub + ' ' + s.group + ' ' + s.key.replace(/_/g, ' ')).toLowerCase().indexOf(q) >= 0;
-      return S.advOnlyChanged || (s.group === S.advTab && inTier(s));
-    });
-    if (!rows.length) { list.appendChild(el('div', 'adv-empty', q ? 'No setting matches “' + S.advSearch + '”.' : 'No settings changed from ' + profileObj().name + '.')); return; }
-    // Subgroups collapse. In Common every one starts open; in All only the first, so a long
-    // tab reads as a list of headings to open. Search and "Changed only" open them all.
-    var groups = [], cur = null, firstOfTab = {};
-    rows.forEach(function (s) {
-      if (!cur || cur.group !== s.group || cur.sub !== s.sub) { cur = { group: s.group, sub: s.sub, rows: [] }; groups.push(cur); if (!firstOfTab[s.group]) firstOfTab[s.group] = cur; }
-      cur.rows.push(s);
-    });
-    var lastGroup = null, cols = el('div', 'adv-cols');
-    groups.forEach(function (g) {
-      if ((q || S.advOnlyChanged) && g.group !== lastGroup) cols.appendChild(el('div', 'adv-group', g.group));
-      lastGroup = g.group;
-      var key = S.advTier + '|' + g.group + '|' + g.sub;
-      var ch = g.rows.filter(function (s) { return S.changes.hasOwnProperty(s.key); }).length;
-      var open = q || S.advOnlyChanged ? true : (S.advOpen.hasOwnProperty(key) ? S.advOpen[key] : (S.advTier === 'common' || firstOfTab[g.group] === g || ch > 0));
-      var box = el('div', 'adv-grp' + (open ? ' open' : ''));
-      var head = el('button', 'adv-sub'); head.type = 'button'; head.setAttribute('aria-expanded', open ? 'true' : 'false');
-      head.appendChild(el('span', 'car', open ? '▾' : '▸'));
-      head.appendChild(el('span', 'nm', g.sub));
-      head.appendChild(el('span', 'ct', g.rows.length + (ch ? ' · ' + ch + ' changed' : '')));
-      if (ch) head.classList.add('has-changes');
-      head.addEventListener('click', function () { S.advOpen[key] = !open; renderAdvanced(); });
-      box.appendChild(head);
-      if (open) g.rows.forEach(function (s) { box.appendChild(advRow(s, v[s.key], pv[s.key], q)); });
-      cols.appendChild(box);
-    });
-    list.appendChild(cols);
-    if (!q && !S.advOnlyChanged) {
-      var shown = rows.length, total = ST.SETTINGS.filter(function (s) { return s.group === S.advTab; }).length;
-      list.appendChild(el('div', 'adv-mock', S.advTier === 'common'
-        ? 'Common shows the ' + shown + ' ' + S.advTab + ' settings teams change most; All settings shows ' + total + '. Mockup note: in Orca this tab has about ' + ST.ORCA_COUNT[S.advTab] + '; the product lists every one, taken from Orca’s own definitions.'
-        : 'Mockup note: All settings shows ' + total + ' of Orca’s about ' + ST.ORCA_COUNT[S.advTab] + ' ' + S.advTab + ' settings as a sample; the product lists every one, taken from Orca’s own definitions.'));
+    body.innerHTML = '';
+    renderAdvancedBody(body, scroll);
+    if (fid) {
+      var f = document.getElementById(fid) || (fid.indexOf('adv-reset-') === 0 ? document.getElementById('adv-' + fid.slice(10)) : null);
+      if (f && f.disabled) f = $('#adv-back');
+      if (f && f !== document.activeElement) f.focus({ preventScroll: true });
     }
   }
-  function advRow(s, value, profVal, q) {
+  function idPart(t) { return t.replace(/[^A-Za-z0-9]+/g, '-'); }
+  function renderAdvancedBody(body, scroll) {
+    var wide = $('#advanced').classList.contains('wide');
+    if (wide) {
+      // the rail of section names down the left; the open section's groups beside it, in one
+      // column whose width is capped so each value stays near its name
+      var rail = el('div', 'adv-rail'); rail.setAttribute('role', 'tablist'); rail.setAttribute('aria-orientation', 'vertical');
+      if (!S.advTab) S.advTab = ST.GROUPS[0];
+      ST.GROUPS.forEach(function (g) {
+        var b = el('button', g === S.advTab ? 'on' : '', g); b.type = 'button'; b.id = 'adv-tab-' + idPart(g); b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', g === S.advTab ? 'true' : 'false');
+        var cnt = changedInSection(g); if (cnt) b.appendChild(el('span', 'n', String(cnt)));
+        b.addEventListener('click', function () { S.advTab = g; renderAdvanced(); var l = $('#adv-body .adv-list'); if (l) l.scrollTop = 0; });
+        rail.appendChild(b);
+      });
+      body.appendChild(rail);
+      var list = el('div', 'adv-list'), col = el('div', 'adv-col');
+      var top = el('div', 'adv-col-top'); top.appendChild(el('span', 'adv-col-name', S.advTab)); top.appendChild(expandButton(S.advTab));
+      col.appendChild(top);
+      renderGroups(S.advTab, col);
+      list.appendChild(col); body.appendChild(list);
+      list.scrollTop = scroll;
+    } else {
+      // the accordion: each section a bold heading with a chevron and its changed count; one open at a time
+      var acc = el('div', 'adv-list adv-accordion');
+      ST.GROUPS.forEach(function (g) {
+        var open = g === S.advTab, cnt = changedInSection(g);
+        var sec = el('div', 'adv-sec' + (open ? ' open' : ''));
+        var hrow = el('div', 'adv-sec-head');
+        var h = el('button', 'adv-sec-btn'); h.type = 'button'; h.id = 'adv-sec-' + idPart(g); h.setAttribute('aria-expanded', open ? 'true' : 'false');
+        h.appendChild(chevron(open)); h.appendChild(el('span', 'nm', g));
+        if (cnt) h.appendChild(el('span', 'ct', '· ' + countText(cnt)));
+        h.addEventListener('click', function () { S.advTab = open ? null : g; renderAdvanced(); });
+        hrow.appendChild(h);
+        if (open) hrow.appendChild(expandButton(g));
+        sec.appendChild(hrow);
+        if (open) { var inner = el('div', 'adv-sec-body'); renderGroups(g, inner); sec.appendChild(inner); }
+        acc.appendChild(sec);
+      });
+      body.appendChild(acc);
+      acc.scrollTop = scroll;
+    }
+  }
+  function advRow(s, value, profVal) {
     var changed = S.changes.hasOwnProperty(s.key);
-    var row = el('div', 'adv-row' + (changed ? ' changed' : ''));
+    var row = el('div', 'adv-row' + (changed ? ' changed' : '')); row.id = 'adv-row-' + s.key;
     var id = 'adv-' + s.key;
     var lab = el('label'); lab.htmlFor = id;
-    if (q) {
-      var i = s.label.toLowerCase().indexOf(q);
-      if (i >= 0) { lab.appendChild(document.createTextNode(s.label.slice(0, i))); lab.appendChild(el('mark', null, s.label.slice(i, i + q.length))); lab.appendChild(document.createTextNode(s.label.slice(i + q.length))); }
-      else lab.textContent = s.label;
-    } else lab.textContent = s.label;
-    if (s.quick) lab.title = 'Also on the Setup step as ' + ST.QUICK[s.quick].label;
+    lab.textContent = s.label;
+    if (s.quick) lab.title = 'Also on the Settings step as ' + ST.QUICK[s.quick].label;
     var ctl = el('div', 'ctl'), input;
     if (s.type === 'num') {
       input = el('input'); input.type = 'number'; input.step = String(s.step); input.min = String(s.min); input.max = String(s.max); input.value = String(value);
@@ -458,41 +597,40 @@
           return;
         }
         if (s.step >= 1) x = Math.round(x);
-        setSetting(s.key, x); renderAdvanced();
+        // redrawn after the focus has moved, so a Tab out of the box lands where it was going
+        setSetting(s.key, x); setTimeout(renderAdvanced, 0);
       });
     } else if (s.type === 'sel') {
       input = el('select');
       s.options.forEach(function (o) { var op = el('option', null, o.text); op.value = o.value; input.appendChild(op); });
       input.value = value;
       input.addEventListener('change', function () { setSetting(s.key, input.value); renderAdvanced(); });
-      ctl.appendChild(input);
+      ctl.appendChild(input); ctl.appendChild(el('span', 'unit'));      // an empty unit slot keeps every control's right edge in line
     } else {
       input = el('input'); input.type = 'checkbox'; input.checked = !!value;
       input.addEventListener('change', function () { setSetting(s.key, input.checked); renderAdvanced(); });
-      ctl.appendChild(input);
+      ctl.appendChild(input); ctl.appendChild(el('span', 'unit'));
     }
     input.id = id;
-    var reset = el('button', 'reset', '↶'); reset.type = 'button';
-    reset.title = 'Undo this change: back to ' + profileObj().name + '’s ' + ST.formatValue(s, profVal);
-    reset.setAttribute('aria-label', 'Reset ' + s.label);
-    reset.addEventListener('click', function () { delete S.changes[s.key]; renderAdvanced(); });
-    row.appendChild(lab); row.appendChild(ctl); row.appendChild(reset);
-    if (changed) row.appendChild(el('div', 'was', profileObj().name + ': ' + ST.formatValue(s, profVal)));
+    row.appendChild(lab); row.appendChild(ctl);
+    // a changed setting: "Profile 0.012 mm", then a Reset link that puts the profile's value back
+    if (changed) {
+      var was = el('div', 'was'); was.appendChild(document.createTextNode('Profile ' + ST.formatValue(s, profVal) + ' '));
+      var reset = el('button', 'linkish reset', 'Reset'); reset.type = 'button'; reset.id = 'adv-reset-' + s.key;
+      reset.setAttribute('aria-label', 'Reset ' + s.label + ' to the profile’s ' + ST.formatValue(s, profVal));
+      reset.addEventListener('click', function () { delete S.changes[s.key]; renderAdvanced(); });
+      was.appendChild(reset); row.appendChild(was);
+    }
     return row;
   }
   function bindAdvanced() {
     $('#adv-back').addEventListener('click', closeAdvanced);
     $('#adv-done').addEventListener('click', closeAdvanced);
-    $('#adv-search').addEventListener('input', function () { S.advSearch = this.value; renderAdvanced(); });
-    $('#adv-only-changed').addEventListener('change', function () { S.advOnlyChanged = this.checked; renderAdvanced(); });
     $('#adv-reset-all').addEventListener('click', function () {
       if (!advResetArmed) { advResetArmed = true; renderAdvanced(); return; }
       advResetArmed = false; S.changes = {}; renderAdvanced();
     });
     $('#advanced').addEventListener('keydown', function (e) { if (e.key === 'Escape') closeAdvanced(); });
-    $all('#adv-tier button').forEach(function (b) {
-      b.addEventListener('click', function () { S.advTier = b.getAttribute('data-tier'); renderAdvanced(); });
-    });
     if (window.ResizeObserver) new ResizeObserver(fitAdvanced).observe($('#advanced'));
   }
 
@@ -512,23 +650,24 @@
     o = o || {};
     var def = P.byKey[key];
     var existing = S.parts.filter(function (p) { return p.key === key && !o.fileName; })[0];
-    if (existing && !o.qty) {
-      // a click on a part already listed raises its quantity by one, and its row flashes
+    if (existing) {
+      // a click on a part already listed raises its quantity by one, and its row flashes;
+      // the prompt above the list does not change (the owner, version 6)
       existing.qty = Math.min(MAX_INSTANCES, existing.qty + 1);
-      partsNote = null; lastAdded = existing.name + ': ' + existing.qty + ' instances.';
+      partsNote = null;
       renderParts(); flashRow(existing); updateSummary();
       return existing;
     }
-    if (existing && o.qty) { existing.qty = Math.min(MAX_INSTANCES, Math.max(existing.qty, o.qty)); renderParts(); return existing; }
+    // units: a part picked in Onshape has its Part Studio's or Assembly's units; an uploaded
+    // file is read in the configuration's units for uploads (inches unless it says millimetres)
     var part = { id: 'p' + (S.nextId++), key: key, name: o.fileName ? o.fileName.replace(/\.(stl|3mf)$/i, '') : def.name,
-                 file: o.fileName || null, qty: o.qty || 1, status: 'exporting', warn: null, error: null, progress: 0, slow: false };
+                 file: o.fileName || null, qty: 1, status: 'exporting', warn: null, error: null, progress: 0, slow: false,
+                 units: o.units || (o.fileName ? Config.uploadUnits : 'mm') };
     S.parts.push(part);
-    lastAdded = null;
     renderParts();
     exportPart(part, o);
     return part;
   }
-  var lastAdded = null;       // the select-status line's last sentence: "HTD Pulley 24T: 2 instances."
   // Bringing a part in. Three ways it can go:
   //  - it arrives (a second or so, with progress on its row);
   //  - Onshape cannot export it (a broken part): a notification, and the part is not added;
@@ -537,10 +676,10 @@
   //    broken entry, and nothing here holds Next.
   function exportPart(part, o) {
     part.status = 'exporting'; part.error = null; part.progress = 0; part.slow = false;
-    var fail = o.fail || (!o.noArm && Mock.take('export_fail'));
-    var net = !fail && !o.noArm ? (Mock.take('server_down') ? 'down' : Mock.take('server_slow') ? 'slow' : null) : null;
-    var warn = o.warn || (!o.noArm && !fail && !net && Mock.take('not_watertight'));
-    var need = net === 'slow' ? 9 : net === 'down' ? RETRY_GIVE_UP_S : (o.delay || 0) + 0.7 + Math.random() * 0.8;
+    var fail = Mock.take('export_fail');
+    var net = !fail ? (Mock.take('server_down') ? 'down' : Mock.take('server_slow') ? 'slow' : null) : null;
+    var warn = !fail && !net && Mock.take('not_watertight');
+    var need = net === 'slow' ? 9 : net === 'down' ? RETRY_GIVE_UP_S : 0.7 + Math.random() * 0.8;
     var t = 0;
     // A network outage runs on the real clock; an export on the mock clock.
     var j = addJob({ tick: function (dt) {
@@ -551,14 +690,6 @@
       if (slowNow !== part.slow) { part.slow = slowNow; renderParts(); } else updateArriveRow(part);
       if (t < need) return;
       dropJob(j);
-      if (o.refresh && (fail || net === 'down')) {
-        // bringing in a new version failed: the version already in the list stays
-        part.status = 'ready'; part.progress = 1; part.slow = false; renderParts(); updateNext();
-        notify('error', 'Could not bring in the new version of ' + part.name + '; the list keeps the version you had.',
-          fail ? 'The part is probably broken in Onshape now: a mechanical mentor can check that it is one closed solid and that its Part Studio rebuilds with no errors.'
-               : 'PenguinSlicer’s server did not answer for ' + RETRY_GIVE_UP_S + ' seconds. Check that this computer is online, then press ↻ again.', 'refresh-' + part.id);
-        return;
-      }
       if (fail) { dropPart(part); failNotice(part, 'export'); }
       else if (net === 'down') { dropPart(part); failNotice(part, 'server'); }
       else arrived(part, warn);
@@ -573,27 +704,27 @@
     var key = 'fail-' + why + '-' + (S.ctx === 'standalone' ? part.file : part.key);
     if (why === 'export' && S.ctx === 'standalone') {
       notify('error', 'Could not read ' + part.file + ', so it was not added: it is not a valid STL or 3MF file.',
-        fine + 'Export it again from your CAD program as STL in millimetres, then upload the new file.', key);
+        fine + 'The file may be cut short or saved in another format under that name. Export it again from your CAD program as STL or 3MF, then upload the new file.', key);
     } else if (why === 'export') {
       notify('error', 'Onshape could not export ' + part.name + ', so it was not added.',
-        fine + 'The part itself is probably broken in Onshape: a mechanical mentor can check that ' + part.name +
+        fine + 'The part itself is probably broken in Onshape. Check in Onshape that ' + part.name +
         ' is one closed solid (not a surface, and not several bodies) and that its Part Studio rebuilds with no errors (no red features in the feature list). Then click it again.', key);
     } else {
       notify('error', 'Could not bring in ' + part.name + ': PenguinSlicer’s server did not answer for ' + RETRY_GIVE_UP_S + ' seconds, so it was not added.',
-        fine + 'Check that this computer is online, then ' + (S.ctx === 'standalone' ? 'upload ' + part.file + ' again.' : 'click ' + part.name + ' in Onshape again.') + ' If it keeps happening, tell a mentor.', key);
+        fine + (S.ctx === 'standalone' ? 'Upload ' + part.file + ' again to try once more.' : 'Click ' + part.name + ' in Onshape again to try once more.'), key);
     }
   }
   function arrived(part, warn) {
     part.status = 'ready'; part.progress = 1; part.slow = false;
-    if (warn) part.warn = { what: part.name + ' is not watertight: its mesh has 14 open edges in 2 places.', todo: 'It may still slice and print. If the slice fails, a mentor can look in Onshape for faces that do not meet, then ' + (S.ctx === 'standalone' ? 'upload the repaired file.' : 'press ↻ on this row to bring in the repaired version.') };
+    if (warn) part.warn = { what: part.name + ' is not watertight: its mesh has 14 open edges in 2 places.', todo: 'It may still slice and print. If the slice fails, look in ' + (S.ctx === 'standalone' ? 'your CAD program' : 'Onshape') + ' for faces that do not meet, then ' + (S.ctx === 'standalone' ? 'remove this row and upload the repaired file.' : 'remove this row and click the repaired part again.') };
     renderParts();
-    // It may arrive after the student moved on. On the Layout step it joins the plate at once;
+    // It may arrive after the user moved on. On the Layout step it joins the plate at once;
     // later than that, it joins the plate the next time the Layout step is shown.
     if (S.step === 'layout') {
       enterLayoutData(); layHint = msg('ok', part.name + ' arrived and joined the plate.', null);
       editor.sync(); scheduleLayoutRender();
     } else if (ORDER.indexOf(S.step) > 2) {
-      notify('info', part.name + ' arrived after you left the Parts step.', 'It is in the list of parts, and joins the plate when you go back to the Layout step.', 'late-' + part.id);
+      notify('info', part.name + ' arrived after you left the Parts step.', 'It joins the plate when you go back to the Layout step.', 'late-' + part.id);
     }
     updateNext(); updateSummary();
   }
@@ -606,16 +737,11 @@
     var ctx = S.ctx;
     $('#parts-onshape').hidden = ctx === 'standalone';
     $('#parts-upload').hidden = ctx !== 'standalone';
-    $('#parts-assembly').hidden = ctx !== 'assembly';
-    var busy = S.parts.some(function (p) { return p.status === 'exporting'; });
-    var ss = $('#select-status');
-    ss.classList.toggle('busy', busy);
-    ss.innerHTML = '';
-    if (busy) { ss.appendChild(el('span', 'spin')); ss.appendChild(document.createTextNode(' Bringing parts in from Onshape… keep clicking to add more.')); }
-    else ss.textContent = lastAdded ? 'Added one more: ' + lastAdded : (ctx === 'assembly' ? 'Click a part in the assembly…' : 'Click a part in Onshape…');
-    $('#parts-hint').textContent = ctx === 'assembly'
-      ? 'Click instances in the list or the graphics area to add one part at a time, or bring them all in with the button. Click a part again for one more.'
-      : 'Click a part in the Parts list or the graphics area; it comes in automatically. Click it again for one more, or set the quantity on its row.';
+    // the prompt says one thing and does not change as parts arrive; only the list updates
+    $('#select-status').textContent = ctx === 'assembly' ? 'Click a part in the assembly' : 'Click a part in the Part Studio';
+    // STL files carry no units (a 3MF file states its own): what an STL is read in is a
+    // consequence the user cannot see
+    $('#upload-units').textContent = 'STL files are read in ' + (Config.uploadUnits === 'in' ? 'inches.' : 'millimetres.');
     renderPartsMessages();
     var list = $('#parts-list'); list.innerHTML = '';
     S.parts.forEach(function (p) {
@@ -630,14 +756,14 @@
         dims.textContent = p.slow ? 'Taking longer than usual; still trying…' : (ctx === 'standalone' ? 'Uploading…' : 'Arriving from Onshape…');
         meta.appendChild(dims);
         var bar = el('div', 'arrive-bar'), fill = el('div'); fill.style.width = Math.round(p.progress * 100) + '%'; bar.appendChild(fill); meta.appendChild(bar);
-      } else { dims.textContent = sizeText(def.size); dims.title = 'Size as modelled; ' + (def.volume / 1000).toFixed(1) + ' cm³ of plastic'; meta.appendChild(dims); }
-      row.appendChild(meta);
-      if (ctx !== 'standalone' && p.status === 'ready') {
-        var rf = el('button', 'refresh', '↻'); rf.type = 'button';
-        rf.title = 'Refresh ' + p.name + ' from Onshape (after you change it there)'; rf.setAttribute('aria-label', rf.title);
-        rf.addEventListener('click', function () { p.warn = null; partsNote = null; exportPart(p, { refresh: true }); renderParts(); });
-        row.appendChild(rf);
+      } else {
+        // the size in the part's own units, as Onshape (or the configuration, for a file) gives them
+        dims.textContent = U.size(def.size, p.units);
+        dims.title = 'Size as modelled, in ' + (p.units === 'in' ? 'inches' : 'millimetres') +
+          (p.file ? (/\.3mf$/i.test(p.file) ? ' (the units the file states)' : ' (STL files are read in ' + (p.units === 'in' ? 'inches' : 'millimetres') + ')') : ' (the units of its ' + (ctx === 'assembly' ? 'assembly' : 'Part Studio') + ')');
+        meta.appendChild(dims);
       }
+      row.appendChild(meta);
       var qty = el('input', 'part-qty'); qty.type = 'number'; qty.min = '1'; qty.max = String(MAX_INSTANCES); qty.step = '1';
       qty.value = String(p.qty); qty.disabled = p.status !== 'ready'; qty.setAttribute('aria-label', 'Instances of ' + p.name);
       qty.addEventListener('change', function () {
@@ -666,35 +792,20 @@
     var coming = S.parts.length - parts;
     box.innerHTML = '';
     if (!S.parts.length) { box.textContent = 'No parts yet.'; return; }
-    box.textContent = parts + ' part' + (parts === 1 ? '' : 's') + ', ' + n + ' instance' + (n === 1 ? '' : 's') + ' on one plate (up to ' + MAX_INSTANCES + ')' +
-      (coming ? '; ' + coming + ' more arriving. Next does not wait for ' + (coming === 1 ? 'it' : 'them') + '.' : '.');
+    box.textContent = parts + ' part' + (parts === 1 ? '' : 's') + ', ' + n + ' instance' + (n === 1 ? '' : 's') + ' on one plate' +
+      (coming ? '; ' + coming + ' more arriving.' : '.');
     if (n > MAX_INSTANCES) box.appendChild(msg('error', 'This plate would hold ' + n + ' instances.', TOO_MANY_INSTANCES_MESSAGE));
   }
 
   // Onshape selection from the page (Part Studio or Assembly)
-  function onOnshapeSelect(key) {
+  // units: the units of the Part Studio or Assembly the part was picked in
+  function onOnshapeSelect(key, units) {
     if (S.step !== 'parts' || S.ctx === 'standalone') return false;
-    addPart(key, {});
+    addPart(key, { units: units });
     return true;
   }
 
-  function importAssembly() {
-    var A = P.ASSEMBLY, failAt = Mock.take('export_fail') ? 2 : -1, warnAt = Mock.take('not_watertight') ? 1 : -1;
-    var added = 0;
-    A.instances.forEach(function (inst, i) {
-      var have = S.parts.filter(function (p) { return p.key === inst.key; })[0];
-      if (have) { have.qty = inst.count; return; }
-      addPart(inst.key, { qty: inst.count, delay: i * 0.35, noArm: true, fail: i === failAt, warn: i === warnAt });
-      added++;
-    });
-    var std = A.standardContent.map(function (s) { return s.count + ' × ' + s.name; }).join('; ');
-    setPartsNote(msg('info', 'Added the ' + A.instances.length + ' parts of ' + A.name + ', each with its count in the assembly.',
-      'Remove what you do not print (for example the hex shafts). Left out as bought, not printed: ' + std + '.'));
-    renderParts();
-  }
-
   function bindParts() {
-    $('#btn-import-assembly').addEventListener('click', importAssembly);
     var dz = $('#dropzone'), input = $('#f-upload'), next = 0;
     var keys = P.LIB.map(function (d) { return d.key; }).filter(function (k) { return k !== 'shaft'; });
     function addFiles(files) {
@@ -777,15 +888,15 @@
       var p = partById(c.partId);
       if (!c.auto || p.autoTold) return;
       p.autoTold = true;
-      told.push(p.name + ' (' + Math.round(PL.derive(c).height) + ' mm tall instead of ' + Math.round(P.resting(c.partKey).modelled.height) + ' mm)');
+      told.push(p.name + ' (' + U.len(PL.derive(c).height) + ' tall instead of ' + U.len(P.resting(c.partKey).modelled.height) + ')');
     });
-    if (told.length) layHint = msg('ok', 'Laid down automatically: ' + told.join(', ') + '.',
-      'Chosen by how much touches the plate, how much hangs over air and how tall it stands. Select an instance to see the other ways it can lie, or to put it back as modelled.');
+    // a consequence the user cannot see otherwise: the part does not lie as it was modelled
+    if (told.length) layHint = msg('ok', 'Laid down automatically: ' + told.join(', ') + '.', null);
     if (!S.laidOut || fresh.length === S.instances.length) {
       var res = PL.bestArrange(S.instances, PLATE); S.laidOut = true;
       S.layoutNotes = arrangeNote(res);
     } else {
-      // instances added to a plate the student already laid out join the group: each takes the
+      // instances added to a plate the user already laid out join the group: each takes the
       // free spot nearest the middle of the instances already there, turned if that is what it
       // takes, and nothing else moves
       fresh.forEach(function (c) {
@@ -831,9 +942,9 @@
   // sentence on what happened.
   function afterLay(instances, what) {
     var how = instances.map(function (c) { recheck(); return settle(c); });
-    var c0 = instances[0], h = Math.round(PL.derive(c0).height);
-    var head = instances.length === 1 ? instanceLabel(c0) + ' now lies ' + what + ': ' + h + ' mm tall.'
-                                   : instances.length + ' instances of ' + partById(c0.partId).name + ' now lie ' + what + ': ' + h + ' mm tall.';
+    var c0 = instances[0], h = U.len(PL.derive(c0).height);
+    var head = instances.length === 1 ? instanceLabel(c0) + ' now lies ' + what + ': ' + h + ' tall.'
+                                   : instances.length + ' instances of ' + partById(c0.partId).name + ' now lie ' + what + ': ' + h + ' tall.';
     var parked = how.filter(function (h) { return h === 'parked'; }).length, moved = how.filter(Boolean).length - parked;
     layHint = msg(parked ? 'warn' : 'ok', head, parked
       ? (instances.length === 1 ? 'It needs more room lying this way and no spot on the plate is free, so it waits beside the plate. The other instances stay where you put them; press Arrange to make room.'
@@ -886,30 +997,31 @@
     afterLay(changed, 'on its ' + ordinal(k + 1) + ' of ' + n0 + ' sides' + (k === 0 ? ' (the best)' : ''));
   }
   function ordinal(n) { return ['first', 'second', 'third', 'fourth', 'fifth', 'sixth'][n - 1] || n + 'th'; }
-  // One sentence per instance that is too close to two or more others.
+  // One error for every instance that is too close: one pair is named; more say how many,
+  // with one Arrange button. Every instance in it stays marked in the view.
+  // The spacing follows the Settings step's supports setting (12 mm on, 5 mm off). Turning
+  // supports on after arranging moves nothing: instances now too close are reported here until
+  // the user presses Arrange or drags them.
   function recheck() {
+    syncPlateRules();
     var raw = PL.check(S.instances, PLATE, instanceLabel), close = raw.filter(function (p) { return p.rule === 'too_close'; });
-    var count = {};
-    close.forEach(function (p) { p.instances.forEach(function (id) { count[id] = (count[id] || 0) + 1; }); });
-    var hubs = Object.keys(count).filter(function (id) { return count[id] >= 2; }).sort(function (a, b) { return count[b] - count[a]; });
-    var used = {}, merged = [];
-    hubs.forEach(function (id) {
-      var mine = close.filter(function (p) { return !used[p.instances.join()] && p.instances.indexOf(id) >= 0; });
-      if (mine.length < 2) return;
-      mine.forEach(function (p) { used[p.instances.join()] = 1; });
-      var others = mine.map(function (p) { return instanceLabel(instanceById(p.instances[0] === id ? p.instances[1] : p.instances[0])); });
-      var list = others.length > 1 ? others.slice(0, -1).join(', ') + ' and ' + others[others.length - 1] : others[0];
-      merged.push({ rule: 'too_close', instances: [id].concat(mine.map(function (p) { return p.instances[0] === id ? p.instances[1] : p.instances[0]; })),
-                    message: instanceLabel(instanceById(id)) + ' overlaps or is closer than ' + PLATE.spacing + ' mm to ' + list + '. Drag it to a clear spot, or press Arrange.' });
-    });
-    S.problems = raw.filter(function (p) { return p.rule !== 'too_close' || !used[p.instances.join()]; }).concat(merged);
+    var rest = raw.filter(function (p) { return p.rule !== 'too_close'; });
+    if (close.length > 1) {
+      var ids = [];
+      close.forEach(function (p) { p.instances.forEach(function (id) { if (ids.indexOf(id) < 0) ids.push(id); }); });
+      close = [{ rule: 'too_close', instances: ids,
+                 message: ids.length + ' instances are closer than ' + U.len(PLATE.spacing) + ' with supports ' + (PLATE.supportsOn ? 'on' : 'off') + '. Press Arrange, or drag them apart.' }];
+    }
+    S.problems = rest.concat(close);
   }
   function isBad(id) { return S.problems.some(function (p) { return p.instances.indexOf(id) >= 0; }); }
+  // an instance waiting beside the plate (to its right), where Arrange or a lay-down left it
+  function isParked(c) { return !!c && PL.bbox(PL.worldHull(c)).minX > PLATE.x; }
   // An instance that was just laid down has a new footprint. If it now overlaps a neighbour or
   // crosses the plate edge, find it a free spot, turning it if that is what it takes.
   // It takes the free spot nearest to where it stood, so it stays beside its neighbours.
   // When no spot is free with the others where they are (a long part laid flat among small
-  // ones), the whole plate is arranged again, which is what the student would press next.
+  // ones), the whole plate is arranged again, which is what the user would press next.
   // Returns 'moved', 'turned', 'arranged', or null when it was fine or nothing fits at all.
   function settle(instance) {
     function placeProblem() { return S.problems.some(function (p) { return p.rule !== 'too_tall' && p.instances.indexOf(instance.id) >= 0; }); }
@@ -921,7 +1033,7 @@
       if (PL.placeNear(instance, others, PLATE, keep.x, keep.y, turns[t] ? 3 : 4)) { recheck(); return how; }
     }
     // No free spot with the others where they are. The owner (M9): never move other instances.
-    // This one waits beside the plate, marked off the plate, until the student presses Arrange.
+    // This one waits beside the plate, marked off the plate, until the user presses Arrange.
     instance.q = keep.q; instance.d = null;
     var d = PL.derive(instance), sideY = 0;
     S.instances.forEach(function (o) { if (o === instance) return; var h = PL.bbox(PL.worldHull(o)); if (h.minX > PLATE.x) sideY = Math.max(sideY, h.maxY + PLATE.spacing); });
@@ -932,7 +1044,9 @@
 
   function enterLayout() {
     enterLayoutData();
-    $('#layout-info').textContent = (PRN.paired ? ST.PRINTER.name : 'The ' + ST.PRINTER.model) + ': plate ' + PLATE.x + ' × ' + PLATE.y + ' mm, instances up to ' + PLATE.height + ' mm tall and ' + PLATE.spacing + ' mm apart.';
+    // the plate's size in millimetres, as Bambu Lab gives it; the height limit and spacing in the layout units
+    $('#layout-info').textContent = (PRN.paired ? ST.PRINTER.name : 'The ' + ST.PRINTER.model) + ': plate ' + PLATE.x + ' × ' + PLATE.y + ' mm, instances up to ' +
+      U.len(PLATE.height) + ' tall, at least ' + U.len(PLATE.spacing) + ' apart (supports ' + (PLATE.supportsOn ? 'on' : 'off') + ').';
     if (!editor) {
       editor = Layout3D.create($('#layout-view'), {
         plate: PLATE,
@@ -996,19 +1110,24 @@
     var sel = S.selected.map(instanceById).filter(Boolean);
     var s = $('#layout-selection');
     $('#layout-selrow').classList.toggle('has-sel', sel.length > 0);
-    if (!sel.length) s.textContent = S.instances.length + ' instance' + (S.instances.length === 1 ? '' : 's') + ' on the plate. Click one to select it.';
-    else if (sel.length === 1) { var d = PL.derive(sel[0]); s.innerHTML = ''; s.appendChild(el('strong', null, instanceLabel(sel[0]))); s.appendChild(document.createTextNode(' ' + Math.round(d.w) + ' × ' + Math.round(d.l) + ' mm, ' + Math.round(d.height) + ' mm tall')); }
+    var beside = S.instances.filter(isParked).length, onPlate = S.instances.length - beside;
+    if (!sel.length) s.textContent = plural(onPlate, 'instance', 'instances') + ' on the plate' + (beside ? ', ' + beside + ' beside it.' : '.');
+    else if (sel.length === 1) { var d = PL.derive(sel[0]); s.innerHTML = ''; s.appendChild(el('strong', null, instanceLabel(sel[0]))); s.appendChild(document.createTextNode(' ' + U.area(d.w, d.l) + ', ' + U.len(d.height) + ' tall')); }
     else { s.innerHTML = ''; s.appendChild(el('strong', null, sel.length + ' instances')); s.appendChild(document.createTextNode(' move and turn together')); }
     renderOrientLine(sel); renderStrip(sel); renderGestures();
     $('#btn-tilt').hidden = Opt.scheme !== 'T'; $('#btn-top').hidden = Opt.scheme === 'T';
-    // The first problem is also said inside the picture, where the student is looking; the
+    // The first problem is also said inside the picture, where the user is looking; the
     // full sentences and their remedy buttons are below it.
     var alertBox = $('#layout-alert');
     alertBox.innerHTML = ''; alertBox.classList.toggle('ok', !S.problems.length); alertBox.disabled = !S.problems.length;
+    // An instance Arrange left beside the plate gets no card of its own: Arrange's message
+    // below already says how many do not fit, with what to do.
+    var shown = S.problems.filter(function (p) { return !(p.rule === 'off_plate' && S.layoutNotes.length && isParked(instanceById(p.instances[0]))); });
+    var lines = (beside && shown.length < S.problems.length ? 1 : 0) + shown.length;
     if (S.problems.length) {
-      var first = S.problems[0].message.split('. ')[0] + '.';
+      var first = shown.length ? shown[0].message.split('. ')[0] + '.' : plural(beside, 'instance does', 'instances do') + ' not fit on the plate.';
       alertBox.appendChild(el('span', 'first', first)); alertBox.title = first;
-      alertBox.appendChild(el('span', 'more', S.problems.length > 1 ? '+' + (S.problems.length - 1) + ' more ↓' : 'Fix ↓'));
+      alertBox.appendChild(el('span', 'more', lines > 1 ? '+' + (lines - 1) + ' more ↓' : 'Fix ↓'));
     } else {
       alertBox.title = '';
       alertBox.appendChild(el('span', 'first', S.instances.length ? '✓ ' + (S.instances.length === 1 ? instanceLabel(S.instances[0]) + ' fits' :'All ' + S.instances.length + ' instances fit') + ' the plate.' : 'No instances yet: add parts on the Parts step.'));
@@ -1016,15 +1135,13 @@
     var box = $('#layout-errors'); box.innerHTML = '';
     if (layHint) box.appendChild(layHint);
     S.layoutNotes.forEach(function (n) { box.appendChild(n); });
-    if (S.problems.length) {
-      box.appendChild(el('div', 'hint fix-first', S.problems.length === 1 ? 'Fix this before Next:' : 'Fix these ' + S.problems.length + ' before Next (click one to select its instances):'));
-      S.problems.forEach(function (p) {
-        // an instance Arrange left beside the plate: pressing Arrange again cannot help
-        var parkedInstance = p.rule === 'off_plate' && S.layoutNotes.length && PL.bbox(PL.worldHull(instanceById(p.instances[0]))).minX > PLATE.x;
+    if (shown.length) {
+      box.appendChild(el('div', 'hint fix-first', shown.length === 1 ? 'Fix this before Next:' : 'Fix these ' + shown.length + ' before Next:'));
+      shown.forEach(function (p) {
+        // an instance laid down with no room left waits beside the plate: Arrange makes room
         var acts = p.rule === 'too_tall' ? [['Auto-orient', function (e) { e.stopPropagation(); S.selected = p.instances.slice(); autoOrient(p.instances); }]]
-                 : parkedInstance ? [['Back to Parts', function (e) { e.stopPropagation(); gotoStep('parts'); }]]
                  : [['Arrange', function (e) { e.stopPropagation(); doArrange(); }]];
-        var m = msg('error', p.message.split('. ')[0] + '.', parkedInstance ? 'It did not fit: lower its quantity, or lay instances another way to make room.' : p.message.split('. ').slice(1).join('. '), acts);
+        var m = msg('error', p.message.split('. ')[0] + '.', p.message.split('. ').slice(1).join('. '), acts);
         m.classList.add('clickable');
         m.addEventListener('click', function () { S.selected = p.instances.slice(); editor.resetHandle(); editor.sync(); renderLayoutSide(); });
         box.appendChild(m);
@@ -1074,11 +1191,12 @@
       var img = el('img'); img.alt = ''; img.src = restThumb(key, it.i, c.q); b.appendChild(img);
       if (it.i === 0) b.appendChild(el('span', 'rs-best', 'Best'));
       var tall = c.height > PLATE.height;
-      b.appendChild(el('span', 'rs-line', Math.round(c.height) + ' mm tall'));
+      b.appendChild(el('span', 'rs-line', U.len(c.height) + ' tall'));
       if (it.i === 'm') b.appendChild(el('span', 'rs-line', 'as modelled'));
       if (tall) b.appendChild(el('span', 'rs-line bad', 'too tall'));
       else if (c.supports) b.appendChild(el('span', 'rs-line warn', 'overhangs'));
-      b.title = (it.i === 0 ? 'The best way, chosen automatically: ' : it.i === 'm' ? 'As modelled: ' : '') + Math.round(c.height) + ' mm tall, ' + Math.round(c.contact) + ' mm² on the plate' + (c.overhang > 1 ? ', ' + Math.round(c.overhang) + ' mm² over air' : '') + (c.supports ? '. Much of it hangs over air, so it will probably need Supports.' : '');
+      function sq(a) { return U.unit === 'in' ? (a / 645.16).toFixed(2) + ' in²' : Math.round(a) + ' mm²'; }
+      b.title = (it.i === 0 ? 'The best way, chosen automatically: ' : it.i === 'm' ? 'As modelled: ' : '') + U.len(c.height) + ' tall, ' + sq(c.contact) + ' on the plate' + (c.overhang > 1 ? ', ' + sq(c.overhang) + ' over air' : '') + (c.supports ? '. Much of it hangs over air, so it will probably need Supports.' : '');
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
       b.addEventListener('click', function () { layInstances(sel, function () { return c; }, it.i === 0 ? 'auto' : it.i === 'm' ? 'modelled' : 'pick'); });
       row.appendChild(b);
@@ -1086,7 +1204,7 @@
     box.appendChild(row);
   }
   // One line under the view: the gestures of the mouse scheme and of the way to lay an instance
-  // down, chosen in the scenario strip, so a student need not be told.
+  // down, chosen in the scenario strip, so a user need not be told.
   var GESTURES = {
     O: 'Drag an instance to move it, its round handle to turn it. Right-drag to look around, Shift-drag to slide, scroll to zoom.',
     S: 'Drag an instance to move it, its round handle to turn it. Drag empty space to look around, right-drag to slide, scroll to zoom.',
@@ -1104,6 +1222,14 @@
     S: ['Shift-drag also slides the view.'],
     T: ['Middle-drag also slides; Top puts the view back above the plate.']
   };
+  // The gestures and the other ways to move and look are behind the "?" icon of the toolbar
+  // (version 6, fix round 1): nothing is written under the view.
+  function toggleLayoutHelp(e) {
+    e.stopPropagation();
+    var pop = $('#layout-help'), open = pop.hidden;
+    pop.hidden = !open; $('#btn-layout-help').setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+  function closeLayoutHelp() { var pop = $('#layout-help'); if (pop) pop.hidden = true; var b = $('#btn-layout-help'); if (b) b.setAttribute('aria-expanded', 'false'); }
   function renderGestures() {
     $('#layout-gestures').textContent = GESTURES[Opt.scheme] + ' ' + LAY_GESTURE[Opt.lay];
     var ul = $('#layout-more'); ul.innerHTML = '';
@@ -1130,6 +1256,12 @@
     $('#btn-top').addEventListener('click', function () { editor && editor.topView(); });
     $('#btn-tilt').addEventListener('click', function () { if (editor) $('#btn-tilt').textContent = editor.toggleTilt() ? 'Above' : '3D'; });
     $('#layout-alert').addEventListener('click', function () { $('#layout-errors').scrollIntoView({ block: 'start', behavior: 'smooth' }); });
+    $('#btn-layout-help').addEventListener('click', toggleLayoutHelp);
+    $('#layout-help').addEventListener('click', function (e) { e.stopPropagation(); });
+    document.addEventListener('click', closeLayoutHelp);
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !$('#layout-help').hidden) { closeLayoutHelp(); $('#btn-layout-help').focus(); }
+    });
   }
   function setOption(name, value) {
     Opt[name] = value;
@@ -1198,7 +1330,8 @@
     if (Mock.take('too_tall')) {
       var rib = S.instances.filter(function (x) { return x.partKey === 'rib'; })[0];
       if (!rib) {
-        var part = { id: 'p' + (S.nextId++), key: 'rib', name: P.byKey.rib.name, qty: 1, status: 'ready', warn: null, error: null };
+        var part = { id: 'p' + (S.nextId++), key: 'rib', name: P.byKey.rib.name, qty: 1, status: 'ready', warn: null, error: null,
+                     units: S.parts.length ? S.parts[0].units : 'in' };      // from the same Part Studio as the first part
         S.parts.push(part); rib = newInstance(part); rib.q = new T.Quaternion(); rib.auto = false; S.instances.push(rib);
         var ribOthers = S.instances.filter(function (x) { return x !== rib; }), ribMid = PL.centre(ribOthers, PLATE);
         if (!PL.placeNear(rib, ribOthers, PLATE, ribMid[0], ribMid[1])) PL.place(rib, ribOthers, PLATE);
@@ -1227,14 +1360,12 @@
   }
   function plateVolume() { return S.instances.reduce(function (a, c) { return a + P.byKey[c.partKey].volume; }, 0) / 1000; }
 
-  // The Preview step's lead always says where the slice stands: running, sliced, failed,
-  // stopped at the time limit, cancelled, or never started.
-  var SLICING_LEAD = 'Slicing the plate on the server. You can step back meanwhile; it goes on.';
-  function previewLead(t) { $('#preview-lead').textContent = t; }
+  // Version 6 has no line under the Preview step's title: the slicing card, the result or the
+  // error message says where the slice stands.
   function enterPreview() {
     if (S.result && S.resultSig === signature()) { showResult(); return; }
     if (S.job && S.job.state === 'running') {
-      if (S.job.sig === signature()) { $('#slice-card').hidden = false; previewLead(SLICING_LEAD); return; }   // still slicing this plate
+      if (S.job.sig === signature()) { $('#slice-card').hidden = false; return; }   // still slicing this plate
       cancelSlice('changed');                                                          // the plate changed: slice it afresh
     }
     startSlice();
@@ -1244,16 +1375,14 @@
   }
   function startSlice() {
     clearPreview(); S.result = null; S.resultSig = null; updateNext();
-    previewLead(SLICING_LEAD);
     var v = eff(), vol = plateVolume(), instances = S.instances.slice();
     var forced = Mock.take('too_large');
     if (forced || vol > PLATE_VOLUME_CAP_CM3) {
-      previewLead('This plate was not sliced: it is too large for the server. Nothing to preview yet.');
       var cap = forced ? Math.max(10, Math.floor(vol * 0.75 / 10) * 10) : PLATE_VOLUME_CAP_CM3;
       $('#preview-errors').appendChild(msg('error',
         'This plate is too large for the server to slice: its ' + instances.length + ' instances hold about ' + Math.round(vol) + ' cm³ of plastic, and the server slices up to ' + cap + ' cm³ at once.',
         instances.length > 1 ? 'Lower the quantities and print the rest on a second plate.'
-                          : 'This part alone is more than the server can slice, so it cannot be printed from here. Slice it in Orca Slicer on a shop computer.',
+                          : 'This part alone is more than the server can slice, so it cannot be printed from here. Slice it in Orca Slicer on your own computer.',
         instances.length > 1 ? [['Back to Parts', function () { gotoStep('parts'); }, 'primary'], ['Back to Layout', function () { gotoStep('layout'); }]]
                           : [['Back to Parts', function () { gotoStep('parts'); }]]));
       if (forced) $('#preview-errors').appendChild(msg('info', 'Mockup: the cap was lowered for this plate to show the message. The mockup’s real cap is ' + PLATE_VOLUME_CAP_CM3 + ' cm³.', null));
@@ -1366,34 +1495,47 @@
   function failSlice(job, type) {
     stopJob(job); job.state = 'failed';
     $('#slice-card').hidden = true;
-    previewLead(type === 'timeout' ? 'The slice was stopped at the server’s time limit. Nothing to preview yet.'
-                                   : 'The slice failed, so there is nothing to preview yet. What to change is below.');
     var box = $('#preview-errors'); box.innerHTML = '';
     var sus = job.suspect, label = sus ? instanceLabel(sus) : 'An instance', h = sus ? PL.derive(sus).height : 40;
-    var z1 = +(h * 0.62).toFixed(2), z2 = +(z1 + 0.72).toFixed(2), zr = Math.round(z1 * 10) / 10;
+    var z1 = +(h * 0.62).toFixed(2), z2 = +(z1 + 0.72).toFixed(2), zr = U.len(z1, 1);
     var name = sus && partById(sus.partId) ? partById(sus.partId).name : 'the part';
-    // For a mentor: Orca Slicer's own sentence, which names the heights; nothing of PenguinSlicer's.
+    // The details: Orca Slicer's own sentence (in millimetres, as Orca writes it), which names
+    // the heights; nothing of PenguinSlicer's.
     var orca = 'Orca Slicer says: “Object can’t be printed for empty layer between ' + z1 + ' and ' + z2 + ' mm. Make sure the object is printable or the object has faulty mesh.” ';
     if (type === 'empty') {
-      box.appendChild(msg('error', 'The slice failed: ' + label + ' has empty layers at about ' + zr + ' mm above the plate.',
+      box.appendChild(msg('error', 'The slice failed: ' + label + ' has empty layers at about ' + zr + ' above the plate.',
         'Part of it starts in mid-air there, and Supports is off, so nothing would hold it up while it prints. Turn Supports on and slice again.',
-        [['Turn on Supports and slice again', function () { setSetting('enable_support', true); startSlice(); updateSummary(); }, 'primary'], ['Back to Layout', function () { gotoStep('layout'); }]],
+        [['Turn on Supports and slice again', supportsOnAndSlice, 'primary'], ['Back to Layout', function () { gotoStep('layout'); }]],
         orca + 'Look at ' + name + ' at that height as it lies on the plate: a piece that starts in mid-air (an overhang with nothing under it) needs Supports, or the part laid another way.'));
     } else if (type === 'faulty') {
-      box.appendChild(msg('error', 'The slice failed: ' + label + ' has a faulty mesh at about ' + zr + ' mm above the plate.',
-        'Supports is already on, so the model itself has gaps or zero-thickness pieces there. Repair ' + name + ' in Onshape (look for faces that do not meet near ' + zr + ' mm), then ' +
-          (S.ctx === 'standalone' ? 'upload the repaired file on the Parts step.' : 'press ↻ on its row on the Parts step to bring in the repaired version.'),
+      box.appendChild(msg('error', 'The slice failed: ' + label + ' has a faulty mesh at about ' + zr + ' above the plate.',
+        'Supports is already on, so the model itself has gaps or zero-thickness pieces there. Repair ' + name + ' in ' + (S.ctx === 'standalone' ? 'your CAD program' : 'Onshape') + ' (look for faces that do not meet near ' + zr + '), then ' +
+          (S.ctx === 'standalone' ? 'on the Parts step remove its row and upload the repaired file.' : 'on the Parts step remove its row and click the repaired part again.'),
         [['Back to Parts', function () { gotoStep('parts'); }, 'primary']],
-        orca + 'In Onshape, check that ' + name + ' is one closed solid with no zero-thickness walls or faces that only touch along an edge near that height, and that its Part Studio rebuilds with no errors.'));
+        orca + (S.ctx === 'standalone'
+          ? 'In your CAD program, check that ' + name + ' is one closed solid with no zero-thickness walls or faces that only touch along an edge near that height, and that the model rebuilds with no errors before you export it again.'
+          : 'In Onshape, check that ' + name + ' is one closed solid with no zero-thickness walls or faces that only touch along an edge near that height, and that its Part Studio rebuilds with no errors.')));
     } else if (type === 'timeout') {
       box.appendChild(msg('error', 'The slice took longer than ' + (SLICE_TIMEOUT_S / 60) + ' minutes, the server’s limit, and was stopped.',
         job.instances.length > 1
-          ? 'Slice again first: the server may have been busy. If it stops again, this plate of ' + job.instances.length + ' instances is too much at once: lower the quantities and print the rest on a second plate, or pick the Draft profile.'
-          : 'Slice again first: the server may have been busy. If it stops again, pick the Draft profile, whose thicker layers slice faster.',
+          ? 'Slice again first: the server may have been busy. If it stops again, this plate of ' + job.instances.length + ' instances is too much at once: lower the quantities and print the rest on a second plate, or pick a profile with thicker layers.'
+          : 'Slice again first: the server may have been busy. If it stops again, pick a profile with thicker layers, which slices faster.',
         job.instances.length > 1 ? [['Slice again', startSlice, 'primary'], ['Back to Parts', function () { gotoStep('parts'); }]]
-                              : [['Slice again', startSlice, 'primary'], ['Back to Setup', function () { gotoStep('setup'); }]]));
+                              : [['Slice again', startSlice, 'primary'], ['Back to Settings', function () { gotoStep('setup'); }]]));
     }
     updateNext();
+  }
+  // The empty-layers remedy. Supports on needs 12 mm between instances, so the placement
+  // check runs first: a plate that passes is sliced; one that does not goes to the Layout
+  // step, where its usual message and Arrange are. Nothing moves by itself.
+  function supportsOnAndSlice() {
+    setSetting('enable_support', true);
+    recheck();
+    if (S.problems.length) {
+      layHint = msg('info', 'Not sliced: with Supports on, instances need ' + U.len(PLATE.spacing) + ' between them.', null);
+      gotoStep('layout'); return;
+    }
+    startSlice(); updateSummary();
   }
   function cancelSlice(why) {
     var job = S.job; if (!job || job.state !== 'running') return;
@@ -1401,10 +1543,9 @@
     stopJob(job); job.state = 'cancelled';
     $('#slice-card').hidden = true;
     if (why === 'changed') return;         // the plate changed while it sliced: a new slice starts at once
-    previewLead('The slice was cancelled, so there is nothing to preview.');
     var box = $('#preview-errors'); box.innerHTML = '';
     box.appendChild(msg('info', 'Slice cancelled at ' + at + ', during “' + stage + '”. Nothing was saved or sent to the printer.',
-      'Change the plate or the settings with Back, or slice again.',
+      null,
       [['Slice again', startSlice, 'primary'], ['Back to Layout', function () { gotoStep('layout'); }]]));
     updateNext();
   }
@@ -1425,38 +1566,29 @@
     clearPreview();
     var r = S.result; $('#preview-result').hidden = false;
     var stats = $('#preview-stats'); stats.innerHTML = '';
-    // the two numbers a student plans around, large; the rest on one quiet line
+    // the two numbers a user plans around, large; the rest on one quiet line (layer height in mm: a slicer setting)
     [['Print time', hm(r.est.seconds)], ['Filament', Math.round(r.est.grams) + ' g ' + r.filament.type]].forEach(function (s) {
       var d = el('div', 'stat'); d.appendChild(el('strong', null, s[1])); d.appendChild(document.createTextNode(s[0])); stats.appendChild(d);
     });
     stats.appendChild(el('div', 'stat-line', r.instances.length + ' instance' + (r.instances.length === 1 ? '' : 's') + ' · ' + r.tp.layers + ' layers of ' + r.settings.layer_height + ' mm · sliced in ' + clock(r.sliceTime)));
     if (!viewer) viewer = Preview3D.createViewer($('#viewer-container'), PLATE);
     setTimeout(function () {
-      viewer.resize(); viewer.show(r.tp, r.instances);
-      Object.keys(S.hiddenTypes).forEach(function (k) { if (S.hiddenTypes[k]) viewer.setVisible(k, false); });
+      viewer.resize(); viewer.show(r.tp, r.instances, r.filament.color);
       setLayer(r.tp.layers - 1);
     }, 0);
     renderLegend(r);
-    $('#preview-lead').textContent = 'Sliced. Check the layers, then Next to send it to the printer.';
     updateNext();
   }
-  // The legend of the layer preview's colours: each line type's colour and name, nothing more
-  // (version 5 removed each type's time and share of the print). A click on a row hides that
-  // type in the layer preview (and shows it again).
+  // Two colours (the owner, version 6): the parts in the filament's colour, supports with their
+  // interface in light grey. The key, "Part · Supports", shows only when supports are on.
   function renderLegend(r) {
     var lg = $('#legend'); lg.innerHTML = '';
-    Preview3D.TYPES.forEach(function (ty) {
-      if (!r.tp.acc[ty.id].pos.length) return;
-      var off = !!S.hiddenTypes[ty.id];
-      var li = el('li', 'lg-row' + (off ? ' off' : '')); li.setAttribute('role', 'button'); li.tabIndex = 0;
-      li.setAttribute('aria-pressed', off ? 'false' : 'true');
-      li.title = (off ? 'Show ' : 'Hide ') + ty.label.toLowerCase() + ' in the layer preview';
-      var sw = el('i'); sw.style.background = '#' + ('00000' + ty.color.toString(16)).slice(-6); li.appendChild(sw);
-      li.appendChild(el('span', 'lg-name', ty.label));
-      function flip() { S.hiddenTypes[ty.id] = !S.hiddenTypes[ty.id]; if (viewer) viewer.setVisible(ty.id, !S.hiddenTypes[ty.id]); renderLegend(r); }
-      li.addEventListener('click', flip);
-      li.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(); } });
-      lg.appendChild(li);
+    lg.hidden = !r.settings.enable_support;
+    if (lg.hidden) return;
+    function hex(c) { return '#' + ('00000' + c.toString(16)).slice(-6); }
+    [['Part', r.filament.color], ['Supports', Preview3D.SUPPORT_COLOR]].forEach(function (k) {
+      var li = el('li'), sw = el('i'); sw.style.background = hex(k[1]); li.appendChild(sw);
+      li.appendChild(el('span', 'lg-name', k[0])); lg.appendChild(li);
     });
   }
   function setLayer(k) {
@@ -1469,7 +1601,11 @@
     $('#ls-fill').style.height = (frac * 100) + '%';
     var z = r.tp.zs[k] || 0;
     $('#ls-label').textContent = 'Layer ' + (k + 1);
-    $('#layer-readout').textContent = (k + 1) + ' of ' + r.tp.layers + ' · ' + z.toFixed(1) + ' mm high';
+    // short enough to stay on one line at 320 px in inches
+    $('#layer-readout').textContent = (k + 1) + ' / ' + r.tp.layers + ' · ' + U.len(z, 1);
+    var sl = $('#layer-slider');
+    sl.setAttribute('aria-valuemin', '1'); sl.setAttribute('aria-valuemax', String(r.tp.layers)); sl.setAttribute('aria-valuenow', String(k + 1));
+    sl.setAttribute('aria-valuetext', 'Layer ' + (k + 1) + ' of ' + r.tp.layers + ', ' + U.len(z, 1) + ' high');
   }
   function bindPreview() {
     $('#btn-cancel').addEventListener('click', function () { cancelSlice('button'); });
@@ -1493,21 +1629,34 @@
     // final action on the Send step: PenguinCAM's split button. The button sends at once; the
     // caret's menu offers Download instead.
     $('#btn-do').addEventListener('click', function () { doAction(S.action); });
-    $('#btn-do-caret').addEventListener('click', function (e) { e.stopPropagation(); $('#do-menu').hidden = !$('#do-menu').hidden; });
-    $all('#do-menu li').forEach(function (li) {
-      li.addEventListener('click', function () {
+    // The caret's menu works by keyboard too: Enter opens it on its first item, the arrow keys
+    // move between the items, Escape closes it and puts focus back on the caret.
+    var caret = $('#btn-do-caret'), menu = $('#do-menu');
+    function items() { return $all('#do-menu [role="menuitem"]'); }
+    function setMenu(open, focusFirst) {
+      menu.hidden = !open; caret.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (open && focusFirst) items()[0].focus();
+    }
+    caret.addEventListener('click', function (e) { e.stopPropagation(); setMenu(menu.hidden, e.detail === 0); });   // detail 0: a key, not a mouse
+    items().forEach(function (b) {
+      b.addEventListener('click', function () {
         // Choosing from the menu only changes what the button does; a separate press acts.
         // (On the first hardware test, a menu choice that printed at once surprised the owner.)
-        S.action = li.getAttribute('data-action'); $('#do-menu').hidden = true;
-        updateNext();
+        S.action = b.getAttribute('data-action'); setMenu(false);
+        updateNext(); $('#btn-do').focus();
       });
     });
-    document.addEventListener('click', function () { $('#do-menu').hidden = true; });
+    menu.addEventListener('keydown', function (e) {
+      var list = items(), i = list.indexOf(document.activeElement);
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setMenu(false); caret.focus(); }
+      else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); list[(i + (e.key === 'ArrowDown' ? 1 : list.length - 1)) % list.length].focus(); }
+    });
+    document.addEventListener('click', function () { setMenu(false); });
   }
   function doAction(a) {
     if (!S.result) return;
     if (a === 'download') {
-      var t = $('#send-toast'); t.hidden = false;
+      var t = $('#send-toast'); t.hidden = false; t.setAttribute('data-sig', S.resultSig);
       t.textContent = 'Downloaded the sliced file of ' + plateName(S.result.instances.length) + ' (' +(0.4 + S.result.instances.length * 0.21).toFixed(1) + ' MB). Mockup: no file is saved.';
       return;
     }
@@ -1517,7 +1666,7 @@
   /* ================================================================== old printing (version 3), replaced below */
   /* ================================================================== the printer */
   // The shop printer, as the relay reports it: the real world, not this page. It outlives a
-  // refresh, a closed panel and the scenario strip's Reset of the student's work. One delivery
+  // refresh, a closed panel and the scenario strip's Reset of the user's work. One delivery
   // job at a time (the relay's job slot); nothing queues.
   //   job: { mine, who, plate, what, phase: upload | starting | prepare | printing | waiting |
   //          finished | failed, up, t, prep, total, layers, pct, layer, sentAt, expectedEnd,
@@ -1532,8 +1681,6 @@
     var j = { mine: !!o.mine, who: o.who, plate: o.plate, what: o.what, phase: o.phase || 'upload', up: o.up || 0, t: o.t || 0, prep: prep, total: total,
               layers: o.layers, pct: 0, layer: 0, failAt: o.failAt || null, waitAt: o.waitAt || null, waitedS: 0, slowBy: o.slowBy || 1,
               el: o.t || 0, sentAt: new Date(nowMs() - (o.t || 0) * 1000) };
-    // the estimate the slicer gave; the printer's own time left can drift behind it
-    j.expectedEnd = new Date(j.sentAt.getTime() + (prep + total) * 1000);
     stepPrint(j, 0);
     return j;
   }
@@ -1577,8 +1724,8 @@
   }
   function remainingS(j) { return j.phase === 'upload' || j.phase === 'starting' ? j.prep + j.total : Math.max(0, (j.prep + j.total - j.t) * j.slowBy); }
   function finishAt(j) { return new Date(j.sentAt.getTime() + (j.el + remainingS(j)) * 1000); }
-  function behindMin(j) { return isLive(j) ? Math.max(0, Math.round((finishAt(j) - j.expectedEnd) / 60000)) : 0; }
-  // One reading of the printer for the header icon, the Setup line and the Send step.
+  // One reading of the printer for the header icon and the Send step. Version 6 shows no
+  // "behind its estimate" and no "late" anywhere (the owner, M24).
   function printerStatus() {
     var j = PRN.job;
     if (!PRN.paired) return { key: 'none', short: 'No printer', title: 'No printer paired', chip: 'off' };
@@ -1604,57 +1751,76 @@
   var sendKey = '';
   function printerChanged(tick) {
     renderPrinterIcon();
-    if (S.step === 'setup') renderPrinterLine();
     if (S.step === 'send') {
       var j = PRN.job, k = [sendBlocked(), j && j.phase, j && j.mine, !!S.result, printerStatus().key].join('|');
       if (!tick || k !== sendKey) renderSend();
       else {
         if (j && j.mine) renderPrintCard($('#send-live'), j);
         var bc = document.querySelector('#send-printer .busy-card'); if (bc && j && !j.mine) bc.parentNode.replaceChild(busyCard(j), bc);
-        var chip = document.querySelector('#send-summary .pstate'); if (chip && PRN.paired) chip.textContent = printerStatus().short;
       }
     }
     updateNext();
   }
   function renderPrinterIcon() {
-    var st = printerStatus(), b = $('#pstat'), j = PRN.job;
-    b.className = 'pstat s-' + st.key + (j && behindMin(j) >= 5 ? ' behind' : '');
+    var st = printerStatus(), b = $('#pstat');
+    b.className = 'pstat s-' + st.key;
     b.querySelector('.ptext').textContent = st.short;
     b.title = st.title + ': click for details';
     if (!$('#pstat-pop').hidden) renderPrinterPop();
   }
   function dl(grid, k, v, cls) { grid.appendChild(el('dt', null, k)); var d = el('dd', cls || null, v); grid.appendChild(d); return d; }
+  // The printer details: basic information only (the owner, version 6); print management is
+  // done at the printer. They open as part of the icon, a tab joined to it.
+  var PAIRING_DOC = '#pairing';      // the documentation page on pairing a printer, to be written
   function renderPrinterPop() {
     var pop = $('#pstat-pop'), st = printerStatus(), j = PRN.job; pop.innerHTML = '';
-    var head = el('div', 'pp-head'); head.appendChild(el('span', 'pp-title', st.title + '.'));
-    var x = el('button', 'pp-close', '×'); x.type = 'button'; x.setAttribute('aria-label', 'Close'); x.addEventListener('click', closePrinterPop); head.appendChild(x);
+    var head = el('div', 'pp-head'); head.appendChild(el('span', 'pp-title', st.key === 'none' ? 'No printer' : ST.PRINTER.name));
+    var x = el('button', 'pp-close', '×'); x.type = 'button'; x.setAttribute('aria-label', 'Close the printer details'); x.addEventListener('click', closePrinterPop); head.appendChild(x);
     pop.appendChild(head);
-    if (st.key === 'none') { pop.appendChild(el('div', 'pp-note', 'Your team has not paired a printer with PenguinSlicer yet. A mentor pairs it once, from the shop computer beside the printer.')); return; }
-    pop.appendChild(el('div', 'pp-sub', ST.PRINTER.name + ', ' + ST.PRINTER.model));
-    if (st.key === 'offline') { pop.appendChild(el('div', 'pp-note', 'Not heard from for ' + PRN.heardAgoMin + ' minutes. Check that the printer and the shop computer beside it are on and connected to the network.')); return; }
-    if (!j) { pop.appendChild(el('div', 'pp-note', 'Nothing is printing. It is free for the next plate.')); return; }
-    var g = el('dl', 'pp-grid');
-    // the first row's label follows the phase: a plate on its way is not printing yet
-    dl(g, j.phase === 'upload' || j.phase === 'starting' ? 'Sending' : j.phase === 'finished' ? 'Printed' : j.phase === 'failed' ? 'Was printing' : 'Printing', j.what);
-    dl(g, 'For', j.mine ? j.who + ' (you)' : j.who);
-    if (isLive(j)) {
-      dl(g, 'Done', j.phase === 'upload' || j.phase === 'starting' ? 'sending ' + Math.floor(j.up * 100) + '%' : j.phase === 'prepare' ? 'heating, 0%' : Math.floor(j.pct) + '%, layer ' + j.layer + ' of ' + j.layers);
-      dl(g, 'Time left', hm(remainingS(j)));
-      dl(g, 'Expected finish', clockTime(finishAt(j)));
-      var late = behindMin(j);
-      dl(g, 'Estimate', late >= 5 ? late + ' min behind its estimate (' + clockTime(j.expectedEnd) + ')' : 'on time', late >= 5 ? 'pp-late' : null);
+    if (st.key === 'none') {
+      var p = el('div', 'pp-note', 'PenguinSlicer needs to be paired with a printer. ');
+      var a = el('a', null, 'How to pair a printer'); a.href = PAIRING_DOC; a.title = 'Documentation (mockup: the page is still to be written)';
+      a.addEventListener('click', function (e) { e.preventDefault(); });
+      p.appendChild(a); pop.appendChild(p); placePrinterPop(); return;
+    }
+    if (st.key === 'offline') { pop.appendChild(el('div', 'pp-note', 'Not heard from for ' + PRN.heardAgoMin + ' minutes.')); placePrinterPop(); return; }
+    if (!j) { pop.appendChild(el('div', 'pp-note', 'Nothing is printing.')); placePrinterPop(); return; }
+    var g = el('dl', 'pp-grid'), sending = j.phase === 'upload' || j.phase === 'starting';
+    var who = j.mine ? j.who + ' (you)' : j.who;
+    if (sending) {
+      // sending: as version 5 had it (the owner: good as it is), less the estimate row and the note
+      dl(g, 'Sending', j.what); dl(g, 'Sent by', who);
+      dl(g, 'Done', 'sending ' + Math.floor(j.up * 100) + '%');
+      dl(g, 'Time left', hm(remainingS(j))); dl(g, 'Expected finish', clockTime(finishAt(j)));
+    } else if (isLive(j)) {
+      // printing: who sent it, percent done, time left and the finish time; nothing more
+      dl(g, 'Sent by', who);
+      dl(g, 'Done', j.phase === 'prepare' ? 'heating' : Math.floor(j.pct) + '%');
+      if (j.phase !== 'waiting') { dl(g, 'Time left', hm(remainingS(j))); dl(g, 'Expected finish', clockTime(finishAt(j))); }
     } else {
+      dl(g, 'Sent by', who);
       dl(g, j.phase === 'finished' ? 'Finished' : 'Stopped', clockTime(j.endedAt) + (j.phase === 'failed' ? ', layer ' + j.layer + ' of ' + j.layers : ''));
     }
     pop.appendChild(g);
-    if (isLive(j)) { var bar = el('div', 'pp-bar'), f = el('div'); f.style.width = (j.phase === 'upload' || j.phase === 'starting' ? j.up * 100 : j.pct) + '%'; bar.appendChild(f); pop.appendChild(bar); }
+    if (sending) { var bar = el('div', 'pp-bar'), f = el('div'); f.style.width = (j.up * 100) + '%'; bar.appendChild(f); pop.appendChild(bar); }
     if (j.phase === 'waiting') pop.appendChild(el('div', 'pp-note pp-late', j.waitingFor.label + '. ' + j.waitingFor.todo));
-    pop.appendChild(el('div', 'pp-note', isLive(j) ? 'The printer’s own report, a few seconds behind. To pause or stop a print, use the printer’s screen.'
-                                                    : j.phase === 'finished' ? 'Take the plate off before the next print.' : 'Clear the plate at the printer before the next print.'));
+    placePrinterPop();
+  }
+  // Joined to the icon: the details' top-right corner sits under the icon's right edge, and the
+  // open icon loses its bottom border, so the two read as one tab.
+  function placePrinterPop() {
+    var pop = $('#pstat-pop'), b = $('#pstat'), host = pop.parentNode;
+    if (pop.hidden || !host) return;
+    var hr = host.getBoundingClientRect(), br = b.getBoundingClientRect();
+    pop.style.top = (br.bottom - hr.top - 1) + 'px';
+    pop.style.right = Math.max(0, hr.right - br.right) + 'px';
+    pop.style.left = 'auto';
+    pop.style.width = Math.min(br.right - hr.left - 8, 340) + 'px';    // at least 8 px clear of the panel's left edge
   }
   function togglePrinterPop(e) {
     e.stopPropagation();
     var pop = $('#pstat-pop'), open = pop.hidden;
+    closeChangesPop();
     pop.hidden = !open; $('#pstat').setAttribute('aria-expanded', open ? 'true' : 'false');
     if (open) renderPrinterPop();
   }
@@ -1667,7 +1833,6 @@
     if (kind === 'idle') PRN.job = null;          // offline and not paired keep whatever the printer was doing
     if (kind === 'other_sending') PRN.job = newPrintJob(Object.assign(other, { phase: 'upload', up: 0.35 }));
     if (kind === 'other_printing') PRN.job = newPrintJob(Object.assign(other, { phase: 'printing', t: 270 + 0.61 * other.total }));
-    if (kind === 'other_behind') { PRN.job = newPrintJob(Object.assign(other, { phase: 'printing', t: 270 + 0.48 * other.total })); PRN.job.expectedEnd = new Date(finishAt(PRN.job).getTime() - 22 * 60000); }
     if (kind === 'other_waiting') { PRN.job = newPrintJob(Object.assign(other, { phase: 'printing', t: 270 + 0.3 * other.total })); PRN.job.phase = 'waiting'; PRN.job.waitingFor = { label: 'Front door open', todo: 'Close the front door, then resume the print on the printer’s screen.' }; }
     if (kind === 'finished') { PRN.job = newPrintJob(Object.assign(other, { phase: 'printing', t: 270 + other.total })); PRN.job.endedAt = new Date(nowMs() - 25 * 60000); }
     if (kind === 'failed') { PRN.job = newPrintJob(Object.assign(other, { phase: 'printing', t: 270 + 0.2 * other.total, failAt: 0.2 })); stepPrint(PRN.job, 1); PRN.job.endedAt = new Date(nowMs() - 12 * 60000); }
@@ -1683,26 +1848,17 @@
     var r = S.result, why = sendBlocked(), j = PRN.job, mineLive = j && j.mine && isLive(j), mineEnded = j && j.mine && !isLive(j);
     sendKey = [why, j && j.phase, j && j.mine, !!r, printerStatus().key].join('|');
     var live = $('#send-live'), sum = $('#send-summary'), pr = $('#send-printer');
-    // the progress of this student's own plate, at the top, once sent
+    // "Downloaded the sliced file of …" belongs to the slice it was said of
+    var toast = $('#send-toast'); if (!toast.hidden && toast.getAttribute('data-sig') !== S.resultSig) toast.hidden = true;
+    // the progress of this user's own plate, at the top, once sent (version 6: no line under
+    // the step title; the print card, the busy card or the message says where things stand)
     if (j && j.mine) renderPrintCard(live, j); else { live.innerHTML = ''; live.removeAttribute('data-key'); }
-    // the lead follows the phase of this student's print, and the printer's state otherwise
-    var ph = j && j.phase, atScreen = ' Pausing or stopping a print is done at the printer’s screen.';
-    $('#send-lead').textContent = mineLive ? (ph === 'upload' || ph === 'starting' ? 'Your plate is on its way to ' + ST.PRINTER.name + '.' + atScreen
-                                            : ph === 'prepare' ? ST.PRINTER.name + ' is heating up to print your plate.' + atScreen
-                                            : ph === 'waiting' ? 'Your print is waiting for a person at the printer: ' + j.waitingFor.label.toLowerCase() + '.'
-                                            : 'Your plate is printing on ' + ST.PRINTER.name + '.' + atScreen)
-      : mineEnded ? (j.phase === 'finished' ? 'Your print finished.' : 'Your print stopped.')
-      : why === 'other' ? ST.PRINTER.name + ' is busy with someone else’s print, so Send waits until it is free.'
-      : why === 'none' ? 'No printer is paired with your team, so Send is off.'
-      : why === 'offline' ? 'Send waits until ' + ST.PRINTER.name + ' can be reached.'
-      : 'Check the plate on the printer, then send. It starts printing as soon as it arrives.';
     // what will be printed
     sum.innerHTML = '';
-    if (!r) { sum.appendChild(msg('info', 'Nothing sliced yet.', 'Go Back to the Preview step: the plate is sliced there.', [['Back to Preview', function () { gotoStep('preview'); }]])); pr.innerHTML = ''; return; }
+    if (!r) { sum.appendChild(msg('info', 'Nothing sliced yet.', 'The plate is sliced on the Preview step.', [['Back to Preview', function () { gotoStep('preview'); }]])); pr.innerHTML = ''; return; }
     var c = el('div', 'card'), g = el('dl', 'send-sum');
-    var p = dl(g, 'Printer', ''), st = printerStatus();
-    if (st.key === 'none') p.appendChild(el('span', 'pstate off', 'No printer paired'));
-    else { p.appendChild(document.createTextNode(ST.PRINTER.name + ' ')); p.appendChild(el('span', 'pstate ' + st.chip, st.short)); }
+    // the printer by name only: its state is the printer-status icon's, and the card or message beside this
+    dl(g, 'Printer', printerStatus().key === 'none' ? 'None paired' : ST.PRINTER.name);
     var ul = el('ul'); partsLine().forEach(function (t) { ul.appendChild(el('li', null, t)); });
     var ii = dl(g, 'Instances', ''); ii.appendChild(el('div', 'big', r.instances.length + ' on one plate')); ii.appendChild(ul);
     var tt = dl(g, 'Print time', ''); tt.appendChild(el('span', 'big', hm(r.est.seconds)));
@@ -1714,18 +1870,24 @@
       if (!why) {
         var cp = el('div', 'clear-plate');
         cp.appendChild(el('span', null, '⚠'));
-        var t = el('div'); t.appendChild(el('strong', null, 'Check that the plate is clear')); t.appendChild(document.createTextNode(' and ' + r.filament.type + ' is loaded. Send starts the print at once; nobody is asked again.'));
+        var t = el('div'); t.appendChild(el('strong', null, 'Check that the plate is clear')); t.appendChild(document.createTextNode(' and ' + r.filament.type + ' is loaded. Send starts the print at once.'));
         cp.appendChild(t); pr.appendChild(cp);
       } else if (why === 'other') pr.appendChild(busyCard(j));
       else if (why === 'offline') pr.appendChild(msg('warn', ST.PRINTER.name + ' has not been heard from for ' + PRN.heardAgoMin + ' minutes, so Send waits.',
-        'Your sliced plate stays ready. Check that the printer and the shop computer beside it are on and connected to the network; Send comes back as soon as the printer answers. Or download the file.',
+        'Your sliced plate stays ready, and Send comes back as soon as the printer answers. Or download the file.',
         [['Download the sliced file', function () { doAction('download'); }]]));
-      else if (why === 'none') pr.appendChild(msg('warn', 'Your team has no printer paired with PenguinSlicer, so nothing can be sent.',
-        'A mentor pairs the printer once, from the shop computer beside it. Meanwhile, download the file and print it from Orca Slicer or Bambu Studio.',
-        [['Download the sliced file', function () { doAction('download'); }]]));
+      else if (why === 'none') {
+        var nm = msg('warn', 'No printer is paired with PenguinSlicer, so nothing can be sent.',
+          'An administrator pairs the printer once, from the computer beside it. Meanwhile, download the file and print it from Orca Slicer or Bambu Studio. ',
+          [['Download the sliced file', function () { doAction('download'); }]]);
+        // the same link as the printer details give
+        var a = el('a', null, 'How to pair a printer'); a.href = PAIRING_DOC; a.title = 'Documentation (mockup: the page is still to be written)';
+        a.addEventListener('click', function (e) { e.preventDefault(); });
+        nm.querySelector('.todo').appendChild(a); pr.appendChild(nm);
+      }
     }
   }
-  // Another student's print or send: whose, what, how far, when it should finish. Send waits;
+  // Another user's print or send: whose, what, how far, when it should finish. Send waits;
   // the sliced plate stays ready; nothing queues.
   function busyCard(j) {
     var c = el('div', 'card busy-card');
@@ -1737,11 +1899,11 @@
     cell(sending ? Math.floor(j.up * 100) + '%' : Math.floor(j.pct) + '%', sending ? 'sent' : 'done');
     cell(sending ? '0 of ' + j.layers : j.layer + ' of ' + j.layers, 'layer');
     cell(hm(remainingS(j)), 'time left');
-    var late = behindMin(j);
-    cell(clockTime(finishAt(j)), late >= 5 ? late + ' min behind' : 'should finish', late >= 5 ? 'late' : null);
+    cell(clockTime(finishAt(j)), 'expected finish');
     c.appendChild(g);
     if (waiting) c.appendChild(el('div', 'bc-note pp-late', j.waitingFor.label + ': someone at the printer has to ' + j.waitingFor.todo.charAt(0).toLowerCase() + j.waitingFor.todo.slice(1)));
-    c.appendChild(el('div', 'bc-note', 'Send waits until the printer is free; your sliced plate stays ready here. Nothing queues: come back, or keep this panel open, and send when it is free.'));
+    // a consequence the user cannot see: nothing queues
+    c.appendChild(el('div', 'bc-note', 'Send comes back when the printer is free; nothing queues.'));
     return c;
   }
   function sendToPrinter() {
@@ -1754,17 +1916,16 @@
     startPrintTicker(); printerChanged();
     $('#wiz-body').scrollTop = 0;
   }
-  // This student's own delivery job and print: stages, percent, layer, time left, expected
+  // This user's own delivery job and print: stages, percent, layer, time left, expected
   // finish. The card is built once per stage; between stages only its figures change, so a
   // button in it is never replaced under the pointer.
   function printCells(j) {
     if (j.phase === 'failed') return [[j.layer + ' of ' + j.layers, 'layer reached'], [clockTime(j.endedAt), 'stopped at']];
     if (j.phase === 'finished') return [[j.layers + ' of ' + j.layers, 'layers'], [clockTime(j.endedAt), 'finished at']];
-    var late = behindMin(j);
     return [
       [j.phase === 'printing' || j.phase === 'waiting' ? j.layer + ' of ' + j.layers : '0 of ' + j.layers, 'layer'],
       [hm(remainingS(j)), 'time left'],
-      [clockTime(finishAt(j)), late >= 5 ? late + ' min behind' : 'expected finish', late >= 5 ? 'late' : null],
+      [clockTime(finishAt(j)), 'expected finish'],
       [clockTime(j.sentAt), 'sent at']
     ];
   }
@@ -1802,18 +1963,15 @@
     printCells(j).forEach(function (c) { var d = el('div', c[2] || null); d.appendChild(el('strong', null, c[0])); d.appendChild(document.createTextNode(c[1])); g.appendChild(d); });
     box.appendChild(g);
     if (j.phase === 'upload') {
-      box.appendChild(el('div', 'pc-note', 'Nothing prints until the whole file has arrived.'));
       var ua = el('div', 'pc-acts');
       ua.appendChild(btn('Cancel sending', function () {
         PRN.job = null; printerChanged();
-        notify('info', 'Sending cancelled. Nothing reached ' + ST.PRINTER.name + ' and nothing will print.', 'Your sliced plate is still here: send it again when you are ready.', 'cancel-send');
+        notify('info', 'Sending cancelled. Nothing reached ' + ST.PRINTER.name + ' and nothing will print.', 'Your sliced plate is still here.', 'cancel-send');
       }, 'danger-outline'));
       box.appendChild(ua);
-    } else if (isLive(j)) {
-      box.appendChild(el('div', 'pc-note', 'From the printer’s own report, a few seconds behind. To pause or stop the print, use the printer’s screen; this panel cannot.'));
     }
     if (j.phase === 'waiting') box.appendChild(msg('warn', j.waitingFor.label + '.', j.waitingFor.todo));
-    if (j.phase === 'finished') box.appendChild(msg('ok', 'The print finished: layer ' + j.layers + ' of ' + j.layers + '.', 'Take the plate off once the bed has cooled; PETG lets go more easily when cool.'));
+    if (j.phase === 'finished') box.appendChild(msg('ok', 'The print finished: layer ' + j.layers + ' of ' + j.layers + '.', null));
     if (j.phase === 'failed') box.appendChild(msg('error', 'The print stopped at layer ' + j.layer + ' of ' + j.layers + ' (' + Math.floor(j.pct) + '%): the printer reported a filament tangle or a clogged nozzle.',
       'Clear the plate and check the filament path at the printer, then send the plate again from here. The sliced file is still here.', null,
       'The printer’s screen shows the fault and its own help for it. Check the filament path from the spool to the nozzle, and the nozzle for a clog.'));
@@ -1830,31 +1988,36 @@
     });
     $('#pstat').addEventListener('click', togglePrinterPop);
     $('#pstat-pop').addEventListener('click', function (e) { e.stopPropagation(); });
-    document.addEventListener('click', closePrinterPop);
-    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closePrinterPop(); });
+    $('#chg-pop').addEventListener('click', function (e) { e.stopPropagation(); });
+    document.addEventListener('click', function () { closePrinterPop(); closeChangesPop(); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { closePrinterPop(); closeChangesPop(); } });
+    // a joined pop follows its icon or chip when the panel is widened
+    window.addEventListener('resize', function () { placePrinterPop(); if (!$('#chg-pop').hidden) renderChangesPop(); });
   }
 
   // Start the page afresh. Work that runs on the server (a slice job, the printer) is not the
-  // page's: it survives unless `wipe` says the scenario strip's Reset threw the student's work away.
+  // page's: it survives unless `wipe` says the scenario strip's Reset threw the user's work away.
   function reset(ctx, keep) {
     jobs.slice().forEach(function (j) { if (!j.server) dropJob(j); });
     if (!keep && S && S.job && S.job.state === 'running') { stopJob(S.job); S.job.state = 'cancelled'; }
     S = fresh(ctx || 'partstudio');
-    partsNote = null; layHint = null; lastAdded = null;
-    $('#advanced').hidden = true; placePrinterIcon(false);
+    partsNote = null; layHint = null;
+    closeChangesPop();
+    $('#advanced').hidden = true; setCoveredInert(false); advOpener = null; placePrinterIcon(false);
     pendingSnap = null;
+    $('#send-toast').hidden = true; clearWhy(); closeLayoutHelp();
     if (editor) editor.sync();
     if (viewer) viewer.clear();
     clearPreview();
     $('#send-live').innerHTML = ''; $('#send-live').removeAttribute('data-key');
-    renderPrinterIcon();
+    renderPrinterIcon(); renderConfig();
     gotoStep(ORDER[0]);
   }
 
   /* ================================================================== coming back */
   // The scenario strip's Refresh page, Close and reopen, and Come back 2 h later. The page's
-  // own state is lost each time; what the server holds is not: this student's slice job (with
-  // its plate configuration) and delivery job, and the printer. When this student's slice or
+  // own state is lost each time; what the server holds is not: this user's slice job (with
+  // its plate configuration) and delivery job, and the printer. When this user's slice or
   // send is still running, the wizard opens on that step with the parts and layout restored.
   // Otherwise it starts at Parts, the first step, and the printer-status icon shows what
   // anyone else is doing.
@@ -1892,11 +2055,11 @@
       // under it moves on (a slice finishes, a print goes from sending to done), this does not.
       notify('info', sending ? 'Back where you were. You had sent your plate to ' + ST.PRINTER.name + ' before you left; its progress is below.'
                              : slicing ? 'Back where you were. Your plate was still slicing when you left; see below.' : 'Back where you were. Your plate was sliced and ready to send when you left.',
-        'Your parts and layout are as you left them.', 'resumed');
+        null, 'resumed');
     } else {
       if (j && j.mine && !isLive(j) && kind === 'later') {
         notify(j.phase === 'finished' ? 'ok' : 'error', j.phase === 'finished' ? 'Your print finished at ' + clockTime(j.endedAt) + '.' : 'Your print stopped at ' + clockTime(j.endedAt) + ', at layer ' + j.layer + ' of ' + j.layers + '.',
-          j.phase === 'finished' ? 'Take it off the plate if nobody has yet. Start a new plate here.' : 'Clear the plate at the printer. Your parts were not kept; add them again to print again.', 'resumed');
+          'Your parts were not kept; add them again to print again.', 'resumed');
       }
       // a finished slice that was never sent does not outlast two hours away (M18); say so in one line
       var sentIt = j && j.mine && j.sliceSig === plate.resultSig;
@@ -1913,6 +2076,7 @@
     state: function () { return S; },
     printer: function () { return PRN; },
     step: function () { return S.step; },
-    resize: function () { if (editor) editor.resize(); if (viewer) viewer.resize(); }
+    setUploadUnits: function (u) { Config.uploadUnits = u; if (S.step === 'parts') renderParts(); },
+    resize: function () { if (editor) editor.resize(); if (viewer) viewer.resize(); placePrinterPop(); if (!$('#chg-pop').hidden) renderChangesPop(); }
   };
 })();

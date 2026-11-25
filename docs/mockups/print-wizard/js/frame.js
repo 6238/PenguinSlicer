@@ -6,7 +6,11 @@
   function $(s) { return document.querySelector(s); }
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
 
+  // ctx: partstudio (Part Studio 1, inches), partstudio_mm (the metric Part Studio), assembly, standalone
   var ctx = 'partstudio', selected = [];
+  function studio() { return ctx === 'partstudio_mm' ? P.PART_STUDIOS[1] : P.PART_STUDIOS[0]; }
+  function isStudio(c) { return c === 'partstudio' || c === 'partstudio_mm'; }
+  function docUnits() { return ctx === 'assembly' ? P.ASSEMBLY.units : studio().units; }
 
   /* ------------------------------------------------------------ graphics area */
   var gfx = (function () {
@@ -113,7 +117,7 @@
   }
   function items() {
     if (ctx === 'assembly') return P.ASSEMBLY.instances.map(function (i) { return { key: i.key, count: i.count }; });
-    return P.PART_STUDIO.parts.map(function (k) { return { key: k, count: 1 }; });
+    return studio().parts.map(function (k) { return { key: k, count: 1 }; });
   }
   function renderList() {
     var ul = $('#os-parts'); ul.innerHTML = '';
@@ -141,7 +145,7 @@
     if (adding) { if (selected.indexOf(key) < 0) selected.push(key); }
     else selected = [key];
     renderList(); gfx.paint();
-    var took = window.Wizard.onOnshapeSelect(key);
+    var took = window.Wizard.onOnshapeSelect(key, docUnits());
     $('#os-hint').textContent = took ? 'Selected ' + P.byKey[key].name + '; PenguinSlicer received it.'
                                      : 'Selected ' + P.byKey[key].name + '. PenguinSlicer adds parts only on its Parts step.';
   }
@@ -160,19 +164,28 @@
       chip.appendChild(x); box.appendChild(chip);
     });
   }
-  function setContext(c) {
+  // Moving between the document's two Part Studios is switching Onshape tabs with the panel
+  // open: the wizard keeps its plate, so inch and metric parts can share one. Any other change
+  // of context starts the wizard afresh. `fresh` (Reset) always starts afresh.
+  function setContext(c, fresh) {
+    var keep = !fresh && isStudio(ctx) && isStudio(c);
     ctx = c; selected = [];
     var sa = c === 'standalone';
     $('#frame').hidden = sa; $('#standalone').hidden = !sa;
     var wiz = $('#wizard');
     (sa ? $('#sa-slot') : $('#panel-slot')).appendChild(wiz);
-    $('#os-tab').textContent = c === 'assembly' ? P.ASSEMBLY.tab : P.PART_STUDIO.tab;
+    $('#os-tab').textContent = c === 'assembly' ? P.ASSEMBLY.tab : P.PART_STUDIOS[0].tab;
+    $('#os-tab2').hidden = c === 'assembly';
+    $('#os-tab').classList.toggle('on', c !== 'partstudio_mm'); $('#os-tab2').classList.toggle('on', c === 'partstudio_mm');
+    $('#sc-context').value = c;
     $('#os-hint').textContent = 'Click a part to select it; Shift-click to select several.';
     features(); renderList();
     if (!sa) gfx.build(items());
-    window.Wizard.reset(c);
+    if (!keep) window.Wizard.reset(isStudio(c) ? 'partstudio' : c);
     setTimeout(function () { gfx.resize(); window.Wizard.resize(); }, 0);
   }
+  $('#os-tab').addEventListener('click', function () { if (ctx === 'partstudio_mm') setContext('partstudio'); });
+  $('#os-tab2').addEventListener('click', function () { if (ctx === 'partstudio') setContext('partstudio_mm'); });
   function setWidth(px) {
     document.documentElement.style.setProperty('--panel-width', px + 'px');
     setTimeout(function () { gfx.resize(); window.Wizard.resize(); }, 0);
@@ -206,7 +219,7 @@
     var grip = $('#os-right-grip'), sel = $('#sc-width'), start = null;
     var opt = document.createElement('option'); opt.value = 'drag'; opt.hidden = true; sel.appendChild(opt);
     grip.addEventListener('pointerdown', function (e) {
-      start = { x: e.clientX, w: $('#os-right').getBoundingClientRect().width };
+      start = { x: e.clientX, w: $('#os-right').clientWidth };        // the panel's width, without its border
       grip.setPointerCapture(e.pointerId); grip.classList.add('on'); e.preventDefault();
     });
     grip.addEventListener('pointermove', function (e) {
@@ -220,15 +233,16 @@
     grip.addEventListener('pointerup', function () { start = null; grip.classList.remove('on'); });
   })();
   $('#sc-context').addEventListener('change', function () { setContext(this.value); });
+  $('#sc-upload-units').addEventListener('change', function () { window.Wizard.setUploadUnits(this.value); });
   $('#sc-reset').addEventListener('click', function () {
     window.Wizard.Mock.armed = []; renderArmed();
     $('#sc-printer').value = 'idle'; window.Wizard.setPrinter('idle', true);
-    setContext($('#sc-context').value);
+    setContext($('#sc-context').value, true);
   });
 
   window.Wizard.Mock.onChange = renderArmed;
   window.Wizard.Mock.speed = $('#sc-speed').value;
   renderArmed();
-  setContext('partstudio');
+  setContext('partstudio', true);
   window.Frame = { clickPart: clickPart, setContext: setContext, setWidth: setWidth };
 })();
