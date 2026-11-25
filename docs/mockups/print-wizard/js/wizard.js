@@ -206,16 +206,37 @@
   function navigateTo(name) {
     var target = ORDER.indexOf(name), cur = ORDER.indexOf(S.step);
     if (target === cur) return;
-    if (target > cur) { for (var i = cur; i < target; i++) { if (i === 2) enterLayoutData(); if (!canLeave(ORDER[i])) return; } }
+    if (target > cur) {
+      for (var i = cur; i < target; i++) {
+        if (i === 2) enterLayoutData();
+        if (!canLeave(ORDER[i])) { sayWhy(ORDER[i]); return; }
+      }
+    }
     gotoStep(name);
   }
+  // A click on a later step tab that an earlier step holds back: one line under the tabs,
+  // where the user is looking, says which step and why. It goes at the next move, or after a while.
+  var STEP_NAME = { parts: 'Parts', setup: 'Settings', layout: 'Layout', preview: 'Preview', send: 'Send' };
+  var whyTimer = null;
+  function sayWhy(step) {
+    var why;
+    if (step === 'parts') why = totalInstances() > MAX_INSTANCES ? 'a plate holds up to ' + MAX_INSTANCES + ' instances.' : S.parts.length ? 'no part has arrived yet.' : 'add a part.';
+    else if (step === 'layout') {
+      var p = S.problems;
+      why = !S.instances.length ? 'there are no instances.' : p[0].message.split('. ')[0] + '.' + (p.length > 1 ? ' (+' + (p.length - 1) + ' more)' : '');
+    } else if (step === 'preview') why = 'the plate is not sliced yet.';
+    var line = $('#step-why'); line.hidden = false;
+    line.textContent = STEP_NAME[step] + ' first: ' + why;
+    clearTimeout(whyTimer); whyTimer = setTimeout(clearWhy, 8000);
+  }
+  function clearWhy() { clearTimeout(whyTimer); var line = $('#step-why'); if (line) { line.hidden = true; line.textContent = ''; } }
   // Moving back and forth always works. Leaving the Preview step while it slices leaves the
   // slice running on the server; coming back to it with the same plate finds it still going,
   // or finished. A changed plate starts a new slice (see enterPreview).
   function gotoStep(name) {
     if (S.step !== name) S.notices = [];     // a notification belongs to the step it was given on
     S.step = name;
-    closePrinterPop(); closeChangesPop();
+    closePrinterPop(); closeChangesPop(); clearWhy(); closeLayoutHelp();
     $all('#wizard .step').forEach(function (s) { s.hidden = s.getAttribute('data-step') !== name; });
     $all('#stepbar li').forEach(function (li) {
       var s = li.getAttribute('data-step');
@@ -224,8 +245,8 @@
     });
     $('#btn-back').disabled = name === ORDER[0];
     $('#btn-next').hidden = name === 'send';
-    $('#final-action').hidden = name !== 'send';
-    $('#do-menu').hidden = true;
+    $('#final-action').hidden = name !== 'send'; $('#wiz-nav').classList.toggle('on-send', name === 'send');
+    $('#do-menu').hidden = true; $('#btn-do-caret').setAttribute('aria-expanded', 'false');
     $('#wiz-body').scrollTop = 0;
     if (name === 'setup') renderSetup();
     if (name === 'parts') renderParts();
@@ -247,6 +268,8 @@
       b.disabled = !ready || !!why;
     }
     $('#btn-do-caret').disabled = !ready;
+    // the menu's Send item has the button's own label ("Send to Shop H2S")
+    $('#do-print').textContent = PRN.paired ? 'Send to ' + ST.PRINTER.name : 'Send to printer';
   }
   function updateSummary() {
     var box = $('#wiz-summary'), idx = ORDER.indexOf(S.step);
@@ -279,9 +302,12 @@
     if (idx >= 4 && S.result) chip(hm(S.result.est.seconds) + ' · ' + Math.round(S.result.est.grams) + ' g');
   }
   // One line per change, in the changes box's wording: "Quality › Resolution: 0.014 mm (profile 0.012 mm)".
+  // A setting that has a quick change is named in the quick change's words ("Support ›
+  // Supports: On (tree, auto)"), so the menu and the changes box say the same thing.
   function changeLine(k) {
-    var s = ST.byKey[k];
-    return s.group + ' › ' + s.label + ': ' + ST.formatValue(s, S.changes[k]) + ' (profile ' + ST.formatValue(s, profileObj().values[k]) + ')';
+    var s = ST.byKey[k], q = s.quick ? ST.QUICK[s.quick] : null;
+    function val(v) { return q ? q.text(v) : ST.formatValue(s, v); }
+    return s.group + ' › ' + (q ? q.label : s.label) + ': ' + val(S.changes[k]) + ' (profile ' + val(profileObj().values[k]) + ')';
   }
   // The change details: plain text, no links, joined to the chip like a tab opened from it.
   function renderChangesPop() {
@@ -319,7 +345,7 @@
     var a = el('a', null, '6238 (Popcorn Penguins)'); a.href = '#'; a.title = 'Open the configuration (mockup: does nothing)';
     a.addEventListener('click', function (e) { e.preventDefault(); });
     p.appendChild(a);
-    var r = el('a', 'config-refresh', '↻'); r.href = '#'; r.title = 'Reload the configuration from Onshape';
+    var r = el('a', 'config-refresh', '↻'); r.href = '#'; r.title = S.ctx === 'standalone' ? 'Reload the configuration' : 'Reload the configuration from Onshape';
     r.addEventListener('click', function (e) { e.preventDefault(); });
     p.appendChild(r);
     box.appendChild(p);
@@ -365,13 +391,14 @@
       box.appendChild(el('strong', null, n + ' setting' + (n > 1 ? 's' : '') + ' changed from ' + profileObj().name));
       var ul = el('ul');
       Object.keys(S.changes).forEach(function (k) {
-        var li = el('li'), a = el('button', 'linkish', changeLine(k)); a.type = 'button';
+        var li = el('li'), a = el('button', 'linkish', changeLine(k)); a.type = 'button'; a.id = 'chg-line-' + k;
         a.title = 'Open advanced mode at ' + ST.byKey[k].label;
         a.addEventListener('click', function () { openAdvanced(k); });
         li.appendChild(a); ul.appendChild(li);
       });
       box.appendChild(ul);
-      box.appendChild(btn('Advanced mode', function () { openAdvanced(); }));
+      var ab = btn('Advanced mode', function () { openAdvanced(); }); ab.id = 'adv-effect-btn';
+      box.appendChild(ab);
     }
   }
 
@@ -413,7 +440,13 @@
   }
   // openAdvanced(key): with a setting's key (a line of the changes box), advanced mode opens
   // at that setting: its section and group open, the setting scrolled into sight and flashed.
+  // What opened advanced mode (a line of the changes box, by its setting's key, or the button),
+  // so that closing it puts focus back there. While it is open, what it covers is inert.
+  var advOpener = null;
+  function setCoveredInert(on) { ['#wiz-header', '#wiz-body', '#wiz-nav'].forEach(function (s) { $(s).inert = on; }); }
   function openAdvanced(key) {
+    advOpener = key || 'button';
+    setCoveredInert(true);
     placePrinterIcon(true); $('#advanced').hidden = false;
     if (key) { var s = ST.byKey[key]; S.advTab = s.group; S.advOpen[s.group + '|' + s.sub] = true; S.advFocus = key; }
     fitAdvanced(); renderAdvanced();
@@ -423,7 +456,14 @@
       S.advFocus = null;
     } else $('#adv-back').focus();
   }
-  function closeAdvanced() { $('#advanced').hidden = true; placePrinterIcon(false); advResetArmed = false; renderSetup(); updateSummary(); }
+  function closeAdvanced() {
+    $('#advanced').hidden = true; setCoveredInert(false); placePrinterIcon(false); advResetArmed = false; renderSetup(); updateSummary();
+    // back to the line that opened it if it is still there, else to whichever Advanced mode button shows
+    var to = (advOpener && advOpener !== 'button' && document.getElementById('chg-line-' + advOpener)) ||
+             (!$('#adv-entry').hidden ? $('#btn-advanced') : document.getElementById('adv-effect-btn'));
+    advOpener = null;
+    if (to) to.focus();
+  }
   // Advanced mode follows the panel's width (a ResizeObserver, not a media query, so it also
   // follows a panel the user drags wider): an accordion of the five sections below 480 px, a
   // rail of section names down the left from 480 px. The groups are always one column.
@@ -454,7 +494,7 @@
   // Expand all / Collapse all: one icon button for the open section's groups.
   function expandButton(section) {
     var groups = sectionGroups(section), allOpen = groups.every(groupOpen);
-    var b = el('button', 'icon-btn adv-expand'); b.type = 'button';
+    var b = el('button', 'icon-btn adv-expand'); b.type = 'button'; b.id = 'adv-expand';
     b.innerHTML = allOpen ? UNFOLD_LESS : UNFOLD_MORE;
     b.title = allOpen ? 'Collapse all' : 'Expand all'; b.setAttribute('aria-label', b.title + ' in ' + section);
     b.addEventListener('click', function (e) { e.stopPropagation(); groups.forEach(function (g) { S.advOpen[g.group + '|' + g.sub] = !allOpen; }); renderAdvanced(); });
@@ -466,7 +506,7 @@
     sectionGroups(section).forEach(function (g) {
       var key = g.group + '|' + g.sub, open = groupOpen(g), ch = changedIn(g.rows);
       var box = el('div', 'adv-grp' + (open ? ' open' : ''));
-      var head = el('button', 'adv-sub' + (ch ? ' has-changes' : '')); head.type = 'button'; head.setAttribute('aria-expanded', open ? 'true' : 'false');
+      var head = el('button', 'adv-sub' + (ch ? ' has-changes' : '')); head.type = 'button'; head.id = 'adv-grp-' + idPart(key); head.setAttribute('aria-expanded', open ? 'true' : 'false');
       head.appendChild(chevron(open));
       // the group's name, and its changed count only when a setting in it is changed: "Precision · 1 changed"
       head.appendChild(el('span', 'nm', g.sub));
@@ -478,13 +518,25 @@
     });
     into.appendChild(el('div', 'adv-mock', 'Mockup note: a sample of ' + ST.SETTINGS.filter(function (s) { return s.group === section; }).length + ' of Orca’s about ' + ST.ORCA_COUNT[section] + ' ' + section + ' settings; the product lists every one, taken from Orca’s own definitions.'));
   }
+  // Every action in advanced mode redraws it; focus goes back to the control with the same id
+  // (a Reset link that is gone hands it to its setting's control), so the keyboard keeps its place.
   function renderAdvanced() {
     var n = changeCount(), body = $('#adv-body'), keep = body.querySelector('.adv-list');
     var scroll = keep ? keep.scrollTop : 0;
+    var act = document.activeElement, fid = act && $('#advanced').contains(act) ? act.id : null;
     $('#adv-sub').textContent = profileObj().name + (n ? ', ' + n + ' changed' : ', no changes');
     var ra = $('#adv-reset-all'); ra.disabled = !n; ra.textContent = advResetArmed ? 'Reset all ' + n + '?' : 'Reset all';
     ra.classList.toggle('primary', advResetArmed);
     body.innerHTML = '';
+    renderAdvancedBody(body, scroll);
+    if (fid) {
+      var f = document.getElementById(fid) || (fid.indexOf('adv-reset-') === 0 ? document.getElementById('adv-' + fid.slice(10)) : null);
+      if (f && f.disabled) f = $('#adv-back');
+      if (f && f !== document.activeElement) f.focus({ preventScroll: true });
+    }
+  }
+  function idPart(t) { return t.replace(/[^A-Za-z0-9]+/g, '-'); }
+  function renderAdvancedBody(body, scroll) {
     var wide = $('#advanced').classList.contains('wide');
     if (wide) {
       // the rail of section names down the left; the open section's groups beside it, in one
@@ -492,7 +544,7 @@
       var rail = el('div', 'adv-rail'); rail.setAttribute('role', 'tablist'); rail.setAttribute('aria-orientation', 'vertical');
       if (!S.advTab) S.advTab = ST.GROUPS[0];
       ST.GROUPS.forEach(function (g) {
-        var b = el('button', g === S.advTab ? 'on' : '', g); b.type = 'button'; b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', g === S.advTab ? 'true' : 'false');
+        var b = el('button', g === S.advTab ? 'on' : '', g); b.type = 'button'; b.id = 'adv-tab-' + idPart(g); b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', g === S.advTab ? 'true' : 'false');
         var cnt = changedInSection(g); if (cnt) b.appendChild(el('span', 'n', String(cnt)));
         b.addEventListener('click', function () { S.advTab = g; renderAdvanced(); var l = $('#adv-body .adv-list'); if (l) l.scrollTop = 0; });
         rail.appendChild(b);
@@ -511,7 +563,7 @@
         var open = g === S.advTab, cnt = changedInSection(g);
         var sec = el('div', 'adv-sec' + (open ? ' open' : ''));
         var hrow = el('div', 'adv-sec-head');
-        var h = el('button', 'adv-sec-btn'); h.type = 'button'; h.setAttribute('aria-expanded', open ? 'true' : 'false');
+        var h = el('button', 'adv-sec-btn'); h.type = 'button'; h.id = 'adv-sec-' + idPart(g); h.setAttribute('aria-expanded', open ? 'true' : 'false');
         h.appendChild(chevron(open)); h.appendChild(el('span', 'nm', g));
         if (cnt) h.appendChild(el('span', 'ct', '· ' + countText(cnt)));
         h.addEventListener('click', function () { S.advTab = open ? null : g; renderAdvanced(); });
@@ -545,7 +597,8 @@
           return;
         }
         if (s.step >= 1) x = Math.round(x);
-        setSetting(s.key, x); renderAdvanced();
+        // redrawn after the focus has moved, so a Tab out of the box lands where it was going
+        setSetting(s.key, x); setTimeout(renderAdvanced, 0);
       });
     } else if (s.type === 'sel') {
       input = el('select');
@@ -563,7 +616,7 @@
     // a changed setting: "Profile 0.012 mm", then a Reset link that puts the profile's value back
     if (changed) {
       var was = el('div', 'was'); was.appendChild(document.createTextNode('Profile ' + ST.formatValue(s, profVal) + ' '));
-      var reset = el('button', 'linkish reset', 'Reset'); reset.type = 'button';
+      var reset = el('button', 'linkish reset', 'Reset'); reset.type = 'button'; reset.id = 'adv-reset-' + s.key;
       reset.setAttribute('aria-label', 'Reset ' + s.label + ' to the profile’s ' + ST.formatValue(s, profVal));
       reset.addEventListener('click', function () { delete S.changes[s.key]; renderAdvanced(); });
       was.appendChild(reset); row.appendChild(was);
@@ -686,8 +739,9 @@
     $('#parts-upload').hidden = ctx !== 'standalone';
     // the prompt says one thing and does not change as parts arrive; only the list updates
     $('#select-status').textContent = ctx === 'assembly' ? 'Click a part in the assembly' : 'Click a part in the Part Studio';
-    // STL files carry no units: what the upload is read in is a consequence the user cannot see
-    $('#upload-units').textContent = 'Files are read in ' + (Config.uploadUnits === 'in' ? 'inches.' : 'millimetres.');
+    // STL files carry no units (a 3MF file states its own): what an STL is read in is a
+    // consequence the user cannot see
+    $('#upload-units').textContent = 'STL files are read in ' + (Config.uploadUnits === 'in' ? 'inches.' : 'millimetres.');
     renderPartsMessages();
     var list = $('#parts-list'); list.innerHTML = '';
     S.parts.forEach(function (p) {
@@ -706,7 +760,7 @@
         // the size in the part's own units, as Onshape (or the configuration, for a file) gives them
         dims.textContent = U.size(def.size, p.units);
         dims.title = 'Size as modelled, in ' + (p.units === 'in' ? 'inches' : 'millimetres') +
-          (p.file ? ' (uploaded files are read in ' + (p.units === 'in' ? 'inches' : 'millimetres') + ')' : ' (the units of its ' + (ctx === 'assembly' ? 'assembly' : 'Part Studio') + ')');
+          (p.file ? (/\.3mf$/i.test(p.file) ? ' (the units the file states)' : ' (STL files are read in ' + (p.units === 'in' ? 'inches' : 'millimetres') + ')') : ' (the units of its ' + (ctx === 'assembly' ? 'assembly' : 'Part Studio') + ')');
         meta.appendChild(dims);
       }
       row.appendChild(meta);
@@ -943,30 +997,26 @@
     afterLay(changed, 'on its ' + ordinal(k + 1) + ' of ' + n0 + ' sides' + (k === 0 ? ' (the best)' : ''));
   }
   function ordinal(n) { return ['first', 'second', 'third', 'fourth', 'fifth', 'sixth'][n - 1] || n + 'th'; }
-  // One sentence per instance that is too close to two or more others.
+  // One error for every instance that is too close: one pair is named; more say how many,
+  // with one Arrange button. Every instance in it stays marked in the view.
   // The spacing follows the Settings step's supports setting (12 mm on, 5 mm off). Turning
   // supports on after arranging moves nothing: instances now too close are reported here until
   // the user presses Arrange or drags them.
   function recheck() {
     syncPlateRules();
     var raw = PL.check(S.instances, PLATE, instanceLabel), close = raw.filter(function (p) { return p.rule === 'too_close'; });
-    var count = {};
-    close.forEach(function (p) { p.instances.forEach(function (id) { count[id] = (count[id] || 0) + 1; }); });
-    var hubs = Object.keys(count).filter(function (id) { return count[id] >= 2; }).sort(function (a, b) { return count[b] - count[a]; });
-    var used = {}, merged = [];
-    hubs.forEach(function (id) {
-      var mine = close.filter(function (p) { return !used[p.instances.join()] && p.instances.indexOf(id) >= 0; });
-      if (mine.length < 2) return;
-      mine.forEach(function (p) { used[p.instances.join()] = 1; });
-      var others = mine.map(function (p) { return instanceLabel(instanceById(p.instances[0] === id ? p.instances[1] : p.instances[0])); });
-      var list = others.length > 1 ? others.slice(0, -1).join(', ') + ' and ' + others[others.length - 1] : others[0];
-      merged.push({ rule: 'too_close', instances: [id].concat(mine.map(function (p) { return p.instances[0] === id ? p.instances[1] : p.instances[0]; })),
-                    message: instanceLabel(instanceById(id)) + ' overlaps or is closer than ' + U.len(PLATE.spacing) + ' to ' + list +
-                      ' (instances need ' + U.len(PLATE.spacing) + ' between them with supports ' + (PLATE.supportsOn ? 'on' : 'off') + '). Drag it to a clear spot, or press Arrange.' });
-    });
-    S.problems = raw.filter(function (p) { return p.rule !== 'too_close' || !used[p.instances.join()]; }).concat(merged);
+    var rest = raw.filter(function (p) { return p.rule !== 'too_close'; });
+    if (close.length > 1) {
+      var ids = [];
+      close.forEach(function (p) { p.instances.forEach(function (id) { if (ids.indexOf(id) < 0) ids.push(id); }); });
+      close = [{ rule: 'too_close', instances: ids,
+                 message: ids.length + ' instances are closer than ' + U.len(PLATE.spacing) + ' with supports ' + (PLATE.supportsOn ? 'on' : 'off') + '. Press Arrange, or drag them apart.' }];
+    }
+    S.problems = rest.concat(close);
   }
   function isBad(id) { return S.problems.some(function (p) { return p.instances.indexOf(id) >= 0; }); }
+  // an instance waiting beside the plate (to its right), where Arrange or a lay-down left it
+  function isParked(c) { return !!c && PL.bbox(PL.worldHull(c)).minX > PLATE.x; }
   // An instance that was just laid down has a new footprint. If it now overlaps a neighbour or
   // crosses the plate edge, find it a free spot, turning it if that is what it takes.
   // It takes the free spot nearest to where it stood, so it stays beside its neighbours.
@@ -996,7 +1046,7 @@
     enterLayoutData();
     // the plate's size in millimetres, as Bambu Lab gives it; the height limit and spacing in the layout units
     $('#layout-info').textContent = (PRN.paired ? ST.PRINTER.name : 'The ' + ST.PRINTER.model) + ': plate ' + PLATE.x + ' × ' + PLATE.y + ' mm, instances up to ' +
-      U.len(PLATE.height) + ' tall and ' + U.len(PLATE.spacing) + ' apart (supports ' + (PLATE.supportsOn ? 'on' : 'off') + ').';
+      U.len(PLATE.height) + ' tall, at least ' + U.len(PLATE.spacing) + ' apart (supports ' + (PLATE.supportsOn ? 'on' : 'off') + ').';
     if (!editor) {
       editor = Layout3D.create($('#layout-view'), {
         plate: PLATE,
@@ -1060,7 +1110,8 @@
     var sel = S.selected.map(instanceById).filter(Boolean);
     var s = $('#layout-selection');
     $('#layout-selrow').classList.toggle('has-sel', sel.length > 0);
-    if (!sel.length) s.textContent = S.instances.length + ' instance' + (S.instances.length === 1 ? '' : 's') + ' on the plate.';
+    var beside = S.instances.filter(isParked).length, onPlate = S.instances.length - beside;
+    if (!sel.length) s.textContent = plural(onPlate, 'instance', 'instances') + ' on the plate' + (beside ? ', ' + beside + ' beside it.' : '.');
     else if (sel.length === 1) { var d = PL.derive(sel[0]); s.innerHTML = ''; s.appendChild(el('strong', null, instanceLabel(sel[0]))); s.appendChild(document.createTextNode(' ' + U.area(d.w, d.l) + ', ' + U.len(d.height) + ' tall')); }
     else { s.innerHTML = ''; s.appendChild(el('strong', null, sel.length + ' instances')); s.appendChild(document.createTextNode(' move and turn together')); }
     renderOrientLine(sel); renderStrip(sel); renderGestures();
@@ -1069,10 +1120,14 @@
     // full sentences and their remedy buttons are below it.
     var alertBox = $('#layout-alert');
     alertBox.innerHTML = ''; alertBox.classList.toggle('ok', !S.problems.length); alertBox.disabled = !S.problems.length;
+    // An instance Arrange left beside the plate gets no card of its own: Arrange's message
+    // below already says how many do not fit, with what to do.
+    var shown = S.problems.filter(function (p) { return !(p.rule === 'off_plate' && S.layoutNotes.length && isParked(instanceById(p.instances[0]))); });
+    var lines = (beside && shown.length < S.problems.length ? 1 : 0) + shown.length;
     if (S.problems.length) {
-      var first = S.problems[0].message.split('. ')[0] + '.';
+      var first = shown.length ? shown[0].message.split('. ')[0] + '.' : plural(beside, 'instance does', 'instances do') + ' not fit on the plate.';
       alertBox.appendChild(el('span', 'first', first)); alertBox.title = first;
-      alertBox.appendChild(el('span', 'more', S.problems.length > 1 ? '+' + (S.problems.length - 1) + ' more ↓' : 'Fix ↓'));
+      alertBox.appendChild(el('span', 'more', lines > 1 ? '+' + (lines - 1) + ' more ↓' : 'Fix ↓'));
     } else {
       alertBox.title = '';
       alertBox.appendChild(el('span', 'first', S.instances.length ? '✓ ' + (S.instances.length === 1 ? instanceLabel(S.instances[0]) + ' fits' :'All ' + S.instances.length + ' instances fit') + ' the plate.' : 'No instances yet: add parts on the Parts step.'));
@@ -1080,15 +1135,13 @@
     var box = $('#layout-errors'); box.innerHTML = '';
     if (layHint) box.appendChild(layHint);
     S.layoutNotes.forEach(function (n) { box.appendChild(n); });
-    if (S.problems.length) {
-      box.appendChild(el('div', 'hint fix-first', S.problems.length === 1 ? 'Fix this before Next:' : 'Fix these ' + S.problems.length + ' before Next:'));
-      S.problems.forEach(function (p) {
-        // an instance Arrange left beside the plate: pressing Arrange again cannot help
-        var parkedInstance = p.rule === 'off_plate' && S.layoutNotes.length && PL.bbox(PL.worldHull(instanceById(p.instances[0]))).minX > PLATE.x;
+    if (shown.length) {
+      box.appendChild(el('div', 'hint fix-first', shown.length === 1 ? 'Fix this before Next:' : 'Fix these ' + shown.length + ' before Next:'));
+      shown.forEach(function (p) {
+        // an instance laid down with no room left waits beside the plate: Arrange makes room
         var acts = p.rule === 'too_tall' ? [['Auto-orient', function (e) { e.stopPropagation(); S.selected = p.instances.slice(); autoOrient(p.instances); }]]
-                 : parkedInstance ? [['Back to Parts', function (e) { e.stopPropagation(); gotoStep('parts'); }]]
                  : [['Arrange', function (e) { e.stopPropagation(); doArrange(); }]];
-        var m = msg('error', p.message.split('. ')[0] + '.', parkedInstance ? 'It did not fit: lower its quantity, or lay instances another way to make room.' : p.message.split('. ').slice(1).join('. '), acts);
+        var m = msg('error', p.message.split('. ')[0] + '.', p.message.split('. ').slice(1).join('. '), acts);
         m.classList.add('clickable');
         m.addEventListener('click', function () { S.selected = p.instances.slice(); editor.resetHandle(); editor.sync(); renderLayoutSide(); });
         box.appendChild(m);
@@ -1169,6 +1222,14 @@
     S: ['Shift-drag also slides the view.'],
     T: ['Middle-drag also slides; Top puts the view back above the plate.']
   };
+  // The gestures and the other ways to move and look are behind the "?" icon of the toolbar
+  // (version 6, fix round 1): nothing is written under the view.
+  function toggleLayoutHelp(e) {
+    e.stopPropagation();
+    var pop = $('#layout-help'), open = pop.hidden;
+    pop.hidden = !open; $('#btn-layout-help').setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+  function closeLayoutHelp() { var pop = $('#layout-help'); if (pop) pop.hidden = true; var b = $('#btn-layout-help'); if (b) b.setAttribute('aria-expanded', 'false'); }
   function renderGestures() {
     $('#layout-gestures').textContent = GESTURES[Opt.scheme] + ' ' + LAY_GESTURE[Opt.lay];
     var ul = $('#layout-more'); ul.innerHTML = '';
@@ -1195,6 +1256,12 @@
     $('#btn-top').addEventListener('click', function () { editor && editor.topView(); });
     $('#btn-tilt').addEventListener('click', function () { if (editor) $('#btn-tilt').textContent = editor.toggleTilt() ? 'Above' : '3D'; });
     $('#layout-alert').addEventListener('click', function () { $('#layout-errors').scrollIntoView({ block: 'start', behavior: 'smooth' }); });
+    $('#btn-layout-help').addEventListener('click', toggleLayoutHelp);
+    $('#layout-help').addEventListener('click', function (e) { e.stopPropagation(); });
+    document.addEventListener('click', closeLayoutHelp);
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !$('#layout-help').hidden) { closeLayoutHelp(); $('#btn-layout-help').focus(); }
+    });
   }
   function setOption(name, value) {
     Opt[name] = value;
@@ -1438,14 +1505,16 @@
     if (type === 'empty') {
       box.appendChild(msg('error', 'The slice failed: ' + label + ' has empty layers at about ' + zr + ' above the plate.',
         'Part of it starts in mid-air there, and Supports is off, so nothing would hold it up while it prints. Turn Supports on and slice again.',
-        [['Turn on Supports and slice again', function () { setSetting('enable_support', true); startSlice(); updateSummary(); }, 'primary'], ['Back to Layout', function () { gotoStep('layout'); }]],
+        [['Turn on Supports and slice again', supportsOnAndSlice, 'primary'], ['Back to Layout', function () { gotoStep('layout'); }]],
         orca + 'Look at ' + name + ' at that height as it lies on the plate: a piece that starts in mid-air (an overhang with nothing under it) needs Supports, or the part laid another way.'));
     } else if (type === 'faulty') {
       box.appendChild(msg('error', 'The slice failed: ' + label + ' has a faulty mesh at about ' + zr + ' above the plate.',
         'Supports is already on, so the model itself has gaps or zero-thickness pieces there. Repair ' + name + ' in ' + (S.ctx === 'standalone' ? 'your CAD program' : 'Onshape') + ' (look for faces that do not meet near ' + zr + '), then ' +
           (S.ctx === 'standalone' ? 'on the Parts step remove its row and upload the repaired file.' : 'on the Parts step remove its row and click the repaired part again.'),
         [['Back to Parts', function () { gotoStep('parts'); }, 'primary']],
-        orca + 'In Onshape, check that ' + name + ' is one closed solid with no zero-thickness walls or faces that only touch along an edge near that height, and that its Part Studio rebuilds with no errors.'));
+        orca + (S.ctx === 'standalone'
+          ? 'In your CAD program, check that ' + name + ' is one closed solid with no zero-thickness walls or faces that only touch along an edge near that height, and that the model rebuilds with no errors before you export it again.'
+          : 'In Onshape, check that ' + name + ' is one closed solid with no zero-thickness walls or faces that only touch along an edge near that height, and that its Part Studio rebuilds with no errors.')));
     } else if (type === 'timeout') {
       box.appendChild(msg('error', 'The slice took longer than ' + (SLICE_TIMEOUT_S / 60) + ' minutes, the server’s limit, and was stopped.',
         job.instances.length > 1
@@ -1455,6 +1524,18 @@
                               : [['Slice again', startSlice, 'primary'], ['Back to Settings', function () { gotoStep('setup'); }]]));
     }
     updateNext();
+  }
+  // The empty-layers remedy. Supports on needs 12 mm between instances, so the placement
+  // check runs first: a plate that passes is sliced; one that does not goes to the Layout
+  // step, where its usual message and Arrange are. Nothing moves by itself.
+  function supportsOnAndSlice() {
+    setSetting('enable_support', true);
+    recheck();
+    if (S.problems.length) {
+      layHint = msg('info', 'Not sliced: with Supports on, instances need ' + U.len(PLATE.spacing) + ' between them.', null);
+      gotoStep('layout'); return;
+    }
+    startSlice(); updateSummary();
   }
   function cancelSlice(why) {
     var job = S.job; if (!job || job.state !== 'running') return;
@@ -1520,7 +1601,11 @@
     $('#ls-fill').style.height = (frac * 100) + '%';
     var z = r.tp.zs[k] || 0;
     $('#ls-label').textContent = 'Layer ' + (k + 1);
-    $('#layer-readout').textContent = (k + 1) + ' of ' + r.tp.layers + ' · ' + U.len(z, 1) + ' high';
+    // short enough to stay on one line at 320 px in inches
+    $('#layer-readout').textContent = (k + 1) + ' / ' + r.tp.layers + ' · ' + U.len(z, 1);
+    var sl = $('#layer-slider');
+    sl.setAttribute('aria-valuemin', '1'); sl.setAttribute('aria-valuemax', String(r.tp.layers)); sl.setAttribute('aria-valuenow', String(k + 1));
+    sl.setAttribute('aria-valuetext', 'Layer ' + (k + 1) + ' of ' + r.tp.layers + ', ' + U.len(z, 1) + ' high');
   }
   function bindPreview() {
     $('#btn-cancel').addEventListener('click', function () { cancelSlice('button'); });
@@ -1544,21 +1629,34 @@
     // final action on the Send step: PenguinCAM's split button. The button sends at once; the
     // caret's menu offers Download instead.
     $('#btn-do').addEventListener('click', function () { doAction(S.action); });
-    $('#btn-do-caret').addEventListener('click', function (e) { e.stopPropagation(); $('#do-menu').hidden = !$('#do-menu').hidden; });
-    $all('#do-menu li').forEach(function (li) {
-      li.addEventListener('click', function () {
+    // The caret's menu works by keyboard too: Enter opens it on its first item, the arrow keys
+    // move between the items, Escape closes it and puts focus back on the caret.
+    var caret = $('#btn-do-caret'), menu = $('#do-menu');
+    function items() { return $all('#do-menu [role="menuitem"]'); }
+    function setMenu(open, focusFirst) {
+      menu.hidden = !open; caret.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (open && focusFirst) items()[0].focus();
+    }
+    caret.addEventListener('click', function (e) { e.stopPropagation(); setMenu(menu.hidden, e.detail === 0); });   // detail 0: a key, not a mouse
+    items().forEach(function (b) {
+      b.addEventListener('click', function () {
         // Choosing from the menu only changes what the button does; a separate press acts.
         // (On the first hardware test, a menu choice that printed at once surprised the owner.)
-        S.action = li.getAttribute('data-action'); $('#do-menu').hidden = true;
-        updateNext();
+        S.action = b.getAttribute('data-action'); setMenu(false);
+        updateNext(); $('#btn-do').focus();
       });
     });
-    document.addEventListener('click', function () { $('#do-menu').hidden = true; });
+    menu.addEventListener('keydown', function (e) {
+      var list = items(), i = list.indexOf(document.activeElement);
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setMenu(false); caret.focus(); }
+      else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); list[(i + (e.key === 'ArrowDown' ? 1 : list.length - 1)) % list.length].focus(); }
+    });
+    document.addEventListener('click', function () { setMenu(false); });
   }
   function doAction(a) {
     if (!S.result) return;
     if (a === 'download') {
-      var t = $('#send-toast'); t.hidden = false;
+      var t = $('#send-toast'); t.hidden = false; t.setAttribute('data-sig', S.resultSig);
       t.textContent = 'Downloaded the sliced file of ' + plateName(S.result.instances.length) + ' (' +(0.4 + S.result.instances.length * 0.21).toFixed(1) + ' MB). Mockup: no file is saved.';
       return;
     }
@@ -1659,7 +1757,6 @@
       else {
         if (j && j.mine) renderPrintCard($('#send-live'), j);
         var bc = document.querySelector('#send-printer .busy-card'); if (bc && j && !j.mine) bc.parentNode.replaceChild(busyCard(j), bc);
-        var chip = document.querySelector('#send-summary .pstate'); if (chip && PRN.paired) chip.textContent = printerStatus().short;
       }
     }
     updateNext();
@@ -1751,6 +1848,8 @@
     var r = S.result, why = sendBlocked(), j = PRN.job, mineLive = j && j.mine && isLive(j), mineEnded = j && j.mine && !isLive(j);
     sendKey = [why, j && j.phase, j && j.mine, !!r, printerStatus().key].join('|');
     var live = $('#send-live'), sum = $('#send-summary'), pr = $('#send-printer');
+    // "Downloaded the sliced file of …" belongs to the slice it was said of
+    var toast = $('#send-toast'); if (!toast.hidden && toast.getAttribute('data-sig') !== S.resultSig) toast.hidden = true;
     // the progress of this user's own plate, at the top, once sent (version 6: no line under
     // the step title; the print card, the busy card or the message says where things stand)
     if (j && j.mine) renderPrintCard(live, j); else { live.innerHTML = ''; live.removeAttribute('data-key'); }
@@ -1758,9 +1857,8 @@
     sum.innerHTML = '';
     if (!r) { sum.appendChild(msg('info', 'Nothing sliced yet.', 'The plate is sliced on the Preview step.', [['Back to Preview', function () { gotoStep('preview'); }]])); pr.innerHTML = ''; return; }
     var c = el('div', 'card'), g = el('dl', 'send-sum');
-    var p = dl(g, 'Printer', ''), st = printerStatus();
-    if (st.key === 'none') p.appendChild(el('span', 'pstate off', 'No printer paired'));
-    else { p.appendChild(document.createTextNode(ST.PRINTER.name + ' ')); p.appendChild(el('span', 'pstate ' + st.chip, st.short)); }
+    // the printer by name only: its state is the printer-status icon's, and the card or message beside this
+    dl(g, 'Printer', printerStatus().key === 'none' ? 'None paired' : ST.PRINTER.name);
     var ul = el('ul'); partsLine().forEach(function (t) { ul.appendChild(el('li', null, t)); });
     var ii = dl(g, 'Instances', ''); ii.appendChild(el('div', 'big', r.instances.length + ' on one plate')); ii.appendChild(ul);
     var tt = dl(g, 'Print time', ''); tt.appendChild(el('span', 'big', hm(r.est.seconds)));
@@ -1776,11 +1874,17 @@
         cp.appendChild(t); pr.appendChild(cp);
       } else if (why === 'other') pr.appendChild(busyCard(j));
       else if (why === 'offline') pr.appendChild(msg('warn', ST.PRINTER.name + ' has not been heard from for ' + PRN.heardAgoMin + ' minutes, so Send waits.',
-        'Your sliced plate stays ready, and Send comes back as soon as the printer answers. The printer, or the computer beside it that connects it to PenguinSlicer, may be off or off the network. Or download the file.',
+        'Your sliced plate stays ready, and Send comes back as soon as the printer answers. Or download the file.',
         [['Download the sliced file', function () { doAction('download'); }]]));
-      else if (why === 'none') pr.appendChild(msg('warn', 'No printer is paired with PenguinSlicer, so nothing can be sent.',
-        'An administrator pairs the printer once, from the computer beside it. Meanwhile, download the file and print it from Orca Slicer or Bambu Studio.',
-        [['Download the sliced file', function () { doAction('download'); }]]));
+      else if (why === 'none') {
+        var nm = msg('warn', 'No printer is paired with PenguinSlicer, so nothing can be sent.',
+          'An administrator pairs the printer once, from the computer beside it. Meanwhile, download the file and print it from Orca Slicer or Bambu Studio. ',
+          [['Download the sliced file', function () { doAction('download'); }]]);
+        // the same link as the printer details give
+        var a = el('a', null, 'How to pair a printer'); a.href = PAIRING_DOC; a.title = 'Documentation (mockup: the page is still to be written)';
+        a.addEventListener('click', function (e) { e.preventDefault(); });
+        nm.querySelector('.todo').appendChild(a); pr.appendChild(nm);
+      }
     }
   }
   // Another user's print or send: whose, what, how far, when it should finish. Send waits;
@@ -1899,8 +2003,9 @@
     S = fresh(ctx || 'partstudio');
     partsNote = null; layHint = null;
     closeChangesPop();
-    $('#advanced').hidden = true; placePrinterIcon(false);
+    $('#advanced').hidden = true; setCoveredInert(false); advOpener = null; placePrinterIcon(false);
     pendingSnap = null;
+    $('#send-toast').hidden = true; clearWhy(); closeLayoutHelp();
     if (editor) editor.sync();
     if (viewer) viewer.clear();
     clearPreview();

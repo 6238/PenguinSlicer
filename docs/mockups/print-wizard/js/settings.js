@@ -215,11 +215,12 @@
       unit = unit || MockUnits.unit;
       return unit === 'in' ? MockUnits.inch(mm) + ' in' : (+mm.toFixed(mmDigits || 0)) + ' mm';
     },
-    // a size, a × b × c, in the units given (a part's own units on the Parts step)
+    // a size, a × b × c, in the units given (a part's own units on the Parts step), from the
+    // unrounded millimetres and rounded once in the unit shown
     size: function (sz, unit) {
       unit = unit || MockUnits.unit;
       if (unit === 'in') return MockUnits.inch(sz.x) + ' × ' + MockUnits.inch(sz.y) + ' × ' + MockUnits.inch(sz.z) + ' in';
-      return sz.x + ' × ' + sz.y + ' × ' + sz.z + ' mm';
+      return +sz.x.toFixed(1) + ' × ' + +sz.y.toFixed(1) + ' × ' + +sz.z.toFixed(1) + ' mm';
     },
     // a footprint, a × b
     area: function (a, b, unit) {

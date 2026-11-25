@@ -50,6 +50,18 @@ reviewed and changed only where the points below reach it.
 - **Printer-status icon:** the details open joined to the icon, with basic information only;
   nothing says "behind its estimate" or "late", here or on the Send step.
 
+A review of version 6 led to one round of fixes ([review](../../orchestration/mockup-v6/review-1.md),
+[fixes](../../orchestration/mockup-v6/fix-1.md)). The ones you will notice:
+
+- **"Turn on Supports and slice again"** runs the placement check at 12 mm first; a plate
+  that fails it is not sliced and the wizard goes to the Layout step (decision 57).
+- **Instances too close are one error,** with how many and one Arrange button (decision 57).
+- **A click on a step tab that an earlier step holds back** says why, in one line under
+  the tabs (decision 3).
+- **The Layout step's gestures** moved behind a "?" icon (decisions 24 and 59).
+- **"480 px" in the scenario strip is now 480 px of panel,** so both "from 480 px" layouts
+  show there (decision 6).
+
 ## What changed in version 5
 
 - **Lay on face as Orca Slicer does it:** *Faces on the hull (like Orca)*, the default
@@ -139,6 +151,7 @@ spacing and decision 47) are built in below and no longer listed. New questions 
 | M25 | **An uploaded file in the other units.** STL carries no units, so a metric file uploaded where the configuration says inches arrives 25.4 times too large (it then fails the height or plate checks). Is the configuration's one option enough, or should each uploaded row get an inches / millimetres switch? |
 | M26 | **"Changed only" in advanced mode** went with the search box and the Common / All switch, since the changes box, the change details and the changed counts on sections and groups already find a changed setting. Right, or bring it back? |
 | M27 | **Spacing in inches reads oddly:** 5 mm is "0.197 in" and 12 mm "0.472 in" on an all-inch plate. Keep the exact conversion, or show the slice service's spacing in millimetres always, as the plate's size is? |
+| M28 | **Two figures that sit beside millimetres on an all-inch plate:** the plate-area chip ("5.983 × 5.865 in of plate", beside "plate 340 × 320 mm") and the layer readout ("134 / 134 · 1.583 in", under "134 layers of 0.3 mm"). Both follow decision 54 now. Should the plate area count as a measure of the plate (millimetres), and a layer's height as a slicer quantity (millimetres)? |
 
 ## Requirements on printer delivery
 
@@ -206,8 +219,10 @@ Onshape's default units, whichever the API gives.
 2. The header: "PenguinSlicer", the printer-status icon at the right of the same line,
    "Config: 6238 (Popcorn Penguins)" with the reload glyph, then the step tabs.
 3. The step tabs are PenguinCAM's: number, name, and a check mark after the name of a
-   finished step. A click on a tab goes there when every step before it allows. At 320 px
-   the five tabs wrap to two rows (M20).
+   finished step. A click on a tab goes there when every step before it allows. When one
+   does not, one line under the tabs names the step and why ("Layout first: 23 instances
+   are closer than 0.472 in with supports on."); it goes at the next move, or after a few
+   seconds. At 320 px the five tabs wrap to two rows (M20).
 4. **The chips row** (version 6): none on the Parts step; from the Settings step on, parts
    and instances, filament, profile and "+N changes", the same on the Settings and Layout
    steps and updated at once as the filament, profile or a setting changes; the plate area
@@ -215,15 +230,18 @@ Onshape's default units, whichever the API gives.
    the layout units. **The "+1 change" chip is a button** on every step where it shows. A
    click opens the change details joined to the chip, as the printer details are joined to
    their icon: one plain-text line per change in the changes box's wording ("Quality ›
-   Resolution: 0.014 mm (profile 0.012 mm)"), no links. A click elsewhere, Escape or the
-   chip again closes them.
+   Resolution: 0.014 mm (profile 0.012 mm)"), no links. A setting that has a quick change
+   is named in the quick change's words ("Others › Brim: Off (profile Auto)"), so the menu
+   and the line agree. A click elsewhere, Escape or the chip again closes them.
 5. Next is disabled until the step's rules pass, and the step says why. A part still
    arriving never holds Next (M21).
 6. The panel's width is fluid, by container queries on the panel, so dragging it wider
    changes the layout exactly as the window would. From 480 px the Settings step puts the
    filament and profile side by side and the quick changes two per row; from 520 px the
    figures of a print sit in one row; from 680 px the parts list has two columns and the
-   Send step two columns. Advanced mode has its own rule (decision 13).
+   Send step two columns. Advanced mode has its own rule (decision 13). Each "from" width
+   includes itself, and the stand-in panel's border is outside its width, so the scenario
+   strip's 480 px shows the 480 px layouts.
 7. Notifications sit at the top of a step, under the chips, until closed with × or until
    the user leaves the step.
 8. The scenario strip sits above the page, never over it: three short rows, a **Fewer
@@ -240,11 +258,18 @@ Onshape's default units, whichever the API gives.
     **Details**.
 59. **Help text and error text get opposite treatment** (version 6). No line under a step
     title and no instruction under a control. A short line stays only where an action has a
-    consequence the user cannot see: the caution under the Profile menu, "Files are read in
-    inches." under the upload area, "Slicing goes on if you step back; change the plate and
-    it starts again." on the slicing card, "Check that the plate is clear and PETG is
-    loaded. Send starts the print at once." on the Send step, and "Send comes back when the
-    printer is free; nothing queues." on a busy printer. Tooltips carry the rest. Errors say
+    consequence the user cannot see: the caution under the Profile menu, "STL files are read
+    in inches." under the upload area, "Slicing goes on if you step back; change the plate
+    and it starts again." on the slicing card, "Check that the plate is clear and PETG is
+    loaded. Send starts the print at once." on the Send step, "Send comes back when the
+    printer is free; nothing queues." on a busy printer, and on the Layout step the line
+    under the view, "Shop H2S: plate 340 × 320 mm, instances up to 13.386 in tall, at least
+    0.197 in apart (supports off).", kept because neither the printer-status icon nor the
+    chips give the plate's size, the height limit or the spacing. The Layout step's
+    gestures (how to move, turn, look and lay an instance down, and the other ways that
+    were under "More ways to move and look") are behind a "?" icon at the right of its
+    toolbar, which opens them in a small panel; Escape or a click elsewhere closes it. This
+    is for the owner's review of the Layout step. Tooltips carry the rest. Errors say
     what went wrong and what is specific to it (which part, what about it, where to look),
     never generic troubleshooting or internals.
 
@@ -284,10 +309,14 @@ The wizard opens on this step. Back is off here.
     Gusset Plate, Shooter Hood Rib, 1/2in Hex Shaft) and the Part Studio "Camera Mount (mm)"
     is metric (the Camera Mount). The Assembly is in inches, so every part picked there,
     the Camera Mount too, is in inches. The wizard never guesses units from a part's size.
-51. **An uploaded file is read in inches** unless the configuration makes millimetres the
-    default. One line under the upload area says which ("Files are read in inches.").
+51. **An uploaded STL file is read in inches** unless the configuration makes millimetres
+    the default. One line under the upload area says which ("STL files are read in
+    inches."). A 3MF file states its own units. (The mockup reads no file, so an uploaded
+    3MF row shows the configuration's units too.)
 52. **The Parts step shows each part's size in its own units:** "2.362 × 1.181 × 1.575 in"
-    or "70 × 40 × 50 mm".
+    or "70 × 40 × 50 mm". A size is rounded once, from the exact millimetres, in the unit
+    shown, so a part has one size on every step (the 6.35 mm Gusset Plate is 0.250 in
+    thick everywhere). A size never gets cut short: in a narrow panel it wraps.
 53. **Inches are decimal, to three places,** as a US machinist reads a drawing: "2.000 ×
     2.000 × 0.188 in", "0.472 in apart". Millimetres keep the precision version 5 had
     (sizes to 0.1 mm, heights and spacing to 1 mm, distances to 0.1 mm).
@@ -345,13 +374,17 @@ Called Setup until version 5; the decisions keep their numbers.
     on its left and the dot after its name; the line under it says "Profile 0.012 mm" and
     then a "Reset" link that puts the profile's value back. Advanced mode keeps its own
     "Reset all", which asks once more. Range checks stay. Changes last for this page load.
+    **By keyboard,** focus stays where the user acted (a heading, a name in the rail, a
+    setting; after a Reset link, the setting's own control), what advanced mode covers
+    cannot be reached, and closing it returns focus to the line or the button that opened
+    it.
 
 ### Layout step
 
 24. The Layout step does not change the list of parts: no Duplicate, Delete, Undo or Redo,
     and Delete, Ctrl+D, Ctrl+Z and Ctrl+Y do nothing. Back from the Layout step goes to the
     Settings step. Since version 6 there is no line under the title; "go to the Parts step
-    to change how many of a part" is in the folded "More ways to move and look".
+    to change how many of a part" is behind the "?" icon with the gestures (decision 59).
 25. **The 3D view fills the panel's width and grows as the panel is widened** (M8): square
     at narrow widths, 4:3 from 520 px, with no height cap.
 26. **Laying an instance down never moves another instance** (M9). An instance that no
@@ -369,9 +402,19 @@ Called Setup until version 5; the decisions keep their numbers.
 57. **Arrange and the placement check follow the Settings step** (version 6): instances are
     kept 12 mm apart with supports on and 5 mm with them off, the slice service's spacing
     for that setting. Turning supports on after arranging moves nothing; instances now too
-    close get the usual sentence ("… are 0.245 in apart; instances need 0.472 in between
-    them with supports on.") until the user presses Arrange or drags them. The line under
-    the view says the spacing and whether supports are on.
+    close get the usual message until the user presses Arrange or drags them. **Every
+    instance that is too close is in one error:** a single pair is named ("… are 0.245 in
+    apart; instances need 0.472 in between them with supports on."), more are counted ("23
+    instances are closer than 0.472 in with supports on. Press Arrange, or drag them
+    apart."), with one Arrange button; each of them stays marked in the view. An instance
+    Arrange left beside the plate gets no error of its own: Arrange's message already
+    counts them, and the line under the view says "90 instances on the plate, 10 beside
+    it." The line under the view says the spacing and whether supports are on.
+    **"Turn on Supports and slice again"** (the empty-layers error) turns Supports on and
+    runs the placement check at 12 mm before slicing. A plate that passes is sliced; one
+    that does not is not sliced, and the wizard goes to the Layout step, which says "Not
+    sliced: with Supports on, instances need 0.472 in between them." above the usual
+    message. Nothing moves by itself; Arrange is the user's choice.
 
 ### Preview step
 
@@ -388,12 +431,15 @@ Called Setup until version 5; the decisions keep their numbers.
 32. Each slicing failure is one sentence of what happened and one of what to do, with its
     buttons; there is no line under the step title (version 6). Exactly three messages have
     folded **Details**: the empty-layers and faulty-mesh slice failures (Orca Slicer's own
-    sentence with the heights, and where to look on the part), and the failed print on the
-    Send step (where the printer's screen shows the fault, and what to check in the
+    sentence with the heights, and where to look on the part: in Onshape, or on the
+    standalone page in "your CAD program", with no word of Onshape or a Part Studio), and
+    the failed print on the Send step (where the printer's screen shows the fault, and what to check in the
     filament path and the nozzle). A timeout suggests a profile with thicker layers (the
     filament's profiles differ, so it no longer names Draft).
 33. **The result:** print time and grams, a quiet line of instances, layers and slice time,
-    and the layer preview with its layer bar. **Two colours** (version 6): every line of the
+    and the layer preview with its layer bar, read out under it as "134 / 134 · 1.583 in"
+    (one line at 320 px); the bar reports its layer to a screen reader and moves with the
+    arrow keys. **Two colours** (version 6): every line of the
     parts (walls, infill, surfaces, brim) in the filament's colour, and supports with their
     interface in light grey. The key, "Part · Supports", shows under the view only when
     supports are on. No line type can be hidden. How to turn, pan and zoom the view is its
@@ -402,13 +448,17 @@ Called Setup until version 5; the decisions keep their numbers.
 
 ### Send step
 
-35. The step shows what will be printed (printer with its state, the instances by part,
+35. The step shows what will be printed (the printer by name, its state left to the
+    printer-status icon and the card or message beside it; the instances by part,
     print time, grams of filament) and one line: "Check that the plate is clear and PETG is
     loaded. Send starts the print at once." There is no line under the step title
     (version 6).
 36. **The Send button sends at once** (M10). It is PenguinCAM's final action: a wide blue
     button with a caret, whose menu offers Download instead (M23). Choosing from the menu
-    changes the button; it does not act.
+    changes the button; it does not act. The menu's send item has the button's label ("Send
+    to Shop H2S"). By keyboard, Enter on the caret opens the menu on its first item, the
+    arrow keys move, Escape closes it. On this step Back keeps its own width, so it does
+    not jump as the button's label changes.
 37. After sending, the step shows the delivery and print progress at the top: the stage on
     a track (Sending, Starting, Heating, Printing, Done), percent, layer of total, time
     left, expected finish and sent at. The card names the plate in words ("Plate 1, 16
@@ -428,7 +478,9 @@ Called Setup until version 5; the decisions keep their numbers.
 42. An offline printer and no printer paired each disable Send with a message and
     Download. With no printer paired, nothing on the step names a printer: "No printer is
     paired with PenguinSlicer, so nothing can be sent. An administrator pairs the printer
-    once, from the computer beside it."
+    once, from the computer beside it.", with the printer details' "How to pair a printer"
+    link. Offline says how long since the printer was last heard from and that Send comes
+    back when it answers, with no guess at the cause, as the printer details do.
 
 ### The printer-status icon
 
@@ -506,7 +558,7 @@ Called Setup until version 5; the decisions keep their numbers.
 10. Hulls are thinned to 40 points; placement distances can be off by about 0.2 mm.
 11. Download saves nothing.
 12. The page around the panel is not Onshape.
-13. Advanced mode shows a sample of Orca's settings (95 of about 295).
+13. Advanced mode shows a sample of Orca's settings (99 of about 295).
 14. Auto-orient scores flat outside faces of the mock parts only; "overhangs" uses an
     invented threshold.
 15. *Top-down first* uses a perspective camera, not an orthographic one.

@@ -204,7 +204,8 @@
     def.geometry = g;
     def.faces = info.faces; def.triFace = info.triFace;
     def.volume = info.volume; def.triangles = info.triangles;
-    def.size = { x: +size.x.toFixed(1), y: +size.y.toFixed(1), z: +size.z.toFixed(1) };
+    // unrounded: MockUnits.size rounds once, in the unit shown, so a part has one size everywhere
+    def.size = { x: size.x, y: size.y, z: size.z };
     byKey[def.key] = def;
   });
 

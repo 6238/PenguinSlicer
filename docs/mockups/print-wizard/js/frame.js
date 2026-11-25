@@ -219,7 +219,7 @@
     var grip = $('#os-right-grip'), sel = $('#sc-width'), start = null;
     var opt = document.createElement('option'); opt.value = 'drag'; opt.hidden = true; sel.appendChild(opt);
     grip.addEventListener('pointerdown', function (e) {
-      start = { x: e.clientX, w: $('#os-right').getBoundingClientRect().width };
+      start = { x: e.clientX, w: $('#os-right').clientWidth };        // the panel's width, without its border
       grip.setPointerCapture(e.pointerId); grip.classList.add('on'); e.preventDefault();
     });
     grip.addEventListener('pointermove', function (e) {

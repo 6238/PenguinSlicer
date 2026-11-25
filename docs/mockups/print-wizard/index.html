@@ -188,6 +188,8 @@
         <li data-step="preview" data-num="4" role="button" tabindex="0">Preview</li>
         <li data-step="send" data-num="5" role="button" tabindex="0">Send</li>
       </ol>
+      <!-- why a click on a later step tab did not go there: one line, under the tabs -->
+      <p id="step-why" class="step-why" role="status" hidden></p>
       <div id="pstat-pop" class="pstat-pop" hidden></div>
     </header>
 
@@ -243,6 +245,13 @@
         <div id="layout-toolbar">
           <button type="button" class="btn small" id="btn-arrange" title="Place every instance on the plate automatically">Arrange</button>
           <button type="button" class="btn small" id="btn-orient" title="Lay the selected instances, or every instance when none is selected, the best way">Auto-orient</button>
+          <span class="spacer"></span>
+          <!-- how to move instances and the view: behind a small help icon, not under the view -->
+          <button type="button" class="icon-btn help-btn" id="btn-layout-help" aria-expanded="false" aria-controls="layout-help" aria-label="How to move instances and the view" title="How to move instances and the view">?</button>
+          <div id="layout-help" class="help-pop" role="dialog" aria-label="How to move instances and the view" hidden>
+            <p id="layout-gestures"></p>
+            <ul id="layout-more"></ul>
+          </div>
         </div>
         <button type="button" id="layout-alert" class="layout-alert ok" disabled></button>
         <div id="layout-view" class="gl-view">
@@ -258,12 +267,7 @@
         </div>
         <div id="rest-strip" class="rest-strip" hidden></div>
         <div id="layout-orient" class="layout-orient hint" hidden></div>
-        <p id="layout-gestures" class="gestures"></p>
         <div id="layout-errors" aria-live="polite"></div>
-        <details class="hint more-help">
-          <summary>More ways to move and look</summary>
-          <ul id="layout-more"></ul>
-        </details>
         <p class="hint" id="layout-info"></p>
       </section>
 
@@ -337,10 +341,10 @@
       <button type="button" id="btn-next" class="btn primary">Next</button>
       <div id="final-action" class="split-btn" hidden>
         <button type="button" id="btn-do" class="btn primary" disabled>Send to printer</button>
-        <button type="button" id="btn-do-caret" class="btn primary split-caret" aria-label="Choose action">&#9662;</button>
+        <button type="button" id="btn-do-caret" class="btn primary split-caret" aria-label="Choose action" aria-haspopup="menu" aria-expanded="false" aria-controls="do-menu">&#9662;</button>
         <ul id="do-menu" class="do-menu" role="menu" hidden>
-          <li role="menuitem" data-action="print">Send to printer</li>
-          <li role="menuitem" data-action="download">Download the sliced file</li>
+          <li role="none"><button type="button" role="menuitem" data-action="print" id="do-print">Send to printer</button></li>
+          <li role="none"><button type="button" role="menuitem" data-action="download">Download the sliced file</button></li>
         </ul>
       </div>
     </footer>

@@ -33,6 +33,7 @@
 #stepbar li.done::after { content: " \2713"; }
 #stepbar li.active { color: var(--accent-ink); background: var(--accent); }
 #stepbar li.active:hover { background: var(--accent); color: var(--accent-ink); }
+#wizard .step-why { margin: 6px 0 0; font-size: 12px; line-height: 1.4; color: var(--danger); }
 
 /* config line, as PenguinCAM's */
 .config-info { margin-top: 6px; }
@@ -66,7 +67,7 @@
 .pp-note a:hover { text-decoration: underline; }
 .pp-head { display: flex; align-items: center; gap: 8px; }
 .pp-title { font-weight: 600; flex: 1; min-width: 0; }
-.pp-close { background: none; border: 0; color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer; padding: 0 2px; }
+.pp-close { background: none; border: 0; color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer; padding: 0; width: 24px; height: 24px; margin: -4px -6px -4px 0; flex: none; }
 .pp-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
 .pp-grid { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin-top: 8px; font-size: 13px; }
 .pp-grid dt { color: var(--muted); font-size: 12px; padding-top: 1px; }
@@ -126,7 +127,7 @@
 .notice .n-body { flex: 1; min-width: 0; }
 .notice .n-what { font-weight: 600; }
 .notice .n-todo { margin-top: 2px; color: var(--ink); }
-.notice .n-x { background: none; border: 0; color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer; padding: 0 2px; }
+.notice .n-x { background: none; border: 0; color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer; padding: 0; width: 24px; height: 24px; margin: -4px -4px 0 0; flex: none; }
 .notice .n-x:hover { color: var(--ink); }
 
 /* ---- Settings ---- */
@@ -165,9 +166,10 @@
 .part-item .meta { flex: 1; min-width: 0; }
 /* a name wraps to a second line rather than being cut short beside ↻, the quantity and × */
 .part-item .name { font-weight: 600; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
-.part-item .dims { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.part-item .dims.slow { color: var(--warn); white-space: normal; }
-.part-item .remove { color: var(--danger); background: none; border: none; cursor: pointer; font-size: 18px; padding: 0 4px; }
+/* a size is never cut: it wraps, as PenguinCAM's own .part-item .dims does */
+.part-item .dims { color: var(--muted); font-size: 12px; }
+.part-item .dims.slow { color: var(--warn); }
+.part-item .remove { color: var(--danger); background: none; border: none; cursor: pointer; font-size: 18px; padding: 0; width: 24px; height: 24px; flex: none; }
 #wizard .part-item .part-qty { width: 50px; flex: 0 0 auto; padding: 4px 4px 4px 6px; font-size: 13px; }
 .part-item .row { gap: 8px; }
 .part-item.arriving { border-style: dashed; }
@@ -191,6 +193,8 @@
 .msg.error .what { color: var(--danger); }
 .msg.warn .what { color: var(--warn); }
 .msg .todo { color: var(--ink); margin-top: 3px; }
+.msg .todo a { color: var(--accent); text-decoration: none; }
+.msg .todo a:hover { text-decoration: underline; }
 .msg .acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .msg details { margin-top: 6px; color: var(--muted); font-size: 12px; }
 .msg details summary { cursor: pointer; }
@@ -210,13 +214,20 @@
 .view-btns { position: absolute; right: 6px; bottom: 6px; z-index: 3; display: flex; gap: 4px; }
 .view-btns button { font: inherit; font-size: 11px; color: var(--muted); background: rgba(255, 255, 255, 0.92); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; cursor: pointer; }
 .view-btns button:hover { color: var(--ink); border-color: var(--muted); }
-.more-help summary { cursor: pointer; color: var(--accent); }
-.more-help ul { margin: 4px 0 0; padding-left: 18px; }
-.more-help li { margin: 2px 0; }
+/* the Layout step's help: a "?" icon at the right of the toolbar opens how to move and look */
+#layout-toolbar { position: relative; }
+#wizard .icon-btn.help-btn { width: 24px; height: 24px; border-color: var(--line); border-radius: 50%; font-weight: 700; font-size: 13px; }
+#wizard .icon-btn.help-btn[aria-expanded="true"] { background: var(--panel-2); color: var(--ink); }
+.help-pop { position: absolute; top: calc(100% + 4px); right: 0; z-index: 25; width: min(340px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+            box-shadow: 0 6px 18px rgba(31, 35, 40, 0.14); padding: 8px 12px 10px; font-size: 12px; line-height: 1.45; color: var(--ink); }
+.help-pop p { margin: 0; }
+.help-pop ul { margin: 6px 0 0; padding-left: 18px; color: var(--muted); }
+.help-pop li { margin: 2px 0; }
 .gl-view { position: relative; width: 100%; aspect-ratio: 1 / 1; max-height: 380px; background: var(--canvas-bg); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
 /* The Layout step's view fills the panel's width and grows with it (the owner, M8): no cap. */
 #wizard #layout-view.gl-view { max-height: none; }
 .gl-view .gl-canvas { display: block; width: 100%; height: 100%; outline: none; }
+.gl-view .gl-canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .gl-tip { position: absolute; left: 6px; bottom: 30px; max-width: calc(100% - 12px); font-size: 11px; background: rgba(255, 255, 255, 0.95); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; pointer-events: none; z-index: 4; }
 .gl-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
 .face-dot { position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 4px; background: #f2cc60; color: #1d1600; border: 1px solid #fff;
@@ -226,7 +237,6 @@
 .tip-handle { position: absolute; width: 20px; height: 20px; margin: -10px 0 0 -10px; border-radius: 50%; background: #fff; color: #0b2a5c; border: 2px solid var(--accent);
               font-size: 13px; line-height: 16px; text-align: center; font-weight: 700; box-shadow: 0 0 0 2px rgba(31, 35, 40, 0.25); }
 .tip-handle.hover { background: var(--accent); color: #fff; }
-#wizard .gestures { margin: 6px 0 0; font-size: 12px; line-height: 1.4; color: var(--muted); }
 .layout-orient { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; margin: 2px 0 0; }
 .layout-orient .auto-chip { color: var(--ok); }
 .layout-orient .linkish { font-size: 12px; }
@@ -340,11 +350,14 @@
 #wiz-nav { display: flex; justify-content: space-between; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--line); background: var(--panel); flex: none; position: relative; }
 #wiz-nav > .btn { flex: 1; }
 .split-btn { position: relative; display: flex; flex: 1; }
+/* the Send step: Back keeps its own width whatever the Send button says, so nothing jumps
+   as the label changes ("Send to Shop H2S", "Printing…", "Download the sliced file") */
+#wiz-nav.on-send > #btn-back { flex: 0 0 auto; }
 .split-btn #btn-do { flex: 1; border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .split-caret { flex: 0 0 auto; padding: 8px 16px !important; font-size: 16px; line-height: 1; border-top-left-radius: 0 !important; border-bottom-left-radius: 0 !important; border-left: 1px solid rgba(0, 0, 0, 0.25) !important; }
 .do-menu { position: absolute; bottom: 100%; right: 0; margin: 0 0 4px; padding: 4px; list-style: none; min-width: 200px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 6px 18px rgba(31, 35, 40, 0.2); z-index: 200; }
-.do-menu li { padding: 8px 10px; border-radius: 4px; font-size: 13px; color: var(--ink); cursor: pointer; white-space: nowrap; }
-.do-menu li:hover { background: var(--panel-2); }
+.do-menu button { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 8px 10px; border-radius: 4px; font: inherit; font-size: 13px; color: var(--ink); cursor: pointer; white-space: nowrap; }
+.do-menu button:hover, .do-menu button:focus-visible { background: var(--panel-2); outline: none; }
 
 /* ---- the reload curtain: a refresh or a reopen, imitated ---- */
 .curtain { position: absolute; inset: 0; z-index: 80; background: var(--bg); display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; flex-direction: column; gap: 8px; }
@@ -406,7 +419,7 @@
 .adv-row.changed { border-left-color: var(--warn-line); background: #fffbe6; }
 .adv-row.changed label::after { content: " \25CF"; color: var(--warn-line); font-size: 10px; }
 .adv-row .was { grid-column: 1 / -1; font-size: 11px; color: var(--warn); }
-#wizard .adv-row .was .reset { font-size: 11px; margin-left: 4px; }
+#wizard .adv-row .was .reset { font-size: 11px; margin: -4px 0 -4px 0; padding: 4px 6px; }   /* a larger target, same line height */
 .adv-row .bad { grid-column: 1 / -1; font-size: 11px; color: var(--danger); }
 .adv-row.flash { animation: flash 1.4s; }
 .adv-foot { padding: 10px 14px; border-top: 1px solid var(--line); background: var(--panel); display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
