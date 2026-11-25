@@ -1,4 +1,4 @@
-/* The panel: PenguinCAM's wizard look, since version 4 (this is version 6). Colours are PenguinCAM's light theme
+/* The panel: PenguinCAM's wizard look, since version 4 (this is version 7). Colours are PenguinCAM's light theme
    (static/wizard.css :root[data-theme="light"]); fonts, font sizes, paddings, radii, the
    step pills, chips, cards and the bottom buttons are its measurements, copied, not
    judged by eye. Scoped to #wizard because here the panel is a block in the page.
@@ -33,6 +33,33 @@
 #stepbar li.done::after { content: " \2713"; }
 #stepbar li.active { color: var(--accent-ink); background: var(--accent); }
 #stepbar li.active:hover { background: var(--accent); color: var(--accent-ink); }
+/* Version 7, below 480 px of panel: a compact stepper, as Material's: five small numbered
+   circles joined by a line, a check in each done step, the current one filled with its name
+   beside it. Every circle stays clickable, with its step's name as its tooltip. From 480 px
+   the pills above stay as they were. */
+#stepbar .sn { display: inline; }
+@container wiz (max-width: 479.98px) {
+  #stepbar { flex-wrap: nowrap; align-items: center; gap: 0; margin-top: 10px; }
+  #stepbar li { display: flex; align-items: center; flex: 1 1 0; min-width: 0; padding: 0; background: none; border-radius: 0; }
+  #stepbar li:last-child { flex: 0 0 auto; }
+  #stepbar li.active { flex: 1 0 auto; }
+  #stepbar li.active, #stepbar li:hover, #stepbar li.active:hover { background: none; }
+  #stepbar li::before { content: attr(data-num); opacity: 1; flex: none; box-sizing: border-box; width: 22px; height: 22px; border-radius: 50%;
+                        display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600;
+                        border: 1px solid var(--line); background: var(--panel); color: var(--muted); }
+  #stepbar li:hover::before { border-color: var(--muted); color: var(--ink); }
+  #stepbar li.done::before { content: "\2713"; background: #dafbe1; border-color: #aceebb; color: var(--ok); }
+  #stepbar li.active::before { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  /* the focus ring goes round the circle, not the circle and the line beside it */
+  #stepbar li:focus-visible { outline: none; }
+  #stepbar li:focus-visible::before { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #stepbar li .sn { display: none; }
+  #stepbar li.active .sn { display: inline; margin-left: 6px; font-weight: 600; color: var(--ink); white-space: nowrap; }
+  /* the line to the next circle */
+  #stepbar li::after { content: ""; flex: 1 1 auto; min-width: 8px; height: 1px; margin: 0 6px; background: var(--line); }
+  #stepbar li.done::after { content: ""; background: #aceebb; }
+  #stepbar li:last-child::after { display: none; }
+}
 #wizard .step-why { margin: 6px 0 0; font-size: 12px; line-height: 1.4; color: var(--danger); }
 
 /* config line, as PenguinCAM's */
@@ -41,7 +68,6 @@
 .config-status a { color: var(--accent); text-decoration: none; }
 .config-status a:hover { text-decoration: underline; }
 .config-status a.config-refresh { color: var(--muted); opacity: 0.35; margin-left: 5px; font-size: 0.9em; }
-.config-status-reason { margin: 3px 0 0; font-size: 11px; line-height: 1.35; color: var(--muted); }
 
 /* ---- the printer-status icon in the header, and its details ---- */
 .pstat { display: inline-flex; align-items: center; gap: 5px; flex: none; font: inherit; font-size: 12px; line-height: 16px; color: var(--muted);
@@ -80,7 +106,13 @@
 /* ---- body, chips, step title (PenguinCAM #wiz-body, #wiz-summary, .step h2) ---- */
 #wiz-body { flex: 1; overflow-y: auto; padding: 14px; min-height: 0; }
 .summary-wrap { position: relative; }
-#wiz-summary { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+/* version 7: the plate summary is two lines of text; only "+2 changes" is a pill */
+#wiz-summary { display: flex; flex-direction: column; gap: 2px; margin-bottom: 14px; font-size: 12px; line-height: 1.45; color: var(--muted); }
+#wiz-summary .sum-line { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* as tall as the "+2 changes" pill always, so nothing moves when the pill comes or goes */
+#wiz-summary .sum-set { display: flex; align-items: center; gap: 8px; overflow: visible; min-height: calc(12px * 1.45 + 4px); }
+#wiz-summary .sum-text { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#wiz-summary .sum-set .chip { flex: none; padding: 1px 8px; }
 #wiz-summary .chip { font-size: 12px; line-height: 1.45; color: var(--muted); background: var(--panel-2); border: 1px solid var(--line); padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
 #wiz-summary .chip.adv { color: var(--warn); border-color: var(--warn-line); }
 #wiz-summary button.chip { font-family: inherit; cursor: pointer; }
@@ -115,6 +147,10 @@
 #wizard .linkish { background: none; border: 0; color: var(--accent); cursor: pointer; font: inherit; padding: 0; text-decoration: none; }
 #wizard .linkish:hover { text-decoration: underline; }
 #wizard .spacer { flex: 1; }
+
+/* the user's own last print, one line (version 7): "Your print finished at 11:25 am." */
+#wizard .last-print { margin: 0 0 12px; font-size: 13px; color: var(--ok); }
+#wizard .last-print::before { content: "\2713  "; }
 
 /* ---- notifications: what happened to a part that did not arrive, and the like ---- */
 #notices:empty { display: none; }
@@ -203,7 +239,6 @@
 .fix-first + .msg { margin-top: 3px; }
 .msg.clickable { cursor: pointer; }
 .msg.clickable:hover { background: var(--panel-2); }
-.mock-note { margin: 10px 0; padding: 6px 8px; font-size: 11px; color: #5c4a00; background: #ffe98f; border-radius: 4px; }
 
 /* ---- Layout ---- */
 #layout-info { margin: 8px 0 0; }
@@ -236,6 +271,9 @@
 .face-dot.hover { transform: scale(1.3); background: #fff; }
 .tip-handle { position: absolute; width: 20px; height: 20px; margin: -10px 0 0 -10px; border-radius: 50%; background: #fff; color: #0b2a5c; border: 2px solid var(--accent);
               font-size: 13px; line-height: 16px; text-align: center; font-weight: 700; box-shadow: 0 0 0 2px rgba(31, 35, 40, 0.25); }
+/* the angle readout beside the rotation handle while it is dragged (version 7) */
+.turn-readout { position: absolute; font-size: 11px; line-height: 16px; padding: 0 5px; white-space: nowrap; background: rgba(255, 255, 255, 0.95);
+                border: 1px solid var(--accent); border-radius: 4px; color: #0b2a5c; font-variant-numeric: tabular-nums; }
 .tip-handle.hover { background: var(--accent); color: #fff; }
 .layout-orient { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; margin: 2px 0 0; }
 .layout-orient .auto-chip { color: var(--ok); }
@@ -370,7 +408,6 @@
 .adv-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--line); }
 .adv-title { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
 .adv-title span { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.adv-mock { margin: 14px 0 0; padding: 6px 8px; font-size: 11px; color: #5c4a00; background: #ffe98f; border-radius: 4px; }
 .adv-body { flex: 1; min-height: 0; display: flex; }
 .adv-list { flex: 1; min-width: 0; overflow-y: auto; padding: 4px 14px 14px; }
 /* chevrons: point right (towards the name) when closed, down when open */
@@ -383,14 +420,21 @@
 #wizard .icon-btn:hover { background: var(--panel-2); border-color: var(--line); color: var(--ink); }
 #wizard .icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .icon-btn svg { width: 18px; height: 18px; }
-/* below 480 px: the accordion of sections, one open at a time */
-.adv-sec { border-bottom: 1px solid var(--line); }
-.adv-sec-head { display: flex; align-items: center; gap: 6px; }
-#wizard .adv-sec-btn { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; background: none; border: 0; padding: 10px 0; cursor: pointer; text-align: left;
+/* below 480 px: the accordion of sections, one open at a time. Version 7: each section is a
+   bordered card like PenguinCAM's .card (#ffffff, 1px #d0d7de, radius 6px): its heading is
+   the card's title, its groups are rows inside it; a closed section is a slim card. */
+.adv-accordion { padding-top: 10px; }
+.adv-sec { border: 1px solid var(--line); border-radius: 6px; background: var(--panel); margin-bottom: 8px; }
+.adv-sec-head { display: flex; align-items: center; gap: 6px; padding: 0 8px 0 10px; }
+.adv-sec.open .adv-sec-head { border-bottom: 1px solid var(--line); }
+#wizard .adv-sec-btn { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; background: none; border: 0; padding: 8px 0; cursor: pointer; text-align: left;
                        font: inherit; font-size: 14px; font-weight: 700; color: var(--ink); }
 .adv-sec-btn .chev { color: var(--ink); }
 .adv-sec-btn .ct, .adv-rail .ct { font-weight: 400; font-size: 12px; color: var(--warn); }
-.adv-sec-body { padding: 0 0 12px 8px; }   /* the groups, one level in */
+.adv-sec-body { padding: 0 10px 6px; }   /* the groups: rows inside the card */
+.adv-sec-body .adv-grp:last-child .adv-sub { border-bottom: 0; }
+.adv-sec-body .adv-grp.open:last-child .adv-sub { border-bottom: 1px solid var(--line); }
+.adv-sec-body .adv-rows { padding-left: 8px; }
 /* from 480 px: the rail of section names down the left, the open section's groups beside it */
 .adv-rail { width: 132px; flex: none; display: flex; flex-direction: column; gap: 4px; padding: 8px; border-right: 1px solid var(--line); overflow-y: auto; }
 .adv-rail button { display: flex; align-items: center; gap: 4px; background: var(--panel-2); border: 0; color: var(--muted); border-radius: 6px; text-align: left; padding: 5px 8px;
