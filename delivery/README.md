@@ -9,8 +9,9 @@ Lab printer, reporting how the print goes. It has two halves:
   the printer's network, that runs the daemon). It connects outward to the relay, downloads the sliced file, uploads it to the printer and starts
   it. It opens no port. It is a plain Python program that runs on Windows, macOS or Linux.
 
-The **caller** is the application that runs the relay and asks it to deliver sliced files:
-it signs its users in, knows the pairing code of the printer they may use, and holds the
+The **caller** is the application that runs the relay and asks it to deliver sliced files
+(in PenguinSlicer, the wizard's server side, from phase 5 of
+[the plan](../docs/plans/penguin-slicer-plan.md)): it signs its users in, knows the pairing code of the printer they may use, and holds the
 sliced file. Printer delivery knows nothing of slicing, of how the caller signs anyone in,
 or of where the caller keeps the configuration (the settings an administrator keeps for
 everyone who uses PenguinSlicer, the pairing code among them).
@@ -38,7 +39,7 @@ sequences of faults on both links, and against the simulated printer over real s
   test saved, at 0 percent. The timed rule after a start command rests on two limits that
   only the H2S can settle ([Two limits that wait for the real printer](#two-limits-that-wait-for-the-real-printer)),
   and everything in
-  [Before trusting it at the H2S](#before-trusting-it-at-the-h2s-what-a-hardware-session-must-confirm)
+  [Before trusting it at the H2S](#before-trusting-it-at-the-h2s-what-the-session-at-the-h2s-must-confirm)
   is unconfirmed.
 - **Never run on Windows.** Tests fake each platform-dependent choice.
 - **Daemon telemetry is not designed.** It is planned: a protocol by which the daemon
@@ -50,12 +51,15 @@ sequences of faults on both links, and against the simulated printer over real s
 
 **What the phases still need from it.** Phases 1 to 4 need nothing from it. Phase 5 (the
 real printer) needs the session at the H2S, daemon telemetry designed and built, a relay
-running where the daemon can reach it, and what the wizard's Send step and printer-status
-icon need that the relay does not give today: who sent the print going on, the end time of
-the last print, and a way for a page that has lost its state to find its user's delivery
-job (listed in the mockup's [DECISIONS.md](../docs/mockups/print-wizard/DECISIONS.md)).
-Some sentences of its error and progress reports, and the caller interface's `Team`, still
-use the old words for users; changing them is a change of its own, with its tests.
+the daemon can reach from another machine (today's local relay binds 127.0.0.1 only, see
+[What the session needs beyond `record`](#before-trusting-it-at-the-h2s-what-the-session-at-the-h2s-must-confirm)),
+and what the wizard's Send step and printer-status icon need that the relay does not give,
+or gives only in part: who sent the print going on, the end time of the last print, and a
+way for a page that has lost its state to find its user's delivery job (listed in the
+mockup's [DECISIONS.md](../docs/mockups/print-wizard/DECISIONS.md)). Some sentences of its
+error reports, the text the daemon's `pair` command prints ("your team's print server",
+"a team configuration file"), the log field `team=` and the caller interface's `Team`
+still use the old words for users; changing them is a change of its own, with its tests.
 
 ## Layout
 
@@ -638,7 +642,7 @@ real printer measures.
    says to look at the printer first, because the part may be printing), the printer
    counts as free, and a resend sends a second start command while the first is pending.
 
-The session at the real printer measures, through the hardware checklist's lines, the
+The session at the H2S measures, through the hardware checklist's lines, the
 documents between the start command and the first `PREPARE` or `RUNNING`, and the seconds
 from the command to the first document naming the file. If the H2S shows a print within
 seconds and drops the previous end at once, neither case can happen at these settings.
@@ -663,7 +667,7 @@ clear.
 | `HOLD_CHECK_SECONDS` | 30 s | How often that wait asks the relay whether it still holds the job |
 
 Every figure is a guess until the real H2S is timed; the
-[hardware checklist](#before-trusting-it-at-the-h2s-what-a-hardware-session-must-confirm)
+[hardware checklist](#before-trusting-it-at-the-h2s-what-the-session-at-the-h2s-must-confirm)
 asks for the measurements that set them. Every other time limit of printer delivery:
 
 | Setting | Where | Default | What it bounds |
@@ -732,7 +736,7 @@ daemon asks for a whole report and waits (see
 other fields. In every case a value the table does not know is kept, raw, in the
 snapshot's `unrecognised`. PROVISIONAL: no pause or fault of the H2S
 has been recorded yet, so what it reports while it waits is on the
-[hardware checklist](#before-trusting-it-at-the-h2s-what-a-hardware-session-must-confirm).
+[hardware checklist](#before-trusting-it-at-the-h2s-what-the-session-at-the-h2s-must-confirm).
 
 | Field | Value | Means | Name | What to do at the printer |
 |---|---|---|---|---|
@@ -946,7 +950,8 @@ relay_of(app).relay.note_code(code)                  # optional: present a code 
 
 `identify(request)` answers who is asking: a `Team`, or `None` (401). `Team` is the
 code's name for a request's identity: the pairing code it may use (the only field the
-relay trusts), with a team number and a user name passed through to the log and events.
+relay trusts), with a team number, passed through to the log and events, and a user name,
+passed through to events.
 The name is one of the old words that are still to change in the code. If `identify`
 raises or returns anything else, a status poll reads as an identity with no pairing code
 and a send is refused with `delivery.identity_unreadable`.
@@ -1023,7 +1028,7 @@ read). `printer.py` now sets the library's own `unwrap` option, which closes the
 connection with a TLS shutdown first; under TLS 1.3 the whole file arrives at the first
 attempt. The size check stays the guard either way. The simulator speaks TLS 1.2 unless a
 scenario says `"tls": "1.3"`; which the H2S speaks is on the
-[hardware checklist](#before-trusting-it-at-the-h2s-what-a-hardware-session-must-confirm).
+[hardware checklist](#before-trusting-it-at-the-h2s-what-the-session-at-the-h2s-must-confirm).
 
 Most of the suite's time is the library's MQTT client connecting and its certificate being
 made. `PrinterLink.disconnect` sends the MQTT DISCONNECT before stopping the library's
@@ -1123,7 +1128,7 @@ A timeout on `uv run` stops `uv` and can leave pytest running.
 `daemon/tests/hardware_smoke.py` starts a real print on a real printer and is never
 collected (`make hardware-smoke`).
 
-## Before trusting it at the H2S: what a hardware session must confirm
+## Before trusting it at the H2S: what the session at the H2S must confirm
 
 Every printer sequence here is invented from one recorded document. A session at the real
 H2S, with `record` running, settles these:
@@ -1192,16 +1197,21 @@ way (from the printer's screen, or from Bambu's own slicer), which is what the s
 printer needs. The lines above about what the H2S reports after a start command need a
 print started by the daemon, and that needs a relay the daemon can reach, the daemon's
 `run` command and a sliced file to send. `pair` with no `--backend` points the daemon at
-`https://penguincam.popcornpenguins.com`, where no relay for it runs, so a relay must be
-started somewhere the daemon can reach (`uv run python -m together.relay_server`, as in
-[Try it on one machine](#try-it-on-one-machine)) and its address given to `pair`. Whether
-`record` and `run` can be connected to the printer at the same time is not known. So the
-session has two parts: recording prints started at the printer, and a print started by
-the daemon with recording, which is prepared as a written walk and tried against the
-simulated printer first.
+`https://penguincam.popcornpenguins.com`, where no relay for it runs. The only relay that
+can be started today is the local one of
+[Try it on one machine](#try-it-on-one-machine) (`uv run python -m together.relay_server`):
+it binds 127.0.0.1 only, over plain HTTP, and signs every request in with the pairing
+code, so it is for tests on one machine only, with the relay and the daemon on the same
+computer. It must never be given a network address: anyone who reached it could start a
+print. A relay the daemon reaches from another machine needs a real caller with a sign-in,
+which is not built and waits for phase 5's design. Whether `record` and `run` can be
+connected to the printer at the same time is not known. So the session has two parts:
+recording prints started at the printer, and a print started by the daemon with
+recording, which is prepared as a written walk and tried against the simulated printer
+first.
 
 **On the daemon's computer.** Nothing here has run on Windows, the likely daemon's
-computer for the first session; on Windows the commands take `py` in place of `python`.
+computer for the session at the H2S; on Windows the commands take `py` in place of `python`.
 This list comes from the builder of the hardening and was not checked by a review:
 
 - [ ] `py -m pip install .\delivery\daemon` works in a fresh Python 3.11 or newer.

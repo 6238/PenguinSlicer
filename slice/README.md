@@ -36,12 +36,13 @@ one, two and three large organic parts, and those with supports on) were measure
   an Orca that fails between two of the watchdog's samples.
 - Not measured: the disk held by finished slice jobs, which keep their uploads and sliced
   file for an hour; CPU time; how many slices a host can run at once. Every measurement is
-  from one aarch64 Linux machine with 4 CPUs.
+  from aarch64 Linux machines: almost all from one with 4 CPUs, and nine plates of the
+  memory model's fit from another.
 
 **What the phases still need from it.** Phase 2 (the wizard outside Onshape) needs, each
-open until that phase's spec settles it: settings beyond the four overrides, for advanced
+open until that phase's design spec settles it: settings beyond the four overrides, for advanced
 mode; the profiles the wizard offers, per filament; where parts in inches are scaled to
-millimetres; the sliced result in a form the Preview step can draw; a way for a page that
+millimetres; the sliced file in a form the Preview step can draw; a way for a page that
 has lost its state to find its slice job; and a way for the wizard's page to reach the HTTP
 interface (it sends no cross-origin headers). Phase 3 (AWS) needs a host chosen and
 measured: 3.5 GB per slice service process (see "Sizing the host" under
@@ -692,7 +693,8 @@ their measured peak. Refitting it belongs with the choice of hosting, on that ho
 measurements. It was fitted as the upper envelope of these measurements
 (`scripts/measure_plate.py --fit` reprints it), peak resident memory of Orca from `wait4`,
 one slice at a time on an aarch64 Linux machine with 4 CPUs, pinned Orca 2.4.2, the
-default set:
+default set (the figures of these eight plates are the builder's; no review measured them
+again):
 
 | Plate | Instances | Volume (cm3) | Supports | Peak (MB) | Estimate (MB) | Seconds | Sliced file (MB) |
 |---|---|---|---|---|---|---|---|
@@ -943,7 +945,8 @@ so going back is quick). `git diff -- slice/` then shows nothing but what you me
 keep.
 
 **What happened when the command was run to other versions and back** (on an aarch64
-Linux machine, with 2.4.2 pinned, Thu 2026-11-19):
+Linux machine, with 2.4.2 pinned, Thu 2026-11-19; the commands were run by the builders
+only, and the reviewers read them without running them):
 
 - **Up to 2.5.1** (released Sat 2026-11-14), `make -C slice upgrade-orca VERSION=2.5.1`:
   GitHub's digests read, the release downloaded, verified and installed, the pin moved.
