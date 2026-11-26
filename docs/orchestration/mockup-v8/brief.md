@@ -18,8 +18,10 @@
 
 ## Read first
 
-1. **The feedback:** [the owner's feedback on version 7](../../handoffs/2026-11-26-mockup-v7-feedback.md).
-   Every bullet is a requirement.
+1. **The feedback:** the owner's feedback on version 7, given Thu 2026-11-26 in
+   `docs/handoffs/2026-11-26-mockup-v7-feedback.md` (now folded into
+   [DECISIONS.md](../../mockups/print-wizard/DECISIONS.md) and deleted; every point is
+   listed in [the result](result.md)). Every bullet is a requirement.
 2. The mockup and its `DECISIONS.md`; the version 7 records in
    [mockup-v7](../mockup-v7/) (brief, review, fix) for what was just done.
 3. The owner's interface preferences:

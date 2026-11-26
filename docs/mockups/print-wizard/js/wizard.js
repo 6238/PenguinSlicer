@@ -42,7 +42,7 @@
   function fresh(ctx) {
     return { ctx: ctx, step: ORDER[0], filament: 'petg', profile: ST.profilesOf('petg')[0].id, changes: {}, parts: [], instances: [],
              selected: [], nextId: 1, laidOut: false, problems: [], job: null, result: null, resultSig: null,
-             action: 'print', layer: 0, advTab: 'Quality', advOpen: {}, advFocus: null,
+             action: 'print', layer: 0, advTab: 'Quality', advOpen: {}, advSecOpen: {}, advFocus: null,
              layoutNotes: [], previewMsg: null, undo: [], redo: [], notices: [] };
   }
   // The choices made in the scenario strip; they outlast Reset, since they are the owner's,
@@ -246,7 +246,7 @@
     if (S.step !== name) { S.notices = []; S.lastNoteOn = null; }    // a notification belongs to the step it was given on; so does the last-print note
     if (S.step === 'layout' && name !== 'layout') layHint = null;   // so does the Layout step's message ("Arranged 5 instances.")
     S.step = name;
-    closePrinterPop(); closeChangesPop(); clearWhy(); closeLayoutHelp();
+    closePrinterPop(); closeChangesPop(); clearWhy(); closeLayoutHelp(); closeKey(); hideTip();
     $all('#wizard .step').forEach(function (s) { s.hidden = s.getAttribute('data-step') !== name; });
     $all('#stepbar li').forEach(function (li) {
       var s = li.getAttribute('data-step');
@@ -455,7 +455,7 @@
     advOpener = key || 'button';
     setCoveredInert(true);
     placePrinterIcon(true); $('#advanced').hidden = false;
-    if (key) { var s = ST.byKey[key]; S.advTab = s.group; S.advOpen[s.group + '|' + s.sub] = true; S.advFocus = key; }
+    if (key) { var s = ST.byKey[key]; S.advTab = s.group; S.advSecOpen[s.group] = true; S.advOpen[s.group + '|' + s.sub] = true; S.advFocus = key; }
     fitAdvanced(); renderAdvanced();
     if (key) {
       var row = $('#adv-row-' + key);
@@ -496,12 +496,16 @@
   }
   function changedIn(rows) { return rows.filter(function (s) { return S.changes.hasOwnProperty(s.key); }).length; }
   function changedInSection(section) { return Object.keys(S.changes).filter(function (k) { return ST.byKey[k].group === section; }).length; }
-  // A group starts closed, as in Orca Slicer, unless it holds a changed setting.
-  function groupOpen(g) { var k = g.group + '|' + g.sub; return S.advOpen.hasOwnProperty(k) ? S.advOpen[k] : changedIn(g.rows) > 0; }
-  // Expand all / Collapse all: one icon button for the open section's groups.
+  // Version 8 (the owner): every section and every group starts open, and advanced mode
+  // remembers each one's open or closed state for as long as the page is open (in memory, not
+  // in the browser's storage): across steps, closing and reopening advanced mode, and the
+  // accordion and the rail as the panel crosses 480 px. A reload forgets it.
+  function groupOpen(g) { var k = g.group + '|' + g.sub; return S.advOpen.hasOwnProperty(k) ? S.advOpen[k] : true; }
+  function sectionOpen(section) { return S.advSecOpen.hasOwnProperty(section) ? S.advSecOpen[section] : true; }
+  // Expand all / Collapse all: one icon button for a section's groups.
   function expandButton(section) {
     var groups = sectionGroups(section), allOpen = groups.every(groupOpen);
-    var b = el('button', 'icon-btn adv-expand'); b.type = 'button'; b.id = 'adv-expand';
+    var b = el('button', 'icon-btn adv-expand'); b.type = 'button'; b.id = 'adv-expand-' + idPart(section);
     b.innerHTML = allOpen ? UNFOLD_LESS : UNFOLD_MORE;
     b.title = allOpen ? 'Collapse all' : 'Expand all'; b.setAttribute('aria-label', b.title + ' in ' + section);
     b.addEventListener('click', function (e) { e.stopPropagation(); groups.forEach(function (g) { S.advOpen[g.group + '|' + g.sub] = !allOpen; }); renderAdvanced(); });
@@ -563,16 +567,17 @@
       list.appendChild(col); body.appendChild(list);
       list.scrollTop = scroll;
     } else {
-      // the accordion: each section a bold heading with a chevron and its changed count; one open at a time
+      // the accordion: each section a card with a bold heading, a chevron and its changed count;
+      // version 8: each opens and closes by itself, and all start open
       var acc = el('div', 'adv-list adv-accordion');
       ST.GROUPS.forEach(function (g) {
-        var open = g === S.advTab, cnt = changedInSection(g);
+        var open = sectionOpen(g), cnt = changedInSection(g);
         var sec = el('div', 'adv-sec' + (open ? ' open' : ''));
         var hrow = el('div', 'adv-sec-head');
         var h = el('button', 'adv-sec-btn'); h.type = 'button'; h.id = 'adv-sec-' + idPart(g); h.setAttribute('aria-expanded', open ? 'true' : 'false');
         h.appendChild(chevron(open)); h.appendChild(el('span', 'nm', g));
         if (cnt) h.appendChild(el('span', 'ct', '· ' + countText(cnt)));
-        h.addEventListener('click', function () { S.advTab = open ? null : g; renderAdvanced(); });
+        h.addEventListener('click', function () { S.advSecOpen[g] = !open; S.advTab = g; renderAdvanced(); });
         hrow.appendChild(h);
         if (open) hrow.appendChild(expandButton(g));
         sec.appendChild(hrow);
@@ -851,15 +856,15 @@
       // done afresh on the plate as it is now, in case it changed since Arrange was pressed
       pushUndo();
       var n = 0;
-      S.instances.forEach(function (c) { var best = P.resting(c.partKey).list[0]; if (best && P.restIndex(c.partKey, c.q) !== 0 && turnToRest(c, best)) { c.auto = true; n++; } });
+      S.instances.forEach(function (c) { var best = P.resting(c.partKey).list[0]; if (best && P.restIndex(c.partKey, c.q) !== 0 && turnToRest(c, best)) { c.auto = true; n++; PL.fitTurn(c, PLATE); } });
       var now = PL.bestArrange(S.instances, PLATE);
       S.layoutNotes = arrangeNote(now);
       layHint = msg('ok', 'Laid ' + plural(n, 'instance', 'instances') + ' the best way and arranged again: ' + (now.parked ? plural(now.placed, 'instance fits', 'instances fit') + ' now.' : 'every instance now fits.'), null);
       recheck(); editor.resetHandle(); editor.sync(); editor.resetView(); scheduleLayoutRender();
     }]);
-    return [msg('error', 'Arrange placed ' + res.placed + ' of ' + (res.placed + res.parked) + ' instances' + (res.turned ? ', turning ' + res.turned : '') + '; ' + plural(res.parked, 'instance does', 'instances do') + ' not fit and ' + (res.parked === 1 ? 'waits' : 'wait') + ' beside the plate.',
+    return [msg('error', 'Arrange placed ' + res.placed + ' of ' + (res.placed + res.parked) + ' instances; ' + plural(res.parked, 'instance does', 'instances do') + ' not fit and ' + (res.parked === 1 ? 'waits' : 'wait') + ' beside the plate.',
       offer ? 'Arrange keeps how each instance lies. With ' + plural(offer.changed, 'instance', 'instances') + ' laid the best way, ' + (offer.parked ? 'more would fit' : 'everything would fit') + '. Or lower the quantities and print the rest on a second plate.'
-            : 'Lower the quantities and print the rest on a second plate, or lay instances another way to make room.', acts)];
+            : 'Lower the quantities and print the rest on a second plate, or turn or lay instances another way to make room.', acts)];
   }
   // Arrange keeps how each instance lies. When that leaves instances over and some do not lie
   // their best way, it also tries the plate with every instance laid its best way; only when
@@ -869,7 +874,7 @@
     var notBest = S.instances.filter(function (c) { return P.resting(c.partKey).list[0] && P.restIndex(c.partKey, c.q) !== 0; });
     if (!res.parked || !notBest.length) return null;
     var keep = S.instances.map(function (c) { return { c: c, x: c.x, y: c.y, q: c.q.clone(), auto: c.auto }; });
-    notBest.forEach(function (c) { if (turnToRest(c, P.resting(c.partKey).list[0])) c.auto = true; });
+    notBest.forEach(function (c) { if (turnToRest(c, P.resting(c.partKey).list[0])) { c.auto = true; PL.fitTurn(c, PLATE); } });
     var res2 = PL.bestArrange(S.instances, PLATE), offer = res2.parked < res.parked ? { parked: res2.parked, changed: notBest.length } : null;
     keep.forEach(function (k) { k.c.x = k.x; k.c.y = k.y; k.c.q = k.q; k.c.auto = k.auto; k.c.d = null; });
     return offer;
@@ -889,6 +894,9 @@
     // Version 7 (the owner: no text about orientation): nothing is said when a part arrives laid
     // down automatically; the view shows it, and its selection's "Put back as modelled" undoes it.
     if (!S.laidOut || fresh.length === S.instances.length) {
+      // version 8: an instance that arrives too long for the plate is turned by the wizard to
+      // fit, once, on arrival; the Arrange below keeps every orientation as it is
+      fresh.forEach(function (c) { PL.fitTurn(c, PLATE); });
       var res = PL.bestArrange(S.instances, PLATE); S.laidOut = true;
       S.layoutNotes = arrangeNote(res);
     } else {
@@ -969,7 +977,8 @@
     var whole = !(ids && ids.length);
     if (!whole) return layInstances(list, function (c) { return P.resting(c.partKey).list[0]; }, 'auto');
     var snap = snapshot(), changed = 0;
-    list.forEach(function (c) { var best = P.resting(c.partKey).list[0]; if (best && turnToRest(c, best)) changed++; if (best) c.auto = true; });
+    // version 8: the wizard turns an instance it laid that is now too long for the plate (Arrange will not)
+    list.forEach(function (c) { var best = P.resting(c.partKey).list[0]; if (best && turnToRest(c, best)) { changed++; PL.fitTurn(c, PLATE); } if (best) c.auto = true; });
     if (!changed) { layHint = null; scheduleLayoutRender(); return; }
     pushUndo(snap); recheck();
     var res = null;
@@ -1239,7 +1248,7 @@
     pushUndo();
     var res = PL.bestArrange(S.instances, PLATE);
     S.layoutNotes = arrangeNote(res, tryBestWay(res));
-    layHint = res.parked ? null : msg('ok', 'Arranged ' + plural(res.placed, 'instance', 'instances') + (res.turned ? ', turning ' + res.turned : '') + '.', null);
+    layHint = res.parked ? null : msg('ok', 'Arranged ' + plural(res.placed, 'instance', 'instances') + '.', null);
     recheck(); editor.resetHandle(); editor.sync(); editor.resetView(); scheduleLayoutRender();
   }
   function bindLayout() {
@@ -1572,24 +1581,25 @@
     stats.appendChild(el('div', 'stat-line', r.instances.length + ' instance' + (r.instances.length === 1 ? '' : 's') + ' · ' + r.tp.layers + ' layers of ' + r.settings.layer_height + ' mm · sliced in ' + clock(r.sliceTime)));
     if (!viewer) viewer = Preview3D.createViewer($('#viewer-container'), PLATE);
     setTimeout(function () {
-      viewer.resize(); viewer.show(r.tp, r.instances, r.filament.color);
+      viewer.resize(); viewer.show(r.tp, r.instances);
       setLayer(r.tp.layers - 1);
     }, 0);
-    renderLegend(r);
+    renderKey();
     updateNext();
   }
-  // Two colours (the owner, version 6): the parts in the filament's colour, supports with their
-  // interface in light grey. The key, "Part · Supports", shows only when supports are on.
-  function renderLegend(r) {
-    var lg = $('#legend'); lg.innerHTML = '';
-    lg.hidden = !r.settings.enable_support;
-    if (lg.hidden) return;
+  // Version 8 (the owner): four fixed colours, one per group, whatever the filament. Their key
+  // is behind a small icon at the view's top left, closed by default: four rows, always the
+  // same, so the key never changes with the plate or the settings.
+  function renderKey() {
+    var lg = $('#pv-key'); if (lg.children.length) return;
     function hex(c) { return '#' + ('00000' + c.toString(16)).slice(-6); }
-    [['Part', r.filament.color], ['Supports', Preview3D.SUPPORT_COLOR]].forEach(function (k) {
-      var li = el('li'), sw = el('i'); sw.style.background = hex(k[1]); li.appendChild(sw);
-      li.appendChild(el('span', 'lg-name', k[0])); lg.appendChild(li);
+    Preview3D.GROUPS.forEach(function (g) {
+      var li = el('li'), sw = el('i'); sw.style.background = hex(g.color); li.appendChild(sw);
+      li.appendChild(el('span', null, g.label)); lg.appendChild(li);
     });
   }
+  function setKey(open) { $('#pv-key').hidden = !open; $('#btn-key').setAttribute('aria-expanded', open ? 'true' : 'false'); }
+  function closeKey() { setKey(false); }
   function setLayer(k) {
     var r = S.result; if (!r) return;
     k = Math.max(0, Math.min(r.tp.layers - 1, Math.round(k)));
@@ -1625,6 +1635,11 @@
     $('#btn-layer-up').addEventListener('click', function () { setLayer(S.layer + 1); });
     $('#btn-layer-down').addEventListener('click', function () { setLayer(S.layer - 1); });
     $('#btn-preview-view').addEventListener('click', function () { if (viewer && S.result) viewer.reset(S.result.instances); });
+    // the colour key: the icon opens and closes it; a click elsewhere or Escape closes it
+    $('#btn-key').addEventListener('click', function (e) { e.stopPropagation(); setKey($('#pv-key').hidden); });
+    $('#btn-key').addEventListener('pointerdown', function (e) { e.stopPropagation(); });     // not a turn of the view
+    $('#pv-key').addEventListener('click', function (e) { e.stopPropagation(); });
+    $('#pv-key').addEventListener('pointerdown', function (e) { e.stopPropagation(); });
     // final action on the Send step: PenguinCAM's split button. The button sends at once; the
     // caret's menu offers Download instead.
     $('#btn-do').addEventListener('click', function () { doAction(S.action); });
@@ -1783,7 +1798,8 @@
     var st = printerStatus(), b = $('#pstat');
     b.className = 'pstat s-' + st.key;
     b.querySelector('.ptext').textContent = st.short;
-    b.title = st.title + ': click for details';
+    // version 8: no tooltip; the details themselves open on hover. A screen reader hears the state.
+    b.setAttribute('aria-description', st.title);
     if (!$('#pstat-pop').hidden) renderPrinterPop();
   }
   function dl(grid, k, v, cls) { grid.appendChild(el('dt', null, k)); var d = el('dd', cls || null, v); grid.appendChild(d); return d; }
@@ -1840,14 +1856,48 @@
     pop.style.left = 'auto';
     pop.style.width = Math.min(br.right - hr.left - 8, 340) + 'px';    // at least 8 px clear of the panel's left edge
   }
+  // Version 8 (the owner): the details open when the pointer rests on the icon, and still on a
+  // click. Opened by the pointer, they stay open while it is over the icon or the details and
+  // close a short while after it leaves both. A click pins them open: then only a click
+  // elsewhere, Escape, × or a second click on the icon closes them. Touch and keyboard work as
+  // before (a tap or Enter is a click).
+  var pstatPinned = false, pstatHoverTimer = null, pstatLeaveTimer = null;
+  var PSTAT_OPEN_MS = 150, PSTAT_GRACE_MS = 300;
+  function openPrinterPop(pinned) {
+    var pop = $('#pstat-pop');
+    pstatPinned = pstatPinned || pinned;
+    if (!pop.hidden) return;
+    closeChangesPop(); hideTip();
+    pop.hidden = false; $('#pstat').setAttribute('aria-expanded', 'true');
+    renderPrinterPop();
+  }
   function togglePrinterPop(e) {
     e.stopPropagation();
-    var pop = $('#pstat-pop'), open = pop.hidden;
-    closeChangesPop();
-    pop.hidden = !open; $('#pstat').setAttribute('aria-expanded', open ? 'true' : 'false');
-    if (open) renderPrinterPop();
+    clearTimeout(pstatHoverTimer); clearTimeout(pstatLeaveTimer);
+    var pop = $('#pstat-pop');
+    if (pop.hidden) openPrinterPop(true);
+    else if (!pstatPinned) pstatPinned = true;            // opened by the pointer: the click pins it
+    else closePrinterPop();
   }
-  function closePrinterPop() { $('#pstat-pop').hidden = true; $('#pstat').setAttribute('aria-expanded', 'false'); }
+  function closePrinterPop() {
+    clearTimeout(pstatHoverTimer); clearTimeout(pstatLeaveTimer); pstatPinned = false;
+    $('#pstat-pop').hidden = true; $('#pstat').setAttribute('aria-expanded', 'false');
+  }
+  function bindPrinterHover() {
+    function enter(e) {
+      if (e.pointerType === 'touch') return;
+      clearTimeout(pstatLeaveTimer);
+      if ($('#pstat-pop').hidden && e.currentTarget.id === 'pstat') { clearTimeout(pstatHoverTimer); pstatHoverTimer = setTimeout(function () { openPrinterPop(false); }, PSTAT_OPEN_MS); }
+    }
+    function leave(e) {
+      if (e.pointerType === 'touch') return;
+      clearTimeout(pstatHoverTimer);
+      if (pstatPinned || $('#pstat-pop').hidden) return;
+      clearTimeout(pstatLeaveTimer);
+      pstatLeaveTimer = setTimeout(function () { if (!pstatPinned) closePrinterPop(); }, PSTAT_GRACE_MS);
+    }
+    ['#pstat', '#pstat-pop'].forEach(function (s) { $(s).addEventListener('pointerenter', enter); $(s).addEventListener('pointerleave', leave); });
+  }
 
   // The scenario strip's Printer menu: what someone else is doing at the shop printer.
   function setPrinter(kind, quiet) {
@@ -2006,6 +2056,75 @@
     card.appendChild(box);
   }
 
+  /* ================================================================== tooltips (version 8) */
+  // The owner: the step circles' tooltips appear faster, look like the rest of PenguinSlicer
+  // and have larger text. Every `title` in the panel becomes the panel's own tooltip: shown
+  // 150 ms after the pointer comes to rest on it and at once on keyboard focus, hidden on
+  // Escape, when the pointer leaves, on a press and on blur; in the panel's font at the body
+  // text size (14 px), styled like the printer details, and kept inside the panel. A title set
+  // later (the code sets many as things change) is taken over as soon as it is set. Option
+  // elements and the 3D views keep the browser's tooltip.
+  var tip = null, tipFor = null, tipPending = null, tipTimer = null, TIP_DELAY_MS = 150;
+  var TIP_SKIP = 'option, canvas, .gl-view';
+  function letters(s) { return (s || '').toLowerCase().replace(/[^a-z]+/g, ''); }
+  function adoptTitle(n) {
+    if (!n.hasAttribute || !n.hasAttribute('title') || n.matches(TIP_SKIP)) return;
+    var t = n.getAttribute('title'); n.removeAttribute('title');
+    if (t) n.setAttribute('data-tip', t); else n.removeAttribute('data-tip');
+    // a screen reader still hears the text, as it heard the title, unless the element's name
+    // already says it (a step circle is named "Step 3: Layout")
+    var name = n.getAttribute('aria-label');
+    if (t && !(name && letters(name).indexOf(letters(t)) >= 0)) n.setAttribute('aria-description', t); else n.removeAttribute('aria-description');
+    if (n === tipFor) { if (t) showTip(n); else hideTip(); }
+  }
+  function showTip(n) {
+    var text = n.getAttribute('data-tip'); if (!text || !n.isConnected || !n.offsetParent) return;
+    var root = $('#wizard');
+    tipFor = n; tip.textContent = text; tip.style.left = '0px'; tip.style.top = '0px'; tip.hidden = false;
+    if (!n.hasAttribute('aria-describedby')) n.setAttribute('aria-describedby', 'wiz-tip');
+    var w = root.getBoundingClientRect(), r = n.getBoundingClientRect(), tw = tip.offsetWidth, th = tip.offsetHeight, M = 6;
+    var left = Math.max(M, Math.min(r.left + r.width / 2 - tw / 2 - w.left, w.width - tw - M));
+    var top = r.bottom - w.top + 6;                                   // below the element, else above it
+    if (top + th > w.height - M) top = Math.max(M, r.top - w.top - th - 6);
+    tip.style.left = left + 'px'; tip.style.top = top + 'px';
+  }
+  function hideTip() {
+    clearTimeout(tipTimer); tipPending = null;
+    if (!tip) return;
+    if (tipFor && tipFor.getAttribute('aria-describedby') === 'wiz-tip') tipFor.removeAttribute('aria-describedby');
+    tipFor = null; tip.hidden = true;
+  }
+  function bindTips() {
+    var root = $('#wizard');
+    tip = el('div', 'wiz-tip'); tip.id = 'wiz-tip'; tip.setAttribute('role', 'tooltip'); tip.hidden = true; root.appendChild(tip);
+    $all('#wizard [title]').forEach(adoptTitle);
+    new MutationObserver(function (list) {
+      list.forEach(function (m) {
+        if (m.type === 'attributes') { adoptTitle(m.target); return; }
+        m.addedNodes.forEach(function (n) { if (n.nodeType !== 1) return; adoptTitle(n); n.querySelectorAll('[title]').forEach(adoptTitle); });
+      });
+    }).observe(root, { subtree: true, childList: true, attributes: true, attributeFilter: ['title'] });
+    root.addEventListener('pointerover', function (e) {
+      if (e.pointerType === 'touch') return;
+      var n = e.target.closest && e.target.closest('[data-tip]');
+      if (!n || n === tipFor || n === tipPending) return;
+      hideTip(); tipPending = n;
+      tipTimer = setTimeout(function () { tipPending = null; showTip(n); }, TIP_DELAY_MS);
+    });
+    root.addEventListener('pointerout', function (e) {
+      var n = tipFor || tipPending;
+      if (!n || !n.contains(e.target) || (e.relatedTarget && n.contains(e.relatedTarget))) return;
+      hideTip();
+    });
+    root.addEventListener('pointerdown', hideTip, true);
+    root.addEventListener('focusin', function (e) {
+      var n = e.target.closest && e.target.closest('[data-tip]');
+      if (n && e.target.matches(':focus-visible')) { hideTip(); showTip(n); }
+    });
+    root.addEventListener('focusout', function (e) { if (tipFor && tipFor.contains(e.target)) hideTip(); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') hideTip(); }, true);
+  }
+
   /* ================================================================== wiring */
   function bindNav() {
     $('#btn-next').addEventListener('click', function () { var i = ORDER.indexOf(S.step); if (i < ORDER.length - 1 && canLeave(S.step)) gotoStep(ORDER[i + 1]); });
@@ -2017,8 +2136,10 @@
     $('#pstat').addEventListener('click', togglePrinterPop);
     $('#pstat-pop').addEventListener('click', function (e) { e.stopPropagation(); });
     $('#chg-pop').addEventListener('click', function (e) { e.stopPropagation(); });
-    document.addEventListener('click', function () { closePrinterPop(); closeChangesPop(); });
-    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { closePrinterPop(); closeChangesPop(); } });
+    // version 8: the printer details also open when the pointer rests on the icon
+    bindPrinterHover();
+    document.addEventListener('click', function () { closePrinterPop(); closeChangesPop(); closeKey(); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { closePrinterPop(); closeChangesPop(); closeKey(); } });
     // a joined pop follows its icon or chip when the panel is widened
     window.addEventListener('resize', function () { placePrinterPop(); if (!$('#chg-pop').hidden) renderChangesPop(); });
   }
@@ -2110,7 +2231,7 @@
     if (S.step === 'send') renderSend();
   }
 
-  bindNav(); bindSetup(); bindAdvanced(); bindParts(); bindLayout(); bindPreview();
+  bindTips(); bindNav(); bindSetup(); bindAdvanced(); bindParts(); bindLayout(); bindPreview();
 
   window.Wizard = {
     Mock: Mock, reset: reset, onOnshapeSelect: onOnshapeSelect, setOption: setOption,

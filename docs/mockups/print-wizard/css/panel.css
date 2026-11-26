@@ -1,4 +1,4 @@
-/* The panel: PenguinCAM's wizard look, since version 4 (this is version 7). Colours are PenguinCAM's light theme
+/* The panel: PenguinCAM's wizard look, since version 4 (this is version 8). Colours are PenguinCAM's light theme
    (static/wizard.css :root[data-theme="light"]); fonts, font sizes, paddings, radii, the
    step pills, chips, cards and the bottom buttons are its measurements, copied, not
    judged by eye. Scoped to #wizard because here the panel is a block in the page.
@@ -339,10 +339,22 @@
 .layer-slider:focus-visible .ls-thumb { box-shadow: 0 0 0 2px var(--accent); }
 .layer-row { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
 #layer-readout { font-variant-numeric: tabular-nums; }
-/* the key of the layer preview's two colours, "Part · Supports", only with supports on */
-.legend { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 8px 0 0; padding: 0; font-size: 12px; color: var(--ink); }
-.legend li { display: flex; gap: 6px; align-items: center; }
-.legend i { width: 14px; height: 4px; border-radius: 2px; display: inline-block; }
+/* version 8: the key of the layer preview's four colours, behind a small icon at the view's
+   top left, closed by default; it opens joined to the icon, as the printer details do */
+#wizard .icon-btn.key-btn { position: absolute; left: 6px; top: 6px; z-index: 3; width: 26px; height: 26px; background: rgba(255, 255, 255, 0.92); border: 1px solid var(--line); border-radius: 6px; }
+#wizard .icon-btn.key-btn svg { width: 16px; height: 16px; }
+#wizard .icon-btn.key-btn[aria-expanded="true"] { background: var(--panel); border-bottom-color: var(--panel); border-radius: 6px 6px 0 0; z-index: 5; }
+.pv-key { position: absolute; left: 6px; top: 31px; z-index: 4; list-style: none; margin: 0; padding: 6px 10px 8px; background: var(--panel); border: 1px solid var(--line);
+          border-radius: 0 8px 8px 8px; box-shadow: 0 6px 18px rgba(31, 35, 40, 0.14); font-size: 12px; line-height: 1.45; color: var(--ink); max-width: calc(100% - 50px); }
+.pv-key li { display: flex; gap: 8px; align-items: center; padding: 1px 0; }
+.pv-key i { flex: none; width: 16px; height: 5px; border-radius: 2px; display: inline-block; }
+
+/* ---- version 8: the panel's own tooltip (the step circles and every control with one),
+   in place of the browser's: shown after 150 ms on hover and at once on keyboard focus,
+   styled like the printer details and kept inside the panel ---- */
+.wiz-tip { position: absolute; z-index: 60; max-width: min(300px, calc(100% - 12px)); padding: 5px 10px; background: var(--panel); color: var(--ink);
+           border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 18px rgba(31, 35, 40, 0.14); font-size: 14px; line-height: 1.45;
+           pointer-events: none; white-space: normal; overflow-wrap: anywhere; }
 .toast { margin: 10px 0; font-size: 12px; color: var(--ink); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
 
 /* ---- Send: the summary card, the plate reminder, the busy printer, the progress ---- */
@@ -420,7 +432,7 @@
 #wizard .icon-btn:hover { background: var(--panel-2); border-color: var(--line); color: var(--ink); }
 #wizard .icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .icon-btn svg { width: 18px; height: 18px; }
-/* below 480 px: the accordion of sections, one open at a time. Version 7: each section is a
+/* below 480 px: the accordion of sections, each opened and closed by itself (version 8). Version 7: each section is a
    bordered card like PenguinCAM's .card (#ffffff, 1px #d0d7de, radius 6px): its heading is
    the card's title, its groups are rows inside it; a closed section is a slim card. */
 .adv-accordion { padding-top: 10px; }

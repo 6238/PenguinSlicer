@@ -1,4 +1,4 @@
-# PenguinSlicer mockup: decisions and fakes (version 7)
+# PenguinSlicer mockup: decisions and fakes (version 8)
 
 The mockup is [index.html](index.html) in this folder; serve the folder with any static
 file server and open it. It is a throwaway: its only product is your reactions.
@@ -10,6 +10,36 @@ something, the mockup had to; each such decision is listed below as the choice m
 
 This file says "user" for the person using PenguinSlicer and "administrator" for whoever
 edits the configuration.
+
+## What changed in version 8
+
+Built from the owner's review of version 7 (Thu 2026-11-26), meant as the last round on the
+mockup before implementation. Nothing else changed.
+
+- **The panel has its own tooltip** (decision 63). The step circles' tooltips, and every
+  other tooltip in the panel, appear 150 ms after the pointer rests on them and at once on
+  keyboard focus, in PenguinSlicer's font at the body text size (14 px), in a white box
+  styled like the printer details, kept inside the panel. The browser's tooltip is gone
+  from the panel.
+- **Advanced mode opens with everything open and remembers what the user closes**
+  (decision 13). Every section and every group starts open. Each one's open or closed
+  state lasts while the page is open: across steps, closing and reopening advanced mode,
+  and the accordion and the rail as the panel crosses 480 px. Below 480 px the sections
+  no longer close each other: each card opens and closes by itself.
+- **The printer details open when the pointer rests on the printer-status icon**
+  (decision 44), and stay open while it is over the icon or the details; a click still
+  opens them and keeps them open. The icon has no tooltip any more.
+- **Arrange never turns an instance** (decision 64). Every instance keeps the orientation
+  it was given, by lay on face, by the rotation handle or by the wizard; Arrange moves it
+  only. "Arranged 5 instances, turning 5." is now "Arranged 5 instances."
+- **The layer preview has four fixed colours** (decision 33): walls blue `#2b5c9e`,
+  infill orange `#e0912f`, top and bottom surfaces green `#2f9e7a`, supports and brim
+  violet-grey `#9a8fb8`. They follow neither the filament nor Orca Slicer. The colour key,
+  four rows, opens from a small icon at the view's top left and is closed by default.
+- **The layer preview reads better at every layer count** (decision 33), after test
+  renders: lines have the extrusion's width when zoomed in and at least one pixel when
+  zoomed out; walls are shaded by the way they face; the current layer is drawn over the
+  others, unshaded and at least two pixels wide; the part above it is a faint ghost.
 
 ## What changed in version 7
 
@@ -141,14 +171,16 @@ Each term has one meaning in the mockup and in this file.
 | **advanced mode** | The view that fills the panel with every slicing setting. |
 | **section** | One of advanced mode's five top divisions, as in Orca Slicer: Quality, Strength, Speed, Support, Others. Below 480 px each is a card. |
 | **group** | A collapsible set of settings inside a section, such as Precision. |
-| **accordion** | Advanced mode below 480 px: the sections as headings, one open at a time. |
+| **accordion** | Advanced mode below 480 px: the sections as cards, each opened and closed by itself (version 8). |
 | **rail** | Advanced mode from 480 px: the section names in a column down the left. |
 | **units of a part** | Inches or millimetres: the units of the Part Studio or Assembly it was picked in, or the configuration's units for uploads. |
 | **printer and plate figures** | The plate's size, the height limit, the spacing between instances, distances between instances and heights above the plate (a layer's, a slicing error's): always in millimetres. |
 | **slice job** | One plate configuration being sliced by the slice service. |
 | **delivery job** | One sliced file's way from Send to the end of its print (printer delivery's term). |
 | **printer-status icon** | The small pill at the right of the header: a printer, a dot and a word. |
-| **printer details** | What a click on the printer-status icon opens, joined to it. |
+| **printer details** | What the pointer resting on, or a click on, the printer-status icon opens, joined to it. |
+| **tooltip** | The panel's own small white box that names or explains the element under the pointer or with keyboard focus (decision 63). |
+| **colour key** | The four rows naming the layer preview's colours, behind a small icon at the view's top left (decision 33). |
 | **last-print note** | The one line "Your print finished at 11:25 am." for the user whose print finished (decision 60). |
 | **busy printer** | The printer printing, receiving or waiting for a person on another user's delivery job. |
 | **notification** | A card at the top of a step, closed with ×, that reports something not on a row: a part that did not arrive, a resumed session. It belongs to that step and goes when the user leaves it, or as soon as it stops being true. |
@@ -237,8 +269,9 @@ step. Not provided today. The slice service's spacing between instances is 12 mm
 supports on and 5 mm with them off, as the mockup uses it.
 
 **On the configuration and the Onshape source:** the configuration lists the profiles of
-each filament (not one list for all), a colour for each filament for the layer preview, and
-the option that makes millimetres the units of uploaded files. The Onshape source gives
+each filament (not one list for all) and the option that makes millimetres the units of
+uploaded files. (Version 8: no colour for each filament; the layer preview's colours are
+fixed.) The Onshape source gives
 each part the units of its Part Studio or Assembly, failing that the part's own units or
 Onshape's default units, whichever the API gives.
 
@@ -271,8 +304,9 @@ Onshape's default units, whichever the API gives.
    in Material's compact stepper: five small circles joined by a line, a check in each done
    step, the current one filled in the accent blue with its name beside it, so the header
    stays one row and the content the user works with stays high in the panel. Every circle
-   stays clickable and has its step's name as its tooltip ("3. Layout"); focused by
-   keyboard, the ring goes round the circle alone. A click on a tab
+   stays clickable and has its step's name as its tooltip ("3. Layout"), the panel's own
+   tooltip since version 8 (decision 63); focused by keyboard, the ring goes round the
+   circle alone and the tooltip shows at once. A click on a tab
    goes there when every step before it allows. When one does not, one line under the tabs
    names the step and why ("Layout first: 23 instances are closer than 12 mm with supports
    on."); it goes at the next move, or after a few seconds.
@@ -308,6 +342,22 @@ Onshape's default units, whichever the API gives.
    configuration's units for uploaded files. What the mockup fakes is said there (an armed
    error's option says what it does to the plate, and "How to use this mockup") and below,
    never in the panel (version 7).
+63. **The panel's own tooltip** (version 8, the owner: the step circles' tooltips appear
+   faster, look like the rest of PenguinSlicer and have larger text). Every tooltip in the
+   panel is one small white box, styled like the printer details (a 1 px `#d0d7de` border,
+   radius 8 px, the same shadow), in the panel's font at the body text size, 14 px. It
+   appears 150 ms after the pointer comes to rest on its element (the browser's waits about
+   a second) and at once when the element gets keyboard focus; it goes when the pointer
+   leaves, on a press, on Escape and when focus leaves. It sits under its element, or above
+   it where the panel ends, centred on it and kept at least 6 px inside the panel's edges,
+   so it never leaves a 320 px panel. A screen reader hears it: a step circle's name ("Step
+   3: Layout") already says it, and every other element carries its text as its
+   description. The step circles were the request; every other control in the panel that
+   had the browser's tooltip (the buttons, links, the plate summary, advanced mode's labels,
+   the Layout step's view buttons) has the same tooltip, since one rule covers them all.
+   Two keep the browser's: the options inside a menu (the browser draws an open menu), and
+   the Preview view's "Drag to turn…", which would sit over the view the user is dragging.
+   The printer-status icon has none (decision 44). Touch shows no tooltip.
 
 ### Words on the panel (version 6)
 
@@ -340,7 +390,8 @@ Onshape's default units, whichever the API gives.
     said is a move the wizard made that the user did not ask for: "L Bracket #1 no longer
     fitted where it stood, so it was moved to the nearest free spot.", an instance left
     beside the plate, or "Arranged the plate again to make room." after Auto-orient. Such a
-    message, and "Arranged 5 instances, turning 5." after Arrange, goes when the user
+    message, and "Arranged 5 instances." after Arrange (version 8: Arrange turns nothing, so
+    no longer "…, turning 5"), goes when the user
     leaves the Layout step (fix round 1 of version 7).
 
 ### Parts step (step 1)
@@ -435,14 +486,27 @@ Called Setup until version 5; the decisions keep their numbers.
     box. With no change, the Advanced mode button stands alone.
 13. **Advanced mode** (version 6) fills the panel, its top line repeating "PenguinSlicer"
     with the printer-status icon. No search box, no Common / All switch, no "Changed only"
-    (M26): every setting of the sample is shown, in groups that start closed (a group
-    holding a change starts open). **Below 480 px, an accordion of cards** (cards since
-    version 7): each section is a bordered card like PenguinCAM's cards (white, a 1 px
-    `#d0d7de` border, radius 6 px), whose title is the section's bold heading with a
-    chevron, its changed count ("Strength · 1 changed") and, on the open section, the
+    (M26): every setting of the sample is shown, in groups. **Everything starts open**
+    (version 8, the owner): every section and every group is open the first time advanced
+    mode is shown. **Advanced mode remembers what is open** (version 8, the owner): each
+    section's and each group's open or closed state is kept in the page's memory (not the
+    browser's storage) for as long as the page is open. It survives moving between steps,
+    closing and reopening advanced mode, and the panel crossing 480 px either way (the
+    accordion and the rail share it; the rail shows one section at a time, as before, and
+    the accordion shows each section open or closed as it was left). The Expand all /
+    Collapse all icon opens or closes every group of its section and that is remembered
+    too; a line of the changes box opens its setting's section and group and that stays
+    open. A reload forgets it all, and everything is open again. Nothing on a single
+    setting opens or closes (its "Profile 0.012 mm · Reset" line shows whenever the setting
+    is changed), so a setting has no state of its own to remember; "each setting" in the
+    owner's words is read as each group of settings. **Below 480 px, an accordion of cards**
+    (cards since version 7): each section is a bordered card like PenguinCAM's cards (white,
+    a 1 px `#d0d7de` border, radius 6 px), whose title is the section's bold heading with a
+    chevron, its changed count ("Strength · 1 changed") and, on an open section, the
     Expand all / Collapse all icon at its right; the section's groups are rows inside the
-    card, with the same chevrons but lighter type; a closed section is a slim card; one
-    section is open at a time. **From 480 px, a rail** (no card there: it would make the
+    card, with the same chevrons but lighter type; a closed section is a slim card. Since
+    version 8 each section opens and closes by itself (until version 7 one was open at a
+    time). **From 480 px, a rail** (no card there: it would make the
     settings more cramped) of section names down the left, with a changed count on each, and the
     open section's groups beside it; the icon sits at the top right of the groups. **The
     groups are always one column,** at most 480 px wide, so each value stays near its name
@@ -477,7 +541,7 @@ Called Setup until version 5; the decisions keep their numbers.
     Arrange to make room.
 27. Everything else is as version 3: no modes; the mouse schemes (M2); the ways to lay an
     instance on a face (M1; see decision 49); auto-orient on arrival (M3); Arrange with its
-    two packers and its offer to lay instances their best way when that fits more (M6); the
+    two packers (which turn nothing since version 8, decision 64) and its offer to lay instances their best way when that fits more (M6); the
     status line (M7); the rotation handle drawn over everything (bound to the instance since
     version 7, decision 62); the placement rules of the
     slice service (decision 57, 3 mm inside the edge, 340 mm tall).
@@ -502,6 +566,22 @@ Called Setup until version 5; the decisions keep their numbers.
     sliced: with Supports on, instances need 0.472 in between them." above the usual
     message ("Not sliced: with Supports on, instances need 12 mm between them." since
     version 7). Nothing moves by itself; Arrange is the user's choice.
+64. **Arrange never turns an instance** (version 8, the owner). Every instance keeps the
+    orientation it was given: by lay on face, by the rotation handle, or by the wizard.
+    Arrange (both packers, and every Arrange the wizard runs itself, after Auto-orient or
+    "Lay them the best way") only moves instances. Until version 7 the pile packer tried
+    each instance at the angle that gives its outline the smallest rectangle and at quarter
+    turns from it, and the shelf packer turned an instance that did not fit; so an instance
+    turned to 37° with the rotation handle came back square after Arrange. The spacing (12
+    mm with supports on, 5 mm off) and the placement check measure each instance's outline
+    as it is turned. **The wizard still turns an instance when it gives it an orientation:**
+    a part that arrives too long for the plate as it lies (the Shooter Hood Rib, 353 mm on a
+    340 × 320 mm plate) is turned a quarter, an eighth or three eighths of a turn, the first
+    that fits, before the first Arrange; so is an instance Auto-orient lays down that is
+    then too long; and an instance moved to the nearest free spot after a lay-down may still
+    be turned (decision 26). An instance that fits only turned and was not turned waits
+    beside the plate after Arrange; its message ends "…, or turn or lay instances another
+    way to make room."
 
 ### Preview step
 
@@ -526,11 +606,47 @@ Called Setup until version 5; the decisions keep their numbers.
 33. **The result:** print time and grams, a quiet line of instances, layers and slice time,
     and the layer preview with its layer bar, read out under it as "134 / 134 · 40.2 mm"
     (always millimetres since version 7; one line at 320 px); the bar reports its layer to a screen reader and moves with the
-    arrow keys. **Two colours** (version 6): every line of the
-    parts (walls, infill, surfaces, brim) in the filament's colour, and supports with their
-    interface in light grey. The key, "Part · Supports", shows under the view only when
-    supports are on. No line type can be hidden. How to turn, pan and zoom the view is its
+    arrow keys. No line type can be hidden. How to turn, pan and zoom the view is its
     tooltip.
+    **Four fixed colours** (version 8, the owner, replacing version 6's two), one for each
+    group of line types, whatever the filament and unlike Orca Slicer's, which a user will
+    not know:
+
+    | Group | Line types | Colour |
+    |---|---|---|
+    | Walls | outer and inner walls | blue `#2b5c9e` |
+    | Infill | sparse and internal solid infill | orange `#e0912f` |
+    | Top and bottom surfaces | top and bottom surfaces | green `#2f9e7a` |
+    | Supports and brim | supports, their interface, and the brim | violet-grey `#9a8fb8` |
+
+    Why these: four hues about a quarter of the colour wheel apart (CIELAB hue 279°, 70°,
+    166°, 302°), so each pair differs in hue; different lightness (L\* 39 walls, 59
+    surfaces, 62 supports and brim, 67 infill), so pairs still differ when hue is lost; the
+    darkest colour for the walls, which outline every part and are what the eye reads first
+    (contrast 6.1:1 on the view's background `#f2f4f7`; the others 2.3:1 to 3.0:1); the
+    least saturated colour for supports and brim, which are not the part and should recede;
+    moderate chroma (C\* 24 to 65) so the view sits calmly beside the wizard's blue accent
+    and greys. Checked by simulation (Machado, Oliveira and Fernandes 2009, full severity)
+    for protanopia, deuteranopia and tritanopia: the smallest CIEDE2000 difference between
+    any two of the four in any of the four kinds of vision is 16.8 (infill and surfaces
+    under protanopia; the smallest under deuteranopia is 21.4, surfaces and supports; under
+    tritanopia 20.3, walls and surfaces), and every colour stays at least 24 from the
+    background. The Okabe-Ito set, the usual safe choice, scored 10.9 and is louder.
+    **The colour key** (version 8): a small icon at the view's top left, its four stripes in
+    the four colours, opens a key of four rows (a stripe and its group's name), joined to
+    the icon as the printer details are to theirs. It is closed by default and closes on a
+    second click, a click elsewhere, Escape or leaving the step. The four rows are always
+    there, with supports off too (the brim has their colour).
+    **How the view draws** (version 8, after test renders at five layer counts on two plates,
+    with supports on and off): each line has the extrusion's width (0.42 mm) at its distance
+    from the camera and never less than 1 pixel, so lines get their weight when zoomed in and
+    stay visible zoomed out (version 7's lines were always 1 pixel). Walls are shaded by the
+    way they face, lighter towards the Layout view's main light (front left, above) and
+    darker away from it, so a stack of walls reads as a surface. The current layer is drawn
+    over the layers below, unshaded and at least 2 pixels wide, so the layer the bar is on
+    stands out. Above it, each instance is a faint grey ghost (grey `#95a0ac`, 36% opaque)
+    cut at the current layer, so the user sees what is still to print; the ghost goes when
+    every layer is shown.
 34. Next goes to the Send step once the plate is sliced.
 
 ### Send step
@@ -599,6 +715,16 @@ Called Setup until version 5; the decisions keep their numbers.
     - No printer paired: "PenguinSlicer needs to be paired with a printer." and a link,
       "How to pair a printer", to a documentation page still to be written.
     A click elsewhere, Escape or × closes it.
+    **The details also open when the pointer rests on the icon** (version 8, the owner):
+    150 ms after the pointer enters the icon, so a pointer passing over it does not open
+    them. Opened that way, they stay open while the pointer is over the icon or the details
+    (the two touch, so moving from one to the other never closes them) and close 300 ms
+    after it leaves both. A click still opens them, and pins them: a pinned details stays
+    until a click elsewhere, Escape, × or a second click on the icon. A click on details
+    opened by the pointer pins them rather than closing them. Touch and the keyboard work
+    as before: a tap or Enter is a click. Opening them closes the change details, as a
+    click did. The icon has no tooltip (until version 7: "Shop H2S is free: click for
+    details"); a screen reader hears the same sentence as its description.
 
 ### Coming back to running work
 
@@ -724,7 +850,7 @@ Called Setup until version 5; the decisions keep their numbers.
 20. **The mock parts were drawn in millimetres,** so the "inch" parts have sizes that are
     not round in inches (the L Bracket is 2.362 × 1.181 × 1.575 in). A part drawn in inches
     would show 2.000 × 1.000 × 1.500 in.
-21. The second filaments' profiles, their values and the filament colours are invented.
+21. The second filaments' profiles and their values are invented.
 22. The "How to pair a printer" link goes nowhere; the page is still to be written.
 23. Each file uploaded on the standalone page becomes one of the mock parts, whatever its
     name; the file itself is not read; the units it is read in are the configuration's
