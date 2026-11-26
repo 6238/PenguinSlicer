@@ -266,7 +266,11 @@ machine. The user downloads the sliced file. No printer.
     service returns the sliced file and a summary, not toolpaths. The heaviest target
     plate of the Popcorn Penguins has about a million lines of G-code (an 8.8 MB sliced
     file); a plate of twelve Elevator Block Bottom Inners gives a 10.8 MB sliced file, and 14.1 MB with
-    supports on.
+    supports on. The preview must show no combs and no show-through at any viewing angle,
+    stay within a frame budget on a machine without a graphics card, and draw again after
+    a lost WebGL context; the implementer proves its appearance with test renders of real
+    sliced plates, looked at one by one. The requirements, and the mockup's artefacts that
+    prompted them, are in decision 33 of [the mockup's decisions](../mockups/print-wizard/DECISIONS.md).
   - Coming back. A page that has lost its state finds its running or finished slice job
     and plate configuration; the HTTP interface offers no way to find a slice job except
     by its id.
