@@ -108,7 +108,20 @@
       if (b.maxY > plate.y - plate.margin + EPS) edges.push('back');
       var off = edges.length > 0;
       var outside = b.minX > plate.x || b.maxX < 0 || b.minY > plate.y || b.maxY < 0;
-      if (off) {
+      var long = off ? tooLong(c, plate) : null;
+      if (long) {
+        // fix round 1 of version 8: an instance longer or wider than the plate takes as it is
+        // turned. Arrange never turns, so it cannot help; the remedy is the wizard's turn.
+        var U0 = window.MockUnits, own0 = plate.unitsOf ? plate.unitsOf(c) : 'mm';
+        var size = own0 === 'in' ? U0.len(long.size, 1, 'mm') + ' (' + U0.len(long.size, 0, 'in') + ')' : U0.len(long.size, 0, 'mm');
+        var said = labelOf(c) + ' is ' + size + (long.axis === 'x' ? ' from left to right' : ' from front to back') +
+          ' as it is turned; the plate takes ' + U0.len(long.usable, 0, 'mm') + '.';
+        var remedy = long.turn ? ' Turn it to fit turns it and arranges the plate again.' : ' Lay it down another way.';
+        problems.push({ rule: 'off_plate', instances: [c.id], turnToFit: !!long.turn, message: outside
+          ? said + remedy
+          : labelOf(c) + ' is not fully on the plate: it crosses the ' + edges.join(' and ') + ' edge' + (edges.length > 1 ? 's' : '') + '. ' +
+            said.replace(labelOf(c), 'It') + remedy });
+      } else if (off) {
         problems.push({ rule: 'off_plate', instances: [c.id], message: outside
           ? labelOf(c) + ' is off the plate. Drag it onto the plate, or press Arrange.'
           : labelOf(c) + ' is not fully on the plate: it crosses the ' + edges.join(' and ') + ' edge' +
@@ -149,10 +162,11 @@
     instance.d = null;
   }
 
-  // The wizard's turn for an instance that arrives too long for the plate as it lies (the Shooter
-  // Hood Rib, 353 mm, on a 340 × 320 mm plate): the first of a quarter turn, an eighth and three
-  // eighths that fits. This is the wizard giving an orientation on arrival, before the first
-  // Arrange; Arrange itself never turns. Returns the angle turned, 0 when none was needed or none fits.
+  // The wizard's turn for an instance too long for the plate as it lies (the Shooter Hood Rib,
+  // 353 mm, on a 340 × 320 mm plate): the first of a quarter turn, an eighth and three eighths
+  // that fits. The wizard turns this way when it gives an orientation: on arrival, after a
+  // lay-down that leaves the instance beside the plate, and when the user presses "Turn it to
+  // fit". Arrange itself never turns. Returns the angle turned, 0 when none was needed or none fits.
   function fitTurn(instance, plate) {
     var usableX = plate.x - 2 * plate.margin, usableY = plate.y - 2 * plate.margin, d = derive(instance);
     if (d.w <= usableX && d.l <= usableY) return 0;
@@ -163,6 +177,16 @@
     }
     instance.q = q0; instance.d = null;
     return 0;
+  }
+  // Whether an instance is longer or wider than the plate takes as it is turned: null, or
+  // { axis 'x' (left to right) or 'y' (front to back), size, usable, turn: the angle fitTurn
+  // would turn it, 0 when no turn fits }. Changes nothing.
+  function tooLong(instance, plate) {
+    var usableX = plate.x - 2 * plate.margin, usableY = plate.y - 2 * plate.margin, d = derive(instance);
+    var axis = d.w > usableX + EPS ? 'x' : d.l > usableY + EPS ? 'y' : null;
+    if (!axis) return null;
+    var probe = { partKey: instance.partKey, q: instance.q.clone(), x: 0, y: 0 };
+    return { axis: axis, size: axis === 'x' ? d.w : d.l, usable: axis === 'x' ? usableX : usableY, turn: fitTurn(probe, plate) };
   }
 
   // Shelf packing, largest first. Version 8 (the owner): Arrange never turns an instance; each
@@ -359,7 +383,7 @@
 
   // Arrange as the research recommends: run the shelf packer above and the pile, keep the
   // result that leaves fewer instances beside the plate, the smaller pile breaking a tie.
-  // Returns { parked, placed, turned, used: 'pile' | 'shelf', ms }.
+  // Returns { parked, placed, used: 'pile' | 'shelf', ms }.
   function bestArrange(instances, plate) {
     var t0 = performance.now();
     function snap() { return instances.map(function (c) { return { c: c, x: c.x, y: c.y, q: c.q.clone() }; }); }
@@ -376,11 +400,10 @@
     restore(start);
     var pp = pile(instances, plate), pArea = pileArea(), used = 'pile';
     if (pa < pp || (pa === pp && aArea < pArea)) { restore(A); used = 'shelf'; }
-    var parked = used === 'pile' ? pp : pa, turned = 0;
-    start.forEach(function (s) { if (s.q.angleTo(s.c.q) > 0.02) turned++; });
-    return { parked: parked, placed: instances.length - parked, turned: turned, used: used, ms: Math.round(performance.now() - t0) };
+    var parked = used === 'pile' ? pp : pa;
+    return { parked: parked, placed: instances.length - parked, used: used, ms: Math.round(performance.now() - t0) };
   }
 
-  window.MockPlate = { derive: derive, worldHull: worldHull, check: check, arrange: arrange, bestArrange: bestArrange, fitTurn: fitTurn, place: place, placeNear: placeNear,
+  window.MockPlate = { derive: derive, worldHull: worldHull, check: check, arrange: arrange, bestArrange: bestArrange, fitTurn: fitTurn, tooLong: tooLong, place: place, placeNear: placeNear,
                        centre: centre, yaw: yaw, bbox: bbox, inside: inside };
 })();

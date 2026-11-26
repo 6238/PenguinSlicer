@@ -311,7 +311,7 @@
             var src = L[t.id], dst = acc[t.id].pos, shs = L.shade[t.id], dsh = acc[t.id].shade;
             for (var i = 0; i < src.length; i += 4) {
               dst.push(src[i] + it.x, src[i + 1] + it.y, z, src[i + 2] + it.x, src[i + 3] + it.y, z);
-              dsh.push(shs ? shs[i / 4] : 0.5);
+              dsh.push(shs ? shs[i / 4] : 1);
               var dx = src[i + 2] - src[i], dy = src[i + 3] - src[i + 1];
               length[t.id] += Math.sqrt(dx * dx + dy * dy);
             }
@@ -322,7 +322,7 @@
         k++;
       }
       if (k < layers) setTimeout(step, 0);
-      else onDone({ acc: acc, layers: layers, zs: zsAll, length: length });
+      else onDone({ acc: acc, layers: layers, zs: zsAll, length: length, lineWidth: S.line_width });
     }
     setTimeout(step, 0);
     return { cancel: function () { cancelled = true; } };
@@ -347,7 +347,7 @@
 
   /* --------------------------------------------------- lines with a width */
   // WebGL draws a line one pixel wide whatever the zoom. Each toolpath segment is drawn instead
-  // as a quad facing the camera, as wide as the extrusion (0.42 mm) seen at that distance and
+  // as a quad facing the camera, as wide as the sliced settings' line width seen at that distance and
   // never thinner than a set number of pixels, so lines get their real weight when zoomed in
   // and stay visible when zoomed out. One instanced quad per segment; the draw range is the
   // instance count.
@@ -380,13 +380,13 @@
     return new T.ShaderMaterial({ vertexShader: LINE_VS, fragmentShader: LINE_FS,
       uniforms: { resolution: { value: new T.Vector2(1, 1) }, worldWidth: { value: worldWidth }, minPx: { value: minPx } } });
   }
-  // A segment's colour: the group's colour for a flat line (shade 0.5); a wall darker as it
-  // turns from the light (shade 0) and lighter as it faces it (shade 1).
+  // A segment's colour: the group's colour for a flat line and for a wall facing the light
+  // (shade 1); a wall darker as it turns from the light, down to 0.66 of it (shade 0: walls
+  // #1c3d68). Fix round 1 of version 8: shading only darkens, so no wall comes nearer to
+  // another group's colour than the flat colour that was checked for colour blindness.
   function shaded(base, t, out, o) {
-    var c = new T.Color(base), r = c.r, g = c.g, b = c.b;
-    if (t < 0.5) { var k = 0.66 + 0.34 * (t / 0.5); r *= k; g *= k; b *= k; }
-    else { var m = 0.28 * ((t - 0.5) / 0.5); r += (1 - r) * m; g += (1 - g) * m; b += (1 - b) * m; }
-    out[o] = r; out[o + 1] = g; out[o + 2] = b;
+    var c = new T.Color(base), k = 0.66 + 0.34 * t;
+    out[o] = c.r * k; out[o + 1] = c.g * k; out[o + 2] = c.b * k;
   }
   // pos: [x1,y1,z1,x2,y2,z2,...] from segment `from` to `to`; flat: every segment in the group's colour
   function lineMesh(pos, shade, base, from, to, material, flat) {
@@ -395,7 +395,7 @@
       var p = (from + i) * 6;
       st[i * 3] = pos[p]; st[i * 3 + 1] = pos[p + 1]; st[i * 3 + 2] = pos[p + 2];
       en[i * 3] = pos[p + 3]; en[i * 3 + 1] = pos[p + 4]; en[i * 3 + 2] = pos[p + 5];
-      shaded(base, flat ? 0.5 : shade[from + i], col, i * 3);
+      shaded(base, flat ? 1 : shade[from + i], col, i * 3);
     }
     var g = new T.InstancedBufferGeometry();
     g.index = QUAD.index; g.setAttribute('position', QUAD.attributes.position);
@@ -408,6 +408,11 @@
   }
 
   /* --------------------------------------------------- the viewer */
+  // Fix round 1 of version 8 tried the review's cull (below the current layer, no inner walls
+  // or infill but for the 16 layers under it). It roughly halved the frame time on software
+  // WebGL but changed the look: holes read smaller and the background showed through along
+  // edges, where the inner walls fill in behind the one-line outer wall. Not kept; the cost and
+  // the requirements it sets for the implementation are in DECISIONS.md, decision 33.
   function createViewer(container, plate) {
     var canvas = document.createElement('canvas'); canvas.className = 'gl-canvas';
     container.appendChild(canvas);
@@ -446,7 +451,10 @@
     renderer.localClippingEnabled = true;
     // Layers below the current one: at least 1 px wide, walls shaded. The current layer: drawn
     // again over them, unshaded and at least 2 px wide, so the layer the bar is on stands out.
-    var belowMat = lineMaterial(1, 0.42), currentMat = lineMaterial(2, 0.42), current = [];
+    // Fix round 1 of version 8: each line is as wide as the sliced settings' line width, the
+    // width the mock's paths are laid apart, so a solid surface reads as one colour.
+    var belowMat = lineMaterial(1, 0.62), currentMat = lineMaterial(2, 0.62), current = [];
+    function setWidth(w) { belowMat.uniforms.worldWidth.value = w; currentMat.uniforms.worldWidth.value = w; }
     function setResolution() {
       var v = new T.Vector2(); renderer.getDrawingBufferSize(v);
       belowMat.uniforms.resolution.value.copy(v); currentMat.uniforms.resolution.value.copy(v);
@@ -475,7 +483,7 @@
     // Version 8: four fixed colours, one per group (walls; infill; top and bottom surfaces;
     // supports and brim), whatever the filament.
     function show(res, instances) {
-      clear(); result = res; setResolution();
+      clear(); result = res; setResolution(); setWidth(res.lineWidth || 0.62);
       TYPES.forEach(function (t) {
         var a = res.acc[t.id]; if (!a.pos.length) return;
         var l = lineMesh(a.pos, a.shade, t.color, 0, a.pos.length / 6, belowMat, false);

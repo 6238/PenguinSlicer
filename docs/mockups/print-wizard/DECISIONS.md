@@ -18,9 +18,10 @@ mockup before implementation. Nothing else changed.
 
 - **The panel has its own tooltip** (decision 63). The step circles' tooltips, and every
   other tooltip in the panel, appear 150 ms after the pointer rests on them and at once on
-  keyboard focus, in PenguinSlicer's font at the body text size (14 px), in a white box
+  keyboard focus of an icon or a step circle, in PenguinSlicer's font at the body text size (14 px), in a white box
   styled like the printer details, kept inside the panel. The browser's tooltip is gone
-  from the panel.
+  from the panel but for the options inside a menu. A tooltip says only what is not on
+  screen (fix round 1).
 - **Advanced mode opens with everything open and remembers what the user closes**
   (decision 13). Every section and every group starts open. Each one's open or closed
   state lasts while the page is open: across steps, closing and reopening advanced mode,
@@ -31,15 +32,21 @@ mockup before implementation. Nothing else changed.
   opens them and keeps them open. The icon has no tooltip any more.
 - **Arrange never turns an instance** (decision 64). Every instance keeps the orientation
   it was given, by lay on face, by the rotation handle or by the wizard; Arrange moves it
-  only. "Arranged 5 instances, turning 5." is now "Arranged 5 instances."
+  only. "Arranged 5 instances, turning 5." is now "Arranged 5 instances." An instance too
+  long for the plate as it is turned says so with both lengths and offers **Turn it to
+  fit** (fix round 1).
 - **The layer preview has four fixed colours** (decision 33): walls blue `#2b5c9e`,
   infill orange `#e0912f`, top and bottom surfaces green `#2f9e7a`, supports and brim
   violet-grey `#9a8fb8`. They follow neither the filament nor Orca Slicer. The colour key,
   four rows, opens from a small icon at the view's top left and is closed by default.
 - **The layer preview reads better at every layer count** (decision 33), after test
-  renders: lines have the extrusion's width when zoomed in and at least one pixel when
-  zoomed out; walls are shaded by the way they face; the current layer is drawn over the
-  others, unshaded and at least two pixels wide; the part above it is a faint ghost.
+  renders: lines have the settings' line width when zoomed in and at least one pixel when
+  zoomed out; walls are shaded darker by the way they face; the current layer is drawn over the
+  others, unshaded and at least two pixels wide; the part above it is a faint ghost. What
+  that costs to draw without a graphics card, and what the implementation must do about
+  it, is in decision 33.
+- **Fix round 1** (after the first review of version 8): the items marked "fix round 1"
+  above and below, and the Preview step's "?" icon for how to move the view.
 
 ## What changed in version 7
 
@@ -51,7 +58,7 @@ Built from the owner's review of version 6 (Wed 2026-11-25). Nothing else change
   while dragged. Turning is free, with a readout beside the handle ("↺ 37°") giving the
   instance's orientation on the plate; **Shift** snaps that orientation to multiples of
   45° (0, 45, 90…), as CAD programs do, so an instance turned at an odd angle can be
-  squared again. The tooltip says "Drag to turn · Shift: 45° steps". Version 6's
+  squared again. The pointer line says "Drag to turn · Shift: 45° steps". Version 6's
   5-degree catch round each 45° is gone.
 - **Round parts can be stood on their rim** (decision 61): where no kept hull face points
   within 30° of a side of the part's bounding box, a **bounding-box patch** lies on that
@@ -180,6 +187,7 @@ Each term has one meaning in the mockup and in this file.
 | **printer-status icon** | The small pill at the right of the header: a printer, a dot and a word. |
 | **printer details** | What the pointer resting on, or a click on, the printer-status icon opens, joined to it. |
 | **tooltip** | The panel's own small white box that names or explains the element under the pointer or with keyboard focus (decision 63). |
+| **pointer line** | The Layout view's own line at its bottom left that says what is under the pointer ("Drag to turn · Shift: 45° steps", "Lay it on this face: … tall", an instance's name). A line of the view, 11 px, fixed in its corner: not a tooltip, and not the status line. |
 | **colour key** | The four rows naming the layer preview's colours, behind a small icon at the view's top left (decision 33). |
 | **last-print note** | The one line "Your print finished at 11:25 am." for the user whose print finished (decision 60). |
 | **busy printer** | The printer printing, receiving or waiting for a person on another user's delivery job. |
@@ -306,7 +314,8 @@ Onshape's default units, whichever the API gives.
    stays one row and the content the user works with stays high in the panel. Every circle
    stays clickable and has its step's name as its tooltip ("3. Layout"), the panel's own
    tooltip since version 8 (decision 63); focused by keyboard, the ring goes round the
-   circle alone and the tooltip shows at once. A click on a tab
+   circle alone and the tooltip shows at once. The current step's circle, whose name shows
+   beside it, and the pills from 480 px have no tooltip (fix round 1 of version 8). A click on a tab
    goes there when every step before it allows. When one does not, one line under the tabs
    names the step and why ("Layout first: 23 instances are closer than 12 mm with supports
    on."); it goes at the next move, or after a few seconds.
@@ -347,17 +356,25 @@ Onshape's default units, whichever the API gives.
    panel is one small white box, styled like the printer details (a 1 px `#d0d7de` border,
    radius 8 px, the same shadow), in the panel's font at the body text size, 14 px. It
    appears 150 ms after the pointer comes to rest on its element (the browser's waits about
-   a second) and at once when the element gets keyboard focus; it goes when the pointer
-   leaves, on a press, on Escape and when focus leaves. It sits under its element, or above
+   a second); it goes when the pointer leaves, on a press, on Escape and when focus leaves.
+   It sits under its element, or above
    it where the panel ends, centred on it and kept at least 6 px inside the panel's edges,
-   so it never leaves a 320 px panel. A screen reader hears it: a step circle's name ("Step
-   3: Layout") already says it, and every other element carries its text as its
-   description. The step circles were the request; every other control in the panel that
+   so it never leaves a 320 px panel. A screen reader hears it once: a step circle's name
+   ("Step 3: Layout") already says it, so the circle has no description and is not pointed
+   at the tooltip; every other element carries its text as its description. The step
+   circles were the request; every other control in the panel that
    had the browser's tooltip (the buttons, links, the plate summary, advanced mode's labels,
    the Layout step's view buttons) has the same tooltip, since one rule covers them all.
-   Two keep the browser's: the options inside a menu (the browser draws an open menu), and
-   the Preview view's "Drag to turn…", which would sit over the view the user is dragging.
-   The printer-status icon has none (decision 44). Touch shows no tooltip.
+   **A tooltip says only what is not on screen** (fix round 1 of version 8): one whose text
+   is its element's own visible text (a part's name, the status line) shows only when that
+   text is cut short; a step pill, or the current step's circle, whose name shows has none;
+   it shows at once on keyboard focus only on an element with no visible text (an icon, a
+   step circle), so a menu or a text field shows its tooltip on hover only and never covers
+   the next field's label while the user tabs down a step. Only the options inside a menu
+   keep the browser's tooltip (the browser draws an open menu). How to move the Preview
+   step's view is behind a "?" icon, as on the Layout step (decision 33). The Layout view's
+   pointer line is not a tooltip (see Terms). The printer-status icon has none (decision
+   44). Touch shows no tooltip.
 
 ### Words on the panel (version 6)
 
@@ -443,7 +460,7 @@ The wizard opens on this step. Back is off here.
     heights and spacing to 1 mm, distances to 0.1 mm).
 54. **A part's own size follows its units** (version 7, replacing version 6's layout
     units): the selected instance's footprint and height on the Layout step, the hull
-    patches' and bounding-box patches' tooltips ("Lay it on this side: 1.732 in tall") and
+    patches' and bounding-box patches' pointer lines ("Lay it on this side: 1.732 in tall") and
     the resting-position strip are in the units of its part. **A comparison is made in one
     unit** (the owner, fix round 1 of version 7): where a part's figure is set against a
     printer's, as in the too-tall error, the part's figure is in millimetres too, with its
@@ -493,7 +510,9 @@ Called Setup until version 5; the decisions keep their numbers.
     browser's storage) for as long as the page is open. It survives moving between steps,
     closing and reopening advanced mode, and the panel crossing 480 px either way (the
     accordion and the rail share it; the rail shows one section at a time, as before, and
-    the accordion shows each section open or closed as it was left). The Expand all /
+    the accordion shows each section open or closed as it was left). The rail shows the
+    section last opened in the accordion; closing a section does not choose it (fix round
+    1 of version 8). The Expand all /
     Collapse all icon opens or closes every group of its section and that is remembered
     too; a line of the changes box opens its setting's section and group and that stays
     open. A reload forgets it all, and everything is open again. Nothing on a single
@@ -538,7 +557,9 @@ Called Setup until version 5; the decisions keep their numbers.
 26. **Laying an instance down never moves another instance** (M9). An instance that no
     longer fits where it stood moves to the nearest free spot, turned if need be; if there
     is none, it waits beside the plate, marked off the plate, and the message says to press
-    Arrange to make room.
+    Arrange to make room. It waits turned as the wizard turns an instance too long for the
+    plate (decision 64), so that Arrange, which never turns, can place it (fix round 1 of
+    version 8).
 27. Everything else is as version 3: no modes; the mouse schemes (M2); the ways to lay an
     instance on a face (M1; see decision 49); auto-orient on arrival (M3); Arrange with its
     two packers (which turn nothing since version 8, decision 64) and its offer to lay instances their best way when that fits more (M6); the
@@ -557,7 +578,7 @@ Called Setup until version 5; the decisions keep their numbers.
     instances are closer than 12 mm with supports on. Press Arrange, or drag them
     apart."), with one Arrange button; each of them stays marked in the view. An instance
     Arrange left beside the plate gets no error of its own: Arrange's message already
-    counts them, and the line under the view says "90 instances on the plate, 10 beside
+    counts them (except one too long for the plate as it is turned, decision 64), and the line under the view says "90 instances on the plate, 10 beside
     it." The line under the view says the spacing (since version 7 not whether supports
     are on; the errors say it).
     **"Turn on Supports and slice again"** (the empty-layers error) turns Supports on and
@@ -578,10 +599,18 @@ Called Setup until version 5; the decisions keep their numbers.
     a part that arrives too long for the plate as it lies (the Shooter Hood Rib, 353 mm on a
     340 × 320 mm plate) is turned a quarter, an eighth or three eighths of a turn, the first
     that fits, before the first Arrange; so is an instance Auto-orient lays down that is
-    then too long; and an instance moved to the nearest free spot after a lay-down may still
-    be turned (decision 26). An instance that fits only turned and was not turned waits
-    beside the plate after Arrange; its message ends "…, or turn or lay instances another
-    way to make room."
+    then too long, and one a lay-down leaves beside the plate (decision 26); and an
+    instance moved to the nearest free spot after a lay-down may still be turned.
+    **An instance longer or wider than the plate takes as it is turned** (fix round 1 of
+    version 8; the user squared it with the rotation handle, say) gets its own message
+    with both figures, in millimetres with the part's own units in brackets when they are
+    inches (decision 54): "Shooter Hood Rib #1 is 352.7 mm (13.885 in) from left to right as
+    it is turned; the plate takes 334 mm. Turn it to fit turns it and arranges the plate
+    again.", and one button, **Turn it to fit**, which turns it as on arrival and arranges
+    again. Where it still stands on the plate, the "not fully on the plate" error says the
+    same after its first sentence and offers Turn it to fit in place of Arrange. Arrange's
+    own message does not count such an instance. A part that fits the plate at no turn gets
+    "Lay it down another way." and no button.
 
 ### Preview step
 
@@ -606,8 +635,10 @@ Called Setup until version 5; the decisions keep their numbers.
 33. **The result:** print time and grams, a quiet line of instances, layers and slice time,
     and the layer preview with its layer bar, read out under it as "134 / 134 · 40.2 mm"
     (always millimetres since version 7; one line at 320 px); the bar reports its layer to a screen reader and moves with the
-    arrow keys. No line type can be hidden. How to turn, pan and zoom the view is its
-    tooltip.
+    arrow keys. No line type can be hidden. How to turn, pan and zoom the view is behind a
+    "?" icon beside Reset view, as on the Layout step ("Drag to turn, right-drag to pan,
+    scroll to zoom; drag the bar on the right to go through the layers."; fix round 1 of
+    version 8, which dropped the view's browser tooltip).
     **Four fixed colours** (version 8, the owner, replacing version 6's two), one for each
     group of line types, whatever the filament and unlike Orca Slicer's, which a user will
     not know:
@@ -638,15 +669,48 @@ Called Setup until version 5; the decisions keep their numbers.
     second click, a click elsewhere, Escape or leaving the step. The four rows are always
     there, with supports off too (the brim has their colour).
     **How the view draws** (version 8, after test renders at five layer counts on two plates,
-    with supports on and off): each line has the extrusion's width (0.42 mm) at its distance
+    with supports on and off): each line has the line width of the settings (0.62 mm in
+    every profile of the mock, unless changed in advanced mode; the width the paths are
+    laid apart, so a solid surface reads as one colour) at its distance
     from the camera and never less than 1 pixel, so lines get their weight when zoomed in and
     stay visible zoomed out (version 7's lines were always 1 pixel). Walls are shaded by the
-    way they face, lighter towards the Layout view's main light (front left, above) and
-    darker away from it, so a stack of walls reads as a surface. The current layer is drawn
+    way they face, by darkening only (fix round 1 of version 8): a wall facing the Layout
+    view's main light (front left, above) has the flat blue `#2b5c9e`, one facing away
+    `#1c3d68`, so a stack of walls reads as a surface. Over that range a wall stays at least
+    20.3 (CIEDE2000) from every other group in all four kinds of vision, the flat colour's
+    figure, and at least 6.1:1 against the background; until the fix walls facing the light
+    were lightened to `#668ab9`, 4.2 from supports and brim under protanopia. The current layer is drawn
     over the layers below, unshaded and at least 2 pixels wide, so the layer the bar is on
     stands out. Above it, each instance is a faint grey ghost (grey `#95a0ac`, 36% opaque)
     cut at the current layer, so the user sees what is still to print; the ghost goes when
     every layer is shown.
+    **What drawing this way costs** (the first review of version 8, and fix round 1). Every
+    toolpath segment is a quad with a width, where version 7 drew a one-pixel line. On an
+    aarch64 Linux machine with no graphics card, where Chrome draws WebGL in software
+    (SwiftShader), one frame took about 27 µs a segment, whatever the size of the view:
+    a Gusset Plate alone (22 layers, 152,101 segments) 4.2 s against version 7's 0.10 s;
+    five instances (134 layers, 399,261 segments) 18.7 to 21.5 s against 0.25 s. After the
+    fix round's wider lines, four instances (134 layers, 356,873 segments) took about 10 s a
+    frame, some frames 16 to 18 s, as before the fix. Frames that long make Chrome restart
+    its graphics process, which loses the WebGL context of all three 3D views: the review
+    saw four losses in seven showings of a five- or six-instance plate, and after a second
+    loss in one page no view drew again until a reload; the fix round's walk of every step
+    with a four-instance plate lost the context in two runs of three. The wizard allows 150
+    instances on a plate. The owner's Mac draws on a graphics card and was not measured.
+    Three quarters of the segments can never be seen (on the five-instance plate 287,646
+    inner-wall and 12,393 infill segments of 399,261 lie inside the parts under the layers
+    above). The fix round tried drawing, below the current layer, only outer walls, top and
+    bottom surfaces, supports and brim, with inner walls and infill for the current layer
+    and the 16 under it: a gusset and an L bracket at 134 layers went from about 5.6 s to
+    1.5 to 2.7 s a frame, but from half way up the holes read smaller and the background
+    showed through along the edges, where the inner walls fill in behind the one-line outer
+    wall. The renders did not look the same, so the mockup draws every segment.
+    **Two requirements for the implementation:** (1) a frame budget for the layer preview
+    on a machine without a graphics card (software WebGL), met at the largest plate the
+    wizard allows, by whatever means keeps the look (merging the segments of a layer into
+    fewer, longer quads, drawing hidden layers at less detail, or a cheaper line); (2) a
+    view that draws again after a lost WebGL context, in all three 3D views, without a
+    reload.
 34. Next goes to the Send step once the plate is sliced.
 
 ### Send step
@@ -782,7 +846,7 @@ Called Setup until version 5; the decisions keep their numbers.
     no kept hull face's outward normal is within 30° of it (half a degree more for
     rounding, so the 1/2in Hex Shaft's flats, exactly 30° off, count as covering). Each
     uncovered side gets a patch styled like the hull patches (same blue, same opacity, the
-    same rounded shape drawn 10% in) lying on the box's side, 0.1 mm out; its tooltip is
+    same rounded shape drawn 10% in) lying on the box's side, 0.1 mm out; its pointer line is
     "Lay it on this side: 1.732 in tall"; a click lays the instance on that side, so a
     pulley rests on its rim. A part whose hull faces cover every side gets none. In the
     mock document: the HTD Pulley 24T and the Hex Bore Spacer 1in get four each (their
@@ -812,7 +876,7 @@ Called Setup until version 5; the decisions keep their numbers.
     since the drag began (the owner, fix round 1 of version 7), so an instance turned at
     an odd angle can be squared again; in a selection of several, the first selected
     instance's orientation snaps and the others turn by the same angle. Pressing or letting
-    go of Shift mid-drag takes effect at once. The handle's tooltip is "Drag to turn · Shift: 45° steps"; the
+    go of Shift mid-drag takes effect at once. The handle's pointer line is "Drag to turn · Shift: 45° steps"; the
     Layout step's "?" list says "Hold Shift while turning to turn in 45° steps."
 
 ## What is fake and could mislead

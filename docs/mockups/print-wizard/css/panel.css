@@ -337,7 +337,8 @@
 .ls-thumb { position: absolute; left: 3px; width: 20px; height: 14px; margin-top: -7px; background: var(--accent); border: 2px solid #fff; border-radius: 4px; box-shadow: 0 0 0 1px rgba(31, 35, 40, 0.2); }
 .ls-thumb span { position: absolute; right: 26px; top: -5px; white-space: nowrap; font-size: 11px; background: rgba(255, 255, 255, 0.95); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; color: var(--ink); font-variant-numeric: tabular-nums; }
 .layer-slider:focus-visible .ls-thumb { box-shadow: 0 0 0 2px var(--accent); }
-.layer-row { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+.layer-row { display: flex; align-items: center; gap: 6px; margin-top: 8px; position: relative; }
+.help-pop.up { top: auto; bottom: calc(100% + 4px); }
 #layer-readout { font-variant-numeric: tabular-nums; }
 /* version 8: the key of the layer preview's four colours, behind a small icon at the view's
    top left, closed by default; it opens joined to the icon, as the printer details do */

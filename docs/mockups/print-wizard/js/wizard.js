@@ -1,4 +1,4 @@
-/* PenguinSlicer mockup, version 7: the wizard in the panel. Five steps (Parts, Settings,
+/* PenguinSlicer mockup, version 8: the wizard in the panel. Five steps (Parts, Settings,
  * Layout, Preview, Send), advanced mode, mocked export with its two ways to fail, slicing
  * progress, layer preview, the Send step with delivery and print progress, the printer
  * status in the header, coming back to running work, and every armed error from the
@@ -246,7 +246,7 @@
     if (S.step !== name) { S.notices = []; S.lastNoteOn = null; }    // a notification belongs to the step it was given on; so does the last-print note
     if (S.step === 'layout' && name !== 'layout') layHint = null;   // so does the Layout step's message ("Arranged 5 instances.")
     S.step = name;
-    closePrinterPop(); closeChangesPop(); clearWhy(); closeLayoutHelp(); closeKey(); hideTip();
+    closePrinterPop(); closeChangesPop(); clearWhy(); closeLayoutHelp(); closeKey(); setPreviewHelp(false); hideTip();
     $all('#wizard .step').forEach(function (s) { s.hidden = s.getAttribute('data-step') !== name; });
     $all('#stepbar li').forEach(function (li) {
       var s = li.getAttribute('data-step');
@@ -577,7 +577,8 @@
         var h = el('button', 'adv-sec-btn'); h.type = 'button'; h.id = 'adv-sec-' + idPart(g); h.setAttribute('aria-expanded', open ? 'true' : 'false');
         h.appendChild(chevron(open)); h.appendChild(el('span', 'nm', g));
         if (cnt) h.appendChild(el('span', 'ct', '· ' + countText(cnt)));
-        h.addEventListener('click', function () { S.advSecOpen[g] = !open; S.advTab = g; renderAdvanced(); });
+        // fix round 1 of version 8: only opening a section makes it the rail's section; a closing is not a choosing
+        h.addEventListener('click', function () { S.advSecOpen[g] = !open; if (!open) S.advTab = g; renderAdvanced(); });
         hrow.appendChild(h);
         if (open) hrow.appendChild(expandButton(g));
         sec.appendChild(hrow);
@@ -848,7 +849,12 @@
   }
   function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
   function arrangeNote(res, offer) {
-    if (!res.parked) return [];
+    // An instance too long for the plate as it is turned has its own card, with "Turn it to
+    // fit" (fix round 1 of version 8); this message counts only the others.
+    var long = S.instances.filter(function (c) { var t = isParked(c) && PL.tooLong(c, PLATE); return t && t.turn; }).length;
+    res = { parked: res.parked - long, placed: res.placed };
+    if (offer && offer.parked >= res.parked) offer = null;
+    if (res.parked <= 0) return [];
     // Arrange keeps how each instance lies. `offer`, when given, is a plate Arrange also tried
     // with every instance laid its best way, and which left fewer instances over: one button takes it.
     var acts = [['Back to Parts', function () { gotoStep('parts'); }]];
@@ -1039,7 +1045,10 @@
     }
     // No free spot with the others where they are. The owner (M9): never move other instances.
     // This one waits beside the plate, marked off the plate, until the user presses Arrange.
+    // Fix round 1 of version 8: it waits turned as the wizard turns an instance too long for
+    // the plate (fitTurn), so that Arrange, which never turns, can then place it.
     instance.q = keep.q; instance.d = null;
+    PL.fitTurn(instance, PLATE);
     var d = PL.derive(instance), sideY = 0;
     S.instances.forEach(function (o) { if (o === instance) return; var h = PL.bbox(PL.worldHull(o)); if (h.minX > PLATE.x) sideY = Math.max(sideY, h.maxY + PLATE.spacing); });
     instance.x = PLATE.x + PLATE.spacing * 4 + d.w / 2; instance.y = sideY + d.l / 2;
@@ -1129,7 +1138,8 @@
     alertBox.innerHTML = ''; alertBox.classList.toggle('ok', !S.problems.length); alertBox.disabled = !S.problems.length;
     // An instance Arrange left beside the plate gets no card of its own: Arrange's message
     // below already says how many do not fit, with what to do.
-    var shown = S.problems.filter(function (p) { return !(p.rule === 'off_plate' && S.layoutNotes.length && isParked(instanceById(p.instances[0]))); });
+    // One too long for the plate as it is turned keeps its card: Arrange cannot help it.
+    var shown = S.problems.filter(function (p) { return !(p.rule === 'off_plate' && !p.turnToFit && S.layoutNotes.length && isParked(instanceById(p.instances[0]))); });
     var lines = (beside && shown.length < S.problems.length ? 1 : 0) + shown.length;
     if (S.problems.length) {
       var first = shown.length ? shown[0].message.split('. ')[0] + '.' : plural(beside, 'instance does', 'instances do') + ' not fit on the plate.';
@@ -1146,7 +1156,9 @@
       box.appendChild(el('div', 'hint fix-first', shown.length === 1 ? 'Fix this before Next:' : 'Fix these ' + shown.length + ' before Next:'));
       shown.forEach(function (p) {
         // an instance laid down with no room left waits beside the plate: Arrange makes room
+        // and one too long for the plate as it is turned: the wizard turns it (Arrange never turns)
         var acts = p.rule === 'too_tall' ? [['Auto-orient', function (e) { e.stopPropagation(); S.selected = p.instances.slice(); autoOrient(p.instances); }]]
+                 : p.turnToFit ? [['Turn it to fit', function (e) { e.stopPropagation(); turnToFit(p.instances); }]]
                  : [['Arrange', function (e) { e.stopPropagation(); doArrange(); }]];
         var m = msg('error', p.message.split('. ')[0] + '.', p.message.split('. ').slice(1).join('. '), acts);
         m.classList.add('clickable');
@@ -1249,6 +1261,18 @@
     var res = PL.bestArrange(S.instances, PLATE);
     S.layoutNotes = arrangeNote(res, tryBestWay(res));
     layHint = res.parked ? null : msg('ok', 'Arranged ' + plural(res.placed, 'instance', 'instances') + '.', null);
+    recheck(); editor.resetHandle(); editor.sync(); editor.resetView(); scheduleLayoutRender();
+  }
+  // "Turn it to fit" (fix round 1 of version 8): the wizard turns an instance that is too long
+  // for the plate as it is turned, as fitTurn does on arrival, and arranges the plate again.
+  function turnToFit(ids) {
+    pushUndo();
+    var list = ids.map(instanceById).filter(Boolean);
+    list.forEach(function (c) { PL.fitTurn(c, PLATE); });
+    var res = PL.bestArrange(S.instances, PLATE);
+    S.layoutNotes = arrangeNote(res, tryBestWay(res));
+    layHint = res.parked ? null : msg('ok', 'Turned ' + (list.length === 1 ? instanceLabel(list[0]) : plural(list.length, 'instance', 'instances')) +
+      ' and arranged ' + plural(res.placed, 'instance', 'instances') + '.', null);
     recheck(); editor.resetHandle(); editor.sync(); editor.resetView(); scheduleLayoutRender();
   }
   function bindLayout() {
@@ -1600,6 +1624,7 @@
   }
   function setKey(open) { $('#pv-key').hidden = !open; $('#btn-key').setAttribute('aria-expanded', open ? 'true' : 'false'); }
   function closeKey() { setKey(false); }
+  function setPreviewHelp(open) { $('#preview-help').hidden = !open; $('#btn-preview-help').setAttribute('aria-expanded', open ? 'true' : 'false'); }
   function setLayer(k) {
     var r = S.result; if (!r) return;
     k = Math.max(0, Math.min(r.tp.layers - 1, Math.round(k)));
@@ -1640,6 +1665,15 @@
     $('#btn-key').addEventListener('pointerdown', function (e) { e.stopPropagation(); });     // not a turn of the view
     $('#pv-key').addEventListener('click', function (e) { e.stopPropagation(); });
     $('#pv-key').addEventListener('pointerdown', function (e) { e.stopPropagation(); });
+    // how to move the view: behind a "?" icon, as on the Layout step (fix round 1 of version 8)
+    $('#btn-preview-help').addEventListener('click', function (e) {
+      e.stopPropagation(); var open = $('#preview-help').hidden; setPreviewHelp(open);
+    });
+    $('#preview-help').addEventListener('click', function (e) { e.stopPropagation(); });
+    document.addEventListener('click', function () { setPreviewHelp(false); });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !$('#preview-help').hidden) { setPreviewHelp(false); $('#btn-preview-help').focus(); }
+    });
     // final action on the Send step: PenguinCAM's split button. The button sends at once; the
     // caret's menu offers Download instead.
     $('#btn-do').addEventListener('click', function () { doAction(S.action); });
@@ -2077,11 +2111,28 @@
     if (t && !(name && letters(name).indexOf(letters(t)) >= 0)) n.setAttribute('aria-description', t); else n.removeAttribute('aria-description');
     if (n === tipFor) { if (t) showTip(n); else hideTip(); }
   }
+  // Fix round 1 of version 8: a tooltip says only what is not on screen.
+  function visibleText(n) { return letters(n.innerText); }
+  function cutShort(n) {
+    return [n].concat([].slice.call(n.querySelectorAll('*'))).some(function (x) {
+      return x.clientWidth > 0 && (x.scrollWidth > x.clientWidth + 1 || x.scrollHeight > x.clientHeight + 1);
+    });
+  }
+  function tipWanted(n, text) {
+    // a step pill, or the current step's circle, already shows its name
+    if (n.matches('#stepbar li')) { var sn = n.querySelector('.sn'); if (sn && sn.offsetWidth > 0) return false; }
+    // a tooltip that repeats the element's own visible text shows only when that text is cut short
+    var own = visibleText(n), t = letters(text);
+    if (own && t && own.indexOf(t) >= 0) return cutShort(n);
+    return true;
+  }
   function showTip(n) {
     var text = n.getAttribute('data-tip'); if (!text || !n.isConnected || !n.offsetParent) return;
+    if (!tipWanted(n, text)) return;
     var root = $('#wizard');
     tipFor = n; tip.textContent = text; tip.style.left = '0px'; tip.style.top = '0px'; tip.hidden = false;
-    if (!n.hasAttribute('aria-describedby')) n.setAttribute('aria-describedby', 'wiz-tip');
+    // not where adoptTitle gave no description: the element's name already says it (a step circle)
+    if (!n.hasAttribute('aria-describedby') && n.hasAttribute('aria-description')) n.setAttribute('aria-describedby', 'wiz-tip');
     var w = root.getBoundingClientRect(), r = n.getBoundingClientRect(), tw = tip.offsetWidth, th = tip.offsetHeight, M = 6;
     var left = Math.max(M, Math.min(r.left + r.width / 2 - tw / 2 - w.left, w.width - tw - M));
     var top = r.bottom - w.top + 6;                                   // below the element, else above it
@@ -2119,7 +2170,10 @@
     root.addEventListener('pointerdown', hideTip, true);
     root.addEventListener('focusin', function (e) {
       var n = e.target.closest && e.target.closest('[data-tip]');
-      if (n && e.target.matches(':focus-visible')) { hideTip(); showTip(n); }
+      // at once on focus only for an element with no visible text (an icon, a step circle); a
+      // menu or a text field shows its tooltip on hover only (fix round 1 of version 8)
+      if (!n || n.matches('select, input, textarea') || visibleText(n)) return;
+      if (e.target.matches(':focus-visible')) { hideTip(); showTip(n); }
     });
     root.addEventListener('focusout', function (e) { if (tipFor && tipFor.contains(e.target)) hideTip(); });
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape') hideTip(); }, true);

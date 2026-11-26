@@ -305,12 +305,12 @@
           <div id="preview-stats" class="stats"></div>
           <div class="preview-cols">
             <div>
-              <div id="viewer-container" class="gl-view" title="Drag to turn, right-drag to pan, scroll to zoom; drag the bar on the right to go through the layers">
+              <div id="viewer-container" class="gl-view">
                 <!-- version 8: the colour key, closed by default, behind a small icon -->
                 <button type="button" class="icon-btn key-btn" id="btn-key" aria-expanded="false" aria-controls="pv-key" aria-label="Colour key" title="Colour key">
                   <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="2" width="5" height="2.4" rx="1" fill="#2b5c9e"/><rect x="1" y="5.6" width="5" height="2.4" rx="1" fill="#e0912f"/><rect x="1" y="9.2" width="5" height="2.4" rx="1" fill="#2f9e7a"/><rect x="1" y="12.8" width="5" height="2.4" rx="1" fill="#9a8fb8"/><rect x="8" y="2.6" width="7" height="1.2" rx="0.6" fill="currentColor"/><rect x="8" y="6.2" width="7" height="1.2" rx="0.6" fill="currentColor"/><rect x="8" y="9.8" width="7" height="1.2" rx="0.6" fill="currentColor"/><rect x="8" y="13.4" width="7" height="1.2" rx="0.6" fill="currentColor"/></svg>
                 </button>
-                <ul id="pv-key" class="pv-key" aria-label="Colours" hidden></ul>
+                <ul id="pv-key" class="pv-key" aria-label="Colour key" hidden></ul>
                 <div id="layer-slider" class="layer-slider" tabindex="0" role="slider" aria-label="Layer">
                   <div class="ls-track"><div class="ls-fill" id="ls-fill"></div></div>
                   <div class="ls-thumb" id="ls-thumb"><span id="ls-label"></span></div>
@@ -322,6 +322,11 @@
                 <button type="button" class="btn small icon" id="btn-layer-up" aria-label="One layer up">+</button>
                 <span class="spacer"></span>
                 <button type="button" class="btn small" id="btn-preview-view">Reset view</button>
+                <!-- fix round 1 of version 8: how to move the view, behind a "?" icon as on the Layout step -->
+                <button type="button" class="icon-btn help-btn" id="btn-preview-help" aria-expanded="false" aria-controls="preview-help" aria-label="How to move the view" title="How to move the view">?</button>
+                <div id="preview-help" class="help-pop up" role="dialog" aria-label="How to move the view" hidden>
+                  <p>Drag to turn, right-drag to pan, scroll to zoom; drag the bar on the right to go through the layers.</p>
+                </div>
               </div>
             </div>
           </div>
