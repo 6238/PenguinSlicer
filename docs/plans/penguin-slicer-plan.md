@@ -15,7 +15,7 @@ says so.
 - **Built and tested:** the slice service (built and tested for one slice service process) and printer delivery
   (tested against the simulated printer only, never against the real H2S). **Not
   started:** the wizard's real code and the Onshape source. The wizard exists as a mockup,
-  version 5 on `main` and version 6 in progress.
+  version 8, which the owner accepted as the last version on Thu 2026-11-26.
 - **The phases, in the owner's order:** (1) finish the mockup and write the wizard's guide;
   (2) the wizard outside Onshape, on one machine, with the slice service, ending in a
   downloaded sliced file; (3) the same hosted on AWS; (4) the wizard inside Onshape, with
@@ -194,7 +194,7 @@ changed checks on purpose and tries hostile inputs.
 
 ## Where things stand
 
-On `main` after pull request 12 (Fri 2026-11-20):
+On `main` after pull request 17 (Thu 2026-11-26):
 
 - **The slice service** is ported from the print branch, brought up to the standing
   requirements, and measured on eight real parts of the Popcorn Penguins' robot. Its state
@@ -202,9 +202,17 @@ On `main` after pull request 12 (Fri 2026-11-20):
 - **Printer delivery** is ported and brought up to the standing requirements, and tested
   against the simulated printer only. Its state is in its guide,
   [Where it stands](../../delivery/README.md#where-it-stands).
-- **The mockup** is at version 5; version 6, built from the owner's review of version 5 on
-  Tue 2026-11-24, is in progress. Its design and its open questions are in
-  [DECISIONS.md](../mockups/print-wizard/DECISIONS.md).
+- **Thirteen design rulings in those two guides** (R1 to R3, R5 to R12, R14, R18) were
+  made by an agent and are not yet confirmed by the owner; each is named, with the guide
+  section where it stands, in
+  [the plan's fix round](../orchestration/plan-by-phase/fix-1.md#rulings-the-owner-has-not-read-for-the-orchestrator).
+- **The mockup** is at version 8 (pull request 16), and the owner accepted it as the last
+  version on Thu 2026-11-26, every step reviewed. Its design, the requirements it puts on
+  the implementation and its open questions are in
+  [DECISIONS.md](../mockups/print-wizard/DECISIONS.md); the open questions are its section
+  "Please react to these" (M1 to M29), plus whether the Layout view's pointer line should
+  be larger than 11 px. The build records of each version are in
+  `docs/orchestration/mockup-v6/` to `mockup-v8/`.
 - **The wizard and the Onshape source** have no code, neither in the browser nor on the
   server. The print branch holds code for
   selecting parts in Onshape and exporting them as STL files that has never run against
@@ -217,8 +225,9 @@ agreed with the owner, and a component's guide is updated as the phase changes i
 
 ### Phase 1: finish the mockup
 
-The owner reviews the Layout step, which was not reviewed in the round of
-Tue 2026-11-24, and then the wizard's guide is written as `wizard/README.md` from the
+The owner has reviewed every step, the Layout step included, over versions 6 to 8, and
+accepted version 8 on Thu 2026-11-26. What remains is the wizard's guide, written as
+`wizard/README.md` from the
 mockup and its [DECISIONS.md](../mockups/print-wizard/DECISIONS.md). That guide is the
 wizard's part of phase 2's design spec. The owner's
 direction for the wizard stands: keep the conventions of PenguinCAM's CNC wizard and its
@@ -226,10 +235,13 @@ look unless additive manufacturing is distinctly different; make the common case
 since most prints use one filament and one of a few profiles; keep every slicing setting
 reachable; and bring over what is needed from Orca's Prepare tab (arranging parts on the
 plate) and Preview tab (inspecting the sliced file layer by layer). The mockup is thrown
-away once the wizard's guide exists.
+away once the wizard's guide exists. The guide cannot settle the questions in
+[DECISIONS.md](../mockups/print-wizard/DECISIONS.md)'s "Please react to these" on its
+own: each is either answered by the owner or carried into the guide with its backing,
+as an open choice.
 
-- **Done when** the owner has reviewed every step of the mockup and has agreed
-  `wizard/README.md`.
+- **Done when** the owner has agreed `wizard/README.md` (the review of every step of the
+  mockup is done).
 - **Components:** the wizard (its mockup and its guide). The guide also says what the
   wizard needs from the slice service and from printer delivery that they do not provide;
   [DECISIONS.md](../mockups/print-wizard/DECISIONS.md) lists those needs today.
