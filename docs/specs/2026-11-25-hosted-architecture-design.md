@@ -1,7 +1,8 @@
 # PenguinSlicer: the hosted architecture
 
-Written Wed 2026-11-25, Pacific time, from a design discussion with the project's owner on
-that day. It says how the wizard, the slice service and printer delivery fit together
+Written Wed 2026-11-25, Pacific time, from a design discussion with the project's owner,
+and revised Thu 2026-11-26 after the owner's first review. The owner has not yet agreed
+it. It says how the wizard, the slice service and printer delivery fit together
 when they are hosted: where each piece of state lives, who may reach what, how a daemon
 is told to print, and where the project's owner reads what happened. It gives no time
 estimates.
@@ -28,13 +29,15 @@ rest of daemon telemetry (what proves a message's origin, what it may hold, its 
   server** (the wizard's server side and, from phase 5, the relay, in one process) is
   the only thing the internet reaches. The **slice container** runs one slice service process and is
   reachable only from the front server.
-- **The browser holds the user's work.** Parts and the layout live in the browser's own
-  storage. The server keeps a part for two hours after its last use and a sliced file for
-  two hours after its slice.
-- **What must last is a few small files** in two object stores. The state bucket holds,
-  for each group, one configuration document and one paired-printer record (which daemon
-  is the group's). The log bucket holds log lines. Everything else may vanish at a
-  restart.
+- **The browser holds the user's parts and layout,** in its own storage. The server
+  keeps a sliced file for two hours after its slice.
+- **What must last is in two object stores.** The state bucket holds each group's
+  configuration and paired-printer record (which daemon is the group's), the sliced
+  files, and the records of pairing codes and delivery jobs. The log bucket holds log
+  lines.
+- **A restart of either container loses nothing a user has to redo.** Connections drop
+  for a few seconds and come back by themselves, a slice that was cut off starts again,
+  and a print goes on.
 - **Every user signs in with Onshape,** in Onshape's panel and outside Onshape alike. A
   **group** is the users who share one configuration and one printer: an Onshape company
   or classroom. Every user of a group may edit its configuration.
@@ -45,6 +48,7 @@ rest of daemon telemetry (what proves a message's origin, what it may hold, its 
   [How often a daemon talks to the relay](#how-often-a-daemon-talks-to-the-relay).
 - **Log lines go to Railway's log view and to files in the log bucket,** which the
   project owner's coding agents can read.
+- **The address is `https://penguinslicer.popcornpenguins.com/`.**
 
 ## Terms
 
@@ -58,11 +62,11 @@ new here.
 | **current group** | The one group, of those a user belongs to, whose configuration and printer the user is using now. |
 | **front server** | The one process that runs the wizard's server side and, from phase 5, the relay with it. Hosted, it runs in a container of its own on Railway; in phase 2 it is a process on the one machine. |
 | **slice container** | The container on Railway that runs one slice service process and nothing else. |
-| **state bucket** | The object store that holds each group's configuration and paired-printer record. |
+| **state bucket** | The object store that holds everything that must outlast a restart of the front server: each group's configuration and paired-printer record, the sliced files, and the records of pairing codes and delivery jobs. |
 | **log bucket** | The object store that holds log lines and daemon telemetry as files. |
 | **paired-printer record** | One small document per group in the state bucket: the id of the group's daemon, the printer's display name, who paired it and when. |
 | **progress stream** | The connection, of server-sent events, on which a page follows a slice job or a delivery job. |
-| **part store** | The slice service's folder of uploaded parts, each kept for two hours after it was last used. |
+| **part store** | The slice service's folder of uploaded parts, each kept for two hours after it was last used. It is a cache: the browser's storage is the record of a user's parts. |
 | **user key** | The signed-in user's Onshape id, which the front server passes to the slice service with every request to say whose part or slice job it is. The slice service compares user keys and never interprets them. |
 | **development identity** | A fixed made-up user and group that the front server signs in when a setting tells it to, for work on one machine. |
 | **sync** | The request a daemon posts to the relay, carrying the printer's status and its delivery job's progress; the answer tells the daemon what to do. |
@@ -88,9 +92,9 @@ new here.
 - **Onshape sign-in** and the registration of the Onshape OAuth app move from phase 4 to
   phase 3. Only the panel itself stays in phase 4.
 - **One printer per group** for now, where the plan's configuration lists printers.
-- **A slice that is running when its page goes away** is stopped, where the mockup's
-  [decision 46](../mockups/print-wizard/DECISIONS.md) has a reopened page find it still
-  running (see [Coming back](#coming-back)).
+- **Sliced files and the relay's records are kept in the state bucket,** where the plan
+  has the slice service and the relay each keep their own in memory or on their own
+  disk. This is what lets a container restart without a user losing work.
 
 ## The shape
 
@@ -107,7 +111,9 @@ flowchart TB
     dm --> pr["printer"]
 ```
 
-One hostname on the Popcorn Penguins' domain serves everything. The domain's DNS is at
+One address serves everything: `https://penguinslicer.popcornpenguins.com/`. The wizard's
+pages, the address a daemon is given for the relay and the redirect address of the
+Onshape OAuth app are all on it. The domain's DNS is at
 Cloudflare, whose proxy hides the host's address and turns away floods of requests; it
 holds no logic of PenguinSlicer's. The browser and the daemons talk only to the front
 server, and the front server calls the slice service over Railway's private network. So
@@ -118,19 +124,19 @@ never makes a cross-origin request.
 no credentials, so a flaw in Orca reaches no sign-in secret and no bucket. The split also
 keeps Orca's memory spike, and a redeploy of the slice container, from cutting off every
 daemon. Railway bills by use, so two containers cost what one would. What the split
-adds is the front server passing parts, slice jobs and sliced files through, and a route
-from which it fetches the slice service's log lines.
+adds is the front server passing parts and slice jobs through, fetching each sliced
+file, and a route from which it fetches the slice service's log lines.
 
 **The buckets are at Cloudflare R2,** not Railway. R2 can issue a credential that only
-reads one bucket, delete files after a set age, and write a file only if it has not
-changed; Railway's buckets promise none of the three. R2 is storage only, so Cloudflare
-still runs no logic.
+reads one bucket, delete files after a set number of days, and write a file only if it
+has not changed; Railway's buckets promise none of the three. R2 is storage only, so
+Cloudflare still runs no logic. Only the front server holds a credential that writes to
+them.
 
 **Sizes.** The slice container is allowed 8 GB, the most one container gets on Railway's
-Hobby plan. The slice service's guide sizes one slice job at 3.5 GB; the project's owner
-chose 8 GB for headroom. It runs one Orca at a time and queues two slice jobs, as
-today. Both containers stay running: nothing is started on demand, so a slice never waits
-for a container to start.
+Hobby plan. It runs one Orca at a time and queues two slice jobs, as today. Both
+containers stay running: nothing is started on demand, so a slice never waits for a
+container to start.
 
 **Leaving Railway.** The design needs two things of its host besides running containers:
 a private network between the two, and a view of recent log lines. On AWS that is one EC2
@@ -140,34 +146,91 @@ machine running both containers with the slice container's port closed to the ou
 the pinned version after the upstream check passes. Deploying it restarts the slice
 container, with the effect below.
 
+### Limits on one slice
+
+The slice service stops an Orca that uses too much memory or runs too long, and reports
+each as an error the wizard explains. Both limits exist today.
+
+| Limit | Today | Hosted | Error |
+|---|---|---|---|
+| Memory ceiling: the most memory one Orca may reach | 2,000 MB | 6,000 MB, proposed | `slice.out_of_memory` |
+| Time limit: the longest one Orca may run | 240 seconds | 240 seconds until measured on Railway | `slice.timeout` |
+
+**The memory ceiling rises to use the 8 GB.** The 2,000 MB was chosen for a machine of
+3.5 GB, which left 1.5 GB for everything else. A ceiling of 6,000 MB leaves 2 GB of the
+slice container for the slice service process, its checks on uploaded parts and the
+operating system. The margin matters because Railway stops a container that passes its
+8 GB, which would take the queued slice jobs with it, where the ceiling ends only the one
+slice. The figure is the project owner's to change; it is one setting of the slice
+service and no code. A higher ceiling costs money only while a heavy plate is slicing,
+since Railway bills the memory a container holds at each moment.
+
+What is known about memory: the heaviest plate measured peaked at 2,569 MB (six Stanford
+bunnies with supports). Nothing above that was ever sliced, so for the plates the higher
+ceiling newly admits, the slice service's estimates of memory and time are extended
+beyond what was measured.
+
+**The time limit must be long enough that every plate which would finish does finish,**
+and no longer, because one Orca runs at a time and a slice that hangs holds up everyone
+behind it. What is known about time: the plates of the Popcorn Penguins' real parts took
+3 to 11 seconds, and the 240 seconds is twenty times what a plate of 150 small spacers
+took. Those were measured on a different kind of machine from Railway's, and on plates
+that fit under 2,000 MB; a plate that needs 6,000 MB will take longer. So both figures
+are settled by one set of measurements on the slice container, listed under
+[To confirm before building on it](#to-confirm-before-building-on-it): plates of rising
+weight up to the memory ceiling, each timed. The time limit is then set at a few times
+the slowest plate that finishes.
+
 ### When a container restarts
 
-- **The slice container.** Running and queued slice jobs, sliced files and the part
-  store are gone; the slice service empties its folders when it starts, so nothing is
-  left from before. A page following a slice job is told the slice job is unknown and
-  slices again, uploading its parts again from the browser's storage. A plate whose
-  sliced file was not yet sent is sliced again when the user presses Send.
-- **The front server.** Every daemon's open request, every progress stream and every delivery job in
-  the relay's memory is gone. Nobody is signed out. Each daemon's next sync is accepted
-  at once, since its token still verifies. A print the printer has started goes on, but
-  the wizard can no longer follow it: its delivery job answers as unknown, with the
-  message to look at the printer. A file on its way to the printer that had not started
-  is not started. So the front server is deployed when no delivery job is live.
+A restart, whether a crash or a deploy, costs a few seconds in which connections drop
+and come back. Nothing a user did has to be done again, and a print goes on. Each line
+below is also a test: the container is restarted at that moment and the result checked.
+
+**The slice container restarts.**
+
+| What was happening | What the user sees |
+|---|---|
+| A slice was running or waiting | Progress starts again. A page that is open uploads its parts again from the browser's storage and submits the same plate, unasked. A page that is closed does so when it is next opened |
+| A slice had finished | Nothing. The sliced file is in the state bucket |
+| A print was being sent or was printing | Nothing. Printer delivery does not pass through the slice container |
+
+**The front server restarts.**
+
+| What was happening | What the user sees |
+|---|---|
+| Any page was open | Its progress stream closes and reconnects. Nobody is signed out, because the cookie's key is a setting of the server and not something in its memory |
+| A slice was running | It keeps running in the slice container. The page shows its progress again once reconnected, and the front server stores the sliced file when the slice ends |
+| A send was waiting for its daemon | The daemon's next sync is accepted, since its token still verifies, and receives the delivery job from its record in the state bucket. It fetches the sliced file from the state bucket |
+| A print was running | It goes on. The printer-status icon and the Send step are blank until the daemon's next sync brings the printer's status and progress back |
+| A pairing code was shown and not yet typed in | The code still works |
+
+The relay's records are in the state bucket, not its memory, for a reason found in the
+daemon's code: a daemon told that the relay no longer knows its delivery job treats the
+job as finished and drops it. The record also holds whether the daemon was already
+allowed to start the print, which is what keeps a print from being started twice.
+
+Two things are lost at a restart, neither of them a user's work. The last minute of log
+lines before a crash is only in Railway's log view (see
+[Reading what happened](#reading-what-happened)). And if both containers restart in the
+seconds between a slice ending and the front server storing its sliced file, that slice
+runs again.
 
 ## Where each piece of state lives
 
-| State | Lives in | How long | When it is lost |
+| State | Lives in | How long | A restart of that container |
 |---|---|---|---|
-| Parts, layout, chosen settings | The browser's storage | Until the plate is sent or its sliced file expires | The user adds the parts again |
-| Uploaded parts | The part store, in the slice container | Two hours after last use | The browser uploads them again, unasked |
-| Slice jobs | The slice service process's memory | While running, then two hours | The browser slices again |
-| Sliced files | The slice container's disk, and the relay's own copy while a delivery job is live | Two hours after the slice ended | The browser slices again |
-| Who is signed in, their groups, their Onshape tokens | An encrypted cookie in the browser | Thirty days, the groups read again from Onshape each day | The user signs in again |
-| Configuration | The state bucket, one document per group | Until edited | It is the lasting record |
-| Paired-printer record | The state bucket, one per group | Until unpaired | It is the lasting record |
-| Pairing codes not yet typed in | The relay's memory | Fifteen minutes | The daemon's `pair` command is run again |
-| Delivery jobs, printer status | The relay's memory | A finished delivery job's report for 24 hours, a printer's status for a day | See [When a container restarts](#when-a-container-restarts) |
-| Log lines, daemon telemetry | The log bucket | Ninety days | The last minute before a crash is only in Railway's log view, for seven days |
+| Parts, layout, chosen settings, the id of the plate's slice job | The browser's storage | Until the plate is sent or its sliced file expires | Not affected |
+| Who is signed in, their groups, their Onshape tokens | An encrypted cookie in the browser | Thirty days, the groups read again from Onshape each day | Not affected |
+| Uploaded parts | The part store, in the slice container | Two hours after last use | Gone; the page uploads them again, unasked |
+| Slice jobs running or waiting | The slice service process's memory | Until the slice ends | Gone; the page submits the plate again, unasked |
+| Sliced files | The state bucket | Two hours after the slice ended | Kept |
+| Configuration | The state bucket, one document per group | Until edited | Kept |
+| Paired-printer record | The state bucket, one per group | Until unpaired | Kept |
+| Pairing codes not yet typed in | The state bucket | Fifteen minutes | Kept |
+| Delivery jobs | The state bucket, one record each | Until a day after the delivery job ends | Kept |
+| Printer status and the progress of a print | The relay's memory | Until the next sync replaces them | Gone; the daemon's next sync brings them back |
+| Log lines, daemon telemetry | The log bucket | Ninety days | Kept, but for the last minute before a crash, which is only in Railway's log view, for seven days |
 
 The server keeps no database and no table of sessions.
 
@@ -196,42 +259,58 @@ learn whether someone else uploaded a given file.
 
 ### The sliced file
 
-The sliced file stays in the slice container from the end of the slice until it expires.
-The browser fetches it through the front server to draw the Preview step and to offer
-the download, and fetches it again after a refresh; the browser does not store it. It is
-8.8 to 14.1 MB on the plates measured so far, small enough to fetch whole and far under
-Cloudflare's 100 MB. On Send, the
-front server hands the relay a stream of the same file from the slice service, and the
-relay keeps its own copy until the delivery job ends, as its interface to its caller
-already provides. The browser never uploads a sliced file.
+When a slice ends, the front server fetches the sliced file from the slice container and
+stores it in the state bucket under the user key and the slice job's id. It does this
+whether or not a page is open. From then on the state bucket's is the copy everything
+uses: the browser fetches it through the front server to draw the Preview step and to
+offer the download, and on Send the relay hands it to the daemon. The browser does not
+store the sliced file and never uploads one, so a printer only ever receives a file the
+slice service made.
 
-A sliced file can be sent, and sent again after a print, for as long as it is kept. The
-relay today refuses a sliced file more than forty minutes old; that limit rises to the
-same two hours.
+A sliced file is 8.8 to 14.1 MB on the plates measured so far.
+
+**Two hours.** A sliced file can be previewed, downloaded, sent, and sent again after a
+print, for two hours after its slice ended. The front server enforces this: it refuses a
+sliced file older than two hours and deletes it. A sliced file that a delivery job still
+needs is kept until the daemon has fetched it. The relay today refuses a sliced file more
+than forty minutes old; that limit rises to the same two hours.
+
+R2's own rule for deleting old files cannot do this alone. It counts in whole days, and
+Cloudflare says a file is typically removed within 24 hours after it falls due. So a
+one-day rule on the sliced files is set as well, to catch any file the front server
+failed to delete, and such a file can rest at R2 for up to about two days.
 
 ### Coming back
 
-A page that has lost its state (a refresh, a closed and reopened panel) reads the parts
-and layout from the browser's storage and asks the front server for the user's slice
-jobs. The slice service lists the slice jobs of a user key, so the page finds a finished
-slice job without having kept its id, and opens on the Preview step. From phase 5, a
-delivery job of the user's opens on the Send step.
+**A slice goes on without its page.** Once submitted, a slice job runs to its end
+whether or not anything is following it: through a refresh, a dropped network connection
+or a closed laptop lid. This is the mockup's
+[decision 46](../mockups/print-wizard/DECISIONS.md). The slice service today cancels a
+slice job that nobody has followed for 120 seconds; that rule is removed. A slice whose
+user never returns therefore holds Orca until it ends, which the time limit bounds (see
+[Limits on one slice](#limits-on-one-slice)).
 
-A slice job that nobody follows is cancelled after 120 seconds, as today. So a page
-closed during a slice and reopened within two minutes finds the slice still running;
-reopened later, it starts the slice again from the stored plate. This departs from the
-mockup's decision 46, which has the slice run on however long the user is away, and it
-keeps Orca from working for a user who has left.
+A page that has lost its state (a refresh, a closed and reopened panel) reads the parts,
+the layout and the id of the plate's slice job from the browser's storage, and asks the
+front server about that slice job.
+
+| The front server answers | The page |
+|---|---|
+| Still running | Shows its progress on the Preview step |
+| Finished, and its sliced file is in the state bucket | Opens on the Preview step with the result |
+| Unknown, because the slice container restarted | Uploads the parts and submits the plate again |
+| Its sliced file has expired | Opens on the Parts step with one line saying the earlier plate's slice has expired, as the mockup's [decision 48](../mockups/print-wizard/DECISIONS.md) has it, and drops the stored parts |
+
+From phase 5, a page whose plate has a delivery job opens on the Send step.
 
 A user has one unfinished slice job at a time. Submitting a plate cancels the user's
 earlier unfinished slice job, which is what the Preview step does when a plate changes;
 with the wizard open in two tabs, the later slice wins.
 
 Work does not follow a user to another computer or browser: there the wizard opens
-empty. After two hours a sliced file that was not sent is gone and the browser drops its
-parts; the wizard then opens on the Parts step with one line saying the earlier plate's
-slice has expired, as the mockup's
-[decision 48](../mockups/print-wizard/DECISIONS.md) has it.
+empty. Chrome also keeps the storage of a page inside Onshape's panel apart from the
+storage of the same page opened directly, so work begun in the panel does not appear at
+the address opened in a tab of its own, nor the reverse.
 
 ### The configuration
 
@@ -301,11 +380,9 @@ Railway or finds Onshape credentials in its environment. The test is the setting
 the address it listens on, because a front server in a development container must listen
 on every address for a browser on the same computer to reach it.
 
-**Limits in the panel, as in PenguinCAM.** Safari sends no cookie to an embedded page and
-forgets an embedded page's storage when it quits, so in Onshape's panel Safari users can
-neither stay signed in nor come back to their parts. Chrome does both while its
-third-party cookies are allowed. Outside Onshape every browser works. Phase 4's design
-spec decides what, if anything, to do for Safari.
+**Browsers.** Safari is not supported. Inside Onshape's panel, sign-in and the stored
+parts depend on Chrome allowing cookies and storage to an embedded page, as PenguinCAM
+does.
 
 ## Printers
 
@@ -315,7 +392,8 @@ Today the pairing code is a lasting secret kept in a configuration file: whoever
 can send prints. In this design the code is used once.
 
 1. A user runs the daemon's `pair` command on the daemon's computer. The daemon asks the
-   relay for a pairing code and shows it. The code is good for fifteen minutes.
+   relay for a pairing code and shows it. The code is good for fifteen minutes and is
+   kept in the state bucket until it is typed in or expires.
 2. A signed-in user types the code into PenguinSlicer.
 3. The relay links the user's current group to that daemon, writes the group's
    paired-printer record to the state bucket, and gives the daemon its token. The code is
@@ -330,8 +408,8 @@ A send is allowed when the signed-in user's current group has a paired-printer r
 naming the daemon. Unpairing removes the record, and the daemon's next request is refused.
 
 This changes printer delivery, where today the caller presents the code first, the token
-carries the code and the relay's records are kept by code. They are kept by the daemon's
-id instead. The exchange in detail belongs to phase 5's design spec.
+carries the code and the relay's records are kept by code, in its memory. They are kept
+by the daemon's id instead, in the state bucket. The exchange in detail belongs to phase 5's design spec.
 
 ### How often a daemon talks to the relay
 
@@ -466,27 +544,30 @@ connects late already gets the latest progress report at once.
 ## Security
 
 **Who may use it.** Only users signed in with Onshape. A user has one unfinished slice
-job at a time, and the part store holds at most 25 parts for one user key (the most a
-plate can use), so one user cannot fill the queue or the disk. Every limit on the rate of
+job at a time, every slice is bounded in memory and time, and the part store holds at
+most 25 parts for one user key (the most a plate can use), so one user cannot fill the
+queue or the disk. Every limit on the rate of
 requests is counted for the signed-in user or the daemon, not for the address a request
 comes from: behind Cloudflare and Railway every request comes from the same few
 addresses.
 
-**Users' models.** A part or a sliced file exists on the server only in the slice
-container and, while a delivery job is live, in the relay's copy on the front server. It
-is never written to a bucket. A user reaches only their own parts, slice jobs and sliced
-files: the front server sets the user key from the cookie and the browser cannot name
-one. Log lines carry a part's name, size and measurements, never its geometry. Users of
-one group do see each other's names and a one-line description of a plate that is
-printing, on the printer-status icon.
+**Users' models.** A part exists on the server only in the slice container, for two
+hours after its last use. A sliced file is in the state bucket at Cloudflare R2 for two
+hours after its slice, or up to about two days if the front server fails to delete it
+(see [The sliced file](#the-sliced-file)). The bucket is private, and the only credential
+that reads it is the front server's. A user reaches only their own parts, slice jobs and
+sliced files: the front server sets the user key from the cookie and the browser cannot
+name one. Log lines carry a part's name, size and measurements, never its geometry.
+Users of one group do see each other's names and a one-line description of a plate that
+is printing, on the printer-status icon.
 
 **Uploaded files as hostile input.** Orca and the slice service's own checks run in the
 slice container, which holds no credentials and accepts requests only from the front
 server. Inside it, Orca runs as a Unix user of its own that can write only the scratch
 folder of its slice job, so a flaw in Orca cannot alter the slice service or reach
 another slice job's files. A flaw in the slice service itself is worse: until the slice
-container restarts, it could read every part uploaded and hand back any file as a sliced
-file, which a printer would then run. The slice container can also call the front server
+container restarts, it could read every part uploaded and hand the front server any file
+as a sliced file, which the front server would store and a printer would then run. The slice container can also call the front server
 over the private network, where it meets the same sign-in as anyone else.
 
 **Printers.** A print is started only by a signed-in user whose current group has a
@@ -536,26 +617,32 @@ private.
 ## What changes in each component
 
 **The slice service.** It gains the part store with a route to upload one part, checked
-on arrival; the user key on every request; a route listing a user key's slice jobs; a
-plate configuration that names parts by hash, with the error report for missing parts;
-one unfinished slice job for each user key; a comment line on its progress stream; a
-route from which the front server fetches its log lines; Orca run as a Unix user of its
-own; its folders emptied at start; and a bound on the disk the part store and the sliced
-files may take. A final slice job's record and its sliced file are kept two hours, where
-today they are kept one. The route that takes a whole plate's files in one request is
-removed.
+on arrival; the user key on every request; a route listing its slice jobs, by which a
+restarted front server finds the slices it must still collect; a plate configuration
+that names parts by hash, with the error report for missing parts; one unfinished slice
+job for each user key; a comment line on its progress stream; a route from which the
+front server fetches its log lines; Orca run as a Unix user of its own; its folders
+emptied at start; and a bound on the disk the part store may take. It loses the rule
+that cancels a slice job nobody follows, and the route that takes a whole plate's files
+in one request. Its memory ceiling is set to the hosted figure, and its time limit is
+set from the measurements on Railway.
 
 **Printer delivery.** It gains whatever the three settings of
-[How often a daemon talks to the relay](#how-often-a-daemon-talks-to-the-relay) call for,
-the single-use pairing code, the
-paired-printer record and records kept by the daemon's id; limits counted for each user
-and daemon; a send limit of two hours; and JSON log lines. These join what the plan
-already lists for phase 5.
+[How often a daemon talks to the relay](#how-often-a-daemon-talks-to-the-relay) call for;
+the single-use pairing code and the paired-printer record; its records of pairing codes
+and delivery jobs kept by the daemon's id in a store its caller supplies (the state
+bucket hosted, a folder on one machine), where today they are kept by code in its
+memory; a daemon that fetches again a sliced file whose fetch a restart cut off; limits
+counted for each user and daemon; a send limit of two hours; and JSON log lines. It no
+longer keeps a copy of the sliced file. These join what the plan already lists for
+phase 5.
 
 **The wizard.** Its server side is built as described here: Onshape sign-in and the
 development identity, the encrypted cookie, the user key, the configuration's reading
-and writing, the passing through of parts, slice jobs and sliced files, and the gathering
-of log lines. Its code in the browser keeps parts and layout in the browser's storage.
+and writing, the passing through of parts and slice jobs, the storing, serving and
+deleting of sliced files, and the gathering of log lines. Its code in the browser keeps
+parts and layout in the browser's storage, and submits a plate again when its slice job
+has become unknown.
 
 **The contracts.** The plate configuration's part names a hash, not a file sent with it.
 A contract for the configuration document is written.
@@ -567,8 +654,10 @@ A contract for the configuration document is written.
   each bucket, behind the same interface. "Parts", "The sliced file" and "Coming back"
   are built here, except what they say of Send and of delivery jobs, which waits for
   phase 5.
-- **Phase 3, hosted.** The two containers on Railway, the buckets, Onshape sign-in, the
-  log bucket and the command that reads it.
+- **Phase 3, hosted.** The two containers on Railway at
+  `https://penguinslicer.popcornpenguins.com/`, the buckets, Onshape sign-in, the log
+  bucket and the command that reads it, and the measurements that set the memory ceiling
+  and the time limit.
 - **Phase 4, inside Onshape.** The panel uses the same sign-in and the same routes.
 - **Phase 5, the real printer.** The relay joins the front server. Pairing, the chosen sync settings and daemon telemetry.
 
@@ -580,9 +669,16 @@ Each of these is believed and not yet checked.
   pass; one real upload settles it.
 - **Railway's 8 GB for one container on its cheaper plan, and x86_64 machines.** Both are
   inferred from Railway's pages and staff posts, not stated outright.
-- **Orca on Railway's machines.** Every measurement of memory and time so far is from
-  aarch64 Linux. The memory ceiling and the time estimates are measured again on the
-  slice container before users rely on it.
+- **Orca on Railway's machines, up to the memory ceiling.** Every measurement of memory
+  and time so far is from aarch64 Linux and from plates under 2,600 MB. Plates of rising
+  weight up to the proposed 6,000 MB are sliced on the slice container, each measured
+  for memory and time, before users rely on it. The memory ceiling, the time limit and
+  the estimates are set from those runs.
+- **What Railway does at a deploy.** Whether it starts the new container before stopping
+  the old one, and how long it lets the old one finish, was not checked. The design
+  assumes the worse case, a plain stop and start.
+- **The daemon after a cut-off fetch.** Whether today's daemon fetches a sliced file
+  again when the connection drops mid-way was not read from its code.
 - **Progress streams through Cloudflare and Railway.** Neither promises to pass
   server-sent events on without holding them back. If one does hold them, the page asks
   for the latest progress report every second or two instead, which both interfaces
@@ -594,9 +690,10 @@ Each of these is believed and not yet checked.
   at once must not leave a spent refresh token in the cookie.
 - **An Onshape account with no company or classroom.** What Onshape answers for one was
   not checked.
-- **Memory and disk.** What the front server uses with fifty held waits, and what the
-  part store and two hours of sliced files take on disk, were never measured.
+- **Memory and disk.** What the front server uses with fifty held waits, what the part
+  store takes on disk, and what the slice service itself needs beside Orca (the 2 GB
+  left above the memory ceiling) were never measured.
 - **Cost.** By Railway's published rates the two containers together cost about $7 a
   month with a few slices a day. About $40 a month is the figure for 5,000 slices and
   1,000 daemons, which also needs the asynchronous server mentioned under
-  [How often a daemon talks to the relay](#how-often-a-daemon-talks-to-the-relay). The buckets hold megabytes and cost cents. The first month's bill settles it.
+  [How often a daemon talks to the relay](#how-often-a-daemon-talks-to-the-relay). The buckets hold two hours of sliced files and some small records, and cost cents. The first month's bill settles it.
