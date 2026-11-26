@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- PenguinSlicer: a click-through requirements mockup of the 3D printing wizard, version 7.
+<!-- PenguinSlicer: a click-through requirements mockup of the 3D printing wizard, version 8.
      Everything is faked in this page: no server, no slicing, no Onshape, no printer.
      The yellow scenario strip at the top is a mockup control, not part of the product. -->
 <html lang="en">
@@ -176,7 +176,7 @@
     <header id="wiz-header">
       <div class="brand-row">
         <div class="brand">PenguinSlicer</div>
-        <button type="button" id="pstat" class="pstat" aria-expanded="false" aria-controls="pstat-pop" title="The printer: click for details">
+        <button type="button" id="pstat" class="pstat" aria-expanded="false" aria-controls="pstat-pop">
           <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M4 1h8v4H4zM2 6h12a1 1 0 0 1 1 1v5h-3v3H4v-3H1V7a1 1 0 0 1 1-1zm3 6v2h6v-3H5zm8-4.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5z"/></svg>
           <span class="pdot"></span><span class="ptext">Free</span>
         </button>
@@ -305,7 +305,12 @@
           <div id="preview-stats" class="stats"></div>
           <div class="preview-cols">
             <div>
-              <div id="viewer-container" class="gl-view" title="Drag to turn, right-drag to pan, scroll to zoom; drag the bar on the right to go through the layers">
+              <div id="viewer-container" class="gl-view">
+                <!-- version 8: the colour key, closed by default, behind a small icon -->
+                <button type="button" class="icon-btn key-btn" id="btn-key" aria-expanded="false" aria-controls="pv-key" aria-label="Colour key" title="Colour key">
+                  <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="2" width="5" height="2.4" rx="1" fill="#2b5c9e"/><rect x="1" y="5.6" width="5" height="2.4" rx="1" fill="#e0912f"/><rect x="1" y="9.2" width="5" height="2.4" rx="1" fill="#2f9e7a"/><rect x="1" y="12.8" width="5" height="2.4" rx="1" fill="#9a8fb8"/><rect x="8" y="2.6" width="7" height="1.2" rx="0.6" fill="currentColor"/><rect x="8" y="6.2" width="7" height="1.2" rx="0.6" fill="currentColor"/><rect x="8" y="9.8" width="7" height="1.2" rx="0.6" fill="currentColor"/><rect x="8" y="13.4" width="7" height="1.2" rx="0.6" fill="currentColor"/></svg>
+                </button>
+                <ul id="pv-key" class="pv-key" aria-label="Colour key" hidden></ul>
                 <div id="layer-slider" class="layer-slider" tabindex="0" role="slider" aria-label="Layer">
                   <div class="ls-track"><div class="ls-fill" id="ls-fill"></div></div>
                   <div class="ls-thumb" id="ls-thumb"><span id="ls-label"></span></div>
@@ -317,10 +322,12 @@
                 <button type="button" class="btn small icon" id="btn-layer-up" aria-label="One layer up">+</button>
                 <span class="spacer"></span>
                 <button type="button" class="btn small" id="btn-preview-view">Reset view</button>
+                <!-- fix round 1 of version 8: how to move the view, behind a "?" icon as on the Layout step -->
+                <button type="button" class="icon-btn help-btn" id="btn-preview-help" aria-expanded="false" aria-controls="preview-help" aria-label="How to move the view" title="How to move the view">?</button>
+                <div id="preview-help" class="help-pop up" role="dialog" aria-label="How to move the view" hidden>
+                  <p>Drag to turn, right-drag to pan, scroll to zoom; drag the bar on the right to go through the layers.</p>
+                </div>
               </div>
-            </div>
-            <div>
-              <ul id="legend" class="legend" aria-label="Colours"></ul>
             </div>
           </div>
         </div>

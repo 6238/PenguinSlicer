@@ -13,16 +13,16 @@
     plate: { x: 340, y: 320, height: 340, margin: 3, spacing: 5, spacingOff: 5, spacingOn: 12 }   // printable_area, printable_height; plate.py
   };
 
-  // color: the colour the layer preview draws the parts in (the configuration's colour of
-  // the spool; invented here). profiles: this filament's profiles, by id, the first is the default.
+  // profiles: this filament's profiles, by id, the first is the default. (Version 8: the layer
+  // preview's colours no longer follow the filament, so a filament has no colour here.)
   var FILAMENTS = [
-    { id: 'petg', name: 'Bambu PETG HF', type: 'PETG', density: 1.27, gPerM: 3.04, color: 0xe8792b,
+    { id: 'petg', name: 'Bambu PETG HF', type: 'PETG', density: 1.27, gPerM: 3.04,
       profiles: ['structural', 'pulley', 'camera', 'draft', 'fine'] },
-    { id: 'petgcf', name: 'Bambu PETG-CF', type: 'PETG-CF', density: 1.25, gPerM: 2.99, color: 0x4a4f57,
+    { id: 'petgcf', name: 'Bambu PETG-CF', type: 'PETG-CF', density: 1.25, gPerM: 2.99,
       profiles: ['cf-stiff', 'cf-light', 'cf-draft'] },
-    { id: 'pla', name: 'Bambu PLA Basic', type: 'PLA', density: 1.26, gPerM: 3.01, color: 0x2f9e5b,
+    { id: 'pla', name: 'Bambu PLA Basic', type: 'PLA', density: 1.26, gPerM: 3.01,
       profiles: ['pla-fit', 'pla-jig', 'pla-display'] },
-    { id: 'tpu', name: 'Generic TPU 95A', type: 'TPU', density: 1.22, gPerM: 2.92, color: 0xc2416a,
+    { id: 'tpu', name: 'Generic TPU 95A', type: 'TPU', density: 1.22, gPerM: 2.92,
       profiles: ['tpu-bumper', 'tpu-grip'] }
   ];
 

@@ -7,17 +7,32 @@
   'use strict';
   var T = THREE;
 
-  var TYPES = [
-    { id: 'outer', label: 'Outer wall', color: 0xff7d38 },
-    { id: 'inner', label: 'Inner wall', color: 0xffe64d },
-    { id: 'sparse', label: 'Sparse infill', color: 0xb03029 },
-    { id: 'solid', label: 'Internal solid infill', color: 0x9654cc },
-    { id: 'top', label: 'Top surface', color: 0xf05050 },
-    { id: 'bottom', label: 'Bottom surface', color: 0x5a7cff },
-    { id: 'support', label: 'Support', color: 0x3ccb5a },
-    { id: 'brim', label: 'Brim', color: 0x1fae91 }
+  // Version 8 (the owner): four fixed colours, one for each group of line types. They follow
+  // neither the filament nor Orca. Chosen for hue spacing, lightness against the view's
+  // background #f2f4f7 and against each other, and checked by simulation for protanopia,
+  // deuteranopia and tritanopia (DECISIONS.md, decision 33).
+  var GROUPS = [
+    { id: 'walls', label: 'Walls', color: 0x2b5c9e },
+    { id: 'infill', label: 'Infill', color: 0xe0912f },
+    { id: 'surfaces', label: 'Top and bottom surfaces', color: 0x2f9e7a },
+    { id: 'supports', label: 'Supports and brim', color: 0x9a8fb8 }
   ];
-  var SUPPORT_COLOR = 0xb4bac2;      // supports and their interface: a light grey that still shows on the light view
+  var TYPES = [
+    { id: 'outer', label: 'Outer wall', group: 'walls' },
+    { id: 'inner', label: 'Inner wall', group: 'walls' },
+    { id: 'sparse', label: 'Sparse infill', group: 'infill' },
+    { id: 'solid', label: 'Internal solid infill', group: 'infill' },
+    { id: 'top', label: 'Top surface', group: 'surfaces' },
+    { id: 'bottom', label: 'Bottom surface', group: 'surfaces' },
+    { id: 'support', label: 'Support', group: 'supports' },
+    { id: 'brim', label: 'Brim', group: 'supports' }
+  ];
+  var GROUP_COLOR = {}; GROUPS.forEach(function (g) { GROUP_COLOR[g.id] = g.color; });
+  TYPES.forEach(function (t) { t.color = GROUP_COLOR[t.group]; });
+  // Walls are shaded by which way they face, as if lit by the Layout view's main light (from
+  // the front left, above), so the stacked walls read as surfaces and not as a flat silhouette.
+  var LIGHT = (function () { var x = -0.4, y = -0.6, L = Math.sqrt(x * x + y * y); return [x / L, y / L]; })();
+  function wallShade(nx, ny) { return 0.5 + 0.5 * (nx * LIGHT[0] + ny * LIGHT[1]); }     // 0 facing away, 1 facing the light
 
   /* --------------------------------------------------- one part in one orientation */
   function makeGroup(partKey, q, d) {
@@ -186,13 +201,15 @@
   // one layer of one group, in the group's own frame: {type: [x1,y1,x2,y2,...]}
   function layerPaths(g, k, zs, S, brimOn) {
     if (g.layers[k]) return g.layers[k];
-    var w = S.line_width, out = { outer: [], inner: [], sparse: [], solid: [], top: [], bottom: [], support: [], brim: [] };
+    var w = S.line_width, out = { outer: [], inner: [], sparse: [], solid: [], top: [], bottom: [], support: [], brim: [], shade: { outer: [], inner: [] } };
     var lh = k ? S.layer_height : S.initial_layer_print_height, z = zs[k] - lh / 2;
     var segs = section(g, z), i, loops = Math.min(S.wall_loops, 4);
     for (i = 0; i < segs.length; i += 6) {
+      var sh = wallShade(segs[i + 4], segs[i + 5]);
       for (var wl = 0; wl < loops; wl++) {
         var off = -w * (wl + 0.5), nx = segs[i + 4] * off, ny = segs[i + 5] * off;
         (wl ? out.inner : out.outer).push(segs[i] + nx, segs[i + 1] + ny, segs[i + 2] + nx, segs[i + 3] + ny);
+        (wl ? out.shade.inner : out.shade.outer).push(sh);
       }
     }
     if (k === 0 && brimOn) {
@@ -278,7 +295,7 @@
     });
     var layers = 0;
     Object.keys(groups).forEach(function (k) { layers = Math.max(layers, groups[k].zs.length); });
-    var acc = {}; TYPES.forEach(function (t) { acc[t.id] = { pos: [], ends: [] }; });
+    var acc = {}; TYPES.forEach(function (t) { acc[t.id] = { pos: [], shade: [], ends: [] }; });
     var length = {}; TYPES.forEach(function (t) { length[t.id] = 0; });
     var zsAll = [], k = 0, cancelled = false;
     function step() {
@@ -291,9 +308,10 @@
           zTop = g.zs[k];
           var L = layerPaths(g, k, g.zs, S, g.brim), z = g.zs[k];
           TYPES.forEach(function (t) {
-            var src = L[t.id], dst = acc[t.id].pos;
+            var src = L[t.id], dst = acc[t.id].pos, shs = L.shade[t.id], dsh = acc[t.id].shade;
             for (var i = 0; i < src.length; i += 4) {
               dst.push(src[i] + it.x, src[i + 1] + it.y, z, src[i + 2] + it.x, src[i + 3] + it.y, z);
+              dsh.push(shs ? shs[i / 4] : 1);
               var dx = src[i + 2] - src[i], dy = src[i + 3] - src[i + 1];
               length[t.id] += Math.sqrt(dx * dx + dy * dy);
             }
@@ -304,7 +322,7 @@
         k++;
       }
       if (k < layers) setTimeout(step, 0);
-      else onDone({ acc: acc, layers: layers, zs: zsAll, length: length });
+      else onDone({ acc: acc, layers: layers, zs: zsAll, length: length, lineWidth: S.line_width });
     }
     setTimeout(step, 0);
     return { cancel: function () { cancelled = true; } };
@@ -327,7 +345,74 @@
     return { seconds: Math.round(secs), grams: grams, meters: grams / filament.gPerM, byType: byType, overhead: overhead };
   }
 
+  /* --------------------------------------------------- lines with a width */
+  // WebGL draws a line one pixel wide whatever the zoom. Each toolpath segment is drawn instead
+  // as a quad facing the camera, as wide as the sliced settings' line width seen at that distance and
+  // never thinner than a set number of pixels, so lines get their real weight when zoomed in
+  // and stay visible when zoomed out. One instanced quad per segment; the draw range is the
+  // instance count.
+  var LINE_VS = [
+    'attribute vec3 iStart; attribute vec3 iEnd; attribute vec3 iColor;',
+    'uniform vec2 resolution; uniform float worldWidth; uniform float minPx;',
+    'varying vec3 vColor;',
+    'void main() {',
+    '  vColor = iColor;',
+    '  vec4 s = projectionMatrix * modelViewMatrix * vec4(iStart, 1.0);',
+    '  vec4 e = projectionMatrix * modelViewMatrix * vec4(iEnd, 1.0);',
+    '  vec2 d = (e.xy / e.w - s.xy / s.w) * resolution;',
+    '  float len = length(d);',
+    '  vec2 dir = len > 1e-6 ? d / len : vec2(1.0, 0.0);',
+    '  vec2 nrm = vec2(-dir.y, dir.x);',
+    '  vec4 c = position.x < 0.5 ? s : e;',
+    '  float px = max(minPx, worldWidth * projectionMatrix[1][1] * resolution.y * 0.5 / c.w);',
+    '  vec2 off = (nrm * position.y + dir * (position.x < 0.5 ? -0.5 : 0.5) * abs(position.y)) * px * 0.5;',
+    '  c.xy += off / resolution * 2.0 * c.w;',
+    '  gl_Position = c;',
+    '}'].join('\n');
+  var LINE_FS = 'varying vec3 vColor; void main() { gl_FragColor = vec4(vColor, 1.0); }';
+  var QUAD = (function () {
+    var g = new T.InstancedBufferGeometry();
+    g.setAttribute('position', new T.Float32BufferAttribute([0, -1, 0, 0, 1, 0, 1, -1, 0, 1, 1, 0], 3));
+    g.setIndex([0, 2, 1, 2, 3, 1]);
+    return g;
+  })();
+  function lineMaterial(minPx, worldWidth) {
+    return new T.ShaderMaterial({ vertexShader: LINE_VS, fragmentShader: LINE_FS,
+      uniforms: { resolution: { value: new T.Vector2(1, 1) }, worldWidth: { value: worldWidth }, minPx: { value: minPx } } });
+  }
+  // A segment's colour: the group's colour for a flat line and for a wall facing the light
+  // (shade 1); a wall darker as it turns from the light, down to 0.66 of it (shade 0: walls
+  // #1c3d68). Fix round 1 of version 8: shading only darkens, so no wall comes nearer to
+  // another group's colour than the flat colour that was checked for colour blindness.
+  function shaded(base, t, out, o) {
+    var c = new T.Color(base), k = 0.66 + 0.34 * t;
+    out[o] = c.r * k; out[o + 1] = c.g * k; out[o + 2] = c.b * k;
+  }
+  // pos: [x1,y1,z1,x2,y2,z2,...] from segment `from` to `to`; flat: every segment in the group's colour
+  function lineMesh(pos, shade, base, from, to, material, flat) {
+    var n = to - from, st = new Float32Array(n * 3), en = new Float32Array(n * 3), col = new Float32Array(n * 3);
+    for (var i = 0; i < n; i++) {
+      var p = (from + i) * 6;
+      st[i * 3] = pos[p]; st[i * 3 + 1] = pos[p + 1]; st[i * 3 + 2] = pos[p + 2];
+      en[i * 3] = pos[p + 3]; en[i * 3 + 1] = pos[p + 4]; en[i * 3 + 2] = pos[p + 5];
+      shaded(base, flat ? 1 : shade[from + i], col, i * 3);
+    }
+    var g = new T.InstancedBufferGeometry();
+    g.index = QUAD.index; g.setAttribute('position', QUAD.attributes.position);
+    g.setAttribute('iStart', new T.InstancedBufferAttribute(st, 3));
+    g.setAttribute('iEnd', new T.InstancedBufferAttribute(en, 3));
+    g.setAttribute('iColor', new T.InstancedBufferAttribute(col, 3));
+    g.instanceCount = n;
+    var m = new T.Mesh(g, material); m.frustumCulled = false;
+    return m;
+  }
+
   /* --------------------------------------------------- the viewer */
+  // Fix round 1 of version 8 tried the review's cull (below the current layer, no inner walls
+  // or infill but for the 16 layers under it). It roughly halved the frame time on software
+  // WebGL but changed the look: holes read smaller and the background showed through along
+  // edges, where the inner walls fill in behind the one-line outer wall. Not kept; the cost and
+  // the requirements it sets for the implementation are in DECISIONS.md, decision 33.
   function createViewer(container, plate) {
     var canvas = document.createElement('canvas'); canvas.className = 'gl-canvas';
     container.appendChild(canvas);
@@ -345,6 +430,7 @@
     function resize() {
       var w = container.clientWidth, h = container.clientHeight; if (!w || !h) return;
       renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); needs = true;
+      if (belowMat) setResolution();
     }
     if (window.ResizeObserver) new ResizeObserver(resize).observe(container);
     var lines = {}, result = null, ghosts = [];
@@ -362,40 +448,70 @@
       camera.position.set(cx + span * 0.35 * k, cy - span * 1.05 * k, span * 0.9 * k + b.h);
       controls.update(); needs = true;
     }
+    renderer.localClippingEnabled = true;
+    // Layers below the current one: at least 1 px wide, walls shaded. The current layer: drawn
+    // again over them, unshaded and at least 2 px wide, so the layer the bar is on stands out.
+    // Fix round 1 of version 8: each line is as wide as the sliced settings' line width, the
+    // width the mock's paths are laid apart, so a solid surface reads as one colour.
+    var belowMat = lineMaterial(1, 0.62), currentMat = lineMaterial(2, 0.62), current = [];
+    function setWidth(w) { belowMat.uniforms.worldWidth.value = w; currentMat.uniforms.worldWidth.value = w; }
+    function setResolution() {
+      var v = new T.Vector2(); renderer.getDrawingBufferSize(v);
+      belowMat.uniforms.resolution.value.copy(v); currentMat.uniforms.resolution.value.copy(v);
+      var dpr = renderer.getPixelRatio();
+      belowMat.uniforms.minPx.value = 1 * dpr; currentMat.uniforms.minPx.value = 2 * dpr;
+    }
+    // The part above the current layer: a faint ghost of each instance, cut at the layer, so the
+    // user sees what is still to print and where the layer sits in the part.
+    var cut = new T.Plane(new T.Vector3(0, 0, 1), 0);
+    var ghostAbove = new T.MeshLambertMaterial({ color: 0x95a0ac, transparent: true, opacity: 0.36, depthWrite: false, clippingPlanes: [cut] });
+    function dropCurrent() { current.forEach(function (m) { scene.remove(m); m.geometry.dispose(); }); current = []; }
     function clear() {
       Object.keys(lines).forEach(function (k) { scene.remove(lines[k]); lines[k].geometry.dispose(); });
-      lines = {}; result = null;
+      lines = {}; result = null; dropCurrent();
       ghosts.forEach(function (m) { scene.remove(m); }); ghosts = [];
       needs = true;
     }
-    // Version 6: two colours, not one per line type. Every line of the parts (walls, infill,
-    // surfaces, brim) in the filament's colour; supports, with their interface, light grey.
-    function show(res, instances, partColor) {
-      clear(); result = res;
+    function ghostMeshes(instances, material) {
+      instances.forEach(function (c) {
+        var def = MockParts.byKey[c.partKey], d = MockPlate.derive(c);
+        var m = new T.Mesh(def.geometry, material);
+        m.quaternion.copy(c.q); m.position.set(c.x - d.offset[0], c.y - d.offset[1], -d.offset[2]);
+        ghosts.push(m); scene.add(m);
+      });
+    }
+    // Version 8: four fixed colours, one per group (walls; infill; top and bottom surfaces;
+    // supports and brim), whatever the filament.
+    function show(res, instances) {
+      clear(); result = res; setResolution(); setWidth(res.lineWidth || 0.62);
       TYPES.forEach(function (t) {
         var a = res.acc[t.id]; if (!a.pos.length) return;
-        var g = new T.BufferGeometry(); g.setAttribute('position', new T.Float32BufferAttribute(a.pos, 3));
-        var col = partColor == null ? t.color : t.id === 'support' ? SUPPORT_COLOR : partColor;
-        var l = new T.LineSegments(g, new T.LineBasicMaterial({ color: col }));
+        var l = lineMesh(a.pos, a.shade, t.color, 0, a.pos.length / 6, belowMat, false);
         lines[t.id] = l; scene.add(l);
       });
+      ghostMeshes(instances, ghostAbove);
       frameView(instances);
       setLayer(res.layers - 1);
     }
     // the instances as grey ghosts, shown while slicing
     function showGhosts(instances) {
       clear();
-      instances.forEach(function (c) {
-        var def = MockParts.byKey[c.partKey], d = MockPlate.derive(c);
-        var m = new T.Mesh(def.geometry, new T.MeshStandardMaterial({ color: 0x8a96a3, transparent: true, opacity: 0.35, flatShading: true }));
-        m.quaternion.copy(c.q); m.position.set(c.x - d.offset[0], c.y - d.offset[1], -d.offset[2]);
-        ghosts.push(m); scene.add(m);
-      });
+      ghostMeshes(instances, new T.MeshStandardMaterial({ color: 0x8a96a3, transparent: true, opacity: 0.35, flatShading: true }));
       frameView(instances);
     }
     function setLayer(k) {
       if (!result) return;
-      TYPES.forEach(function (t) { if (lines[t.id]) lines[t.id].geometry.setDrawRange(0, result.acc[t.id].ends[k]); });
+      dropCurrent();
+      TYPES.forEach(function (t) {
+        if (!lines[t.id]) return;
+        var a = result.acc[t.id], to = a.ends[k] / 2, from = k ? a.ends[k - 1] / 2 : 0;
+        lines[t.id].geometry.instanceCount = from;          // the layers below
+        if (to > from) { var m = lineMesh(a.pos, a.shade, t.color, from, to, currentMat, true); m.renderOrder = 1; current.push(m); scene.add(m); }
+      });
+      // the ghost: what is above the current layer, hidden once every layer is shown
+      var last = k >= result.layers - 1;
+      cut.constant = -(result.zs[k] || 0);
+      ghosts.forEach(function (m) { m.visible = !last; });
       needs = true;
     }
     function setVisible(id, on) { if (lines[id]) { lines[id].visible = on; needs = true; } }
@@ -403,5 +519,5 @@
              reset: function (instances) { frameView(instances); } };
   }
 
-  window.Preview3D = { TYPES: TYPES, SUPPORT_COLOR: SUPPORT_COLOR, generate: generate, estimate: estimate, createViewer: createViewer };
+  window.Preview3D = { TYPES: TYPES, GROUPS: GROUPS, generate: generate, estimate: estimate, createViewer: createViewer };
 })();

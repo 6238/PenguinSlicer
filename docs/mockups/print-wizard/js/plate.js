@@ -108,7 +108,20 @@
       if (b.maxY > plate.y - plate.margin + EPS) edges.push('back');
       var off = edges.length > 0;
       var outside = b.minX > plate.x || b.maxX < 0 || b.minY > plate.y || b.maxY < 0;
-      if (off) {
+      var long = off ? tooLong(c, plate) : null;
+      if (long) {
+        // fix round 1 of version 8: an instance longer or wider than the plate takes as it is
+        // turned. Arrange never turns, so it cannot help; the remedy is the wizard's turn.
+        var U0 = window.MockUnits, own0 = plate.unitsOf ? plate.unitsOf(c) : 'mm';
+        var size = own0 === 'in' ? U0.len(long.size, 1, 'mm') + ' (' + U0.len(long.size, 0, 'in') + ')' : U0.len(long.size, 0, 'mm');
+        var said = labelOf(c) + ' is ' + size + (long.axis === 'x' ? ' from left to right' : ' from front to back') +
+          ' as it is turned; the plate takes ' + U0.len(long.usable, 0, 'mm') + '.';
+        var remedy = long.turn ? ' Turn it to fit turns it and arranges the plate again.' : ' Lay it down another way.';
+        problems.push({ rule: 'off_plate', instances: [c.id], turnToFit: !!long.turn, message: outside
+          ? said + remedy
+          : labelOf(c) + ' is not fully on the plate: it crosses the ' + edges.join(' and ') + ' edge' + (edges.length > 1 ? 's' : '') + '. ' +
+            said.replace(labelOf(c), 'It') + remedy });
+      } else if (off) {
         problems.push({ rule: 'off_plate', instances: [c.id], message: outside
           ? labelOf(c) + ' is off the plate. Drag it onto the plate, or press Arrange.'
           : labelOf(c) + ' is not fully on the plate: it crosses the ' + edges.join(' and ') + ' edge' +
@@ -149,31 +162,45 @@
     instance.d = null;
   }
 
-  // Shelf packing, largest first. An instance too long for the plate is tried turned 90 and 45
-  // degrees. Instances that still do not fit wait beside the plate. Returns the number parked.
+  // The wizard's turn for an instance too long for the plate as it lies (the Shooter Hood Rib,
+  // 353 mm, on a 340 × 320 mm plate): the first of a quarter turn, an eighth and three eighths
+  // that fits. The wizard turns this way when it gives an orientation: on arrival, after a
+  // lay-down that leaves the instance beside the plate, and when the user presses "Turn it to
+  // fit". Arrange itself never turns. Returns the angle turned, 0 when none was needed or none fits.
+  function fitTurn(instance, plate) {
+    var usableX = plate.x - 2 * plate.margin, usableY = plate.y - 2 * plate.margin, d = derive(instance);
+    if (d.w <= usableX && d.l <= usableY) return 0;
+    var q0 = instance.q.clone(), tries = [90, 45, 135];
+    for (var t = 0; t < tries.length; t++) {
+      instance.q = q0.clone(); yaw(instance, tries[t]); d = derive(instance);
+      if (d.w <= usableX && d.l <= usableY) return tries[t];
+    }
+    instance.q = q0; instance.d = null;
+    return 0;
+  }
+  // Whether an instance is longer or wider than the plate takes as it is turned: null, or
+  // { axis 'x' (left to right) or 'y' (front to back), size, usable, turn: the angle fitTurn
+  // would turn it, 0 when no turn fits }. Changes nothing.
+  function tooLong(instance, plate) {
+    var usableX = plate.x - 2 * plate.margin, usableY = plate.y - 2 * plate.margin, d = derive(instance);
+    var axis = d.w > usableX + EPS ? 'x' : d.l > usableY + EPS ? 'y' : null;
+    if (!axis) return null;
+    var probe = { partKey: instance.partKey, q: instance.q.clone(), x: 0, y: 0 };
+    return { axis: axis, size: axis === 'x' ? d.w : d.l, usable: axis === 'x' ? usableX : usableY, turn: fitTurn(probe, plate) };
+  }
+
+  // Shelf packing, largest first. Version 8 (the owner): Arrange never turns an instance; each
+  // keeps the orientation it was given (by lay on face, the rotation handle or the wizard), and
+  // its footprint in that orientation is what is placed and spaced. Instances that do not fit
+  // wait beside the plate. Returns the number parked.
   function arrange(instances, plate) {
-    var usableX = plate.x - 2 * plate.margin, usableY = plate.y - 2 * plate.margin;
-    instances.forEach(function (c) {
-      var d = derive(c);
-      if (d.w <= usableX && d.l <= usableY) return;
-      var tries = [90, 45, 90];
-      for (var t = 0; t < tries.length; t++) {
-        yaw(c, tries[t]); d = derive(c);
-        if (d.w <= usableX && d.l <= usableY) return;
-      }
-    });
     // largest footprint first, each at the first free spot scanning from the front-left corner
     function area(c) { var h = derive(c).hull, a = 0; for (var i = 0, j = h.length - 1; i < h.length; j = i++) a += (h[j][0] + h[i][0]) * (h[j][1] - h[i][1]); return Math.abs(a / 2); }
     var order = instances.slice().sort(function (a, b) { return area(b) - area(a); });
     var placed = [], parked = 0, sideY = 0;
     order.forEach(function (c) {
       if (place(c, placed, plate)) { placed.push(c); return; }
-      var turns = [90, 45, 90, 90], q0 = c.q.clone();         // try it turned, with a finer scan
-      for (var t = 0; t < turns.length; t++) {
-        yaw(c, turns[t]);
-        if (place(c, placed, plate, 2)) { placed.push(c); return; }
-      }
-      c.q = q0; c.d = null;
+      if (place(c, placed, plate, 2)) { placed.push(c); return; }     // a finer scan before giving up
       var d = derive(c);
       c.x = plate.x + plate.spacing * 4 + d.w / 2; c.y = sideY + d.l / 2; sideY += d.l + plate.spacing; parked++;
     });
@@ -262,25 +289,13 @@
   }
 
   /* ------------------------------------------------------------ the pile arrange */
-  // Research 2026-11-19, section C: largest first; each instance tried at the angle that gives its
-  // outline the smallest rectangle and at a quarter, half and three-quarter turn from it (45
-  // degrees more only if none of those fits); every free spot on a 5 mm grid scored by how
+  // Research 2026-11-19, section C: largest first; every free spot on a 5 mm grid scored by how
   // small and square the pile stays and how near the plate's middle it is, then refined at
   // 1 mm; the pile is centred at the end. Instances that fit nowhere wait beside the plate.
+  // Version 8 (the owner): no instance is turned. Until version 7 each was tried at the angle
+  // that gives its outline the smallest rectangle and at quarter turns from it, which squared
+  // an instance the user had turned with the rotation handle back to that angle.
   function hullArea(h) { var a = 0; for (var i = 0, j = h.length - 1; i < h.length; j = i++) a += (h[j][0] + h[i][0]) * (h[j][1] - h[i][1]); return Math.abs(a / 2); }
-  function minRectAngle(h) {
-    var best = 0, bestA = Infinity;
-    for (var i = 0; i < h.length; i++) {
-      var a = h[i], b = h[(i + 1) % h.length], th = Math.atan2(b[1] - a[1], b[0] - a[0]);
-      var c = Math.cos(-th), s = Math.sin(-th), x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-      for (var k = 0; k < h.length; k++) {
-        var x = h[k][0] * c - h[k][1] * s, y = h[k][0] * s + h[k][1] * c;
-        if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
-      }
-      var A = (x1 - x0) * (y1 - y0); if (A < bestA - 1e-6) { bestA = A; best = -th; }
-    }
-    return best * 180 / Math.PI;
-  }
   // true when two outlines are closer than lim (stops at the first pair of edges that is)
   function closer(A, B, lim) {
     if (inside(A[0], B) || inside(B[0], A)) return true;
@@ -326,11 +341,10 @@
     }
     order.forEach(function (c) {
       var q0 = c.q.clone(); c.d = null;
-      var base = minRectAngle(derive(c).hull), angles = [0, 90, 180, 270, 45, 135], best = null;
+      var best = null;
       var full = noRoom(c, placed.map(function (p) { return p.c; }), plate);
-      for (var ai = 0; ai < angles.length && !full; ai++) {
-        if (ai >= 4 && best) break;
-        c.q = q0.clone(); yaw(c, base + angles[ai]); var d = derive(c);
+      if (!full) {
+        var d = derive(c);
         var x0 = plate.margin + d.w / 2, x1 = plate.x - plate.margin - d.w / 2 + EPS, y0 = plate.margin + d.l / 2, y1 = plate.y - plate.margin - d.l / 2 + EPS;
         // score every spot first (cheap), then test spots best first: the first free one wins
         var spots = [];
@@ -369,7 +383,7 @@
 
   // Arrange as the research recommends: run the shelf packer above and the pile, keep the
   // result that leaves fewer instances beside the plate, the smaller pile breaking a tie.
-  // Returns { parked, placed, turned, used: 'pile' | 'shelf', ms }.
+  // Returns { parked, placed, used: 'pile' | 'shelf', ms }.
   function bestArrange(instances, plate) {
     var t0 = performance.now();
     function snap() { return instances.map(function (c) { return { c: c, x: c.x, y: c.y, q: c.q.clone() }; }); }
@@ -386,11 +400,10 @@
     restore(start);
     var pp = pile(instances, plate), pArea = pileArea(), used = 'pile';
     if (pa < pp || (pa === pp && aArea < pArea)) { restore(A); used = 'shelf'; }
-    var parked = used === 'pile' ? pp : pa, turned = 0;
-    start.forEach(function (s) { if (s.q.angleTo(s.c.q) > 0.02) turned++; });
-    return { parked: parked, placed: instances.length - parked, turned: turned, used: used, ms: Math.round(performance.now() - t0) };
+    var parked = used === 'pile' ? pp : pa;
+    return { parked: parked, placed: instances.length - parked, used: used, ms: Math.round(performance.now() - t0) };
   }
 
-  window.MockPlate = { derive: derive, worldHull: worldHull, check: check, arrange: arrange, bestArrange: bestArrange, place: place, placeNear: placeNear,
+  window.MockPlate = { derive: derive, worldHull: worldHull, check: check, arrange: arrange, bestArrange: bestArrange, fitTurn: fitTurn, tooLong: tooLong, place: place, placeNear: placeNear,
                        centre: centre, yaw: yaw, bbox: bbox, inside: inside };
 })();
