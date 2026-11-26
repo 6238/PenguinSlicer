@@ -696,7 +696,13 @@ Called Setup until version 5; the decisions keep their numbers.
     saw four losses in seven showings of a five- or six-instance plate, and after a second
     loss in one page no view drew again until a reload; the fix round's walk of every step
     with a four-instance plate lost the context in two runs of three. The wizard allows 150
-    instances on a plate. The owner's Mac draws on a graphics card and was not measured.
+    instances on a plate. On the owner's Mac, which draws on a graphics card, the preview
+    was fast (Thu 2026-11-26, not timed), but showed artefacts: walls and hole edges read
+    as combs, supports have ragged edges, and infill shows through near the edges of a top
+    surface ([the owner's screenshot](../../orchestration/mockup-v8/screenshots/owner-preview-combs-on-mac.png)).
+    The mockup draws each path as a flat strip with no height, which nearly vanishes when
+    seen edge-on, so the gaps between layers show. The owner chose to leave this to the
+    implementation.
     Three quarters of the segments can never be seen (on the five-instance plate 287,646
     inner-wall and 12,393 infill segments of 399,261 lie inside the parts under the layers
     above). The fix round tried drawing, below the current layer, only outer walls, top and
@@ -705,12 +711,17 @@ Called Setup until version 5; the decisions keep their numbers.
     1.5 to 2.7 s a frame, but from half way up the holes read smaller and the background
     showed through along the edges, where the inner walls fill in behind the one-line outer
     wall. The renders did not look the same, so the mockup draws every segment.
-    **Two requirements for the implementation:** (1) a frame budget for the layer preview
+    **Four requirements for the implementation:** (1) a frame budget for the layer preview
     on a machine without a graphics card (software WebGL), met at the largest plate the
     wizard allows, by whatever means keeps the look (merging the segments of a layer into
     fewer, longer quads, drawing hidden layers at less detail, or a cheaper line); (2) a
     view that draws again after a lost WebGL context, in all three 3D views, without a
-    reload.
+    reload; (3) no combs and no show-through at any viewing angle: walls, hole edges and
+    supports read as solid surfaces, and a solid surface shows only its own colour, as in
+    the owner's screenshot above, by whatever drawing method achieves it; (4) the
+    implementer makes test renders of real sliced plates (several plates, supports on and
+    off, several layer counts, several viewing angles including edge-on and zoomed in),
+    looks at every one, and keeps them as the evidence that the preview looks right.
 34. Next goes to the Send step once the plate is sliced.
 
 ### Send step
