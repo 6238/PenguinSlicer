@@ -5,7 +5,7 @@ memory model in penguin_slice/limits.py can be refitted.
 Standard library, numpy and the slice service's package. One plate at a time, each run
 through the code that ships (plate_3mf.py writes the plate, slicer.slice_plate slices it,
 the name guard reads it back); the peak is the slice service's memory watchdog's reading of
-Orca's processes (the rows in the guide before Fri 2026-11-20 used Orca's ru_maxrss from
+Orca's processes (the rows in slice/README-details.md before Fri 2026-11-20 used Orca's ru_maxrss from
 wait4; on the spacer plates of that day the two read the same), and the watchdog stops a slice that passes MEASURE_STOP_MB (3 GB).
 
     uv run --project slice python slice/scripts/measure_plate.py --list

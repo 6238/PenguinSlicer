@@ -669,7 +669,7 @@ def test_a_sound_parts_warning_is_not_given_as_the_reason_another_part_failed(tm
 
 
 def test_the_reference_plate_of_100_spacers(tmp_path):
-    """Protects: the measurement behind MAX_INSTANCES (slice/README.md, "Plate limits"). 100
+    """Protects: the measurement behind MAX_INSTANCES (slice/README-details.md, "Plate limits"). 100
     hex shaft spacers in a 10 by 10 grid, through the HTTP interface: delivered with every
     instance, under the default memory ceiling, its peak, time and size printed."""
     import time

@@ -767,7 +767,7 @@ def check_start_path(shop, jobs, *, shown, cancels=(), exempt_done=False, exempt
     told. `shown`: the files the printer showed as printing (its own truth). `cancels`:
     (job, error code or None, shop time, the files commanded by then) of each cancel and
     its answer. `exempt_done` and `exempt_end`: a printer so slow, or a daemon so blind,
-    that the guide's two stated limits allow a done, or an end, without the print shown;
+    that the two stated limits of README-details.md allow a done, or an end, without the print shown;
     `slow` the same for "did not start", and `allow_overlap` for a start command while
     the printer prints. `longer_hold`: a damaged note, which holds the printer for longer
     on purpose. Returns nothing; raises AssertionError naming the broken invariant."""

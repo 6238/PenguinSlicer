@@ -385,7 +385,7 @@ def test_an_unknown_code_is_reported_truthfully_with_the_code_kept_in_detail():
 def test_the_guide_lists_exactly_the_codes_printer_delivery_can_report():
     import os
     import re
-    guide = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'README.md')
+    guide = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'README-details.md')
     with open(guide, encoding='utf-8') as fh:
         listed = set(re.findall(r'^\| `(delivery\.[a-z_]+)` \|', fh.read(), re.MULTILINE))
     assert listed == set(errors.CODES)

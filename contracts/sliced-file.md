@@ -4,9 +4,9 @@ What the slice service returns for a [plate configuration](plate-configuration.m
 file, ready to send to the printer, and its summary. The file is what Orca Slicer exports
 for a sliced plate, a `.gcode.3mf` archive. The slice service's HTTP interface serves the
 file alone at `GET /slices/<job>/file`, and the summary, a JSON object, on its own at
-`GET /slices/<job>/summary` ([the slice service's guide](../slice/README.md), "The HTTP
-interface"). The Orca release is the one the slice service pins ([the slice service's
-guide](../slice/README.md), "Orca Slicer").
+`GET /slices/<job>/summary` ([The HTTP interface](../slice/README-details.md#the-http-interface)
+in the slice service's detailed guide). The Orca release is the one the slice service pins
+([Orca Slicer](../slice/README-details.md#orca-slicer) in the same guide).
 
 ## Name
 
@@ -67,8 +67,8 @@ good.
   opens as a zip with its directory intact, has `Metadata/plate_1.gcode` and
   `Metadata/plate_1.json`, and every entry passes its checksum. A cancel discards it.
 - A done slice job keeps only its sliced file and its uploaded parts on the print server,
-  until its record expires ([the slice service's guide](../slice/README.md), "The HTTP
-  interface"): the
+  until its record expires ([The HTTP interface](../slice/README-details.md#the-http-interface)
+  in the slice service's detailed guide): the
   slice service slices in a scratch folder and removes that folder whether the slice
   succeeds or fails.
 

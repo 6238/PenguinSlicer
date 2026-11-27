@@ -144,7 +144,8 @@ reports each as an error the wizard explains. How many Orcas run at once and how
 slice jobs may wait are settings, starting at one and two; memory decides the first,
 since the slice container never runs more Orcas than fit with each at the memory
 ceiling. The reasoning, the measurements behind the figures and what is still to be
-measured are in [the slice service's guide](../slice/README.md).
+measured are in [the slice service's guide](../slice/README.md), and in full in its
+[detailed guide](../slice/README-details.md#to-be-built).
 
 ### Progress streams
 
@@ -258,7 +259,8 @@ once. The printer-status icon shows Offline when a daemon's last sync is more th
 minutes old, and a running delivery job's report is stale after 40 seconds.
 
 Pairing, sending and unpairing, the syncs and every limit are in
-[printer delivery's guide](../delivery/README.md).
+[printer delivery's guide](../delivery/README.md), and in full in its
+[detailed guide](../delivery/README-details.md#to-be-built).
 
 ## Reading what happened
 

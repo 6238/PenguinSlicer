@@ -37,7 +37,7 @@ class Code:
     action: Optional[str] = None
 
 
-#: Every code printer delivery can report. The guide lists the same codes; each has a test
+#: Every code printer delivery can report. README-details.md lists the same codes; each has a test
 #: that produces it on purpose.
 CODES = {
     # -- refused before any delivery job exists ------------------------------------------

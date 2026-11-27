@@ -30,7 +30,7 @@ A delivery job, on the daemon:
    leave the wait once the relay no longer holds the job (the hold stays, and so does the
    note, so a restarted daemon holds the printer too).
 
-Every acknowledgement carries the failure's code (the guide lists them; the relay turns
+Every acknowledgement carries the failure's code (README-details.md lists them; the relay turns
 each into an error report), the one line of reason, and the evidence in `detail`. An acknowledgement that
 cannot be delivered is queued and sent again, with backoff, until the relay answers.
 """
@@ -61,7 +61,7 @@ BACKOFF_CAP = 60.0
 #: Every wait after a failure is shortened by up to this share, drawn from `rand`, so a
 #: shop full of daemons that lost the relay at the same moment do not return in step.
 JITTER = 0.25
-# The settings of "How a start is decided" (the guide's section of that name). Every one
+# The settings of "How a start is decided" (the section of that name in README-details.md). Every one
 # is a guess until the real H2S is timed.
 #
 #: After the start command, this long without the printer showing our print and the
@@ -123,7 +123,7 @@ _ENDED = (printer_module.FINISHED, printer_module.ERROR)
 class StartHold:
     """What the daemon knows of one start command, from the moment it is sent until the
     evidence settles what became of it. While a hold is unsettled no other start command
-    goes to the printer (see "How a start is decided" in the guide).
+    goes to the printer (see "How a start is decided" in README-details.md).
 
     `sent_at` is on the daemon's monotonic clock. `sent_here` is False for a hold rebuilt
     from the relay or from the note in the daemon's home (a restarted daemon, or a start
@@ -1178,7 +1178,7 @@ class RunLoop:
 
     def _await_start(self, job_id, remote_name, hold=None):
         """Hold the printer and wait for the evidence of what became of the start command
-        (see "How a start is decided" in the guide): the print seen going, a proven end of
+        (see "How a start is decided" in README-details.md): the print seen going, a proven end of
         ours, or START_SETTLE_SECONDS of whole, fresh pictures that do not show our print.
         A start that silently did nothing is reported, never shown as a success, and an end
         left over from the previous print is never taken for ours.

@@ -1012,8 +1012,8 @@ class TestStoppingWithAJobInFlight(RunLoopTestCase):
 
 
 class TestHowAStartIsDecided(RunLoopTestCase):
-    """Review 4, the four rulings on the moment a print starts (the guide's "How a start
-    is decided"), one test per case, on the fake clock."""
+    """Review 4, the four rulings on the moment a print starts ("How a start is decided"
+    in README-details.md), one test per case, on the fake clock."""
 
     def setUp(self):
         super().setUp()

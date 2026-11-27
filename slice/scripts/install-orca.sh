@@ -9,7 +9,7 @@
 #
 # On Linux the AppImage is extracted (no FUSE needed) and, when the host lacks
 # Orca's runtime libraries and this script is not running as root, the missing
-# Ubuntu 24.04 packages are unpacked into tools/orca/hostlibs/. See slice/README.md.
+# Ubuntu 24.04 packages are unpacked into tools/orca/hostlibs/. See slice/README-details.md, "Orca Slicer".
 set -euo pipefail
 
 ORCA_VERSION="2.4.2"
@@ -202,7 +202,7 @@ case "$OS" in
         MISSING="$(missing_libs || true)"
         if [ -n "$MISSING" ]; then
             if [ "$(id -u)" = "0" ]; then
-                die "runtime libraries missing (install the distro packages, see slice/README.md):"$'\n'"$MISSING"
+                die "runtime libraries missing (install the distro packages, see slice/README-details.md, "Orca Slicer"):"$'\n'"$MISSING"
             fi
             echo "install-orca: host lacks runtime libraries; unpacking Ubuntu 24.04 packages into $DEST/hostlibs"
             bootstrap_hostlibs

@@ -22,7 +22,7 @@ def bearer(code):
 
 class TwoTeams:
     """One relay, two teams. The `X-Who` header chooses which team identify() answers for.
-    find_sliced_file does what the guide asks of a caller: it answers only for a token the
+    find_sliced_file does what README-details.md asks of a caller: it answers only for a token the
     asking team owns."""
 
     def __init__(self, tmp_path):

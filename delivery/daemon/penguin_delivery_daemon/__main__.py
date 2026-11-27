@@ -233,7 +233,7 @@ def cmd_pair(args, *, ask=input, out=sys.stdout, clock=time.monotonic, sleep=tim
 
 def parse_printer_ports(text):
     """`--printer-ports MQTT,FTPS` -> (mqtt, ftps); None or empty -> (0, 0), the printer's
-    own. For the simulated printer only (see the guide's "Try it on one machine")."""
+    own. For the simulated printer only (see "Try it on one machine" in README-details.md)."""
     if not text:
         return 0, 0
     parts = [part.strip() for part in str(text).split(',')]

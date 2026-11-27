@@ -4,7 +4,7 @@ VERSION=x.y.z`.
 1. Writes `bambulabs_api==<VERSION>` in daemon/pyproject.toml, the one place it is stated.
 2. Re-locks (`uv lock --upgrade-package bambulabs_api`) and installs (`uv sync`).
 3. Looks for patches kept for the library (daemon/patches/bambulabs_api/<version>/). There
-   are none today, and none is needed (see the guide). Any patch found stops the upgrade
+   are none today, and none is needed (see "Upstream" in README-details.md). Any patch found stops the upgrade
    with a message, so a patch is never silently dropped or silently not applied.
 4. Runs the upstream check (`make test-upstream`): the installed library's behaviour that
    the daemon relies on, and the daemon against the simulated printer.

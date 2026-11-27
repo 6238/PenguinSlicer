@@ -5,7 +5,7 @@ of every part on two plates, with supports off and on. Each through the HTTP int
 the default profiles, and each must come back as a valid sliced file with every instance
 where it was placed, a print time and filament within BAND of what was measured, and only
 the warnings that are true. Orca's G-code is not the same bytes from one slice of a plate
-to the next (slice/README.md, "The same plate, sliced again"), so what is pinned is what is
+to the next (slice/README-details.md, "The same plate, sliced again"), so what is pinned is what is
 stable: the summary, the warnings and the placements, on every run of this suite.
 
 Protects: the slice service's whole path on real, printed parts with the pinned Orca. A
@@ -29,7 +29,7 @@ from penguin_slice.slicer import SliceError, _natural, plate_object_names
 from test_orca import through_the_http_interface
 
 # What each plate sliced to with the pinned Orca 2.4.2 (slices on an aarch64 Linux machine
-# with 4 CPUs, slice/README.md, "The team's real parts"): print time (s), filament (g),
+# with 4 CPUs, slice/README-details.md, "The Popcorn Penguins' real parts"): print time (s), filament (g),
 # layers, with supports off (MEASURED_SLICES) and on (MEASURED_SLICES_SUPPORTS). Between
 # slices of one plate the print time moved by a few seconds in hours and the filament by
 # 0.01 g (Orca's threads), so BAND is wide of that and far inside any real change.
@@ -186,7 +186,7 @@ def test_the_real_parts_slice_through_the_http_interface(tmp_path, meshes, plate
 
 
 def tight_plate(gap):
-    """The pairs that needed the most room in the measurements (slice/README.md, "Spacing"),
+    """The pairs that needed the most room in the measurements (slice/README-details.md, "Spacing"),
     `gap` mm apart: two Elevator Block Tops one behind the other with a Carriage behind them,
     and three Elevator Top Inners, two side by side and one behind."""
     top, carriage, inner = (frc_parts.FOOTPRINT_MM[r] for r in ("elevator-block-top", "elevator-block-carriage",

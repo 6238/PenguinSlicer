@@ -8,7 +8,8 @@ service. An instance is one placement of a part on the plate; a part printed onc
 instance.
 
 A plate configuration is a JSON object, sent to the slice service's HTTP interface with
-the STL files it names ([slice/README.md](../slice/README.md), "The HTTP interface").
+the STL files it names ([The HTTP interface](../slice/README-details.md#the-http-interface)
+in the slice service's detailed guide).
 
 ## Fields
 
@@ -185,12 +186,13 @@ surface facing inwards, or a size that suggests an inch file read as millimetres
 sliced, and carries a warning in the sliced file's summary (`part_warnings`, see
 [sliced-file.md](sliced-file.md)).
 
-Orca may still refuse a plate that passes these checks; the slice service's guide,
-[slice/README.md](../slice/README.md), lists every code.
+Orca may still refuse a plate that passes these checks; the slice service's detailed guide,
+[Error codes](../slice/README-details.md#error-codes), lists every code.
 
 ## Example
 
 See [examples/plate-configuration.json](examples/plate-configuration.json), which places
 two instances of [examples/parts/bracket.stl](examples/parts/bracket.stl) and one of
 [examples/parts/spacer.stl](examples/parts/spacer.stl). Each `stl` is the name the file
-is sent under ([slice/README.md](../slice/README.md) shows the `curl` command).
+is sent under ([Use](../slice/README-details.md#use), in the slice service's detailed
+guide, shows the `curl` command).

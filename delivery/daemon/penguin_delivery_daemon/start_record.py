@@ -2,7 +2,7 @@
 
 The daemon writes it (`start.json` in its home, paths.py) BEFORE it sends a start command
 to the printer, marks it `sent` once the command has gone, and removes it when the
-evidence settles what became of the command (see "How a start is decided" in the guide).
+evidence settles what became of the command (see "How a start is decided" in README-details.md).
 A daemon that starts and finds the note holds the printer until the evidence settles it,
 without help from the relay, which may have restarted too.
 

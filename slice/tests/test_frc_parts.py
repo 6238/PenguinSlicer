@@ -2,7 +2,7 @@
 the slice service reads every part (tests/fixtures/frc-parts/README.md). They were printed
 and work on the robot, so a refusal, a warning or a wrong figure here is a defect in the
 slice service. Each part is read once (the module's fixture: all eight together, 0.17 to
-0.19 s in three runs, slice/README.md, "Tests"); the figures are tests/frc_parts.py's,
+0.19 s in three runs, slice/README-details.md, "Tests"); the figures are tests/frc_parts.py's,
 measured once from the files.
 """
 import zipfile
@@ -88,7 +88,7 @@ def test_the_plates_the_real_orca_suite_slices_pass_the_placement_check(mixed, p
 def test_the_slice_service_hands_orca_the_same_plate_every_time(mixed, tmp_path):
     """Protects: two writes of one plate configuration give a plate 3MF with the same
     entries, byte for byte (the zip's own time stamps aside), so any difference between two
-    slices of it is Orca's (slice/README.md, "The same plate, sliced again"). The pulleys and
+    slices of it is Orca's (slice/README-details.md, "The same plate, sliced again"). The pulleys and
     spacers of plate four-each-a, the two smallest parts, to keep the write short."""
     instances = [i for i in frc_parts.FOUR_EACH_A if i["ref"] in ("pulley-v3", "inner-spacer")]
     parts = {ref: {"name": p.name, "stl_path": p.stl_path, "footprints": p.footprints}

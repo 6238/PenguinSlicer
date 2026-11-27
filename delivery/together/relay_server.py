@@ -9,7 +9,7 @@ caller: every request is the one team whose pairing code is `--code` (the code a
 placeholder sample by default). Its log lines, the relay's structured lines included, go
 to the terminal. A fresh secret key is made at each start, so a daemon paired against an
 earlier run pairs again by itself. Ctrl-C stops it. Never use it for a real shop: it
-signs in everyone as one team. See the guide's "Try it on one machine".
+signs in everyone as one team. See "Try it on one machine" in delivery/README-details.md.
 """
 
 import argparse

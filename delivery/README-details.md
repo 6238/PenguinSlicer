@@ -1,5 +1,9 @@
 # Printer delivery
 
+This is the detailed guide, for someone changing printer delivery; a shorter guide is in
+[README.md](README.md). Everything outside the section [To be built](#to-be-built) is true
+of the code as built.
+
 Printer delivery takes a sliced file (`.gcode.3mf`) and gets it printed on a shop's Bambu
 Lab printer, reporting how the print goes. It has two halves:
 
@@ -10,7 +14,7 @@ Lab printer, reporting how the print goes. It has two halves:
   it. It opens no port. It is a plain Python program that runs on Windows, macOS or Linux.
 
 The **caller** is the application that runs the relay and asks it to deliver sliced files
-(in PenguinSlicer, the wizard's server side, from phase 5 of
+(in PenguinSlicer, the front server, from phase 5 of
 [the plan](../docs/plans/penguin-slicer-plan.md)): it signs its users in, knows the pairing code of the printer they may use, and holds the
 sliced file. Printer delivery knows nothing of slicing, of how the caller signs anyone in,
 or of where the caller keeps the configuration (the settings an administrator keeps for
@@ -60,6 +64,436 @@ mockup's [DECISIONS.md](../docs/mockups/print-wizard/DECISIONS.md)). Some senten
 error reports, the text the daemon's `pair` command prints ("your team's print server",
 "a team configuration file"), the log field `team=` and the caller interface's `Team`
 still use the old words for users; changing them is a change of its own, with its tests.
+
+## To be built
+
+Everything in this section is design, not code. Phases 2, 3 and 4 of
+[the plan](../docs/plans/penguin-slicer-plan.md) need nothing of printer delivery; every
+item below is phase 5 (the real printer). Each item says what it does, its figures, what
+it replaces in the code as built, the error report it produces where there is one, and
+the tests it needs. When an item is built, its text moves into the body of this file and
+[README.md](README.md) is updated to match.
+
+**Terms used here.** A **group** is the users who share one configuration and one
+printer (one Onshape company or classroom, or one user alone); a user's **current
+group** is the one whose printer the user is using now. The **front server** is the one
+process that serves the wizard's pages and, from phase 5, runs the relay; it is the
+relay's caller ([its guide](../front/README.md)). The **state bucket** is the object store
+that holds what must outlast a restart of the front server; on one machine a folder
+stands in for it. The **user key** is the signed-in user's Onshape id. A **paired-printer
+record** is one small document per group in the state bucket holding the id of the
+group's daemon, the printer's display name, who paired it and when, which of the relay's
+secret keys the daemon's token was last issued under, and, until the daemon has its
+token, a hash of the pairing code. A **daemon id** is a random id a daemon makes for
+itself when its `pair` command is run, and keeps; it names the daemon in its token, in
+the paired-printer record and in the relay's memory. A **send** is the request by which a
+user's page asks the relay to print a sliced file; it creates a delivery job. A **sync**
+is the request a daemon posts to the relay with the printer's status and its delivery
+job's progress; the answer tells the daemon what to do. The **held wait** is the time, up
+to 55 seconds, for which the relay holds back its answer to an idle daemon's sync. A
+**progress stream** is the server-sent event connection on which a page follows a
+delivery job.
+
+### Phase 5: the relay inside the front server
+
+Phase 5 brings the relay into the front server, with pairing, the syncs and the held
+wait, the records of delivery jobs in the state bucket, replacing the relay's secret key,
+and daemon telemetry ([the plan](../docs/plans/penguin-slicer-plan.md)). The front server
+spends one thread on every idle daemon; set to 100 threads, it has room for about fifty
+idle daemons beside users' requests and progress streams
+([the front server](../front/README.md)). The messages of the pairing exchange in detail,
+and what daemon telemetry holds, are left to phase 5's own design spec
+([the plan](../docs/plans/penguin-slicer-plan.md)).
+
+#### Pairing
+
+Pairing links a group to the daemon beside its printer, and the pairing code is used
+once.
+
+1. **The daemon makes the code and its daemon id.** The `pair` command makes a pairing
+   code (forty random bits, as built) and a daemon id, shows the code, and offers both to
+   the relay every thirty seconds. The daemon id is kept for good; the code is good for
+   fifteen minutes, after which a daemon still unpaired makes a new one and shows it.
+2. **The relay remembers the offers in its memory only**, keyed by daemon id: which
+   daemon is offering which code. Nothing about an offer is written to the state bucket.
+3. **A signed-in user types the code into PenguinSlicer.** If a daemon is offering that
+   code, the relay writes the paired-printer record for the user's current group to the
+   state bucket, naming that daemon and holding a hash of the code. If none is, the user
+   is told at once that no daemon is showing that code and to try again in a moment.
+4. **The daemon's next offer is answered with its token**, provided the code it offers
+   matches the hash in the record. The hash is then removed from the record and the code
+   is dead.
+
+The daemon's token names the daemon (its daemon id) and its group, and is signed with the
+relay's secret key, so nothing read from the state bucket lets anyone start a print or,
+once the daemon has its token, pose as a daemon ([the architecture](../docs/architecture.md)
+holds the security case). A wrong pairing code gets the same answer whatever was wrong
+with it (no such offer, an expired code, a code already used), and wrong attempts are
+limited for each signed-in user. The offer of a pairing code is the one request with
+neither a user nor a daemon: it is limited to sixty a minute for the whole relay and also
+counted for the address Cloudflare reports it came from, so one stranger cannot use up
+everyone's offers (see [Limits on the rate of requests](#limits-on-the-rate-of-requests)).
+The pairing code is typed into PenguinSlicer once and is then dead; it is no longer kept
+in the configuration ([the plan](../docs/plans/penguin-slicer-plan.md)).
+
+*Replaces in the code as built:* the code is a lasting secret that the daemon keeps in
+`config.toml` (`pairing_code`) and the caller presents from the configuration
+(`Team.pairing_code` from `identify`, or `note_code`); `begin_exchange` in `relay.py`
+grants a token for any code presented since the relay started while no daemon with that
+code has been heard for two minutes (`DAEMON_ONLINE_SECONDS`); `issue_token` signs a
+payload of the code and the issue time (`{'code', 'iat'}`), so the token carries the
+code; every record of the relay (`_Record`) is keyed by the normalised code; and the
+daemon trades its code every 30 s (`EXCHANGE_INTERVAL`) for as long as it has no token.
+The relay instead keeps what it knows of each daemon by daemon id, writes the
+paired-printer record, and checks an offered code against the hash in it. The daemon
+gains its daemon id, offers it with its code, and makes a new code after fifteen minutes.
+The same answer for every refusal is kept: as built every refused exchange is
+`404 {"error": "not paired"}`.
+
+*Error report:* a typed code that no daemon is offering, or any other wrong code, is a
+new error report (retryable) saying that no daemon is showing that code and to try again
+in a moment; one code serves every wrong case. Over the limit for the user it is
+`delivery.rate_limited`, as built.
+
+*Tests:* a typed code a daemon is offering writes the record for the current group, with
+the hash, and the next offer gets a token naming the daemon id and the group; the hash is
+then gone and the same code offered again is refused; a code typed when no daemon offers
+it is refused at once with the new report, and every kind of wrong code gets an answer
+identical in status and body; a code sixteen minutes old is refused and the daemon shows a
+new one; wrong attempts past the user's limit are refused; nothing read from the state
+bucket (a record with or without its hash) is enough to obtain a token or start a print;
+a restart of the front server just after a code is typed loses nothing, because the
+record is already in the state bucket, and a code typed in the half minute after a
+restart, before the daemon offers again, gets the wrong-code answer.
+
+#### Sending and unpairing
+
+A send is accepted when the signed-in user's current group has a paired-printer record,
+and its delivery job goes to the daemon that record names. A daemon holds one delivery
+job at a time. A delivery job's record is kept for a day after the delivery job ends, so
+the Send step and the printer-status icon can show how the last print ended. A print is
+started only by a signed-in user whose current group has a paired-printer record naming
+the daemon, and the front server accepts a current group only if the sign-in cookie lists
+it ([the architecture](../docs/architecture.md)). Every route of the front server refuses
+a request without a signed-in user except the sign-in routes, the daemon's routes (which
+carry the daemon's token) and the offer of a pairing code ([the front server](../front/README.md)).
+
+Unpairing removes the paired-printer record. The daemon's next request is refused, and
+the daemon says plainly that it has been unpaired and waits for `pair` to be run again.
+
+*Replaces in the code as built:* `identify` answers a `Team` whose pairing code is the
+only field the relay trusts, and a send is keyed on that code; one job slot per code
+already gives one delivery job at a time, and a final report is already kept 24 hours
+(`FINAL_TTL_SECONDS`), but in memory. `identify` instead answers the user key, the
+user's display name and the current group, and the send looks up the group's
+paired-printer record. There is no unpairing as built: a token verifies by its signature
+alone (`authenticated_code` in `routes.py`), and the only refusal a daemon meets is
+`401 {"error": "repair"}` for a token that does not verify, on which the daemon blanks
+its token and trades its code again (`TokenRejected` in `run_loop.py`). Under the design a
+token that verifies but names a daemon no paired-printer record names is refused with an
+answer of its own, and the daemon stops syncing, says it has been unpaired and how to
+pair again, and waits.
+
+*Error report:* a send for a group with no paired-printer record is `delivery.not_paired`,
+whose meaning changes from "the request's identity has no pairing code" to "the current
+group has no paired-printer record". The unpaired daemon's answer is not an error report
+to a user: it is the daemon's log line.
+
+*Tests:* a send with a record goes to the daemon it names and no other; a send without
+one is `delivery.not_paired`; a second send while the daemon holds a delivery job is
+refused as built (`delivery.job_in_flight`); a record of an ended delivery job is read
+back for a day and gone after; after unpairing, the daemon's next sync is refused, its
+log says it was unpaired and what to run, and it sends nothing more until `pair` is run.
+
+#### A daemon that was off
+
+A daemon whose computer was restarted, or switched off for any length of time, reconnects
+and works once started again, with no pairing again.
+
+- Everything the daemon needs to reconnect is in one settings file on its computer: the
+  relay's address, its daemon id and token, and the printer's address, serial number and
+  access code, readable only by the daemon's own user.
+- The daemon's token has no end date: the relay accepts it by its signature and the
+  paired-printer record however long the daemon was silent, except after a replacement
+  of the relay's secret key while the daemon was off for more than a week (see
+  [Replacing the relay's secret key](#replacing-the-relays-secret-key)).
+- While the daemon is silent the printer-status icon shows Offline and Send is disabled;
+  the daemon's first sync puts both back.
+- A print running when the computer went off goes on at the printer; the note of the
+  print the daemon started, in a file beside its settings file, lets it follow that print
+  when started again and never start it a second time.
+- Starting the daemon, at boot or after it stops, is the job of whoever runs that
+  computer, not of PenguinSlicer. A daemon that is a single file installing itself to
+  start at boot is possible later work that this design does not include or depend on
+  ([the plan](../docs/plans/penguin-slicer-plan.md)).
+
+*Replaces in the code as built:* most of this is built. `config.toml` already holds the
+relay's address (`backend_url`), the printer's address, serial and access code, and the
+token, written with mode 600 (`config.py`); it gains the daemon id and loses the lasting
+`pairing_code`. `issue_token` already sets no end date. The relay already reports a
+daemon not heard for two minutes as not `online` and refuses a send with
+`delivery.daemon_silent` (`STATUS_ONLINE_SECONDS`). The note of the start command is
+`start.json` (see [How a start is decided](#how-a-start-is-decided)). The daemon is
+already started by hand.
+
+*Tests:* a daemon stopped for a simulated week and started again syncs with its saved
+token and takes a send, with no pairing; one stopped in the middle of a print follows the
+print to its end and sends no second start command (the restart tests of
+[Tests](#tests) cover the note); the settings file is readable by its owner only.
+
+#### How often a daemon talks to the relay
+
+The daemon opens no port; everything passes through the sync, which carries the printer's
+latest status and the progress of the delivery job the daemon holds, and whose answer
+carries a delivery job to fetch, a cancel, or nothing. How often the daemon syncs depends
+on what the printer is doing:
+
+| The printer is | The daemon syncs | What that gives |
+|---|---|---|
+| Idle | Once for each held wait, and again at once when it is answered | A send reaches the daemon immediately; the idle printer's information is at most about a minute old; about one request a minute |
+| Taking a delivery job (fetching the file, uploading it to the printer, starting it) | Each second | The Send step moves smoothly, and a cancel reaches the daemon within a second |
+| Printing, whoever started the print | Every 10 seconds | The percentage and time left are at most 10 seconds old; six requests a minute |
+| Changing state (idle, printing, paused, failed, finished, offline) | At once, whatever else is going on | The printer-status icon never waits to show a change |
+
+**The held wait.** While the printer is idle and the daemon has no delivery job, the relay
+answers a sync the moment a delivery job arrives for that daemon, and otherwise after 55
+seconds, inside the 125 seconds Cloudflare and the five minutes Railway allow a request
+without data. The daemon keeps the held sync on a thread of its own and goes on watching
+the printer; when the printer's state changes during a held sync it posts a further sync
+with the change, without waiting for the held one.
+
+**Nothing is held during a print.** The relay refuses a send to a printer that is
+printing, whether PenguinSlicer sent the print or someone started it at the printer's
+screen, so it has nothing to tell that daemon that cannot wait ten seconds.
+
+**What the relay concludes from silence.** A daemon is online if its last sync was within
+2 minutes; past that the printer-status icon shows Offline and Send is disabled. A
+running delivery job's report is fresh if the daemon's last sync was within 40 seconds;
+past that it is marked stale, and that is how long a daemon that died during a print goes
+unnoticed (four missed syncs at ten seconds). A stale delivery job whose print was started
+may be given up by the user ("stop following"), which lets the relay accept the next send
+once the daemon is back and the printer is idle.
+
+**After a restart of the front server** every held sync closes at once, and each daemon
+waits a short random time before it syncs again, so they do not all arrive together.
+
+*Replaces in the code as built:* the daemon syncs every 5 s when nothing changes
+(`SYNC_INTERVAL`) and at most once a second when a delivery job's progress changes
+(`PROGRESS_SYNC_SECONDS`); the relay answers every sync at once; a running delivery job's
+report is stale after 20 s (`STALE_AFTER_SECONDS` in `deliveries.py`). The relay gains the
+held wait. The daemon gains the thread that holds a sync, a sync each second while it
+takes a delivery job, the 10-second rhythm during a print, and the random wait before it
+syncs again after losing the relay; the stale limit becomes 40 seconds. Already built and
+kept: a sync at once when the snapshot's `state` changes (`_sync` in `run_loop.py`); the
+answer carrying the job, its `cancel` and `start_granted`; online within 2 minutes
+(`STATUS_ONLINE_SECONDS`, `DAEMON_ONLINE_SECONDS`); the refusal of a send to a busy or
+paused printer (`delivery.printer_busy`, `delivery.printer_paused`); stop-following
+(`POST /printer/jobs/<id>/stop-following`), which frees the job slot; and, after a
+failure, a wait that doubles from 5 s (`BACKOFF_START`) to 60 s (`BACKOFF_CAP`), shortened
+by up to a quarter (`JITTER`).
+
+*Tests (all on fake clocks):* an idle daemon's sync is held and answered at 55 s with no
+job, and the daemon syncs again at once; a send during a held sync answers it at once
+with the job; a printer state change during a held sync posts a second sync without
+waiting; while taking a delivery job the daemon syncs each second, and a cancel reaches
+it within one; while printing it syncs every 10 s; no sync is held while the printer is
+printing; a daemon silent 41 s during a print makes the report stale, and one silent
+2 minutes reads Offline; many daemons whose held syncs close together do not all sync
+again in the same moment.
+
+#### The records of delivery jobs
+
+The records of delivery jobs are kept in a store the relay's caller supplies (the state
+bucket hosted, a folder on one machine), not in the relay's memory, because a daemon told
+that the relay no longer knows its delivery job treats it as finished and drops it. Before
+a daemon sends the printer the start command it asks the relay, which allows it once for
+each delivery job, and the record holds whether that was allowed, which keeps a print from
+starting twice. A record is kept for a day after its delivery job ends. Each record kept
+in the state bucket carries the number of its format ([the contracts](../contracts/README.md)).
+
+*Replaces in the code as built:* every delivery job (`Delivery` in `deliveries.py`), the
+job slot (`_Record.job`), the printer's last start granted (`_Record.last_grant`) and the
+start gate's grant (`start_granted_to`, set by `grant_start` in `relay.py`) live in one
+process's memory, so a restarted relay answers `404 delivery.job_unknown` for every
+delivery job and refuses a held job at the start gate (`unknown`); see
+[Restarts and cleanup](#restarts-and-cleanup) and "One relay process" under
+[Delivery jobs](#delivery-jobs). The grant must be written to the store before the gate
+answers yes. `delivery.job_unknown` then means only an id the relay never had or whose
+record has gone, and `delivery.daemon_never_reported` ("no daemon heard since the relay
+started") means no daemon heard since the printer was paired.
+
+*Tests:* the front server restarted while a delivery job waits for its daemon: the
+daemon's next sync is accepted and receives the job from its record; restarted during a
+print: the print goes on and the printer-status icon and Send step come back within ten
+seconds of the front server answering again; restarted between the gate's yes and the
+daemon's word: the record still says the start was allowed, and the start is never
+allowed again; a record is read back for a day after its delivery job ends; a record
+written by the previous version is read by the new one.
+
+#### The sliced file
+
+The state bucket's copy of a sliced file is the one everything uses; on Send the relay
+hands it to the daemon ([the front server](../front/README.md) owns where it is stored).
+The relay takes the sliced file from the store when the daemon fetches it, and keeps no
+copy of its own. A sliced file that a delivery job still needs is kept until the daemon
+has fetched it. The relay's limit on the age of a sliced file it will send rises from
+forty minutes to two hours. The daemon fetches again a sliced file whose fetch was cut
+off.
+
+*Replaces in the code as built:* `find_sliced_file` answers a `SlicedFile` with a `path`
+or a `stream`; a stream is copied once into the relay's spool directory
+(`SlicedFileStore` in `sliced_files.py`), and the daemon fetches the file from
+`GET /printer/download/<token>`, with the token in the path as its whole authority
+(30 a minute per address, `DOWNLOAD_LIMIT`). The spool directory and its sweep go. The age
+limit is `SLICE_MAX_AGE_SECONDS` in `routes.py`, 40 minutes, which becomes two hours. A
+fetch cut off mid-way already raises in `RelayClient.download` ("the download failed
+after N bytes"), leaves no partial file, and is tried again from the start by `_download`
+in `run_loop.py`, up to three attempts (`DOWNLOAD_ATTEMPTS`) with backoff.
+
+*Error report:* a send of a sliced file sliced more than two hours before is
+`delivery.sliced_file_too_old`, with its figure changed; a fetch that fails three times is
+`delivery.download_failed`, as built.
+
+*Tests:* a send at 1 h 59 min is accepted and one at 2 h 1 min refused; the daemon's
+fetch reads the store and the relay writes no file of its own; a fetch cut off mid-way
+through the front server is fetched again and the delivery job goes on; a sliced file a
+delivery job still needs is still there when the daemon fetches it, past two hours.
+
+#### Replacing the relay's secret key
+
+The relay accepts a token signed with either of its two secret keys, the current one and
+the previous one, and answers a daemon whose token was signed with the previous key with
+a new one, which the daemon saves. Each paired-printer record notes which key its
+daemon's token was last issued under. The previous key is removed after one week, or
+sooner once every paired-printer record shows the current key; so a daemon switched off
+for the whole week after a replacement must be paired again. The front server writes a
+log line each time a previous key is used, and a command lists the daemons still to be
+given a new token. In an emergency, when a key has leaked, it is replaced and not kept as
+the previous key, and every printer is paired again. The steps are written down in the
+repository as a procedure, and a test covers the replacement
+([the architecture](../docs/architecture.md) holds the procedure for both keys).
+
+*Replaces in the code as built:* `create_app` takes one `secret_key`, and `read_token`
+verifies with that key alone; a token that does not verify is answered
+`401 {"error": "repair"}`, on which the daemon blanks its token and trades its lasting
+pairing code for a new token, which the relay grants only once a caller has presented
+that code again.
+
+*Tests:* a token made with the previous key is accepted and renewed, the daemon saves the
+new token, and the record then shows the current key; a token made with a removed key is
+refused; the log has a line for each use of the previous key; the command lists exactly
+the daemons whose records still show the previous key.
+
+#### Limits on the rate of requests
+
+Limits on the rate of requests are counted for the signed-in user on the caller's routes
+and for the daemon on the daemon's routes. The offer of a pairing code, which has neither,
+is limited to sixty a minute for the whole relay and also counted for the address
+Cloudflare reports it came from. Wrong pairing codes typed are limited for each signed-in
+user.
+
+*Replaces in the code as built:* `STATUS_LIMIT` (120 a minute) and `JOBS_LIMIT` (10 a
+minute) are counted for each pairing code (`code_key` in `routes.py`), as are
+`SYNC_LIMIT` (120) and `DAEMON_LIMIT` (60) for the code in the daemon's token;
+`EXCHANGE_LIMIT` (60) is counted for the whole relay only; `DOWNLOAD_LIMIT` (30) for the
+request's address, as `ProxyFix` reports it after the trusted proxies.
+
+*Error report:* `delivery.rate_limited` on a caller's route, as built; a daemon's route
+answers `429` with `Retry-After`, as built.
+
+*Tests:* two users of one group each have their own allowance; two daemons each have
+theirs; offers from one address past its count are refused while offers from another
+address still pass, and the whole relay still stops at sixty a minute; wrong codes past a
+user's limit are refused for that user only.
+
+#### Stopping
+
+Asked to stop, the relay closes its progress streams and answers its held syncs, so pages
+and daemons reconnect to the front server that replaces it; the front server also
+finishes the uploads and downloads in progress ([the front server](../front/README.md)).
+The daemon waits and tries again when the relay does not answer.
+
+*Replaces in the code as built:* nothing in the relay reacts to being asked to stop: a
+progress stream (`GET /printer/jobs/<id>/events`) runs until its delivery job ends or the
+connection drops. The daemon's retry is built (the backoff above).
+
+*Tests:* asked to stop, the relay ends every progress stream and answers every held sync
+at once; a daemon whose relay stops answering waits and tries again, and takes up its
+delivery job from its record once a relay answers.
+
+#### The log
+
+The relay's and the daemon's log lines become JSON and gain the time, the group and the
+user key. The line that ends a delivery job carries how long the file took to reach the
+printer, how long the print ran, and how it ended. A daemon's errors arrive as daemon
+telemetry with its requests. Every error a user is shown is logged with its code, the
+user key and name, the group and the job; every exception with its stack trace; every
+refusal, including a wrong pairing code; and every line about a send carries the user key
+and the current group ([the architecture](../docs/architecture.md) owns these rules).
+
+*Replaces in the code as built:* lines are text, `printer-delivery request=... key=value`,
+written through the caller's `log` (see [Supportable from the server](#supportable-from-the-server));
+they carry `printer`, a hash of the pairing code, and `team`, never the user key or the
+group; the transition line carries `state`, `stage` and `code` and no durations; the
+daemon has no telemetry and writes its own log only.
+
+*Tests:* every line parses as JSON and carries the time; a send's lines carry the user
+key and the group and no secret; the line that ends a delivery job carries its three
+figures; a daemon's error reaches the front server with its next request.
+
+#### From the wizard's mockup
+
+The wizard's approved mockup lists what it needs of printer delivery under
+[Requirements on printer delivery](../docs/mockups/print-wizard/DECISIONS.md), numbered:
+
+1. **Who sent it.** A delivery job carries the Onshape display name of the user who sent
+   it, and `GET /printer/status` returns it for the delivery job going on. Not provided:
+   `Team.user` is passed to events only (`caller.py`).
+2. **What it is.** A delivery job carries a one-line description of the plate (such as
+   "8 instances of Gusset Plate"), returned with it. Not provided: only the file name,
+   which the user did not choose.
+3. **Finding the user's own work after a refresh.** A page that has lost its state finds
+   its user's live delivery job. Provided in part: `delivery` in `GET /printer/status` is
+   the printer's most recent delivery job, and with requirement 1 a page can tell whether
+   it is its user's.
+4. **The end time and the sender of the last print that finished**, kept until another
+   plate is sent or for 12 hours after the print finished. Provided in part: a final
+   report is kept 24 hours (`FINAL_TTL_SECONDS`), which is long enough, but it carries no
+   end time and no sender, and `last_result.age_seconds` lasts ten minutes only
+   (`LAST_RESULT_TTL_SECONDS`).
+
+The mockup's printer details also show, for a failed print, when it stopped and at which
+layer (its decision 44). Provided in part: a final report keeps the last `layer` the
+printer reported, but carries no time at which it stopped. So a delivery job's record
+carries the sender's display name, the plate's one-line description, the time the
+delivery job ended and, for a failure, the layer at which it stopped; and a page that has
+lost its state can ask for its user's live delivery job and that user's last print.
+
+*Tests:* the status of a busy printer names the sender and the description; a final
+record carries its end time, and a failed one its layer; a user asking for their live
+delivery job gets their own and never another user's; that user's last print is found for
+12 hours after it finished.
+
+#### Already built, kept as they are
+
+Every progress stream sends a comment line at least every fifteen seconds while it has
+nothing to report, and one that connects late gets the latest progress report at once;
+the relay does both as built (`STREAM_HEARTBEAT_SECONDS`, and `GET /printer/jobs/<id>`
+gives the latest report), and [the slice service](../slice/README.md) owns the rule. The
+daemon opens no port and only calls out to the relay, so nothing on the internet can call
+the computer beside the printer ([the architecture](../docs/architecture.md)). An
+installed daemon, which may be much older than the relay, keeps working: a change to the
+relay may add to what it sends a daemon, and may not remove or change what an installed
+daemon relies on ([the architecture](../docs/architecture.md)).
+
+#### To confirm
+
+Whether Cloudflare's protection against automated clients ever challenges a daemon's
+requests is not checked (the daemon already names a challenge when it meets one,
+`ChallengeDetected` in `relay_client.py`). Whether the daemon fetches a sliced file again
+when the connection drops mid-way is listed in [the architecture](../docs/architecture.md)
+as not read from its code; the code as built does, up to three attempts (see
+[The sliced file](#the-sliced-file)).
 
 ## Layout
 
