@@ -1,8 +1,8 @@
 /* PenguinSlicer mockup: printer, filaments, the profiles of each filament (the
  * configuration lists them per filament) and the advanced mode settings. Labels follow Orca
  * Slicer's process sections (Quality, Strength, Speed, Support, Others); keys are Orca's
- * setting keys. Values are plausible for a 0.6 mm nozzle H2S. Also the units every length
- * on the Layout and Preview steps is shown in (MockUnits). */
+ * setting keys. Values are plausible for a 0.6 mm nozzle H2S. Also how lengths are written
+ * (MockUnits). */
 (function () {
   'use strict';
 
@@ -13,16 +13,16 @@
     plate: { x: 340, y: 320, height: 340, margin: 3, spacing: 5, spacingOff: 5, spacingOn: 12 }   // printable_area, printable_height; plate.py
   };
 
-  // color: the colour the layer preview draws the parts in (the configuration's colour of
-  // the spool; invented here). profiles: this filament's profiles, by id, the first is the default.
+  // profiles: this filament's profiles, by id, the first is the default. (Version 8: the layer
+  // preview's colours no longer follow the filament, so a filament has no colour here.)
   var FILAMENTS = [
-    { id: 'petg', name: 'Bambu PETG HF', type: 'PETG', density: 1.27, gPerM: 3.04, color: 0xe8792b,
+    { id: 'petg', name: 'Bambu PETG HF', type: 'PETG', density: 1.27, gPerM: 3.04,
       profiles: ['structural', 'pulley', 'camera', 'draft', 'fine'] },
-    { id: 'petgcf', name: 'Bambu PETG-CF', type: 'PETG-CF', density: 1.25, gPerM: 2.99, color: 0x4a4f57,
+    { id: 'petgcf', name: 'Bambu PETG-CF', type: 'PETG-CF', density: 1.25, gPerM: 2.99,
       profiles: ['cf-stiff', 'cf-light', 'cf-draft'] },
-    { id: 'pla', name: 'Bambu PLA Basic', type: 'PLA', density: 1.26, gPerM: 3.01, color: 0x2f9e5b,
+    { id: 'pla', name: 'Bambu PLA Basic', type: 'PLA', density: 1.26, gPerM: 3.01,
       profiles: ['pla-fit', 'pla-jig', 'pla-display'] },
-    { id: 'tpu', name: 'Generic TPU 95A', type: 'TPU', density: 1.22, gPerM: 2.92, color: 0xc2416a,
+    { id: 'tpu', name: 'Generic TPU 95A', type: 'TPU', density: 1.22, gPerM: 2.92,
       profiles: ['tpu-bumper', 'tpu-grip'] }
   ];
 
@@ -203,10 +203,10 @@
     profile('tpu-grip', 'Grip pad', 'thin grippy pads', { layer_height: 0.2, wall_loops: 2, sparse_infill_density: 15, outer_wall_speed: 30, inner_wall_speed: 30, sparse_infill_speed: 30, travel_speed: 200 })
   ];
 
-  // Lengths on the Layout and Preview steps (sizes, spacing, heights) are shown in the
-  // layout units: inches when every part on the plate is in inches, otherwise millimetres.
-  // The plate's size and every slicer setting stay in millimetres. Inches are written the
-  // way a US machinist reads them: decimal inches to three places (2.000 × 2.000 × 0.188 in).
+  // Version 7: printer and plate figures (the plate, the height limit, spacing, layer
+  // heights) and every slicer setting are in millimetres, the default unit here; a part's own
+  // size (and an instance's height) is given its part's units by the caller. Inches are
+  // written the way a US machinist reads them: decimal inches to three places (2.000 × 2.000 × 0.188 in).
   var MockUnits = {
     unit: 'mm',
     inch: function (mm) { return (mm / 25.4).toFixed(3); },

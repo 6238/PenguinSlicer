@@ -207,6 +207,7 @@
   $('#sc-refresh').addEventListener('click', function () { window.Wizard.comeBack('refresh'); });
   $('#sc-reopen').addEventListener('click', function () { window.Wizard.comeBack('reopen'); });
   $('#sc-later').addEventListener('click', function () { window.Wizard.comeBack('later'); });
+  $('#sc-12h').addEventListener('click', function () { window.Wizard.twelveHoursLater(); });
   $('#sc-speed').addEventListener('change', function () { window.Wizard.Mock.speed = this.value; });
   $('#sc-width').addEventListener('change', function () { if (this.value !== 'drag') setWidth(+this.value); });
   $('#sc-lay').addEventListener('change', function () { window.Wizard.setOption('lay', this.value); });

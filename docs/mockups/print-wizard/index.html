@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- PenguinSlicer: a click-through requirements mockup of the 3D printing wizard, version 6.
+<!-- PenguinSlicer: a click-through requirements mockup of the 3D printing wizard, version 8.
      Everything is faked in this page: no server, no slicing, no Onshape, no printer.
      The yellow scenario strip at the top is a mockup control, not part of the product. -->
 <html lang="en">
@@ -63,7 +63,7 @@
           <optgroup label="Layout step">
             <option value="too_close">3a. Instances too close</option>
             <option value="off_plate">3b. Instance off the plate</option>
-            <option value="too_tall">3c. Instance too tall</option>
+            <option value="too_tall">3c. Instance too tall (stands a Shooter Hood Rib up, adding one if none)</option>
           </optgroup>
           <optgroup label="Preview step: slicing">
             <option value="empty_layers">4. Empty layers (fails while Supports is off)</option>
@@ -71,7 +71,7 @@
             <option value="timeout">6. Slice times out</option>
             <option value="conn_lost">7. Connection lost, then back</option>
             <option value="cancel">8. User cancels (auto at about half way)</option>
-            <option value="too_large">9. Plate too large for the server</option>
+            <option value="too_large">9. Plate too large (lowers the 600 cm³ cap for one plate)</option>
           </optgroup>
           <optgroup label="Send step: your print">
             <option value="print_wait">10a. Filament runs out partway (waits for a person)</option>
@@ -83,11 +83,11 @@
       <span id="sc-armed" aria-live="polite"></span>
       <label>Printer
         <select id="sc-printer" title="What the shop printer is doing because of someone else">
-          <option value="idle" selected>Free (idle)</option>
+          <option value="idle" selected>Free (nothing printed lately)</option>
           <option value="other_sending">Another user sending</option>
           <option value="other_printing">Another user printing</option>
           <option value="other_waiting">Another user's print: door open</option>
-          <option value="finished">Last print finished</option>
+          <option value="finished">Free, another user's print finished 25 min ago</option>
           <option value="failed">Last print failed</option>
           <option value="offline">Not heard from (offline)</option>
           <option value="unpaired">No printer paired</option>
@@ -97,6 +97,7 @@
       <button type="button" id="sc-refresh" title="Imitate the user pressing the browser's reload">Refresh page</button>
       <button type="button" id="sc-reopen" title="Imitate closing the right panel and opening PenguinSlicer again">Close and reopen</button>
       <button type="button" id="sc-later" title="Imitate the user coming back two hours later">Come back 2 h later</button>
+      <button type="button" id="sc-12h" title="Imitate 12 hours passing with the panel left open: a print that finished drops its last-print line and note">12 hours later</button>
     </div>
     <div class="sc-row" id="sc-row3">
       <span class="sc-group">Layout step, options to compare:</span>
@@ -125,8 +126,8 @@
       <details class="sc-how" id="sc-how"><summary>How to use this mockup</summary>
         The panel on the right is the wizard; go through it with Next. On its Parts step, click parts in the list or the picture on the left, as you would in Onshape.
         The two Part Studio tabs at the bottom (or <em>Context</em>) switch between the document's Part Studio in inches and its metric one without closing the panel, so a plate can mix inch and metric parts.
-        Nothing is real: no slicing, no Onshape, no printer. <em>Arm error</em> makes a failure happen at the next chance; <em>Printer</em> sets what someone else is doing at the shop printer;
-        <em>Come back</em> imitates a page refresh, closing and reopening the panel, or returning two hours later while work runs. Drag the panel's left edge, or use <em>Panel width</em>, to widen it.
+        Nothing is real: no slicing, no Onshape, no printer; a file you upload is not read, it becomes one of the mock parts, and Download saves nothing. <em>Arm error</em> makes a failure happen at the next chance; <em>Printer</em> sets what someone else is doing at the shop printer;
+        <em>Come back</em> imitates a page refresh, closing and reopening the panel, or returning two hours later while work runs; <em>12 hours later</em> moves the clock on with the panel open. Advanced mode shows a sample of Orca's settings. Drag the panel's left edge, or use <em>Panel width</em>, to widen it.
       </details>
     </div>
   </div>
@@ -175,18 +176,19 @@
     <header id="wiz-header">
       <div class="brand-row">
         <div class="brand">PenguinSlicer</div>
-        <button type="button" id="pstat" class="pstat" aria-expanded="false" aria-controls="pstat-pop" title="The printer: click for details">
+        <button type="button" id="pstat" class="pstat" aria-expanded="false" aria-controls="pstat-pop">
           <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M4 1h8v4H4zM2 6h12a1 1 0 0 1 1 1v5h-3v3H4v-3H1V7a1 1 0 0 1 1-1zm3 6v2h6v-3H5zm8-4.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5z"/></svg>
           <span class="pdot"></span><span class="ptext">Free</span>
         </button>
       </div>
       <div class="config-info" id="config-info"></div>
       <ol id="stepbar" aria-label="Steps">
-        <li data-step="parts" data-num="1" class="active" role="button" tabindex="0">Parts</li>
-        <li data-step="setup" data-num="2" role="button" tabindex="0">Settings</li>
-        <li data-step="layout" data-num="3" role="button" tabindex="0">Layout</li>
-        <li data-step="preview" data-num="4" role="button" tabindex="0">Preview</li>
-        <li data-step="send" data-num="5" role="button" tabindex="0">Send</li>
+        <!-- below 480 px of panel: numbered circles, the current one with its name; from 480 px: pills -->
+        <li data-step="parts" data-num="1" class="active" role="button" tabindex="0" title="1. Parts" aria-label="Step 1: Parts"><span class="sn">Parts</span></li>
+        <li data-step="setup" data-num="2" role="button" tabindex="0" title="2. Settings" aria-label="Step 2: Settings"><span class="sn">Settings</span></li>
+        <li data-step="layout" data-num="3" role="button" tabindex="0" title="3. Layout" aria-label="Step 3: Layout"><span class="sn">Layout</span></li>
+        <li data-step="preview" data-num="4" role="button" tabindex="0" title="4. Preview" aria-label="Step 4: Preview"><span class="sn">Preview</span></li>
+        <li data-step="send" data-num="5" role="button" tabindex="0" title="5. Send" aria-label="Step 5: Send"><span class="sn">Send</span></li>
       </ol>
       <!-- why a click on a later step tab did not go there: one line, under the tabs -->
       <p id="step-why" class="step-why" role="status" hidden></p>
@@ -199,6 +201,8 @@
         <!-- the change details: what a click on the "+1 change" chip opens, joined to the chip -->
         <div id="chg-pop" class="chg-pop" hidden></div>
       </div>
+      <!-- the user's own last print, one line: "Your print finished at 11:25 am." (version 7) -->
+      <p id="last-print" class="last-print" hidden></p>
       <div id="notices" aria-live="polite"></div>
 
       <!-- ===== SETTINGS (step 2; called Setup until version 5) ===== -->
@@ -301,7 +305,12 @@
           <div id="preview-stats" class="stats"></div>
           <div class="preview-cols">
             <div>
-              <div id="viewer-container" class="gl-view" title="Drag to turn, right-drag to pan, scroll to zoom; drag the bar on the right to go through the layers">
+              <div id="viewer-container" class="gl-view">
+                <!-- version 8: the colour key, closed by default, behind a small icon -->
+                <button type="button" class="icon-btn key-btn" id="btn-key" aria-expanded="false" aria-controls="pv-key" aria-label="Colour key" title="Colour key">
+                  <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="2" width="5" height="2.4" rx="1" fill="#2b5c9e"/><rect x="1" y="5.6" width="5" height="2.4" rx="1" fill="#e0912f"/><rect x="1" y="9.2" width="5" height="2.4" rx="1" fill="#2f9e7a"/><rect x="1" y="12.8" width="5" height="2.4" rx="1" fill="#9a8fb8"/><rect x="8" y="2.6" width="7" height="1.2" rx="0.6" fill="currentColor"/><rect x="8" y="6.2" width="7" height="1.2" rx="0.6" fill="currentColor"/><rect x="8" y="9.8" width="7" height="1.2" rx="0.6" fill="currentColor"/><rect x="8" y="13.4" width="7" height="1.2" rx="0.6" fill="currentColor"/></svg>
+                </button>
+                <ul id="pv-key" class="pv-key" aria-label="Colour key" hidden></ul>
                 <div id="layer-slider" class="layer-slider" tabindex="0" role="slider" aria-label="Layer">
                   <div class="ls-track"><div class="ls-fill" id="ls-fill"></div></div>
                   <div class="ls-thumb" id="ls-thumb"><span id="ls-label"></span></div>
@@ -313,10 +322,12 @@
                 <button type="button" class="btn small icon" id="btn-layer-up" aria-label="One layer up">+</button>
                 <span class="spacer"></span>
                 <button type="button" class="btn small" id="btn-preview-view">Reset view</button>
+                <!-- fix round 1 of version 8: how to move the view, behind a "?" icon as on the Layout step -->
+                <button type="button" class="icon-btn help-btn" id="btn-preview-help" aria-expanded="false" aria-controls="preview-help" aria-label="How to move the view" title="How to move the view">?</button>
+                <div id="preview-help" class="help-pop up" role="dialog" aria-label="How to move the view" hidden>
+                  <p>Drag to turn, right-drag to pan, scroll to zoom; drag the bar on the right to go through the layers.</p>
+                </div>
               </div>
-            </div>
-            <div>
-              <ul id="legend" class="legend" aria-label="Colours"></ul>
             </div>
           </div>
         </div>
@@ -353,8 +364,8 @@
     <div id="advanced" class="advanced" hidden>
       <!-- the printer-status icon and its details move here while advanced mode is open -->
       <div class="brand-row adv-brand" id="adv-brand"><div class="brand">PenguinSlicer</div></div>
+      <!-- version 7: no "‹ Settings" here; the button at the bottom is the only way back -->
       <div class="adv-head">
-        <button type="button" class="btn small" id="adv-back" title="Back to the Settings step">&lsaquo; Settings</button>
         <div class="adv-title"><strong>Advanced mode</strong><span id="adv-sub"></span></div>
         <button type="button" class="btn small" id="adv-reset-all">Reset all</button>
       </div>
