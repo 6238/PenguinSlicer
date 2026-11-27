@@ -104,6 +104,17 @@ belongs to.
     by the rule of decision 3; it also checks each link stands in the section of its example
     and the folder's README lists every file. It failed with no files, passes now, and caught
     three hand mutations (a changed name, an extra key, an `id` not the `sequence`).
+15. **What the folder's README warns of (second review).** The documents are silent on what
+    the README says beyond listing the files. It names every file that breaks a rule of the
+    contract: four, with `slice-summary.json` linked beside `slice-done.json` and
+    `slice-events.txt`, the lengths of time described as "not written as whole numbers" so
+    that 2145.0 is covered as well as 31.5. It also says the files show shapes, not one
+    story, naming the 4 instances of the accepted plate against the 3 of the summary
+    (decision 9), and calls its files requests, answers or window messages, since
+    `signin-window-signed-in.json` is a message between windows. A throwaway check (the old
+    "Two files" sentence present, `slice-summary.json` absent from the bullet) failed before
+    the edit and passes after it. To overrule: cut the warnings, leaving the record as the
+    only place they stand.
 
 ## Targets missed
 
@@ -124,11 +135,11 @@ belongs to.
   batch was to hold exactly what the inline example holds and to change no rule; the folder's
   README names the conflict. To settle it, the contract's example becomes `null` (and the file
   with it) or the rule changes, and the slice service follows whichever the contract says.
-- **Lengths of time that are not whole seconds.** The contract says, under Answers, errors and
+- **Lengths of time not written as whole numbers.** The contract says, under Answers, errors and
   times, that a length of time is a number of whole seconds in a field ending `_s`. The
   progress report contract types `elapsed_s` and `expected_s` as a number, and its examples
   and the slice service's (`slice-http/events.txt`, `examples/sliced-file.json`) carry
-  fractions. The front server passes the slice service's reports and summary unchanged, so the
+  values written with a decimal point, fractions (31.5) or not (2145.0). The front server passes the slice service's reports and summary unchanged, so the
   files keep them: `elapsed_s` 31.5 and 52.8 in
   [slice-events.txt](../../../../contracts/examples/wizard-front/slice-events.txt) and
   [slice-done.json](../../../../contracts/examples/wizard-front/slice-done.json), and

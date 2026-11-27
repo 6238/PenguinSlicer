@@ -1,6 +1,6 @@
 # Examples: the wizard and the front server
 
-Each file here is one example request or answer of
+Each file here is one example request, answer or window message of
 [the contract between the wizard and the front server](../../wizard-front-server.md), written
 out whole from the example that stands inline in the contract, where a link to the file
 stands beside it. A file holds exactly what its inline example holds; where the inline example
@@ -8,19 +8,26 @@ is shortened (an ellipsis, a placeholder in angle brackets), the file completes 
 taken from the other contracts' examples, so that every file is a complete request or answer.
 The contract wins over a file wherever the two differ.
 
-Two files hold values that break a rule of the contract, because the contract's own examples
+Four files hold values that break a rule of the contract, because the contract's own examples
 hold them:
 
 - [part-record.json](part-record.json) carries a `slice.part_not_watertight` warning beside
   `volume_mm3` 9910.4, as the inline record does, while the contract says `volume_mm3` is
   `null` for a surface that is not closed. A check of the part's record should not take that
   pair as the rule.
-- The slice service's reports and summary, passed unchanged, carry fractions of a second
-  (`elapsed_s` 31.5 and 52.8 in [slice-done.json](slice-done.json) and
-  [slice-events.txt](slice-events.txt), `print_time_s` 2145.0 in the summary), while the
-  contract says a length of time is a number of whole seconds. The values the front server
-  reckons itself (`expires_in_s`, and the files' invented printer delivery figures) are
-  whole.
+- The slice service's reports and summary, passed unchanged, carry lengths of time not
+  written as whole numbers (`elapsed_s` 31.5 and 52.8 in [slice-done.json](slice-done.json)
+  and [slice-events.txt](slice-events.txt), `print_time_s` 2145.0 in the summary of both and
+  of [slice-summary.json](slice-summary.json)), while the contract says a length of time is a
+  number of whole seconds. The values the front server reckons itself (`expires_in_s`, and
+  the files' invented printer delivery figures) are whole.
+
+The files show shapes, not one story: [slice-accepted.json](slice-accepted.json) names
+[the phase 2 plate configuration](../plate-configuration-phase-2.json), of 4 instances, while
+the summary that slice job `3f9a1c2b` carries in [slice-done.json](slice-done.json),
+[slice-events.txt](slice-events.txt) and [slice-summary.json](slice-summary.json) is the
+slice service's [example of the sliced file's details](../sliced-file.json) unchanged, of 3
+instances.
 
 The front server's builder and the wizard's builder each check their stand-ins against these
 files.
