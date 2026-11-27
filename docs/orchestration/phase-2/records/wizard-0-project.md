@@ -100,6 +100,60 @@ What was built:
     are editing those files now, and the change is small enough to make when phase 2's
     guide for the owner is written. To overrule: change those two lines.
 
+### After the review (the fixer's decisions)
+
+14. **three.js's core is kept in git by a `.gitignore` in `wizard/vendor/`, not by `git add
+    -f`.** The review found `three/build/three.module.min.js` never committed: a global
+    excludes rule (`build/`) on the build machine ignored it, so a fresh checkout failed 4
+    tools' tests. The documents are silent on how. A forced add commits this file once and
+    loses the next release's the same way; `wizard/vendor/.gitignore` (`!build/`,
+    `!build/**`) wins over any global excludes file, and
+    `test_no_vendored_file_is_ignored_by_git_even_under_a_global_build_rule` builds a
+    throwaway repository with a global `build/` rule and the repository's own `.gitignore`
+    files and checks git ignores no file the vendor README lists. To overrule: delete the
+    file and the test and force-add each release.
+15. **The build reads `src` and `href` in double quotes, single quotes or none, and leaves
+    `href="#..."` as it is.** The details said the build refuses a reference to another
+    site; it saw only double quotes. It now reads all three forms HTML allows (and spaces
+    around `=`), keeps the value's own quotes when it rewrites, and refuses the other forms
+    for the same reasons as before; `tests/page.test.js` reads the same three forms. A link
+    within the page is not a file, so it is passed through rather than refused, for the
+    page's later in-page links. Only `src` and `href` are read: `srcset`, `poster` or
+    `data` addresses are neither rewritten nor refused, and the contract's content security
+    policy (`default-src 'self'`) is what keeps them from loading; the details file says
+    so. To overrule: add attributes to `REFERENCE` in `build.py` and to the page test.
+16. **The tools' tests run without `-q`,** so pytest's header shows pytest-randomly's
+    `Using --randomly-seed=<seed>`, as the details and the Makefile said it did.
+    `test_makefile.py` runs the target's own command (from `make -n test-tools`) on a
+    throwaway test and checks the seed is printed. `test-browser` dropped `-q` as well, for
+    the same reason. To overrule: put `-q` back and pass `-p randomly` with a printed seed
+    some other way.
+17. **The seams search now reads regular expression literals and `Date['now']`.** A `/`
+    starts a literal after an operator, an opening bracket, a comma, a semicolon, a few
+    keywords (`return`, `typeof` and the like) or at the start of the text, the usual rule
+    of thumb; the literal (with its character classes and escapes) is searched like a
+    string, so a `/*` or a quote inside it no longer hides what follows. A `/` after a name,
+    a number or `)` is a division. A literal right after `)` (`if (x) /re/.test(s)`) is
+    taken for a division, which only matters if it holds a quote or a comment marker. The
+    other ways of reaching the time or the network (`new Date()`, `performance.now`,
+    `requestAnimationFrame`, `XMLHttpRequest`, `EventSource`, `WebSocket`) are left for the
+    skeleton batch, which builds the seams and so decides what the clock and the transport
+    cover; the details file names them. To overrule: add them to `FORBIDDEN` in
+    `wizard/tests/forbidden_calls.js`.
+18. **Smaller fixes from the review, each with a test seen to fail first or a check seen to
+    fail by hand:** a test with an escaped quote in a string (removing the escape handling
+    now fails it); `page.test.js` runs each rule on pages that break it as well as on the
+    real page; the hub's 3 mm fillets and its 300 by 250 facets are tested on the generated
+    mesh (a fillet of 0.5 mm or a split of 250 by 300 now fails); Node's check names a Node
+    that does not answer within 30 seconds instead of ending in a traceback; the trials'
+    server has tests of a null byte in a path and of a symbolic link leading out of a served
+    folder. The review called the containment check unreachable while the `..` check stands;
+    it is reachable through such a link, which the new test shows (removing the check lets
+    the link serve a file outside), so the check stays.
+19. **Declined: the plan's and the root README's lines about the wizard having no code**
+    (review minor 8). The task limited this batch's document updates to the root
+    `CLAUDE.md`'s table, and other builders are editing the plan now; decision 13 stands.
+
 ## Targets missed
 
 None.
@@ -113,7 +167,10 @@ None.
   skeleton batch's (item 2 of "By phase"); the task allowed a minimal build here.
 - **The fakes in `wizard/tests/fakes/`** (the fake clock, the fake front server in
   JavaScript) and **the seams' modules**: the skeleton batch's.
-- **The plan's and the root README's lines about the wizard having no code** (decision 13).
+- **The plan's and the root README's lines about the wizard having no code** (decisions 13
+  and 19).
+- **The seams search for `new Date()`, `performance.now`, `requestAnimationFrame`,
+  `XMLHttpRequest`, `EventSource` and `WebSocket`** (decision 17): the skeleton batch's.
 
 ## For the owner to look at
 
