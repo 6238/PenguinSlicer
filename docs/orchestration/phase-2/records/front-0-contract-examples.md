@@ -50,9 +50,10 @@ belongs to.
    it with the sentence the wizard's guide gives as the kind expected ("It may still slice
    and print. If the slice fails, look in your CAD program for faces that do not meet, then
    add the repaired part again."), starting "This part" as the contract does, since an upload
-   carries no name. The `detail` is invented evidence (`open edges 14, separate pieces 2,
-   closed false`). See Targets missed: the slice service as built words this warning
-   otherwise.
+   carries no name. The `detail` is invented evidence (`open edges 14, separate pieces 2`); it
+   says nothing of whether the surface is closed, so as not to assert in a second place what
+   the record's `volume_mm3` contradicts. See Targets missed: the slice service as built words
+   this warning otherwise, and the record's volume breaks a rule.
 8. **The slice job's first report.** Completed from
    [slice-http/slice-accepted.json](../../../../contracts/examples/slice-http/slice-accepted.json)
    and [the phase 2 plate configuration](../../../../contracts/examples/plate-configuration-phase-2.json):
@@ -89,10 +90,12 @@ belongs to.
     = `elapsed_s` + 60 × `remaining_min`). The last print ended at the inline
     `2026-11-27T19:25:00Z`; with the answer at `20:10:00Z`, its sliced file expires at
     `21:25:00Z`, 4,500 seconds on. The send request names the live job's slice job,
-    `5e2b8c19`. Phase 5 may reshape printer delivery's own fields; then this file changes
-    with them.
+    `5e2b8c19`. Its lengths of time are whole seconds (`elapsed_s` 1503 and 2241,
+    `expected_s` 3483), by the contract's rule, since here the values were the batch's to
+    choose. Phase 5 may reshape printer delivery's own fields; then this file changes with
+    them.
 13. **Where the links stand.** A link follows its fenced block or sentence as "See
-    [examples/wizard-front/…](…)."; one in a table cell is put in parentheses in the cell; the
+    examples/wizard-front/<file>.", the text linked to that file; one in a table cell is put in parentheses in the cell; the
     `200` of `PUT /api/configuration`, written in a table, is linked in a line after the
     table. Each removed line of the diff comes back with only the link added.
 14. **How the files are checked.** There is no `front/` project yet. A throwaway script outside
@@ -110,8 +113,34 @@ belongs to.
   holes in its surface (… open edges, … separate pieces); if the slice fails or looks wrong,
   repair it in CAD." No suite should assert the warning's `message` equals the file until the
   slice service's builder settles the sentence for an upload, which carries no name.
+- **The part's record breaks the contract's rule for `volume_mm3`.** The contract's table of
+  the part's record, and the slice service's HTTP interface, say `volume_mm3` is `null` for a
+  surface that is not closed. The inline record, and so
+  [part-record.json](../../../../contracts/examples/wizard-front/part-record.json), gives
+  `volume_mm3` 9910.4 beside a `slice.part_not_watertight` warning with 14 open edges. The
+  slice service as built gives a third figure: when a part is not watertight it reports the
+  bounding box's volume (`slice/src/penguin_slice/mesh.py`, `analyse`), which for
+  `size_mm` [50.8, 50.8, 4.775] is 12,322.6 mm³. The file keeps the inline 9910.4, since the
+  batch was to hold exactly what the inline example holds and to change no rule; the folder's
+  README names the conflict. To settle it, the contract's example becomes `null` (and the file
+  with it) or the rule changes, and the slice service follows whichever the contract says.
+- **Lengths of time that are not whole seconds.** The contract says, under Answers, errors and
+  times, that a length of time is a number of whole seconds in a field ending `_s`. The
+  progress report contract types `elapsed_s` and `expected_s` as a number, and its examples
+  and the slice service's (`slice-http/events.txt`, `examples/sliced-file.json`) carry
+  fractions. The front server passes the slice service's reports and summary unchanged, so the
+  files keep them: `elapsed_s` 31.5 and 52.8 in
+  [slice-events.txt](../../../../contracts/examples/wizard-front/slice-events.txt) and
+  [slice-done.json](../../../../contracts/examples/wizard-front/slice-done.json), and
+  `print_time_s` 2145.0 in the summary of both and of
+  [slice-summary.json](../../../../contracts/examples/wizard-front/slice-summary.json). Where
+  the values were the batch's to choose (printer-mine.json, decision 12) they are whole. To
+  settle it, the contract's rule says it covers only the front server's own figures, or the
+  front server rounds what it passes, which would break "unchanged".
 - **No fast suite was run.** The batch has no component with a suite (`front/` does not exist
-  yet); the comparison script ran in its place, twice, before and after merging `main`.
+  yet); the comparison script ran in its place, before and after the fixes of the review, and
+  again after merging `origin/main` into the branch, which had not moved since the branch was
+  cut.
 
 ## Not done
 
@@ -119,7 +148,18 @@ belongs to.
   `{"printer": {…}}` of `GET /api/printer`, the `201` of pairing, the `200` of unpairing, the
   `202` of a send, the `200` of `GET /api/printer/deliveries/<delivery>`, the `200` and `202`
   of a cancel and the `200` of stop-following. Each would be invented almost whole from
-  printer delivery's shapes, which phase 5 settles.
+  printer delivery's shapes, which phase 5 settles. The line is not clean, as the review
+  noted: [printer-mine.json](../../../../contracts/examples/wizard-front/printer-mine.json)
+  was invented the same way, because its inline example is a fenced block, and the `202` of
+  a send is a whole answer in a table cell that decision 1's rule counts. Both stay as they
+  are: phase 2 uses neither, and every inline example of phase 2 has its file. Phase 5 writes
+  the rest when printer delivery's shapes are settled.
+- **Declined from the review: no link from the contract to the folder's README.** The batch was told to change nothing
+  else in the contract; a pointer like the one in the slice service's HTTP interface is for a
+  later change.
+- **Declined from the review: `examples/progress-report.json` says "Generating supports"** where the stages table says
+  "Checking and generating supports". It is not this batch's file, and the batch's files take
+  "Generating infill" from the table; left for the progress report contract's owner.
 - **The small window's `sign_in_failed` message** (phase 4): its `report` is a
   `front.sign_in_refused` or `front.sign_in_failed` report whose sentences no document
   writes, and inventing them would settle the front server's wording.

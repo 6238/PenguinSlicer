@@ -5,8 +5,22 @@ Each file here is one example request or answer of
 out whole from the example that stands inline in the contract, where a link to the file
 stands beside it. A file holds exactly what its inline example holds; where the inline example
 is shortened (an ellipsis, a placeholder in angle brackets), the file completes it with values
-taken from the other contracts' examples, so that every file is a complete, valid request or
-answer. The contract wins over a file wherever the two differ.
+taken from the other contracts' examples, so that every file is a complete request or answer.
+The contract wins over a file wherever the two differ.
+
+Two files hold values that break a rule of the contract, because the contract's own examples
+hold them:
+
+- [part-record.json](part-record.json) carries a `slice.part_not_watertight` warning beside
+  `volume_mm3` 9910.4, as the inline record does, while the contract says `volume_mm3` is
+  `null` for a surface that is not closed. A check of the part's record should not take that
+  pair as the rule.
+- The slice service's reports and summary, passed unchanged, carry fractions of a second
+  (`elapsed_s` 31.5 and 52.8 in [slice-done.json](slice-done.json) and
+  [slice-events.txt](slice-events.txt), `print_time_s` 2145.0 in the summary), while the
+  contract says a length of time is a number of whole seconds. The values the front server
+  reckons itself (`expires_in_s`, and the files' invented printer delivery figures) are
+  whole.
 
 The front server's builder and the wizard's builder each check their stand-ins against these
 files.
