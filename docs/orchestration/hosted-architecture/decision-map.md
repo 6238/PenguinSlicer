@@ -588,6 +588,31 @@ phrased it.
 |---|---|---|---|---|
 | D362 | What the spec calls "the wizard's server side" is a component of its own, the front server, in `front/`; the wizard is the code in the browser only, in `wizard/`; and a contract between the two, `contracts/wizard-front-server.md`, is to be written. | 14-17 (note added after approval) | `docs/plans/penguin-slicer-plan.md` | `docs/architecture.md`, `front/README.md`, `wizard/README.md`, `contracts/wizard-front-server.md`, `contracts/README.md` |
 
+| D363 | A component's guide is two files: `README.md` for a person and `README-details.md` for a builder (the owner, Thu 2026-11-26). | none | `docs/plans/penguin-slicer-plan.md` | every guide |
+| D364 | Correction by measurement: the slowest plate of the Popcorn Penguins' real parts took 34.3 seconds (twelve Elevator Block Bottom Inners with supports on), where the spec says 22. | 150 | `slice/README.md` | |
+| D365 | Correction by the code: the line that ends a slice job already carries the memory ceiling, which the spec lists as something to add. | 892 | `slice/README.md` | |
+| D366 | Answered by the code: the daemon as built fetches a sliced file again after a cut-off connection, up to three attempts; this leaves the list of things to confirm (D359). | 1004-1005 | `delivery/README.md` | `docs/architecture.md` |
+| D367 | Added: the front server stores a sliced file's summary beside it in the state bucket and serves both, because the Preview step needs the summary after the slice container has deleted its copy. | none | `front/README.md` | `contracts/wizard-front-server.md` |
+| D368 | Added, as a proposal: a send repeated with the same sliced file by the same user while its delivery job is live answers with that delivery job, since the page retries every request. | none | `delivery/README.md` | `front/README.md`, `contracts/wizard-front-server.md` |
+| D369 | Added: a slice service that is stopping refuses a new slice job with an answer that is tried again without telling the user, never `slice.busy`. | none | `slice/README.md` | `contracts/wizard-front-server.md`, `wizard/README.md` |
+
+### Awaiting the owner
+
+Where the wizard's approved mockup (version 8) and the spec differ. Each is set out in
+full, with both sides and a recommendation, in
+[the wizard's detailed guide](../../../wizard/README-details.md). Until the owner answers,
+the living documents state the recommendation and mark it as not yet confirmed.
+
+| Item | Recommendation | Status |
+|---|---|---|
+| Sending the same plate again after a long print | A sliced file lives until two hours after its slice or two hours after its last print ended, whichever is later | Awaiting the owner's choice |
+| How long the page retries before telling the user | Keep the mockup's 20 seconds; a longer restart is a defect to fix once measured | Awaiting the owner's choice |
+| "Not heard from for 7 minutes" | The relay notes the time in the paired-printer record when a daemon goes offline | Awaiting the owner's choice |
+| What a refresh keeps; finding a slice job after one; when the two hours start; who pairs the printer and where; how the page outside Onshape finds its configuration; where a returning page opens after its print ended | The spec | Not yet confirmed |
+| A colour for each filament; a part that cannot be used | The mockup (four fixed colours; a notification, and the part is not added) | Not yet confirmed |
+| Whether the printer is in the configuration | The paired-printer record links the group to its daemon; the configuration names the printer's Orca profile | Not yet confirmed |
+| What a delivery job's record carries; a returning page finding its delivery job and last print; a profile's own name and purpose; the plate's size on the Layout step | Added to the living documents as the mockup requires | Not yet confirmed |
+
 ## Possible disagreements in the spec
 
 - D11 against D127, D132 and D133: the short answer says the hosted service makes no calls besides sign-in until phase 4, but if the app becomes public before phase 4, reading groups again (once a day) and renewing tokens make calls before phase 4.
