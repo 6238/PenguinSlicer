@@ -331,15 +331,30 @@ rule's figure:
 | A turned instance | A bracket at `angle` 37, 5.01 mm from another at the closest point of their outlines | The same at 4.99 mm |
 | A rotation | The bracket laid on its hull face by `rotation`, 5.01 mm from a spacer | The same at 4.99 mm |
 
+**The files.** The set is built: thirteen plates, `margin-pass.json`, `margin-fail.json`,
+`height-pass.json`, `height-fail.json`, `height-laid-down-pass.json` (`post-341.stl` with
+`orientation` `+x` at `angle` 30), `spacing-pass.json`, `spacing-fail.json`,
+`spacing-supports-pass.json`, `spacing-supports-fail.json`, `angle-pass.json`,
+`angle-fail.json`, `rotation-pass.json` and `rotation-fail.json`. Each names no `printer`,
+`filament` or `process`, so it is over the default set, and its `overrides` holds only
+`enable_support`, `"0"` or `"1"`, so that whether supports are on never depends on the process
+profile. Its `plate_id` and `submission_id` are fixed UUIDs, different on every plate. The
+posts' parts are named `Post-340` and `Post-341`; `spacer.stl` is a box of 40 by 30 by 10 mm.
+The height plates are 0 mm (`post-340.stl`, exactly the printable height, passing) and 1 mm
+(`post-341.stl`, failing) from their figure, as the table says; every other plate is 0.01 mm
+from its figure. The slice service's
+[details](../slice/README-details.md#shared-plates-for-the-placement-checks) say how the set
+is written and tested.
+
 **Agreement.** On every plate of the set both checks give exactly the expected answer. The
 slice service decides each rule with a tolerance of 1e-6 mm; the set keeps every distance
 0.01 mm from its figure, so a check that computes in single precision, as a browser's
 drawing may, still agrees. Closer to a figure than 0.01 mm the two checks may differ, and the
 slice service's answer is the one that holds.
 
-**Who writes it.** The slice service's builder writes the set and its parts first of all in
+**Who writes it.** The slice service's builder wrote the set and its parts first of all in
 phase 2, before the rest of its work, since the wizard's builder runs it from the start
-([the slice service's details](../slice/README-details.md#phase-2-one-machine)).
+([the slice service's details](../slice/README-details.md#shared-plates-for-the-placement-checks)).
 
 ## Fields
 
