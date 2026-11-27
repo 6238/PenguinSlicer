@@ -65,8 +65,11 @@ the sliced file, the progress stream and a compressed table of settings. Every f
 Every answer carries `Cache-Control: no-store`.
 
 **Times and ids.** A time is a string in UTC, RFC 3339, to the second
-(`2026-11-27T22:14:05Z`). A slice job's id (`job`) is the slice service's, an opaque string of
-1 to 64 letters, digits, `-` and `_`.
+(`2026-11-27T22:14:05Z`), except the `time` of a log line, which is to the millisecond
+([The log](#the-log)). A slice job's id (`job`) is the slice service's, an opaque string of
+1 to 64 letters, digits, `-` and `_`, made at random (as built, `j` and 16 hexadecimal
+characters), so that a restarted process never gives an id an earlier process gave: the front
+server keeps a sliced file under its slice job's id after the process that made it has gone.
 
 **One process.** A slice service process holds its slice jobs in its memory. A restarted
 process knows none of the slice jobs of the process before it, and answers them

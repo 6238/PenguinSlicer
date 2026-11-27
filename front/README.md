@@ -135,7 +135,7 @@ explained in the section of this guide that deals with it.
 | With | What passes | The contract |
 |---|---|---|
 | The wizard | Pages; parts and plate configurations going up; progress and the sliced file coming down; the group's configuration; the list of settings for advanced mode; the wizard's reports about itself; from phase 5, sends and the printer's status | [The wizard and the front server](../contracts/wizard-front-server.md), which fixes the exact requests; failures as [error reports](../contracts/error-report.md), progress as [progress reports](../contracts/progress-report.md) |
-| The slice service | Parts and [plate configurations](../contracts/plate-configuration.md) going in; progress, the [sliced file](../contracts/sliced-file.md), the list of settings, the profile catalog's names and log lines coming out | The slice service's own interface ([its guide](../slice/README.md)) |
+| The slice service | Parts and [plate configurations](../contracts/plate-configuration.md) going in; progress, the [sliced file](../contracts/sliced-file.md), the list of settings, the profile catalog's names and log lines coming out | [The slice service's HTTP interface](../contracts/slice-http-interface.md), which fixes the exact requests; what the slice service does behind them is in [its guide](../slice/README.md) |
 | Onshape | Who a user is and which companies and classrooms they belong to; from phase 4, the parts a user selected | Onshape's public interface |
 | The state bucket | Each group's configuration, the sliced files and, from phase 5, what the relay must remember | [The configuration's contract](../contracts/configuration.md) for the configuration |
 | The relay, from phase 5 | Who is asking; a place to keep what it must remember; the sliced file | The relay's interface to its caller ([printer delivery's guide](../delivery/README.md)) |
@@ -952,7 +952,7 @@ the one most easily broken by accident.
 **Each container's previous version works against the other's new one.** The front
 server and the slice service are deployed separately, so a new one of either meets the
 previous one of the other. A change to the plate configuration's contract or to the
-slice service's interface is therefore made so that the previous front server still
+slice service's HTTP interface is therefore made so that the previous front server still
 works against the new slice service, and the previous slice service against the new
 front server.
 

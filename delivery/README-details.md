@@ -624,7 +624,7 @@ A delivery job's record holds:
 
 - the group and the daemon it is for, and the sliced file it uses, which is how the front
   server knows when a sliced file's last print ended
-  ([the front server](../front/README-details.md#two-hours-deleting-and-the-backstop));
+  ([the front server](../front/README-details.md#two-hours-the-sweep-and-the-backstop));
 - who sent it: the user's Onshape display name, and the user's user key, by which the
   relay tells the sender's own delivery job from another user's (`sender.you`,
   `GET /api/printer/mine`) and checks Stop following, since display names need not differ;
@@ -690,7 +690,7 @@ reads the sliced file from the store when the daemon fetches it and passes it on
 keeps no copy of its own, so a printer only ever receives a file the slice service made.
 A sliced file is kept until two hours after its slice ended or two hours after its last
 print ended, whichever is later; its last print ended when the latest delivery job that
-used it ended ([the front server](../front/README-details.md#two-hours-deleting-and-the-backstop)).
+used it ended ([the front server](../front/README-details.md#two-hours-the-sweep-and-the-backstop)).
 Printer delivery's part of that rule is to tell the front server, for a slice job, whether
 a delivery job that uses it has not ended (the front server then gives `expires_at`
 `null`) and when the last one ended. A sliced file may therefore be sent while it is kept,

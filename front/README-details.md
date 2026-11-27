@@ -1394,8 +1394,10 @@ characters of its commit). A progress stream carries it as its first event too. 
 sends its own version in `X-PenguinSlicer-Page`, which the front server writes in its log
 lines. A page that sees a newer version reloads at a quiet moment; that is the wizard's
 ([the wizard's guide](../wizard/README.md#the-page-reloading-itself-for-a-new-version)).
-*Proposed:* the build writes the version into the package, and the front server reads it at
-start. Built in phase 2.
+A release build sets the version in the setting `PENGUIN_VERSION`; unset, as when run from a
+checkout, it is the moment the front server started, in UTC, then `-0000000`
+([The wizard's built files](../contracts/wizard-front-server.md#the-wizards-built-files)).
+Built in phase 2.
 
 Three rules hold across a deploy:
 
@@ -1711,8 +1713,10 @@ without one the built-in default is served.
 **The joined suite.** One suite outside the three fast suites runs the components together,
 as printer delivery's `test-together` does for its two halves. It is its own `uv` project at
 the repository's root, `together/`, run with `make -C together test`. It starts the real
-slice service with the slice service's stand-in Orca (`PENGUIN_SLICE_ORCA` naming
-`slice/tests/fake_orca.py`) and the real front server with the development identity, each on
+slice service with the slice service's stand-in Orca (`PENGUIN_SLICE_ORCA` naming a small
+executable wrapper the suite writes, which runs `slice/tests/fake_orca.py` with Python, as
+`install_fake_orca` in `slice/tests/helpers.py` does; the file is not executable by itself)
+and the real front server with the development identity, each on
 a port the system chooses and each with fresh folders, builds the wizard, and drives the
 wizard in Chromium through Playwright: the phase's "Done when" from adding parts to the
 download, and each row of the architecture's table "The slice container restarts", the slice
