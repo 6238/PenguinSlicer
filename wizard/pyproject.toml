@@ -1,0 +1,27 @@
+[project]
+name = "penguin-wizard"
+version = "0.1.0"
+description = "The wizard's tools: its build, its browser tests and its trials. The page itself is plain JavaScript in src/."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "playwright>=1.48",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-randomly>=3.15",
+    "pytest-timeout>=2.3",
+]
+
+[tool.uv]
+# Not a Python package: the project holds the tools that build and test the page.
+package = false
+
+[tool.pytest.ini_options]
+# The tools' tests (tests/tools/) and the browser tests (tests_browser/) are run by path from
+# the Makefile; the page's own tests run on Node's test runner.
+pythonpath = ["."]
+addopts = "-p no:cacheprovider --strict-markers"
+timeout = 120

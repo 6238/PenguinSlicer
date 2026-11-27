@@ -1,0 +1,4 @@
+# The built page, made again by `make build`
+dist/
+# The trials' sliced files, made again by the preview trial's script (25.6 MB)
+trials/sliced/
