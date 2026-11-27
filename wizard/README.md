@@ -10,6 +10,32 @@ The phases named below are those of [the plan](../docs/plans/penguin-slicer-plan
 phase 2, the wizard on one machine with parts from files; phase 3, the same hosted, with
 Onshape sign-in; phase 4, inside Onshape; phase 5, the real printer.
 
+A reader short of time starts at [Where to look first](#where-to-look-first), which
+points at what nobody has seen drawn, at the choices this guide made by itself, and at
+what is not settled. The parts of the guide, in order:
+
+1. [What it is for](#what-it-is-for), with the terms and
+   [Where to look first](#where-to-look-first)
+2. [The panel as a whole](#the-panel-as-a-whole): width, header, how the panel says
+   something, who writes a failure's sentences, units, retrying
+3. [Signing in](#signing-in) and [The current group](#the-current-group)
+4. The five steps: [Parts](#the-parts-step), [Settings](#the-settings-step),
+   [Layout](#the-layout-step), [Preview](#the-preview-step), [Send](#the-send-step)
+5. [The printer-status icon](#the-printer-status-icon), with pairing
+6. [When a user comes back](#when-a-user-comes-back)
+7. [What the browser keeps, and why it is the record](#what-the-browser-keeps-and-why-it-is-the-record)
+8. [How it does the hard parts](#how-it-does-the-hard-parts)
+9. [What the wizard asks of the front server](#what-the-wizard-asks-of-the-front-server)
+10. [How well it must do it](#how-well-it-must-do-it)
+11. [Inside Onshape's panel and outside it](#inside-onshapes-panel-and-outside-it)
+12. [Accessibility](#accessibility)
+13. [Security, from the browser's side](#security-from-the-browsers-side)
+14. [When things go wrong](#when-things-go-wrong)
+15. [How it is tested](#how-it-is-tested)
+16. [Designed here and not in the mockup](#designed-here-and-not-in-the-mockup)
+17. [What is to be built, by phase](#what-is-to-be-built-by-phase)
+18. [What is undecided or unmeasured](#what-is-undecided-or-unmeasured)
+
 ## What it is for
 
 The **wizard** is the code in the browser: a step-by-step user interface that takes a user
@@ -29,8 +55,10 @@ owns three things nothing else has.
   lie on, choosing how it lies, arranging the plate and checking that every instance fits
   are done in the browser, with no server involved, so that dragging an instance answers
   at once.
-- **Every sentence a user reads.** The other components report failures and progress in
-  fixed shapes; the wizard decides where each appears and what stays on screen.
+- **Everything a user sees.** The other components report failures and progress in fixed
+  shapes; the wizard decides where each appears and what stays on screen. It does not
+  write the sentences of another component's failure
+  ([Who writes the sentences of a failure](#who-writes-the-sentences-of-a-failure)).
 
 What it must never hold: a secret of any kind, a sliced file of its own making, or a
 decision about who the user is. It talks to one thing only, the **front server** (the
@@ -64,7 +92,9 @@ The plan's terms hold here. The ones this guide leans on, each in a sentence:
 - A **part** is one distinct solid to print. An **instance** is one placement of a part on
   the plate, labelled with its part's name and a number ("L Bracket #2"). The **plate** is
   the printer's bed and everything on it.
-- The **page** is the wizard as loaded in one browser tab, or in Onshape's panel.
+- The **page** is the wizard as loaded in one browser tab, or in Onshape's panel. The
+  **panel** is the area the wizard draws in, whether that is Onshape's right panel or a
+  browser tab.
 - The **browser's storage** is the storage a browser gives a page that outlasts a refresh
   and a closed tab. It is kept for each browser and for each address the page is opened at.
 - A **group** is the users who share one configuration and one printer: one Onshape company
@@ -82,13 +112,48 @@ The plan's terms hold here. The ones this guide leans on, each in a sentence:
 - A **delivery job** is one sliced file on its way to one printer, from Send to the end of
   its print. The **daemon** is printer delivery's program on the computer beside the
   printer; the wizard never talks to it, and the panel calls it "the PenguinSlicer program
-  on the computer beside the printer".
+  on the computer beside the printer". The **relay** is printer delivery's other half,
+  which runs inside the front server, hands delivery jobs to the daemon and holds the
+  printer's last status.
 
 A user never reads the word "job". What is sliced and printed is a plate, named in words
 ("Plate 1, 16 instances"), never by the sliced file's generated name. So where this guide
 describes what a user sees, "a slice" is a slice job, "a print" is a delivery job from the
 moment the printer starts, and "a sliced plate" is a plate whose sliced file is still
-kept.
+kept. The wizard holds one plate at a time, and "Plate 1" is the only number a user meets
+today; how a second plate is started, and what the number then counts, is undecided
+([Starting a second plate](#starting-a-second-plate)).
+
+## Where to look first
+
+Three places hold what is the owner's to change, and they can be read without the rest.
+
+- **The screens designed here and not in the mockup.** Nineteen screens and states have
+  never been drawn; they exist only as the words of this guide. The table under
+  [Designed here and not in the mockup](#designed-here-and-not-in-the-mockup) lists them
+  and links to each: fourteen that are written as the design, and five that are only
+  proposed.
+- **The choices made in designing them.** Twelve things this guide chose that no source
+  decides, each with its reason and the alternative, are in the table
+  [Choices made in designing these screens](#choices-made-in-designing-these-screens).
+  In the body they are written as the design; that table is where they are shown as
+  choices. The smaller rules this guide proposes are listed under the table, and each
+  is marked "proposed" where it stands.
+- **What is undecided or unmeasured.**
+  [What is undecided or unmeasured](#what-is-undecided-or-unmeasured) holds the two risks
+  to try first, the Preview step's targets, the
+  eleven [gaps in the design](#gaps-in-the-design) that no source decides, each with its
+  options and a recommendation (two tabs on one stored plate, stored work that is not
+  tied to a user, a progress stream that cannot be reopened, failures in the browser
+  that reach no log, STL files in millimetres, starting a second plate, a configuration
+  that cannot be read, a print no longer followed, parts dropped on return, the Layout
+  step by keyboard, and where the printer's name comes from), and
+  [eleven smaller open items](#the-other-undecided-items).
+
+Everything else in the guide follows the mockup's accepted decisions or a decision
+recorded in the plan or the architecture, except the targets this guide proposes for
+speed and memory, each marked "proposed" in the table of
+[How well it must do it](#how-well-it-must-do-it).
 
 ## The panel as a whole
 
@@ -96,20 +161,17 @@ kept.
 
 The panel is fluid: it works at 320 px and lays out wider when it has more room, and
 dragging Onshape's panel wider changes the layout exactly as widening a window would,
-because every rule is measured on the panel and not on the window. Four widths change the
-layout, each including itself:
-
-| From | What changes |
-|---|---|
-| 480 px | The step circles become named tabs; the Settings step puts the filament and the profile side by side and the quick changes two to a row; advanced mode shows its sections in a column down the left |
-| 520 px | The figures of a print sit in one row; the 3D views become 4:3 instead of square |
-| 680 px | The parts list has two columns, and the Send step has two columns |
+because every rule is measured on the panel and not on the window. Three widths change
+the layout (480, 520 and 680 px); what changes at each is in the table at the end of this
+section, [The three widths](#the-three-widths), once the things it names have been
+described.
 
 The look is PenguinCAM's light theme, so that a user of the CNC wizard meets nothing new:
 a pale grey background, white cards, a blue accent, body text at 14 px, a step title at
 18 px. Two departures: amber text is darker than PenguinCAM's, which is hard to read on
-white, and a step tab's hover is light. The dark house style of the project's documents
-does not apply to the wizard.
+white, and a step tab's hover is light. The font is PenguinCAM's, which starts with the
+system's own font, so the panel looks slightly different on each system; that is
+accepted. The dark house style of the project's documents does not apply to the wizard.
 
 ### The header
 
@@ -124,11 +186,17 @@ group, "Config: 6238 (Popcorn Penguins)", with a reload glyph beside it
 after the name of a finished step. Below 480 px they are five small numbered circles
 joined by a line, a check in each finished one, the current one filled in blue with its
 name beside it, so the header stays one row and the content the user works with stays high
-in the panel. Every circle is clickable and shows its step's name as its tooltip
-("3. Layout"). A click on a tab goes there when every step before it allows it. When one
-does not, the **panel line**, one line under the tabs, names the step that holds it and
-why ("Layout first: 23 instances are closer than 12 mm with supports on."); it goes at the
-user's next move or after a few seconds.
+in the panel. Every circle is clickable, and every circle but the current one, whose name
+already shows beside it, has its step's name as its tooltip ("3. Layout"). A click on a
+tab goes there when every step before it allows it. When one does not, the **panel
+line** says so. The panel line is one line under the tabs with two uses. Its passing use
+names the step that holds a click and why ("Layout first: 23 instances are closer than
+12 mm with supports on."), and goes at the user's next move or after a few seconds. Its
+lasting use is the message that the server is slow or cannot be reached
+([When the server is slow](#when-the-server-is-slow-or-cannot-be-reached)), which stays
+until a request is answered and may hold a link or a button. When both apply the lasting
+use is shown and the passing one is not (proposed: no source has the two meet), since a
+user whose click was held can see why from the step itself.
 
 **The plate summary.** The Parts step has none. From the Settings step on, two lines of
 text sit under the header, the same on every step and updated at once: the parts and
@@ -140,32 +208,40 @@ pill even without it, so nothing below moves when the pill comes or goes. The su
 gives no plate area, print time or grams: the Send step states those. The pill is a button:
 a click opens the **change details** joined to it, one plain line for each change
 ("Quality › Resolution: 0.014 mm (profile 0.012 mm)"), closed by a click elsewhere, Escape
-or the pill again.
+or the pill again. A setting that has a quick change on the Settings step is named in the
+quick change's words ("Others › Brim: Off (profile Auto)"), so the menu and the line
+agree.
 
 **Back and Next** sit at the bottom of every step. Next is off until the step's rules pass,
 and the step says why. Back is off on the Parts step.
 
 ### How the panel tells the user something
 
-The panel has five ways to say something, and each kind of news always uses the same one.
+The panel has six ways to say something, and each kind of news always uses the same one.
 The screens below are written with these words.
 
 | Way | What it is | Used for |
 |---|---|---|
 | **Notification** | A card at the top of a step, under the plate summary, closed with × | Something that happened and is on no row: a part that was not added, sending cancelled, work resumed. It belongs to its step and goes when the user leaves the step or as soon as it stops being true |
-| **Message** | A block in the body of a step: one sentence of what happened, one of what to do, and its buttons. Red when it holds Next, amber when it is a caution, grey when it only informs, green when something was done | A problem on the plate, a slice that failed, a printer that cannot take a send |
+| **Message** | A block in the body of a step: one sentence of what happened, one of what to do, and its buttons. Red when it holds Next, amber when it is a caution, grey when it only informs, green when something was done | A problem on the plate, a slice that failed, a printer that cannot take a send, a sign-in that has ended |
 | **Card** | A white bordered box that holds a state for as long as it lasts | Slicing progress, the progress of the user's print, a busy printer |
-| **Details** | A small box that opens joined to the header element or icon it belongs to | The printer details, the change details, the group details, the colour key |
+| **Joined box** | A small box that opens joined to the header element or icon it belongs to. Each has its own name, and the guide uses that name | The printer details, the change details, the group details, the colour key |
 | **Line** | One short sentence in a fixed place | A consequence the user cannot see; the panel line under the tabs |
+| **Confirmation** | The panel asking once more before something is lost. Proposed, since no source draws one: a small box joined to the control that was pressed, holding the question in one or two sentences and two buttons, the one that goes ahead and the one that keeps things as they are. Escape or a click elsewhere keeps things as they are | Changing the current group with changes or a slice to lose, Reset all, Stop following, Unpair |
+
+The word **Details**, with a capital, is kept for one thing only: the folded part of a
+message, which the user opens by the word "Details" to read more.
 
 **Tooltips** are the panel's own: a small white box in the panel's font at body size, which
-appears 150 ms after the pointer rests on an element (a browser's own waits about a
-second) and at once when the keyboard focuses an icon or a step circle. It sits under its
+appears after the pointer has rested on an element for a moment, much sooner than a
+browser's own tooltip (the figure is in [How well it must do it](#how-well-it-must-do-it)),
+and at once when the keyboard focuses an icon or a step circle. It sits under its
 element, or above it where the panel ends, and is kept at least 6 px inside the panel's
 edges, so it never leaves a 320 px panel. A tooltip says only what is not on screen: an
 element whose text is fully visible has none, and one whose text is cut short shows the
 whole text. Only the options inside an open menu keep the browser's tooltip, because the
-browser draws an open menu. Touch shows no tooltip.
+browser draws an open menu. Touch shows no tooltip, so nothing a user needs is said by a
+tooltip alone.
 
 ### The words it uses
 
@@ -187,6 +263,54 @@ failures and a failed print.
 the wizard, nothing says how it lies now: the view shows it. What is said is a move the
 wizard made that the user did not ask for.
 
+### Who writes the sentences of a failure
+
+Every failure is an error report: what happened in a sentence a user understands, where,
+what to do next, the single action that fixes it when one does, and the underlying detail,
+which is kept for the server's log and never shown. **The component that failed writes
+the sentences.** This is a requirement on the boundary between components, and every
+failure this guide describes follows it.
+
+One thing a user can read is not written by a component of PenguinSlicer. On the two
+slice failures that carry folded Details, the Details quote Orca Slicer's own sentence
+with the heights, marked as Orca's, beside the slice service's sentence of where to look
+on the part ([When a slice fails](#when-a-slice-fails)). The slice service puts that
+quotation into its error report among what is for the user; the wizard still shows the
+report as it is and never reads the detail kept for the log.
+
+| The failure is | Its sentences are written by | The wizard |
+|---|---|---|
+| The slice service's: a part it refuses or warns about, a plate it refuses, a slice that fails, runs too long or runs out of memory, no room to wait | The slice service | Shows them as they are |
+| Printer delivery's, from phase 5: a send it refuses, a print that failed or waits for a person, a wrong pairing code | Printer delivery | Shows them as they are |
+| The front server's own: not signed in, a group the user is not in, a configuration that cannot be read, a sliced file that has expired | The front server | Shows them as they are |
+| The Onshape integration's, from phase 4: a part Onshape cannot export | The Onshape integration | Shows them as they are |
+| Something that happens in the browser: no answer from the front server, a check the page makes before sending anything (a file over the size limit, a twenty-sixth part, a plate over 150 instances), every problem of placement on the Layout step, a file the page itself cannot read, a 3D view that is lost, storage that fails | The wizard | Writes them |
+
+"As they are" means that the wizard neither rewords a sentence nor replaces it with one
+of its own made from the report's code. What the wizard adds is its own: where the report
+appears (a notification, a message, a row), its colour, the button for the single action
+the report names, and its own buttons for moving about (Back to Layout, Back to Parts).
+Because the wizard never rewrites, a sentence that reads badly is mended in the component
+that wrote it, and in its tests. Two consequences:
+
+- A sentence written on a server cannot know whether the page is inside Onshape, so it
+  says "your CAD program" or "in CAD" and never "Onshape". Only the Onshape integration's
+  sentences name Onshape.
+- Where this guide quotes a sentence of another component, the quotation is that
+  component's wording as its own guide gives it, or an example of the kind of sentence
+  expected. Where the two differ, the other component's guide wins: the remedy for a
+  slice that ran out of memory is the slice service's, for example
+  ([When a slice fails](#when-a-slice-fails)). The one place where this guide asks
+  another component for something its guide does not have is Orca's sentence under
+  Details, which is listed as an ask
+  ([What the other components do not provide yet](#what-the-wizard-asks-of-the-front-server)).
+
+States that are not failures are the wizard's to put into words, from the figures it is
+sent: a slice waiting behind others, a busy printer, a printer not heard from, a print
+that has gone quiet. Some sentences of the slice service and of printer delivery still
+say "the print server" and use the old words for people; changing them is known work in
+those components, and until it is done the wizard shows what they write.
+
 ### Units
 
 A part has **units**, inches or millimetres, and they are a label that travels with it:
@@ -196,9 +320,9 @@ configuration's units for uploads. The wizard never guesses units from a part's 
 | What | Shown in |
 |---|---|
 | A part's own size, on every step | The part's units. Inches are decimal to three places, as a machinist reads a drawing ("2.000 × 2.000 × 0.188 in"); millimetres to 0.1 mm |
-| Printer and plate figures: the plate's size, the height limit, the spacing between instances, distances between instances, a height above the plate, the layer readout | Always millimetres, as the printer's maker gives them |
+| Printer and plate figures: the plate's size, the height limit, the spacing between instances, distances between instances, a height above the plate, the layer readout | Always millimetres, as the printer's maker gives them: heights and the spacing to 1 mm, distances between instances to 0.1 mm |
 | A comparison of a part's figure with a printer's | Millimetres for both, with the part's own units in brackets when they are inches ("stands 352.7 mm (13.885 in) tall; the printer prints up to 340 mm") |
-| Slicing settings | Always millimetres, as in Orca and in the profiles |
+| Slicing settings, and Orca's own sentence quoted under Details on a failed slice | Always millimetres, as in Orca and in the profiles |
 
 A size is rounded once, from the exact millimetres, in the unit shown, so a part has one
 size on every step. A size is never cut short: in a narrow panel it wraps.
@@ -215,17 +339,44 @@ every request it makes, and a user sees a pause, not an error.
 | 20 to 300 seconds | The panel line, in amber: "The server is being slow. Your browser is retrying in 28 s.", counting down to the next attempt, with a link, "Retry now" |
 | After 300 seconds | The panel line, in red: "The server could not be reached.", with one button, **Try again**, which starts the 300 seconds afresh |
 
-The waits between attempts grow, doubling from one second to thirty, so there is something
-to count down and a struggling server is not hammered. The message is on the panel line
-and not a notification because it concerns the whole panel and must stay as the user moves
-between steps; it goes the moment a request is answered. Throughout, nothing of the user's
-work is dropped: the parts, the layout and the settings are in the browser's storage, a
-part whose upload stopped keeps its row, and everything that needs no server (laying out
-the plate, changing settings) goes on working. These times cover every request a user
-waits on: adding a part, submitting a plate, fetching a sliced file, sending, cancelling.
+These sentences are the wizard's own, since no component answered to write one, and "the
+server" in them is the front server, the only server a user's browser knows. The waits
+between attempts grow (proposed: doubling from one second to thirty), so there is
+something to count down and a struggling front server is not hammered. The message is on
+the panel line and not a notification because it concerns the whole panel and must stay
+as the user moves between steps; it goes the moment a request is answered. Throughout,
+nothing of the user's work is dropped: the parts, the layout and the settings are in the
+browser's storage, a part whose upload stopped keeps its row, and everything that needs
+no server (laying out the plate, changing settings) goes on working. These times cover
+every request a user waits on: adding a part, submitting a plate, fetching a sliced file,
+sending, cancelling.
+
 A dropped **progress stream** (the connection on which the page follows a slice or a
-print as it happens) is not one of them: the page reconnects silently, because progress
-streams are closed routinely.
+print as it happens) is treated differently at first: the page reopens it silently,
+because progress streams are closed routinely, by the hosts' time limits and at every
+restart of the front server. What the page does when a progress stream cannot be reopened
+is decided by no source and is undecided; proposed, a stream that has failed to reopen
+for 20 seconds is treated as a failed request, with the same panel line
+([A progress stream that cannot be reopened](#a-progress-stream-that-cannot-be-reopened)).
+
+One case is known in which a deploy shows this message for minutes. A user who submits a
+plate while the slice service is finishing another user's slice before stopping sees "The
+server is being slow" until that slice has ended and the replacement has started, which is
+at most the slice service's time limit of 240 seconds plus the replacement's start; past
+300 seconds they see "The server could not be reached" and must press Try again. Their
+plate is kept either way. Whether that is acceptable is undecided in
+[the slice service's guide](../slice/README.md#what-a-user-sees-while-the-slice-service-stops).
+
+### The three widths
+
+Each width includes itself, and each row names things described above or in the steps
+below.
+
+| From | What changes |
+|---|---|
+| 480 px | The step circles become named tabs. On the Settings step the Filament and Profile menus sit side by side and the quick changes (four menus for the commonest settings) two to a row. Advanced mode, the view of every setting, shows its five sections as a column of names down the left |
+| 520 px | The figures of a print on the Send step (percent, layer, time left) sit in one row. The 3D views of the Layout and Preview steps become 4:3 instead of square |
+| 680 px | The Parts step's list of parts has two columns, and the Send step has two columns |
 
 ## Signing in
 
@@ -243,21 +394,33 @@ PenguinSlicer shows no sign-in page of its own on the way in.
 
 **A sign-in that failed.** If the user refuses Onshape's request, or Onshape does not
 answer, the browser lands on a plain page with the header's first line and no step tabs,
-no group and no printer-status icon, and one message: "PenguinSlicer could not sign you in
-with Onshape." Its second sentence is specific: "You did not allow PenguinSlicer to read
-your Onshape account. It reads only your name and the companies and classrooms you belong
-to." or "Onshape did not answer." One button: **Sign in with Onshape**.
+no group and no printer-status icon, and one message. The failure is the front server's,
+so the sentences are the front server's, of this kind: "PenguinSlicer could not sign you
+in with Onshape.", then what is specific, "You did not allow PenguinSlicer to read your
+Onshape account. It reads only your name and the companies and classrooms you belong to."
+or "Onshape did not answer." One button: **Sign in with Onshape**.
 
 **A sign-in that has run out.** A sign-in lasts thirty days. It can also end early for
 everyone at once, when the key that protects it is replaced in an emergency. Either way
-the page learns it when a request is refused as not signed in. The step's content is then
-replaced by one card: "Your sign-in has ended. Sign in with Onshape to go on. Your parts,
-layout and settings are kept in this browser." with one button, **Sign in with Onshape**.
-The header stays, with a blank printer-status icon. The button takes the same trip to
+the page learns it when the front server refuses a request as not signed in. The step's
+content is then replaced by one grey message, with the front server's sentences, of this
+kind: "Your sign-in has ended. Sign in with Onshape to go on. Your parts, layout and
+settings are kept in this browser.", and one button, **Sign in with Onshape**. The header
+stays; from phase 5 its printer-status icon shows a grey dot and "…", as for a printer
+not heard from yet, since the page can no longer ask. The button takes the same trip to
 Onshape and back, and the wizard reopens on the step the user was on, with the plate as it
 was. The page does not leave for Onshape by itself: a user in the middle of dragging an
 instance would lose their place without knowing why. Nothing is lost by waiting, because
 the work is in the browser's storage and the front server holds no session to expire.
+The stored work is not tied to the user who made it, so a different person who signs in
+on this screen would be shown the last user's parts; that is a gap in the design and is
+undecided ([Stored work is not tied to a user](#stored-work-is-not-tied-to-a-user)).
+
+**A browser that is not supported.** Chrome is proposed as the supported browser and
+Safari is not supported ([Browsers](#inside-onshapes-panel-and-outside-it)). What a user
+of Safari is shown is the front server's to serve, since the wizard's code cannot be
+relied on there; proposed in [the front server's guide](../front/README.md#signing-in):
+a plain page saying that PenguinSlicer needs Chrome.
 
 ## The current group
 
@@ -274,35 +437,54 @@ as the printer details are joined to their icon:
 
 A click elsewhere, Escape or the name again closes them. A user in one group sees one row
 and has nothing to choose, but still has Sign in again, which is for exactly that user:
-a group is read from Onshape only at sign-in, so someone added to an Onshape company after
+until the Onshape app is public, a user's groups are read from Onshape only at sign-in
+(after that they are read again once a day), so someone added to an Onshape company after
 signing in does not see it until they use this link. It costs two of PenguinSlicer's
 calls to Onshape, of a yearly allowance, which is why it is a link the user chooses and
-not something the page does by itself. It takes the trip to Onshape and back and returns
-to the same step with the group details open, so the user sees the new list. Sign in again
-lives inside the group details and not on the header line itself so that the line stays
-one row at 320 px.
+not something the page does by itself. Nothing yet limits how often one user may use it,
+which [the front server's guide](../front/README.md#sign-ins-and-the-allowance) lists as
+undecided. It takes the trip to Onshape and back and returns to the same step with the
+group details open, so the user sees the new list. Sign in again lives inside the group
+details and not on the header line itself so that the line stays one row at 320 px.
 
 **Changing the current group** changes the configuration and the printer, so it clears
 what belonged to the old ones: the filament and profile become the new group's first, the
-changes are cleared, and the plate must be sliced again. The parts and the layout stay,
-and the Layout step checks them against the new printer's plate. When there are changes or
-a sliced plate to lose, the wizard asks once more first: "Change to FRC 1678? Your 2
-changes and this plate's slice are cleared. Your parts and layout are kept." A plate
-already sent goes on printing at its own printer; the printer-status icon now shows the
-new group's printer, and the earlier print is seen again by changing back. The choice is
-kept in the browser's storage until the user changes it.
+changes are cleared, a slice still waiting or running is cancelled, and the plate must be
+sliced again. The parts and the layout stay, and the Layout step checks them against the
+new printer's plate. When there are changes or a slice to lose, the wizard asks first, in
+a confirmation: "Change to FRC 1678? Your 2 changes and this plate's slice are cleared.
+Your parts and layout are kept." A plate already sent goes on printing at its own
+printer, and the printer-status icon now shows the new group's printer. Changing back
+shows the earlier print again in the printer-status icon and the printer details, as any
+user of that group sees it, and the last-print note when it finishes; it does not bring
+back the print card with Send enabled, because the sliced plate that was sent was cleared
+at the change. The choice of group is kept in the browser's storage until the user
+changes it.
 
 **A group the user no longer belongs to.** If the front server refuses the stored group
 (the user left that company and has signed in again since), the page takes the first of
-the user's groups and says so in a notification: "You are no longer in 6238 (Popcorn
-Penguins). PenguinSlicer now uses FRC 1678's configuration and printer."
+the user's groups and says so in a notification: the front server's sentence that the
+user is not in that group ("You are no longer in 6238 (Popcorn Penguins)."), then the
+wizard's own of what it did, "PenguinSlicer now uses FRC 1678's configuration and
+printer." The group details then offer the user's other groups and Sign in again, which
+is the remedy the front server's sentence names.
 
 **The reload glyph** reads the configuration again from the front server, for a user who
 has been told that a filament or a profile was added. If the chosen filament or profile is
 gone from the new configuration, the first one takes its place and a notification says
 which. The configuration cannot be edited from the wizard: its edit screens are a feature
-of their own, in no phase yet. A group that has no configuration gets a built-in default,
-so a new group can slice without setting anything up.
+of their own, in no phase yet, and until they exist a group uses the built-in default or
+a document the owner of the service writes by hand. A group that has no configuration
+gets the built-in default, so a new group can slice without setting anything up.
+
+**A configuration that cannot be read.** A configuration that exists but is damaged is
+never replaced by the default, so that a hand-written document is not lost to a typing
+mistake: the front server reports it, and the group cannot slice until the document is
+mended. What the wizard shows then, and where, is designed in no source and is undecided;
+proposed, a red message in place of the step's content with the front server's sentence,
+which sends the user to whoever wrote the configuration and names no "administrator", and
+the reload glyph as its one control
+([A configuration that cannot be read](#a-configuration-that-cannot-be-read)).
 
 ## The Parts step
 
@@ -315,17 +497,28 @@ quantity by one and flashes its row, so a user who wants four clicks four times.
 Assembly a click on an instance, in Onshape's list or in its graphics area, adds that
 instance's part. There is no button that adds every part of an assembly.
 
-**Adding a part outside Onshape** (phase 2). An upload area takes STL files, dropped or
-chosen. One line under it says how they will be read, because an STL file carries no
-units: "STL files are read in inches." (or "in millimetres.", as the configuration says).
-A metric file uploaded where the configuration says inches arrives 25.4 times too large
-and then fails the height or plate checks on the Layout step; the configuration's one
-option is the only control, and a row has no switch of its own.
+**Adding a part outside Onshape** (phase 2). An upload area takes binary STL files,
+dropped or chosen. One line under it says how they will be read, because an STL file
+carries no units: "STL files are read in inches." (or "in millimetres.", as the
+configuration says). A metric file uploaded where the configuration says inches arrives
+25.4 times too large. The slice service checks each part with its units when it is added,
+so such a file is usually refused on this step as too large for the printer; one that
+passes fails the height or plate checks on the Layout step. The configuration's one
+option is the only control, and a row has no switch of its own. Since no user can edit a
+configuration until its edit screens exist, a group on the built-in default cannot use an
+STL file in millimetres at all; what to do about that meanwhile is undecided
+([STL files in millimetres before the edit screens exist](#stl-files-in-millimetres-before-the-edit-screens-exist)).
+
+**Clearing the plate.** The wizard holds one plate. A user who has printed it and wants
+another removes the rows by hand; nothing else starts a new plate, and how a second plate
+should be started is undecided ([Starting a second plate](#starting-a-second-plate)).
 
 **A row** shows the part's picture, name, size in its own units, quantity and a remove
 button. There is no refresh button on a row: a part changed in Onshape is removed and
 clicked again. While a part is arriving its row shows a thin progress bar and "Arriving
-from Onshape…" (or "Uploading…"). A part still arriving never holds Next. If it arrives
+from Onshape…" (or "Uploading…"). The bar shows that something is happening and promises
+no duration: how long Onshape takes to export a part is unknown until phase 4. A part
+still arriving never holds Next. If it arrives
 after the user has moved on, it joins the plate on the Layout step, at once if the user is
 there and otherwise the next time that step is shown, and a notification on the step the
 user is on says so ("Gusset Plate arrived after you left the Parts step. It joins the
@@ -339,22 +532,36 @@ arriving.
 Each part is checked by the slice service the moment it is added, before anything is laid
 out, so a part that cannot be sliced is found on this step and not after a layout has been
 made around it. A part that cannot be used is a notification that names it, and it is not
-added; the list never holds a broken row. "Your other parts are fine." is added only while
-the list holds other parts. A second failure of the same part replaces its notification.
+added; the list never holds a broken row. The notification's sentences are those of the
+component that refused the part
+([Who writes the sentences of a failure](#who-writes-the-sentences-of-a-failure)); the
+wizard adds "Your other parts are fine." only while the list holds other parts. A second
+failure of the same part replaces its notification.
 
-| What happened | The notification | Then |
-|---|---|---|
-| Onshape cannot export the part | "Onshape could not export Shooter Hood Rib, so it was not added." and what to check in Onshape: that it is one closed solid, not a surface and not several bodies, and that the Part Studio rebuilds with no red features | Next stays as it was. There is no Try again: the part is broken until it is mended in Onshape |
-| A file is not an STL file the slice service can read | "Could not read bracket.stl, so it was not added: it is not a valid STL file." and that the file may be cut short or saved in another format under that name, to be exported again | The same |
-| The slice service's check refuses the part (no volume, too small to print, too large for the printer) | The slice service's own sentence, which names the part and what is wrong with it | The same |
-| The part is over the size limit | See [The limits on a plate](#the-limits-on-a-plate) | The same |
+| What happened | Whose sentences | The notification says | Then |
+|---|---|---|---|
+| Onshape cannot export the part (phase 4) | The Onshape integration's | That Onshape could not export the part, so it was not added ("Onshape could not export Shooter Hood Rib, so it was not added."), and what to check in Onshape: that it is one closed solid, not a surface and not several bodies, and that the Part Studio rebuilds with no red features | Next stays as it was. There is no Try again: the part is broken until it is mended in Onshape |
+| The file cannot be read as a part: it is empty, cut off or padded, or is not an STL at all (a picture, a zip or a 3MF saved under that name) | The slice service's | That the file could not be read as a part, naming it, and to export it again | The same |
+| The file is a text STL | The slice service's | That a binary STL is needed, naming the file: an STL file can be written as text or as binary, and the slice service reads only the binary kind, whose length it can check exactly. The remedy is to export the part again as a binary STL | The same |
+| The slice service's check refuses the part: too small or flat, nothing to print, or too large for the printer | The slice service's | Which part and what is wrong with it. For an uploaded file refused as too large, the notification is followed by the wizard's own reminder of how STL files are read ("STL files are read in inches."), since a file in millimetres read as inches is the likeliest cause | The same |
+| The part is over the size limit | The wizard's, since the page checks before sending | See [The limits on a plate](#the-limits-on-a-plate) | The same |
 
 A part the slice service copes with but warns about is added, and the warning stays on its
-row, in amber, without holding Next. The commonest is a part that is not watertight:
-"Gusset Plate is not watertight: its mesh has 14 open edges in 2 places. It may still
-slice and print. If the slice fails, look in Onshape for faces that do not meet, then
-remove this row and click the repaired part again." (Outside Onshape the sentence says
-"your CAD program" and "upload the repaired file".)
+row, in amber, without holding Next. The warning's sentences are the slice service's. The
+commonest is a part that is not watertight, for which the sentence expected is of this
+kind: "Gusset Plate is not watertight: its mesh has 14 open edges in 2 places. It may
+still slice and print. If the slice fails, look in your CAD program for faces that do not
+meet, then add the repaired part again." Another is a part with every side under 5 mm,
+which the slice service warns may be a file in inches read as millimetres.
+
+The page also reads each file itself, to draw it. A file the page cannot read is, in
+almost every case, one the slice service refuses, and the slice service's notification is
+the one shown. If the slice service accepts a part that the page cannot draw, that is a
+defect in the wizard. Proposed, since no source has the case: the part is not added, the
+wizard's own notification says that PenguinSlicer could not show the part and that the
+fault is PenguinSlicer's, and the failure reaches the server's log, which nothing yet
+provides for
+([Failures in the browser that reach no log](#failures-in-the-browser-that-reach-no-log)).
 
 A part whose upload gets no answer is not refused. Its row stays, because the part is
 already in the browser's storage, and the page retries as
@@ -364,13 +571,19 @@ after 300 seconds the row keeps the part and shares the panel line's Try again.
 
 ### The limits on a plate
 
-Three limits bound a plate, and the Parts step is where a user meets each.
+Three limits bound a plate, and the Parts step is where a user meets each. All three are
+the slice service's limits. The page checks each one itself before sending anything, so
+these sentences are the wizard's; should the slice service refuse all the same, its own
+sentence is shown.
 
 | Limit | What it protects | What the user sees |
 |---|---|---|
 | A part is at most 7.5 MB, which is 150,000 triangles | The slice service's memory and time for one part, and the size of one upload | A notification, and the part is not added: "bracket.stl is 9.1 MB. PenguinSlicer takes parts up to 7.5 MB (150,000 triangles), so it was not added. Export it again from your CAD program at a coarser resolution." The page checks the size before uploading, so nothing is sent |
 | A plate uses at most 25 different parts | The most the slice service keeps for one user, so one user cannot fill its disk | The twenty-sixth is not added, and a notification says "A plate takes up to 25 different parts, so Gusset Plate was not added. Remove a part, or print it on a second plate." Raising the quantity of a part already in the list still works |
 | A plate holds at most 150 instances | The slice service's limit on placements | One part's quantity cannot be typed or clicked past 150. When the parts together pass it, a red message under the list says "This plate would hold 163 instances. Up to 150 instances per plate; print the rest on a second plate.", and Next is off |
+
+"A second plate" in these sentences means the same plate emptied and filled again after
+this one is printed ([Starting a second plate](#starting-a-second-plate)).
 
 For a part picked in Onshape that comes out over 7.5 MB, the notification names the part
 and says it is too detailed to slice here. Whether the Onshape integration then exports it
@@ -404,41 +617,42 @@ the profile clears your 2 changes." Nothing is said after they are cleared.
 changed. Once a setting is changed, the **changes box** takes its place: a yellow box
 headed "2 settings changed from Structural", one line for each change, and the Advanced
 mode button. Each line is a link that opens advanced mode at that setting, with its
-section and group open, the setting scrolled into sight and flashed. The box has no "Reset
-all"; that lives in advanced mode.
+section and setting group open, the setting scrolled into sight and flashed. The box has
+no "Reset all"; that lives in advanced mode.
 
 ### Advanced mode
 
 Advanced mode is the view that keeps every slicing setting reachable. It fills the panel.
 It offers every setting of Orca's that is a parameter with a value (a choice from a list,
-a number, a piece of text), about 295 of them, and none of the programmatic ones: settings
-that run a program, name a file on the server or hold custom G-code are not shown, and the
-slice service refuses them, since they would let a user run something on the server.
+a number, a piece of text): all of Orca's about 295 settings, less the programmatic ones.
+Settings that run a program, name a file on the slice service's machine or hold custom
+G-code are not shown, and the slice service refuses them, since they would let a user run
+something on that machine.
 
 **Its header** repeats "PenguinSlicer" with the printer-status icon, then says "Advanced
 mode", the profile and how many settings are changed ("Structural, 2 changed"), and
-**Reset all**, which asks once more before putting every setting back. **Back to Settings**
-at the bottom is the only way out; Escape does not close advanced mode, so a stray key
-cannot throw the user out of a long list.
+**Reset all**, which asks in a confirmation before putting every setting back. **Back to
+Settings** at the bottom is the only way out; Escape does not close advanced mode, so a
+stray key cannot throw the user out of a long list.
 
 **The settings are in five sections,** as in Orca (Quality, Strength, Speed, Support,
-Others), and each section's settings are in collapsible **groups** such as Precision.
-There is no search box, no switch between common and all settings and no "changed only"
-filter: the changes box, the change details and the changed counts already find a changed
-setting.
+Others), and each section's settings are in collapsible **setting groups** such as
+Precision. There is no search box, no switch between common and all settings and no
+"changed only" filter: the changes box, the change details and the changed counts already
+find a changed setting.
 
 | Width | How the sections are shown |
 |---|---|
-| Below 480 px | An accordion of cards: each section is a bordered card whose heading has a chevron and its changed count ("Strength · 1 changed"); its groups are rows inside the card. Each card opens and closes by itself |
-| From 480 px | A rail of section names down the left, a changed count on each, with the chosen section's groups beside it |
+| Below 480 px | An accordion of cards: each section is a bordered card whose heading has a chevron and its changed count ("Strength · 1 changed"); its setting groups are rows inside the card. Each card opens and closes by itself |
+| From 480 px | A rail of section names down the left, a changed count on each, with the chosen section's setting groups beside it |
 
-The groups are always one column, at most 480 px wide, so a value stays near its name. A
-group's heading has a chevron and no count of its settings, only a changed count when it
-has changes ("Precision · 1 changed"). One icon button, a double chevron, expands or
-collapses every group of a section.
+The setting groups are always one column, at most 480 px wide, so a value stays near its
+name. A setting group's heading has a chevron and no count of its settings, only a changed
+count when it has changes ("Precision · 1 changed"). One icon button, a double chevron,
+expands or collapses every setting group of a section.
 
-**Everything starts open,** every section and every group, the first time advanced mode
-is shown, and advanced mode remembers what the user closes for as long as the page is
+**Everything starts open,** every section and every setting group, the first time advanced
+mode is shown, and advanced mode remembers what the user closes for as long as the page is
 loaded: across steps, across closing and reopening advanced mode, and as the panel is
 dragged across 480 px either way. A reload forgets it, and everything is open again.
 
@@ -474,19 +688,24 @@ From top to bottom:
   instances fit the plate."), red with the first problem when not, with "+2 more ↓" when
   there are others. A click on a red status line scrolls to the full messages.
 - **The view,** with view buttons in a corner (Zoom to instances, Whole plate, Top) and,
-  at its bottom left, the **pointer line**: one small line that says what is under the
-  pointer (an instance's name, "Lay it on this face: 0.250 in tall", "Drag to turn · Shift:
-  45° steps").
+  at its bottom left, the **pointer line**: one line at 11 px, the one text in the panel
+  below the body size, that says what is under the pointer (an instance's name, "Lay it on
+  this face: 0.250 in tall", "Drag to turn · Shift: 45° steps").
 - **The selection line** under the view: with nothing selected, "90 instances on the
   plate, 10 beside it."; with one instance selected, its name, footprint and height in its
-  part's units; with several, "5 instances move and turn together". Beside it, when the
-  selection could lie better, one link: "Lay it the best way", or "Put back as modelled".
+  part's units; with several, "5 instances move and turn together". Beside it, one link at
+  most: "Lay it the best way" when the selection does not lie its best way, "Put back as
+  modelled" when it has been laid down differently from the model, and nothing when it
+  lies as modelled and that is its best way.
 - **One line of printer and plate figures:** "Shop H2S: plate 340 × 320 mm, up to 340 mm
   tall, 12 mm apart". It is kept because nothing else on the panel gives the plate's size,
   the height limit or the spacing. The size and height come from the printer's Orca
   profile named in the configuration, the same profile the slice service slices for.
 - **The messages:** anything the wizard moved, and under "Fix these 2 before Next:" one red
-  message for each problem, each with the button that fixes it.
+  message for each problem, each with the button that fixes it. A message about a move
+  the wizard made, and Arrange's "Arranged 16 instances.", goes when the user leaves the
+  Layout step; a problem stays until it is fixed. Every sentence on this step is the
+  wizard's own, since everything here happens in the browser.
 
 ### Moving, turning and looking
 
@@ -529,7 +748,9 @@ says so: "L Bracket #1 no longer fitted where it stood, so it was moved to the n
 free spot." If there is no free spot it waits beside the plate, marked as off the plate,
 and an amber message says "L Bracket #1 no longer fits on the plate and waits beside it.
 No spot on the plate is free for it lying this way. The other instances stay where you put
-them; press Arrange to make room."
+them; press Arrange to make room." It waits there already turned to fit the plate if it
+is too long for the plate as it lay, so that Arrange, which never turns an instance, can
+place it.
 
 ### Parts arrive lying their best way
 
@@ -555,10 +776,19 @@ fit and wait beside the plate. Arrange keeps how each instance lies. With 5 inst
 the best way, everything would fit. Or lower the quantities and print the rest on a second
 plate.", with **Lay them the best way: all fit**.
 
-The wizard does turn an instance at the moments when it gives it an orientation itself: a
-part that arrives too long for the plate as it lies is turned a quarter, an eighth or three
-eighths of a turn, the first that fits, before it is first arranged. A 353 mm rib on a
-340 × 320 mm plate fits only on the diagonal, and a user should not have to discover that.
+The wizard turns an instance about the vertical only when it has just laid it down itself
+and it is then too long for the plate. It is turned a quarter, an eighth or three eighths
+of a turn, the first that fits. There are four such moments:
+
+- a part that arrives too long for the plate as it lies, before it is first arranged;
+- an instance that Auto-orient lays down and that is then too long;
+- an instance that a lay-down leaves beside the plate, which waits turned so that Arrange
+  can place it;
+- an instance moved to the nearest free spot after a lay-down, which may be turned to fit
+  that spot.
+
+A 353 mm rib on a 340 × 320 mm plate fits only on the diagonal, and a user should not
+have to discover that.
 
 ### The placement rules, and what each problem says
 
@@ -573,12 +803,14 @@ the instances' outlines as they are turned. Next is off while any rule is broken
 | Two instances too close | "L Bracket #1 and Gusset Plate #2 are 6.2 mm apart; instances need 12 mm between them with supports on. Drag one away, or press Arrange." | Arrange |
 | Many instances too close | One message for all of them: "23 instances are closer than 12 mm with supports on. Press Arrange, or drag them apart." Each stays marked in the view | Arrange |
 | An instance across the plate's edge | "Gusset Plate #3 is not fully on the plate: it crosses the left edge. Drag it inward, or press Arrange." | Arrange |
-| An instance longer than the plate takes, as it is turned | "Shooter Hood Rib #1 is 352.7 mm (13.885 in) from left to right as it is turned; the plate takes 334 mm. Turn it to fit turns it and arranges the plate again." | **Turn it to fit**, since Arrange never turns |
+| An instance longer or wider than the plate takes, as it is turned (the user squared it with the rotation handle, say) | "Shooter Hood Rib #1 is 352.7 mm (13.885 in) from left to right as it is turned; the plate takes 334 mm. Turn it to fit turns it and arranges the plate again." Where such an instance still stands on the plate, the message opens with "not fully on the plate" and goes on with the same sentences | **Turn it to fit**, in place of Arrange, since Arrange never turns. It turns the instance as on arrival and arranges again |
 | A part that fits the plate at no turn | The same first sentence, then "Lay it down another way." | None |
 | An instance too tall | "Shooter Hood Rib #1 stands 352.7 mm (13.885 in) tall; the printer prints up to 340 mm. Lay it down another way, or press Auto-orient." | Auto-orient |
 
 An instance that Arrange left beside the plate gets no message of its own; Arrange's
-message already counts it. A click on a message selects the instances it names.
+message already counts it. The exception is an instance too long or too wide for the plate
+as it is turned: it has its own message, the row above, and Arrange's message does not
+count it. A click on a message selects the instances it names.
 
 **Turning supports on after arranging moves nothing.** The spacing follows the Settings
 step, so instances that were 5 mm apart are now too close, and they get the usual message
@@ -598,10 +830,11 @@ card**: a ring gauge with the percentage, the stage in words, the time taken and
 expected to be left, a bar, the list of stages with the current one marked, a **Cancel
 slice** button, and one line: "Slicing goes on if you step back; change the plate and it
 starts again." The stages and the percentage are Orca's own, passed through; nothing is
-invented.
+invented. The time expected is the slice service's estimate and is good only to about a
+factor of two, so the card says "about" before it.
 
 **A slice goes on without its page.** Leaving the step, refreshing, losing the network or
-closing a laptop lid leaves the slice running on the server, and coming back with the same
+closing a laptop lid leaves the slice running in the slice service, and coming back with the same
 plate finds it still going or finished. A changed plate (a part moved, a setting changed)
 cancels it and starts a new one. Coming back to a plate that is already sliced shows the
 result without slicing again. Leaving does not stop the slice because the commonest reason
@@ -611,18 +844,18 @@ to leave is to look at something and come back, and a slice thrown away is a wai
 |---|---|
 | Waiting behind other slices | The ring is empty and the stage line reads "Waiting for the slicer: 2 slices ahead of yours." (or "1 slice ahead of yours."), updated as the number falls. The time waited counts up; no time left is shown, since none is known. Cancel slice works |
 | Slicing | The ring, the stage and the times, as above |
-| The server cannot be reached | The figures stop, the time-left line says "no news since 0:41", and Cancel slice is off, with one line: "Cancel slice is off until the server can be reached again; the slice may still be running." |
+| The front server cannot be reached | The figures stop, the time-left line says "no news since 0:41", and Cancel slice is off, with one line: "Cancel slice is off until the server can be reached again; the slice may still be running." When this state begins for a page that is only following progress is undecided; proposed, when the progress stream has failed to reopen for 20 seconds ([A progress stream that cannot be reopened](#a-progress-stream-that-cannot-be-reopened)) |
 | Reconnected | One line on the card: "Reconnected at 1:05. The slice kept running; the progress below is up to date." |
 | The slice service restarted | The ring and the stages go back to the start, and one line on the card says "The slicer restarted, so this slice began again." The page has sent the parts and the plate again by itself; the user did nothing |
 | Cancelled by the user | A grey message: "Slice cancelled at 0:23, during “Generating perimeters”. Nothing was saved or sent to the printer.", with **Slice again** and Back to Layout |
 
 **No room to wait.** The slice service runs one slice at a time and lets two more wait.
 When a fourth arrives it is refused, and the step shows an amber message in place of the
-slicing card: "The slicer is busy: other plates are being sliced and no more can wait. Try
-again shortly. Your plate is unchanged.", with **Slice again**. The page does not try
-again by itself, since a silent queue outside the server's own would hide how busy it is
-from the person waiting. The message is amber and not red because nothing is wrong with
-the plate.
+slicing card, with the slice service's sentence ("The slicer is busy, try again in a
+minute."), the wizard's own line "Your plate is unchanged.", and **Slice again**. The
+page does not try again by itself, since a silent queue outside the slice service's own
+would hide how busy it is from the person waiting. The message is amber and not red
+because nothing is wrong with the plate.
 
 **Stopped by a slice from another tab.** A user has one unfinished slice at a time: a
 second one, started in another tab or in a tab beside Onshape's panel, cancels the first.
@@ -630,23 +863,44 @@ The page whose slice was cancelled shows a grey message in place of the slicing 
 "This slice was stopped because you started another one in another tab or window.
 PenguinSlicer slices one plate at a time for each user.", with **Slice again** and Back to
 Layout. It does not slice again by itself: if it did, two open pages would cancel each
-other in turn for ever.
+other in turn for ever. Two tabs opened directly at the wizard's address also share one
+browser's storage, and so one stored plate; what a second tab does about that is designed
+nowhere and is undecided
+([Two tabs on one stored plate](#two-tabs-on-one-stored-plate)).
 
 ### When a slice fails
 
-Each failure is one sentence of what happened and one of what to do, with its buttons. Two
-of them carry folded Details.
+A failed slice is a red message in place of the slicing card: one sentence of what
+happened and one of what to do, with its buttons. The failure is the slice service's, so
+both sentences are the slice service's and the wizard shows them as they are
+([Who writes the sentences of a failure](#who-writes-the-sentences-of-a-failure)). The
+wizard's part is the buttons: the one for the single action the error report names, when
+it names one; **Slice again** when the report says the same plate may succeed unchanged;
+and its own Back to Layout or Back to Parts, whichever step holds the remedy. Two
+failures carry folded Details: a part with empty layers while supports are off, and the
+same finding with supports already on, which is a fault in the part's mesh. The Details
+of both hold Orca Slicer's own sentence with the heights, quoted and marked as Orca's,
+and the slice service's sentence of where to look on the part. Nothing else of Orca's
+output is shown, on these failures or on any other. The slice service as built keeps Orca's words for the log only, so the quotation
+is an ask on it
+([What the other components do not provide yet](#what-the-wizard-asks-of-the-front-server)).
 
-| Failure | What happened | What to do, and the buttons |
+| Failure | What the slice service's sentences say | The wizard's buttons |
 |---|---|---|
-| Empty layers | "The slice failed: Gusset Plate #2 has empty layers at about 12.4 mm above the plate." | "Part of it starts in mid-air there, and Supports is off, so nothing would hold it up while it prints. Turn Supports on and slice again." **Turn on Supports and slice again**; Back to Layout. Details: Orca's own sentence with the heights, and where to look on the part |
-| A faulty mesh | "The slice failed: Gusset Plate #2 has a faulty mesh at about 12.4 mm above the plate." | "Supports is already on, so the model itself has gaps or zero-thickness pieces there." and to repair the part in Onshape (outside Onshape, "your CAD program", with no word of Onshape) and add it again. Details: Orca's sentence, and what to check in the model |
-| Too slow | "The slice took longer than 4 minutes, the server's limit, and was stopped." | "Slice again first: the server may have been busy. If it stops again, this plate of 40 instances is too much at once: lower the quantities and print the rest on a second plate, or pick a profile with thicker layers." **Slice again**; Back to Parts |
-| Out of memory | "The slice needed more memory than the server allows one plate, and was stopped." | With several instances: "This plate of 12 instances is too much at once. Lower the quantities and print the rest on a second plate." Back to Parts. With one instance: "This part alone is more than the server can slice. Slice it in Orca Slicer on your own computer." Slice again is not offered, because the same plate would run out of memory the same way |
-| Anything else | The slice service's own sentence of what happened and what to do | **Slice again**; Back to Layout |
+| The plate is not acceptable to the slice service, although the Layout step passed it | Which instance is off the plate or too tall, or which two instances are closer than the spacing. This is a disagreement between the wizard's placement check and the slice service's, and so a defect in one of them | Back to Layout |
+| A part has a gap with nothing under it (empty layers) | Which instance, and between which heights above the plate nothing would be printed; with supports off, to turn supports on, which is the single action; with supports already on, that the part itself must be repaired in CAD and added again. An example of the kind: "Gusset Plate #2 has empty layers at about 12.4 mm above the plate." Details, in both cases: Orca's own sentence with the heights, and where to look on the part | With supports off: **Turn on Supports and slice again**; Back to Layout. With supports on: Back to Parts |
+| Two instances' paths would meet | Which two, and that supports are the likely cause when they are on; to spread them out, turn supports off or use a second plate | Back to Layout |
+| Nothing printable was found | That no layers were found, or that the print is empty, naming the part when the plate has one; to repair the part in CAD or check its size | Back to Parts |
+| Too slow: the slice passed the slice service's time limit, today 240 seconds | "The slicer took too long on this plate.", and the remedies: fewer instances or a second plate | **Slice again**, since the slice service may only have been busy; Back to Parts |
+| Out of memory: the slice passed the most memory the slice service allows one plate | "This plate is too large to slice: the slicer needed more than the 2,000 MB of memory the print server allows." ("the print server" is the slice service's old word for itself.) The remedy is the slice service's: fewer instances or a second plate; for a single instance, to split or simplify the part | Back to Parts. Slice again is not offered, because the same plate would run out of memory the same way |
+| Orca failed with only a general reason | "The slicer could not slice this plate.", with Orca's warnings added and labelled as possibly unrelated | **Slice again**; Back to Layout |
+| Orca crashed or was stopped, its sliced file is missing or damaged, or the slice service itself failed | That the slicer crashed, was stopped, or failed unexpectedly, or that the sliced file is damaged or missing | **Slice again**; Back to Layout |
 
-There is no "plate too large" refusal before slicing: nothing caps a plate's volume, and a
-plate too heavy to slice ends as out of memory or too slow.
+The full list of the slice service's failures and their sentences is in
+[the slice service's guide](../slice/README.md#when-things-go-wrong); the wizard treats
+one it does not know like the last row. There is no "plate too large" refusal before
+slicing: nothing caps a plate's volume, and a plate too heavy to slice ends as out of
+memory or too slow.
 
 **Turn on Supports and slice again** checks the plate first, because supports need 12 mm
 between instances where the plate may have been arranged at 5 mm. A plate that passes is
@@ -670,6 +924,12 @@ When the slice is done the step shows:
   how to move: "Drag to turn, right-drag to pan, scroll to zoom; drag the bar on the right
   to go through the layers."
 
+The right mouse button therefore means different things in the two 3D views: on the
+Layout step a right-drag looks around, as in Onshape, because a left-drag there moves an
+instance; on the Preview step nothing can be moved, so a left-drag turns the view and a
+right-drag slides it. Both are as the mockup has them, and the difference is kept. Making
+the Preview step follow Onshape too would be a change to an accepted screen.
+
 Next goes to the Send step once the plate is sliced.
 
 **What the layer preview must look like.** It shows the toolpaths of the sliced file
@@ -686,25 +946,24 @@ itself, so what the user inspects is what the printer will run.
   | Top and bottom surfaces | Top and bottom surfaces | Green `#2f9e7a` |
   | Supports and brim | Supports, their interface and the brim | Violet-grey `#9a8fb8` |
 
-  The four were chosen to stay apart for every common kind of colour blindness: checked by
-  simulation for protanopia, deuteranopia and tritanopia, the smallest difference between
-  any two is 16.8 on the CIEDE2000 scale, and every colour stays at least 24 from the
-  view's background. The walls have the darkest colour (contrast 6.1 to 1 against the
-  background) because they outline every part and are what the eye reads first; supports
-  and brim have the least saturated, because they are not the part and should recede.
+  The four were chosen to stay apart from each other and from the view's background for
+  the three common kinds of colour blindness, which was checked by simulation. The walls
+  have the darkest colour because they outline every part and are what the eye reads
+  first; supports and brim have the least saturated, because they are not the part and
+  should recede.
 - **A colour key** opens from a small icon at the view's top left: four rows, a stripe and
   a name each. It is closed until asked for and always has all four rows. No line type can
   be hidden.
 - **Lines have their real width.** Each line is drawn as wide as the settings' line width
   at its distance from the camera, and never thinner than one pixel, so a solid surface
   reads as one colour when zoomed in and lines stay visible when zoomed out.
-- **Walls are shaded by the way they face,** by darkening only (from `#2b5c9e` facing the
-  light to `#1c3d68` facing away), so a stack of walls reads as a surface and never drifts
-  toward another group's colour.
+- **Walls are shaded by the way they face,** by darkening only (from the walls' blue
+  facing the light to a darker blue facing away), so a stack of walls reads as a surface
+  and never drifts toward another group's colour.
 - **The current layer stands out:** it is drawn over the layers below, unshaded and at
   least two pixels wide.
 - **What is still to print is a ghost:** above the current layer each instance is a faint
-  grey shape (`#95a0ac`, 36% opaque) cut at that layer; it goes when every layer is shown.
+  grey, mostly transparent shape cut at that layer; it goes when every layer is shown.
 - **No combs and no show-through, at any viewing angle.** Walls, hole edges and supports
   read as solid surfaces, and a solid surface shows only its own colour, including seen
   edge-on and zoomed in.
@@ -714,20 +973,34 @@ How fast it must be, and how that is to be proved, is in
 
 ### A sliced plate that expires
 
-A sliced plate is kept on the server until two hours after its slice ended, or two hours
-after its last print ended, whichever is later; past that the front server refuses it and
-deletes it. The two hours run whether or not the page is open, so a user can be looking at
-a result when it expires. The page knows both times and shows, at that moment, a grey
-message in place of the result on the Preview step, and in place of Send on the Send step:
-"This plate's slice has expired. A sliced plate is kept for two hours after it is sliced
-or after its last print ends. Slice it again to print it; your parts, layout and settings
-are unchanged.", with **Slice again**, which goes to the Preview step and slices. If the
-page's clock is wrong and the user presses Send or Download first, the front server's
-refusal brings up the same message. A notification that says the sliced plate "is still
-here" goes at the same moment, since it has stopped being true. The page does not slice
-again by itself: a slice takes a place others may be waiting for, and only the user knows
-whether the plate is still wanted. It is a message and not an error because nothing went
-wrong.
+A sliced plate is kept by the front server until two hours after its slice ended, or two
+hours after its last print ended, whichever is later; past that the front server refuses
+it and deletes it. The two hours run whether or not the page is open, so a user can be
+looking at a result when it expires. The page is to be told the moment of expiry by the
+front server, as the front server reckons it, with the sliced file's summary and again
+when a print of the plate ends; the page does not work it out from its own clock, which
+may be wrong. That moment is not yet in the contract
+([What the other components do not provide yet](#what-the-wizard-asks-of-the-front-server)).
+At that moment the page shows a grey message in place of the result on the Preview step,
+and in place of Send on the Send step: "This plate's slice has expired. A sliced plate is
+kept for two hours after it is sliced or after its last print ends. Slice it again to
+print it; your parts, layout and settings are unchanged.", with **Slice again**, which
+goes to the Preview step and slices. The sentence is the wizard's, since nothing was
+refused. If the user presses Send or Download first and the front server refuses the
+sliced file as expired, the front server's own sentence is shown in the same place with
+the same button. A notification that says the sliced plate "is still here" goes at the
+same moment, since it has stopped being true. The page does not slice again by itself: a
+slice takes a place others may be waiting for, and only the user knows whether the plate
+is still wanted. It is a message and not an error because nothing went wrong.
+
+The message appears only on the Preview and Send steps. A user who is on another step
+when the sliced plate expires sees nothing, and entering the Preview step afterwards
+slices, as for any plate not yet sliced.
+
+A page that is open at the expiry keeps the plate; a page that is next opened after the
+expiry starts empty ([Coming back to running work](#coming-back-to-running-work)). The
+two rules each have a source and they treat the same plate differently, which is raised
+under [Parts dropped on return and kept while the page is open](#parts-dropped-on-return-and-kept-while-the-page-is-open).
 
 ## The Send step
 
@@ -738,21 +1011,34 @@ plate", then "8 × Gusset Plate", "4 × L Bracket"…), the print time and the g
 filament. The printer's state is not repeated here; the printer-status icon and the card
 or message beside the button say it.
 
-**One line** stands above the button, because Send has a consequence the user cannot see
-from the panel: "⚠ Check that the plate is clear and PETG is loaded. Send starts the print
-at once." The printer can report that a print ended but not that a person has taken it off
-the plate, so the check is the user's.
+**The plate-clear line** stands above the button, because Send has a consequence the user
+cannot see from the panel: "⚠ Check that the plate is clear and PETG is loaded. Send
+starts the print at once." The printer can report that a print ended but not that a
+person has taken it off the plate, so the check is the user's.
 
 **The Send button** is the wizard's final action, a wide blue button labelled with the
 printer's name ("Send to Shop H2S") with a caret. The caret's menu offers **Download the
 sliced file** instead. Choosing from the menu changes what the button does; it does not
-act. Pressing Send sends at once, with no confirmation, since the line above it is the
+act. Pressing Send sends at once, with no confirmation, since the plate-clear line is the
 confirmation. Download saves the sliced file to the user's computer, for printing from
-Orca or Bambu Studio, and leaves a notification naming the plate and the file's size.
+Orca or Bambu Studio, and leaves a notification naming the plate and the file's true
+size.
 
-Until phase 5 there is no printer: the step shows what will be printed, and its button is
-Download the sliced file. Sending, the printer-status icon and everything below arrive in
-phase 5.
+**With no printer paired, nothing on the step names a printer.** The card of what will be
+printed has no printer's name, the plate-clear line is absent, and the button is Download
+the sliced file with no caret, beside the message and the pairing form described under
+[When Send is not offered](#when-send-is-not-offered).
+
+**Until phase 5 there is no printer at all,** and the step is the same screen with less
+on it. The card holds the instances by part, the print time and the grams of filament,
+and no printer's name. The plate-clear line and the caret are absent, and the one button
+is **Download the sliced file**. There is no printer-status icon, no message about
+pairing and no pairing form, since nothing can be paired yet. The step and its tab keep
+the name Send from phase 2, so that the five steps do not change their names when the
+printer arrives. This differs from the plan, which gives the Send step to phase 5 and
+only "the download" to phase 2; the alternative is in
+[Choices made in designing these screens](#choices-made-in-designing-these-screens).
+Sending, the printer-status icon and everything below arrive in phase 5.
 
 ### After Send
 
@@ -766,14 +1052,19 @@ person…").
 |---|---|
 | On its way, before the printer starts | **Cancel sending** is offered. Cancelling leaves a notification: "Sending cancelled. Nothing reached Shop H2S and nothing will print. Your sliced plate is still here." It goes when the plate is sent again. If the printer had already started when the cancel arrived, the card says the print has started and goes on following it |
 | Printing | The figures. Pausing or stopping a print is done at the printer's screen; the panel offers neither, because a stop from a browser that the printer never received would be worse than no button |
-| Waiting for a person | An amber message says what to do at the printer: "Filament ran out. Load new filament, then resume the print on the printer's screen." It is a stage, never an end |
-| Failed | The card says so: "The print stopped at layer 51 of 134 (38%): the printer reported a filament tangle or a clogged nozzle. Clear the plate and check the filament path at the printer, then send the plate again from here. The sliced file is still here." Details: where the printer's screen shows the fault and what to check |
+| Waiting for a person | An amber message says what to do at the printer, in printer delivery's sentences, of this kind: "Filament ran out. Load new filament, then resume the print on the printer's screen." It is a stage, never an end |
+| Failed | The card says so, in printer delivery's sentences, of this kind: "The print stopped at layer 51 of 134 (38%): the printer reported a filament tangle or a clogged nozzle. Clear the plate and check the filament path at the printer, then send the plate again from here. The sliced file is still here." Details: where the printer's screen shows the fault and what to check |
 | Finished | No card. One line takes its place at the top of the step: "Your print finished at 11:25 am." ([The user's last print](#the-users-last-print)) |
+
+What a printer really reports while it waits and when it fails is unknown until it has
+been recorded in phase 5, so the two quoted sentences are examples and not printer
+delivery's wording.
 
 After a print that finished or failed, Send is enabled again for the same sliced plate,
 under the plate-clear line, for as long as the sliced file is kept. So a user whose long
-print failed at the last layer can send it again at once, and a second copy of a plate
-needs no second slice. Nothing on the panel says "late" or "behind its estimate".
+print failed at the last layer can send it again at once, and printing the same plate a
+second time needs no second slice. Nothing on the panel says "late" or "behind its
+estimate".
 
 ### When Send is not offered
 
@@ -782,8 +1073,13 @@ needs no second slice. Nothing on the panel says "late" or "behind its estimate"
 | Busy with another user's plate | A **busy card**: "Shop H2S is busy: printing for Alex Chen.", what it is ("8 instances of Gusset Plate"), how far (percent, layer), the time left and the expected finish. One line: "Send comes back when the printer is free; nothing queues." Send is off and the sliced plate stays ready |
 | Busy with a print nobody sent from PenguinSlicer | The busy card with what the printer itself reports: "Shop H2S is busy: printing something that was started at the printer, not from PenguinSlicer.", with the percent, layer, time left and expected finish, and no sender or description, since there is none. The same line about nothing queuing |
 | Offline | An amber message: "Shop H2S has not been heard from for 7 minutes, so Send waits. Your sliced plate stays ready, and Send comes back as soon as the printer answers. Or download the file.", with Download. No guess at the cause |
-| Not heard from yet | Send is off, with one line: "Waiting to hear from Shop H2S." This lasts a few seconds after the server restarts and up to half a minute after pairing |
-| No printer paired | An amber message, with the pairing form below it ([Pairing a printer](#pairing-a-printer)) and Download |
+| Not heard from yet | Send is off, with one line: "Waiting to hear from Shop H2S." This lasts a few seconds after the front server restarts and up to half a minute after pairing |
+| No printer paired | An amber message, with the pairing form below it ([Pairing a printer](#pairing-a-printer)) and Download. Nothing on the step names a printer |
+
+These are states and not failures, so their sentences are the wizard's, made from the
+printer's status. A send that printer delivery refuses all the same, because the printer
+became busy in the moment between the page's last news and the press, is shown with
+printer delivery's sentence in the same place.
 
 **Nothing queues.** A printer takes one plate at a time, and a send to a busy printer is
 refused rather than held, because a queued plate would start by itself on a plate nobody
@@ -792,24 +1088,38 @@ has cleared.
 ### A print that has gone quiet
 
 During a print the daemon reports every ten seconds. If nothing has arrived for 40 seconds
-the print's figures are stale: the print card keeps its last figures, greyed, and an amber
+the print has **gone quiet**: the print card keeps its last figures, greyed, and an amber
 line on it says "No news from Shop H2S since 11:02 am. The print may still be running;
 these figures are from then." It clears by itself when the next report arrives. After two
-minutes the printer-status icon turns to Offline.
+minutes without news the printer-status icon turns to Offline. "Gone quiet" is about a
+print, from 40 seconds; "Offline" is about the printer, from two minutes. When both hold,
+which is whenever a followed print's daemon has been silent for more than two minutes,
+the print's rows win (proposed: no source says which applies): the icon says Offline,
+and the Send step and the printer details go on showing the print card or the busy card
+with its greyed figures and Stop following, not the Offline message, which says nothing
+of the print.
 
 A print that has gone quiet holds the printer for everyone, since nobody can know that it
-ended. So once the figures are stale and the print had started, a link appears on the
-print card, on the busy card and in the printer details, for every user of the group and
-not only the sender, who may have gone home: **Stop following**. It asks once more: "Stop
+ended. So once a print that had started has gone quiet, a link appears on the print card,
+on the busy card and in the printer details, for every user of the group and not only the
+sender, who may have gone home: **Stop following**. It asks in a confirmation: "Stop
 following this print? PenguinSlicer will no longer show its progress and cannot say how it
 ended. The print itself is not stopped; that is done at the printer's screen." with **Stop
 following** and Keep following. After it, the card goes, a notification says "Stopped
 following Plate 1 on Shop H2S. How it ended is not known.", and Send comes back once the
 daemon answers again and the printer is idle. If the printer starts reporting
 the print again before the user confirms, stopping is refused and the card simply shows
-the fresh figures. A print nobody stops following is given up by the server itself after
-24 hours of silence. A plate that had not yet started needs none of this: Cancel sending
-is still offered.
+the fresh figures. A print nobody stops following is given up by printer delivery's relay
+after 24 hours of silence. A plate that had not yet started needs none of this: Cancel
+sending is still offered.
+
+What the printer-status icon and the printer details show after Stop following, or after
+the relay gives a print up, is designed in no source and is undecided. The icon's
+"Failed" means a fault at the printer that someone has to see to, and here nothing is
+known to have failed; proposed, the icon shows what the daemon next reports, and the
+printer details say "Stopped following Alex Chen's print at 11:40 am. How it ended is not
+known." in words that never say the print failed
+([After a print is no longer followed](#after-a-print-is-no-longer-followed)).
 
 ## The printer-status icon
 
@@ -826,14 +1136,27 @@ header and not on the Send step alone.
 | Failed (red) | A print ended on a fault someone at the printer has to see to |
 | Offline (grey) | The daemon has not been heard from for two minutes |
 | No printer (grey) | The current group has no printer paired |
-| A grey dot and "…" | A printer is paired and nothing has been heard from it yet |
+| A grey dot and "…" | A printer is paired and nothing has been heard from it yet: for a few seconds after the front server restarts, for up to half a minute after pairing, and while the sign-in has ended |
 
-**The printer details** open joined to the icon, as a tab that grows down from it. They
-open 150 ms after the pointer rests on the icon, so a pointer passing over does not open
-them, stay open while the pointer is over the icon or the details, and close 300 ms after
-it leaves both. A click opens them and pins them until a click elsewhere, Escape, × or a
-second click on the icon. A tap or Enter is a click. The icon has no tooltip; a screen
-reader hears one sentence ("Shop H2S is free").
+The architecture says the icon and the Send step are "blank" for the seconds after a
+restart of the front server. This guide draws that as the grey dot and "…", with "Waiting
+to hear from Shop H2S." on the Send step, so that a user sees a state and not a hole; a
+print card that was showing keeps its last figures for those seconds. A page first opened
+during those seconds shows the same grey dot and "…", and the Send step's line, until the
+daemon's next report.
+
+The printer's name ("Shop H2S") is the display name in the paired-printer record, the
+record that links a group to its daemon. Who gives the printer that name, and where, is
+stated in no source: the pairing form has one field, for the code
+([Where the name of the printer comes from](#where-the-name-of-the-printer-comes-from)).
+
+**The printer details** are a joined box that opens from the icon, as a tab that grows
+down from it. They open after the pointer has rested on the icon for a moment, so a
+pointer passing over does not open them, stay open while the pointer is over the icon or
+the details, and close a moment after it leaves both (both figures are in
+[How well it must do it](#how-well-it-must-do-it)). A click opens them and pins them
+until a click elsewhere, Escape, × or a second click on the icon. A tap or Enter is a
+click. The icon has no tooltip; a screen reader hears one sentence ("Shop H2S is free").
 
 They hold basic information only, under the printer's name:
 
@@ -844,8 +1167,8 @@ They hold basic information only, under the printer's name:
 | Printing or heating | Who sent it (with "(you)" for the user), percent done, time left and expected finish. For a print started at the printer: "Started at the printer, not from PenguinSlicer.", then the same figures |
 | Waiting for a person | Who sent it, percent done, and what to do at the printer, in amber |
 | Failed | Who sent it, and when it stopped and at which layer |
-| Stale | The last figures, and "No news since 11:02 am.", with Stop following |
-| Offline | "Not heard from for 7 minutes." If the server has restarted since it last heard from the printer, it can only say "Not heard from for at least 3 minutes." |
+| A print gone quiet | The last figures, and "No news since 11:02 am.", with Stop following. This row holds for as long as the print is followed, also after the icon has turned to Offline |
+| Offline, with no print followed | "Not heard from for 7 minutes." If the front server has restarted since it last heard from the printer, it can only say "Not heard from for at least 3 minutes." |
 | Not heard from yet | "Waiting to hear from Shop H2S." |
 | No printer paired | "PenguinSlicer needs to be paired with a printer.", and the pairing form |
 
@@ -865,23 +1188,27 @@ step, where a user first finds that a printer is missing. The Send step's messag
 "No printer is paired with PenguinSlicer, so nothing can be sent. Anyone in 6238 (Popcorn
 Penguins) can pair one: start the PenguinSlicer program on the computer beside the
 printer and type the code it shows. Meanwhile, download the file and print it from Orca
-Slicer or Bambu Studio." The form is one field, "Pairing code", a **Pair** button, and a
-link, "How to pair a printer", to a documentation page. The field takes the code in
-capitals or small letters, with or without its hyphen.
+Slicer or Bambu Studio." That message is the wizard's, since no printer paired is a state
+and not a failure. The form is one field, "Pairing code", a **Pair** button, and a link,
+"How to pair a printer", to a documentation page that is written in phase 5. The field
+takes the code in capitals or small letters, with or without its hyphen.
 
 | What happens | What the user sees |
 |---|---|
 | The code is one a daemon is showing | The form goes. A notification says "Paired with Shop H2S. Everyone in 6238 (Popcorn Penguins) can now send to it." The icon shows a grey dot and "…" until the daemon first reports, within about half a minute, and then the printer's state |
-| No daemon is showing that code | At once, in red under the field: "No computer beside a printer is showing that code right now. Check the code and try again in a moment." Every wrong code gets this one answer, whether it was mistyped, has run out or was already used, so that a guesser learns nothing from the answer. It is also the answer for a right code typed in the half minute after the server restarts, which is why it says "in a moment" |
-| Too many wrong codes from this user | The field and the button are off, with "Too many wrong codes. Wait a few minutes, then try again." |
+| No daemon is showing that code | At once, in red under the field, printer delivery's sentence, of this kind: "No computer beside a printer is showing that code right now. Check the code and try again in a moment." Every wrong code gets this one answer, whether it was mistyped, has run out or was already used, so that a guesser learns nothing from the answer. It is also the answer for a right code typed in the half minute after the front server restarts, which is why it says "in a moment" |
+| Too many wrong codes from this user | The field and the button are off, with printer delivery's sentence, of this kind: "Too many wrong codes. Wait a few minutes, then try again." |
 
 **Unpairing.** At the bottom of the printer details, whenever a printer is paired, is a
-quiet link, **Unpair this printer**. It asks once more: "Unpair Shop H2S? Nobody in 6238
-(Popcorn Penguins) can send to it until it is paired again." with **Unpair** and Keep. It
-is off while a print that PenguinSlicer is following is going on, with the tooltip "Shop
-H2S is printing; unpair it when the print has ended." After unpairing, the icon says No
-printer. Any user of the group may pair and unpair; there are no permissions inside a
-group.
+quiet link, **Unpair this printer**. It asks in a confirmation: "Unpair Shop H2S? Nobody
+in 6238 (Popcorn Penguins) can send to it until it is paired again." with **Unpair** and
+Keep. While a print that PenguinSlicer is following is going on the link is off, and one
+line under it says why, "Shop H2S is printing; unpair it when the print has ended.", as a
+line and not a tooltip, because touch shows no tooltip. Whether the relay itself refuses
+an unpairing then, or only the wizard withholds it, is undecided in
+[printer delivery's guide](../delivery/README.md#unpairing-while-a-delivery-job-has-not-ended).
+After unpairing, the icon says No printer. Any user of the group may pair and unpair;
+there are no permissions inside a group.
 
 ## When a user comes back
 
@@ -891,54 +1218,63 @@ A page that has lost what it had in memory (a refresh, a closed and reopened pan
 laptop opened the next morning) loses nothing of the user's work, because the work is in
 the browser's storage. It reads its plate from there and asks the front server what has
 become of the plate's slice, and from phase 5 of its print, and opens where the user will
-want to be.
+want to be. The rows below are tried in order, and the first row that applies decides.
 
 | What the page finds | Where it opens, and what it says |
 |---|---|
+| The plate has a print, running or ended (phase 5), and its sliced file is still kept | On the Send step. While it runs: "Back where you were. You had sent your plate to Shop H2S before you left; its progress is below.", which goes when the print ends. After it finished: the last-print note. After it failed: the failure on the print card. Send is enabled again for the same sliced plate while its sliced file is kept |
 | Parts, and no slice yet | On the step the user was on (Parts, Settings or Layout), with the plate as it was. Nothing is said |
 | The slice is waiting or running | On the Preview step, with its progress. A notification: "Back where you were. Your plate was still slicing when you left; see below." |
 | The slice finished | On the Preview step, with the result: "Back where you were. Your plate was sliced and ready to send when you left." |
 | The slice ended in an error | On the Preview step, with the failure's message, as if the page had stayed open |
 | The slice was stopped by one from another tab | On the Preview step, with the message of [Stopped by a slice from another tab](#slicing) and Slice again |
-| The slice is unknown to the server and was submitted less than two hours ago: the slice service restarted | On the Preview step. The page sends the parts and the plate again by itself, and the slicing card starts from the beginning |
-| The plate has a print, running or ended (phase 5) | On the Send step. While it runs: "Back where you were. You had sent your plate to Shop H2S before you left; its progress is below.", which goes when the print ends. After it finished: the last-print note. After it failed: the failure on the print card. Send is enabled again for the same sliced plate while its sliced file is kept |
-| The slice is unknown and was submitted more than two hours ago: the sliced file has expired | On the Parts step, empty, with one notification: "The slice of your earlier plate has expired; add its parts again to print it." The stored parts are dropped |
+| The slice is unknown to the front server and was submitted less than two hours ago: the slice service restarted | On the Preview step. The page sends the parts and the plate again by itself, and the slicing card starts from the beginning |
+| The front server reports the sliced file expired, or the slice is unknown and was submitted more than two hours ago | On the Parts step, empty, with one notification: "The slice of your earlier plate has expired; add its parts again to print it." The stored parts are dropped |
 
 The page tells the two "unknown" rows apart by the time it kept when it submitted, not by
-anything the server says. A plate with a print is the exception to the last row: a print
-keeps its sliced file until two hours after the print ends, so the page drops such a plate
-only when the front server reports the sliced file expired.
+anything the front server says. A plate with a print is held by the first row for longer
+than two hours from its slice, because a print keeps its sliced file until two hours
+after the print ends; the page drops such a plate only when the front server reports the
+sliced file expired.
 
-**Work does not follow a user to another computer or browser.** There the wizard opens
-empty. The parts and the layout live in one browser's storage, so no other browser could
-show them, and the server keeps no list of who has which plate. The same holds between
-Onshape's panel and a browser tab on one computer
-([Inside Onshape's panel and outside it](#inside-onshapes-panel-and-outside-it)).
+No source gives the reason for dropping the parts in the last row, and a page that stays
+open through the same expiry keeps them. The likely reason, and whether a returning page
+should keep the parts too, are under
+[Parts dropped on return and kept while the page is open](#parts-dropped-on-return-and-kept-while-the-page-is-open).
+
+Work does not follow a user to another computer or browser, where the wizard opens empty
+([What the browser keeps](#what-the-browser-keeps-and-why-it-is-the-record)).
 
 ### The page reloading itself for a new version
 
 Every answer from the front server says which version it is. A page that sees a newer
 version than its own reloads itself at the next quiet moment: when no request of its own
-is waiting for an answer, no pointer is down, no menu or details are open and no field is
-being typed in. An open progress stream does not count, since the reloaded page
-reconnects and is told the latest progress at once. Until it reloads, the older page goes
-on working against the newer server.
+is waiting for an answer, no pointer is down, no menu, joined box or confirmation is
+open, no field is being typed in, and the user has touched nothing for a while (proposed:
+ten seconds without a pointer movement, a key or a scroll, so that the reload does not
+fall one second after the user lets go of the mouse; no source gives a figure). An open
+progress stream does not count, since the reloaded page reconnects and is told the latest
+progress at once. Until it reloads, the older page goes on working against the newer
+front server.
 
 The user sees the panel redraw, once, and nothing else: no message, and no "Back where you
-were", because the page notes in the browser's storage that the reload was its own. It
+were", because the page notes in the browser's storage that the reload was its own. The
+reason for saying nothing is that the project is deployed many times a day, so a message
+at each reload would be noise about something the user can do nothing with, and the
+standing requirement is that a deploy interrupts no user. The page
 reopens on the step it was on, in advanced mode if advanced mode was open, with the parts,
 the layout, every change, a running slice's progress and a print's progress as they were.
 What starts afresh is only what lived in the page's memory: advanced mode's sections and
-groups are all open again, the 3D views return to their starting camera, the selection on
-the Layout step is cleared, the layer bar is back at the top layer, and open details and
-notifications are closed. That list is the cost of a deploy to someone working, and it is
-why the list of things kept only in memory must stay short.
+setting groups are all open again, the 3D views return to their starting camera, the
+selection on the Layout step is cleared, the layer bar is back at the top layer, and open
+joined boxes and notifications are closed. That list is the cost of a deploy to someone
+working, and it is why the list of things kept only in memory must stay short.
 
 ### The user's last print
 
 When the user's own print finishes, one line says so, "Your print finished at 11:25 am.":
-the **last-print note**. It is a line and not a card because a finished print asks nothing of the user. It shows at the top of the Send
-step, above the Send of the same plate or of a new one, and, when the user comes back to
+the **last-print note**. It is a line and not a card because a finished print asks
+nothing of the user. It shows at the top of the Send step, above the Send of the same plate or of a new one, and, when the user comes back to
 the wizard, on whichever step opens, until the user leaves that step. It goes, with the
 printer details' "Last print finished…" line, when the user sends another plate or 12
 hours after the print finished, whichever comes first. A print that failed is not a line:
@@ -960,23 +1296,29 @@ user's models rest outside their own browser only as short-lived copies.
 | The step the user is on | The same |
 | The current group | The user changes it |
 
+A plate that was never sliced has no sliced file to expire, so it stays until its rows
+are removed.
+
 What lives only in the page's memory starts afresh on a reload: which of advanced mode's
-sections are open, the cameras, the selection, open details and notifications.
+sections are open, the cameras, the selection, open joined boxes and notifications.
 
 Three consequences follow, and each is deliberate.
 
 - **A refresh keeps the work.** It has to: the page reloads itself after every deploy, so
   a refresh that dropped the plate would lose work several times a day.
-- **Work does not follow the user to another browser.** That is the price of having no
-  database, and it is accepted.
-- **The server's copies can always be made again.** The slice service keeps each part for
+- **Work does not follow the user to another computer or browser.** There the wizard
+  opens empty. The parts and the layout live in one browser's storage, so no other
+  browser could show them, and neither server keeps a list of who has which plate. The
+  same holds between Onshape's panel and a browser tab on one computer, whose storage is
+  kept apart. That is the price of having no database, and it is accepted.
+- **The slice service's copies can always be made again.** The slice service keeps each part for
   two hours after its last use, as a cache, and forgets all of them when it restarts.
   Whenever it no longer has a part a plate names, it says which, and the page sends those
   parts again from the browser's storage and submits the plate again. The user sees
   nothing of it.
 
 **Each part is sent once, when it is added,** and from then on is named by its
-fingerprint: a SHA-256 hash of its bytes. On the Preview step the page sends only the
+fingerprint. On the Preview step the page sends only the
 plate configuration, which names each part by fingerprint and carries no files. So slicing
 again after moving a part or changing a setting uploads nothing, and a part that cannot be
 sliced is found when it is added.
@@ -987,7 +1329,16 @@ printer therefore only ever receives a file the slice service made; nothing a br
 could alter is ever printed.
 
 The storage must hold the most a plate can use, 25 parts of up to 7.5 MB each, for one
-page.
+page. What the page does when the browser refuses to store a part, because its allowance
+is full, or has cleared the storage, is not designed and is part of the open item
+[Whether the browser's storage reliably holds a full plate](#whether-the-browsers-storage-reliably-holds-a-full-plate).
+
+Two things the record does not yet answer are gaps in the design. The stored work
+belongs to a browser and not to a user, so the next person to sign in at the same
+browser is shown it
+([Stored work is not tied to a user](#stored-work-is-not-tied-to-a-user)). And two tabs
+at the wizard's address share one stored plate and can overwrite each other's work
+([Two tabs on one stored plate](#two-tabs-on-one-stored-plate)).
 
 ## How it does the hard parts
 
@@ -1037,15 +1388,19 @@ rules of PenguinSlicer's own for round parts.
    sides of the part's bounding box, if no kept face points within 30 degrees of that
    side, the side itself gets a patch, and a click turns the part to rest that way. Thirty
    degrees is the half-angle of a hexagon, so a hex shaft, whose flats are 60 degrees
-   apart, rightly gets none and lies on a flat. The angle is a starting point to be tuned
-   on real parts.
+   apart, rightly gets none and lies on a flat; half a degree more is allowed for
+   rounding, so that flats exactly 30 degrees off count as covering the side. The rule
+   also gives patches on the two ends of a slanted part such as the Shooter Hood Rib.
+   Stood on such an end the part is too tall for the printer and gets the usual message;
+   the end patches are kept all the same. The angle is a starting point to be tuned on
+   real parts.
 
 A click turns the instance by the shortest rotation that points the chosen face straight
 down, keeping its turn about the vertical. The faces are found once for each part and turn
 with it, so turning an instance costs nothing.
 
-What the approach costs: the hull dominates, and its cost grows with the part's corners
-times the hull's triangles. On the mockup's own generated parts (up to 1,744 corners)
+What the approach costs: making the hull dominates, and by the simple method the time
+grows roughly with the square of the part's detail. On the mockup's own generated parts (up to 1,744 corners)
 finding the faces took 0.2 to 10 ms. A part exported from Onshape can have tens of
 thousands of corners and needs a faster hull, or the work moved off the page's main thread
 so the panel does not freeze. Four things are known to be needed on real parts that the
@@ -1131,20 +1486,14 @@ million lines of printer instructions, in an 8.8 MB sliced file. A plate of twel
 robot's largest block gives a 10.8 MB sliced file, and 14.1 MB with supports on. The
 wizard allows 150 instances on a plate.
 
-**Why the mockup's method fails.** The mockup drew every toolpath segment as a flat strip.
-On a machine with no graphics card one frame cost about 27 millionths of a second for each
-segment, whatever the view's size: 4.2 seconds for one small plate of 152,101 segments,
-and 10 to 21 seconds for four or five instances of some 400,000 segments. Frames that long
-make Chrome restart its graphics process, which blanks every 3D view on the page; after a
-second such loss no view drew again until a reload. On a laptop with a graphics card the
-same preview was fast but showed the artefacts requirement 3 forbids: walls and hole
-edges read as combs, and infill showed through near the edges of top surfaces, because a
-flat strip nearly vanishes when seen edge-on. Three quarters of the segments can never be
-seen, being inside the part; drawing only the visible ones made frames three times faster
-and changed the look, so that shortcut as tried is not acceptable either.
+**What is known about the cost.** Drawing every toolpath as a flat strip, the one method
+tried, took many seconds a frame on a machine without a graphics card and showed the
+combs and show-through of requirement 3 on a machine with one. The figures are under
+[The risks to try first in phase 2](#the-risks-to-try-first-in-phase-2).
 
-The frame rate, the browser and the machine are stated nowhere; they are proposed under
-[What is undecided or unmeasured](#what-is-undecided-or-unmeasured).
+The frame rate, the browser and the machine are stated in no source; they are proposed
+under
+[The layer preview's frame rate, browser and machine](#the-layer-previews-frame-rate-browser-and-machine).
 
 ## What the wizard asks of the front server
 
@@ -1168,31 +1517,40 @@ phase 2's design. In words:
 - **To answer what became of a slice** the page kept note of, for a page coming back.
 - **To cancel a slice.**
 - **The sliced file and its summary,** for as long as the sliced file is kept, with the
-  time its slice ended, so the page can tell when it will expire.
+  moment at which the front server will refuse it as expired.
 - **Its version on every answer,** so an older page knows to reload.
-- **From phase 5:** the printer's state, with who sent the plate that is printing, a
-  one-line description of it, how the last print ended and when, and how long a silent
-  printer has been silent; the user's own print, for a page coming back; and to send,
-  cancel a send, stop following, pair and unpair.
+- **From phase 5:** the printer's state and its name, with who sent the plate that is
+  printing, a one-line description of it, how the last print ended and when, and how long
+  a silent printer has been silent; the user's own print, for a page coming back; and to
+  send, cancel a send, stop following, pair and unpair.
 
 Three rules bind every one of these. Every failure arrives in one shape, the
-[error report](../contracts/error-report.md), whose sentences for the user the wizard
-shows as they are and whose internal detail it never shows. Every request can safely be
-sent twice, because the page retries: a send repeated because its first answer was lost
-must not start a second print. And a page loaded before a deploy must keep working against
-the server deployed after it, until it reloads.
+[error report](../contracts/error-report.md), whose sentences for the user were written
+by the component that failed and are shown by the wizard as they are, and whose internal
+detail the wizard never shows
+([Who writes the sentences of a failure](#who-writes-the-sentences-of-a-failure)). Every
+request can safely be sent twice, because the page retries: a send repeated because its
+first answer was lost must not start a second print. And a page loaded before a deploy
+must keep working against the front server deployed after it, until it reloads.
 
-**What the other components do not provide yet,** and the wizard as designed needs:
+**What the other components do not provide yet,** and the wizard as designed needs. The
+first three rows are asks that the contract between the wizard and the front server does
+not hold yet.
 
 | Needed | From | For |
 |---|---|---|
+| The moment a sliced file will be refused as expired, as the front server reckons it, sent with the sliced file's summary and again when a print of the plate ends. The contract carries no such moment, and the page's own clock may be wrong | The front server, and the contract | [A sliced plate that expires](#a-sliced-plate-that-expires) |
+| A request by which the page reports a failure that happened only in the browser. Undecided ([Failures in the browser that reach no log](#failures-in-the-browser-that-reach-no-log)) | The front server, and the contract | Support from the server's log |
+| Signing out, if the proposal under [Sign-out](#sign-out) stands | The front server, and the contract | A shared computer |
 | Units for each part in the plate configuration, applied by the slice service | The slice service and the plate configuration's contract | Parts in inches |
 | Every setting of Orca's that is a parameter with a value accepted as a change; as built, four are | The slice service | Advanced mode |
-| The list of those settings, with each one's kind, range and choices, and each profile's value for it | Undecided where from ([undecided](#what-is-undecided-or-unmeasured)) | Advanced mode, the changes box |
+| The list of those settings, with each one's kind, range and choices, and each profile's value for it. Not in the contract; to be added when it is settled | Undecided where from ([Where advanced mode's settings come from](#where-advanced-modes-settings-come-from)) | Advanced mode, the changes box |
+| Orca's own sentence with the heights, as a quotation for the user in the error reports of the two slice failures that carry Details. The slice service's guide and the error report's contract keep Orca's words for the log and show none of them | The slice service and the error report's contract | [When a slice fails](#when-a-slice-fails) |
+| Sentences in the slice service's and printer delivery's error reports that say "your CAD program" and never a role word or "the print server" | The slice service and printer delivery, as their known future work | [Who writes the sentences of a failure](#who-writes-the-sentences-of-a-failure) |
 | A slice that runs on when its page goes away, one unfinished slice for each user, parts kept and named by fingerprint, a waiting slice's place | The slice service, phase 2 | The Preview step and coming back |
 | Who sent a print, a one-line description of the plate, when the last print ended and who sent it, the layer of a failure | Printer delivery, phase 5 | The printer details, the busy card, the last-print note |
 | The signed-in user's own running print and last print | Printer delivery, phase 5 | A page coming back |
-| The time a daemon went silent, kept across a server restart | Printer delivery, phase 5 | "Not heard from for 7 minutes." |
+| The time a daemon went silent, kept across a restart of the front server | Printer delivery, phase 5 | "Not heard from for 7 minutes." |
 | A print started at the printer reported as a print with no sender | Printer delivery, phase 5 | The busy card |
 
 ## How well it must do it
@@ -1216,9 +1574,12 @@ belongs to another component and the wizard only has to respect and explain it.
 | Auto-orient | A part lies its best way within one second of arriving | Parts arriving laid down, not jumping later | Proposed. Measured: about 0.1 s for 100,004 triangles outside a browser | The same |
 | Arrange | Under 2 seconds for 150 instances, the panel not frozen meanwhile | A button that feels like a button; anything longer would need progress and a way to cancel | Proposed. Measured: 0.2 to 1.5 s for up to 25 instances, unoptimised | The same |
 | The placement check | Keeps up with a drag, with 150 instances on the plate | The status line telling the truth while the user moves things | Proposed; unmeasured | The same |
-| The layer preview | See the proposal under what is undecided | Inspecting a plate being possible at all on a school laptop | Proposed | Timed, and test renders |
+| The Layout view | At least 30 frames a second while an instance is dragged or the view turned, on a machine with a graphics card, and at least 10 on one without, at the largest plate allowed: 150 instances of parts of up to 150,000 triangles. The machines are those proposed for the layer preview | Dragging an instance feeling joined to the hand | Proposed, with no measurement behind it: the same figures as the layer preview, since the same hand does the dragging. The mockup's Layout view was never timed at this size | Timed in a real browser on both machines |
+| The page's memory | Under 1 GB for the page at the largest plate, with the layer preview of a 14.1 MB sliced file open | A laptop with 8 GB of memory, of which the browser has a share, not closing the page | Proposed; unmeasured. Twenty-five parts of 7.5 MB are about 190 MB before anything is drawn | Measured in a real browser at that plate |
+| The layer preview | See [the proposal](#the-layer-previews-frame-rate-browser-and-machine) | Inspecting a plate being possible at all on a school laptop | Proposed | Timed, and test renders |
+| Idle time before a self-reload | 10 seconds without a pointer movement, a key or a scroll | A reload not falling just after the user lets go of the mouse | Proposed | A test with a clock the test moves |
 | A sliced file | 8.8 to 14.1 MB on the plates measured | The time to the first picture, and the download | Measured by the slice service | — |
-| A silent progress stream | Kept alive at least every fifteen seconds by the server; reopened by the page whenever it closes | Progress surviving the hosts' time limits (125 seconds without data at Cloudflare, five minutes without data and fifteen minutes in all at Railway) | Someone else's | A test that closes the connection at chosen moments |
+| A silent progress stream | Kept alive at least every fifteen seconds by the front server; reopened by the page whenever it closes | Progress surviving the hosts' time limits (125 seconds without data at Cloudflare, five minutes without data and fifteen minutes in all at Railway) | Someone else's | A test that closes the connection at chosen moments |
 
 ## Inside Onshape's panel and outside it
 
@@ -1232,23 +1593,62 @@ guide holds in both, with these differences.
 | A part's units | The configuration's units for uploads | The units of the Part Studio or Assembly |
 | Where to mend a broken part | "your CAD program" | "Onshape" |
 | Sign-in | A trip to Onshape and back in the tab | The same trip, inside the panel |
-| The browser's storage | The tab's own | Kept apart by Chrome from the tab's, although the address is the same |
+| The browser's storage | The tab's own, shared with every other tab at the same address | Kept apart by Chrome from the tab's, although the address is the same |
 | Width | Whatever the window gives | Whatever the user drags the panel to, from 320 px |
 
 **Storage is kept apart.** Chrome gives a page embedded in another site its own storage,
-separate from the same page opened directly. So work begun in the panel does not appear in
-a tab, nor the reverse; each is its own page with its own plate. Since a user has one
-unfinished slice at a time, slicing in one stops an unfinished slice in the other, which
-then shows the message for a slice stopped from another tab.
+separate from the same page opened directly, so the panel and a tab each have their own
+plate ([What the browser keeps](#what-the-browser-keeps-and-why-it-is-the-record)). Since
+a user has one unfinished slice at a time, slicing in one stops an unfinished slice in
+the other, which then shows the message for a slice stopped from another tab.
 
 **What must work inside the panel** and can only be proved there: signing in and staying
 signed in as an embedded page; storage that survives the panel being closed and reopened;
 the mouse on the Layout step, where Onshape's own gestures are next to the pointer; and
 the layout at whatever widths the panel can really be dragged to.
 
-**Browsers.** Chrome is the supported browser. Safari is not supported, in the panel or
-outside it: nothing is designed or tested for it. A touch screen works for everything that
-is a click; the Layout step's gestures are designed for a mouse.
+**Browsers.** Chrome is proposed as the supported browser; no approved source names one,
+and the choice is the owner's to confirm
+([Browsers other than Chrome](#browsers-other-than-chrome)). The reason is that the
+design inside Onshape's panel depends on a browser that lets a page embedded in another
+site keep a cookie and storage of its own, which is how Chrome behaves and what the
+sign-in and the stored plate were designed around; Chrome is also the browser every
+measurement in this guide was made in. Safari is not supported, in the panel or outside
+it: nothing is designed or tested for it, and a user of Safari is shown a plain page by
+the front server ([Signing in](#signing-in)). A touch screen works for everything that is
+a click; the Layout step's gestures are designed for a mouse.
+
+## Accessibility
+
+No source states accessibility as a requirement of its own; what the accepted screens
+require is gathered here, with what is not required said plainly.
+
+**Required, from the accepted screens.**
+
+- Everything outside the two 3D views can be reached and worked by keyboard: the step
+  tabs, the menus, the quick changes, every row and button, the joined boxes and the
+  confirmations, with focus always visible. The accepted screens state this for the step
+  circles, advanced mode, the printer-status icon and the Send button's menu; as a rule
+  for the whole panel it is proposed. Where focus goes when advanced mode opens and
+  closes is under [Advanced mode](#advanced-mode).
+- A tooltip appears at once when the keyboard focuses its element, and nothing a user
+  needs is said by a tooltip alone, since touch shows none.
+- The printer-status icon gives a screen reader one sentence ("Shop H2S is free"). The
+  layer bar moves with the arrow keys and reports its layer to a screen reader.
+- The Send button's menu opens with Enter on the caret, moves with the arrow keys and
+  closes with Escape.
+- Colour never carries a meaning alone: a message has its sentence, the printer-status
+  icon has its word, a changed setting has its dot and bar, and the layer preview's four
+  colours were checked for the three common kinds of colour blindness.
+- Text is at the body size of 14 px or larger, with the pointer line at 11 px as the one
+  exception, and the panel's amber is darkened to be readable on white.
+
+**Not required.** The Layout step is designed for a mouse. Whether placing, turning and
+laying down an instance must also be possible by keyboard, and what a screen reader is
+told of the plate, is designed in no source and is undecided
+([The Layout step by keyboard](#the-layout-step-by-keyboard)). A screen reader gets no
+account of the layer preview beyond the layer bar's layer. No conformance to a published
+accessibility standard is claimed or tested.
 
 ## Security, from the browser's side
 
@@ -1273,52 +1673,71 @@ the request came from and refuses one that fails either check.
 code, font or picture from any other site, and never makes a request to one.
 
 **What the page treats as hostile.** Everything it shows that someone else wrote: a part's
-name, another user's name, a plate's description, a group's or a profile's name, and the
-sentences of an error report are shown as text and never interpreted as markup. An
-uploaded file is hostile input to the page as well as to the server: reading it must be
-bounded by the size limit, and a malformed file must end in the "could not read"
-notification, never in a frozen panel.
+name, another user's name, a plate's description, a group's or a profile's name, the
+printer's name, and the sentences of an error report are shown as text and never
+interpreted as markup. An uploaded file is hostile input to the page as well as to the
+slice service: reading it must be bounded by the size limit, and a malformed file must
+end in a notification that the part was not added, never in a frozen panel.
 
 **What a flaw would expose.** A flaw that let someone run their own code in the page
 could do whatever the user can: read the parts in the browser's storage, and start a print
 on the group's printer, which starts by itself with nobody beside it. It could not read
-the cookie's contents or any server secret.
+the cookie's contents or any server secret. A second exposure needs no flaw at all: the
+stored work is not tied to a user, so a different person who signs in at the same browser
+is shown the last user's parts, and the page sends them to the slice service under the
+new user. That is a gap and not an accepted risk
+([Stored work is not tied to a user](#stored-work-is-not-tied-to-a-user)).
 
-**Accepted risks.** The parts sit unencrypted in the browser's storage until the plate
-expires, so on a computer shared under one browser profile the next person can see them;
-and the design has no sign-out
-([undecided](#what-is-undecided-or-unmeasured)). Users of one group see each other's names
-and what is printing. Any user of a group can send a print or unpair the printer from
-anywhere. Each is accepted for the small groups PenguinSlicer is meant for.
+**Accepted risks.** The parts sit unencrypted in the browser's storage until the page is
+next opened after the plate's sliced file has expired, and a plate never sliced stays
+until its rows are removed; so on a computer shared under one browser profile the next
+person can see them. Users of one group see each other's names and what is printing. Any
+user of a group can send a print or unpair the printer from anywhere. Each is accepted
+for the small groups PenguinSlicer is meant for. That the design has no sign-out is not
+among them: it is undecided ([Sign-out](#sign-out)).
 
 ## When things go wrong
 
 Each failure a user can meet is described at the step where it happens. This is the index,
-with the two things that are true of all of them: a failure never loses the plate, and
-every one says what the user can do next.
+with the three things that are true of all of them: a failure never loses the plate,
+every one says what the user can do next, and its sentences are written by the component
+that failed ([Who writes the sentences of a failure](#who-writes-the-sentences-of-a-failure)).
 
 | What happened | Where it shows | Described under |
 |---|---|---|
 | A part cannot be used, or is over a limit | A notification on the Parts step | [A part that cannot be used](#a-part-that-cannot-be-used), [The limits on a plate](#the-limits-on-a-plate) |
-| The server is slow or cannot be reached | The panel line, on every step | [When the server is slow](#when-the-server-is-slow-or-cannot-be-reached) |
+| The configuration cannot be read | Undecided; proposed, a message in place of the step | [The current group](#the-current-group) |
+| The front server is slow or cannot be reached | The panel line, on every step | [When the server is slow](#when-the-server-is-slow-or-cannot-be-reached) |
 | An instance does not fit | The status line and red messages on the Layout step | [The placement rules](#the-placement-rules-and-what-each-problem-says) |
 | A slice waits, is refused for lack of room, is stopped from another tab, fails, runs too long or runs out of memory | The Preview step | [Slicing](#slicing), [When a slice fails](#when-a-slice-fails) |
 | A sliced plate expires | The Preview step and the Send step | [A sliced plate that expires](#a-sliced-plate-that-expires) |
 | The printer is busy, offline, not paired, or has gone quiet | The Send step and the printer details | [When Send is not offered](#when-send-is-not-offered), [A print that has gone quiet](#a-print-that-has-gone-quiet) |
 | A print waits for a person or fails | The print card | [After Send](#after-send) |
-| The sign-in has run out | A card in place of the step | [Signing in](#signing-in) |
+| The sign-in has run out | A message in place of the step | [Signing in](#signing-in) |
+| The browser's storage is full, refused or cleared; a 3D view is lost; the page's own code fails | Not designed beyond the 3D views drawing again | [Whether the browser's storage reliably holds a full plate](#whether-the-browsers-storage-reliably-holds-a-full-plate), [Failures in the browser that reach no log](#failures-in-the-browser-that-reach-no-log) |
+
+**Failures that happen only in the browser** reach no server and so no log: a part the
+page cannot draw, storage refused or cleared, a 3D drawing context that is lost, the
+layout code failing on a part, a sentence the page wrote itself. The plan's standing
+requirement is that a failure can be diagnosed from the server's log without asking the
+user for anything, and for these the design has no means. Which of them the page reports
+to the front server, and what such a report may carry, is undecided
+([Failures in the browser that reach no log](#failures-in-the-browser-that-reach-no-log)).
 
 **Cancelling.** A slice can be cancelled at any moment from the slicing card, which stops
 Orca itself and leaves the plate ready to slice again. A send can be cancelled until the
 printer starts. A print is stopped at the printer.
 
-**A restart or a deploy** costs a user a pause and nothing else. The front server
-restarting pauses requests, which are retried, and closes progress streams, which
-reopen; nobody is signed out. For a few seconds the printer-status icon shows a grey dot
-and "…" and a print card keeps its last figures, until the daemon next reports.
-The slice service restarting loses a waiting or running slice, which the page starts again
-by itself from the browser's storage, so the slicing card goes back to its start with a
-line saying why. A print goes on through both.
+**A restart or a deploy** costs a user a pause and, with one known exception, nothing
+else. The front server restarting pauses requests, which are retried, and closes progress
+streams, which reopen; nobody is signed out. For a few seconds the printer-status icon
+shows a grey dot and "…" and a print card keeps its last figures, until the daemon next
+reports. The slice service restarting loses a waiting or running slice, which the page
+starts again by itself from the browser's storage, so the slicing card goes back to its
+start with a line saying why. A print goes on through both. The exception is a plate
+submitted while the slice service is finishing another user's slice before it stops for
+a deploy, which can show the retry message for minutes
+([When the server is slow](#when-the-server-is-slow-or-cannot-be-reached)).
 
 ## How it is tested
 
@@ -1330,12 +1749,15 @@ The rules are the project's, applied to code in a browser.
 - **The front server is a fake the test controls.** Anything that depends on the order of
   events over the network is tested with a stand-in front server that lets the test put
   the events in an exact order: an answer lost and the request repeated, a progress
-  connection closed mid-slice, a slice cancelled from another tab, a part the server has
+  connection closed mid-slice, a slice cancelled from another tab, a part the slice service has
   forgotten, a newer version announced while a request is waiting.
 - **Every row is a test.** Each row of each table in this guide that describes a state or
   a message has a test that reaches that state on purpose and checks what the user sees:
   every row of the returning page's table, every failure of a slice, every state of the
   printer-status icon, every refusal of a part.
+- **Another component's sentences are shown unchanged.** For each kind of error report,
+  a test gives the page a report with sentences the test made up and checks that exactly
+  those sentences appear, as text, with the buttons the report's action calls for.
 - **The geometry is tested on real parts.** Finding faces, auto-orient, Arrange and the
   placement check are tested without a browser window, on a fixed set of real exported
   parts kept in the repository, with the expected faces and placements written down. The
@@ -1348,51 +1770,27 @@ What tests of that kind cannot prove, and what proves it instead:
 | What | Proved only by |
 |---|---|
 | That the layer preview looks right | A person looking at the test renders of real sliced plates |
-| That the preview and the Layout view are fast enough | Timing in a real Chrome, on a machine with no graphics card and on one with |
+| That the preview and the Layout view are fast enough | Timing in a real browser (proposed: Chrome), on the two machines proposed under [The layer preview's frame rate, browser and machine](#the-layer-previews-frame-rate-browser-and-machine) |
 | Sign-in, storage and the mouse inside Onshape's panel | Real Onshape, in phase 4 |
 | What the printer reports while waiting, failing and after a stop | The real printer, in phase 5 |
 | That progress passes through the hosts unheld | The hosted service, in phase 3 |
 
-## What the mockup faked
-
-The mockup ran entirely in the browser with nothing real behind it. Each thing it invented
-is listed with what the real wizard needs in its place.
-
-| The mockup showed | The real wizard needs |
-|---|---|
-| Toolpaths drawn from generated shapes; print time and grams estimated from them | The sliced file's own toolpaths, and Orca's own time and grams from its summary |
-| Slicing stages, durations and percentages from invented formulas | Orca's own stages and percentage, passed through. The time expected is only good to about a factor of two, so the card says "about" |
-| An uploaded file that was never read | A reader for STL files that copes with a malformed one |
-| A part "exported from Onshape" in about a second | Real export times, unknown until phase 4; the row's progress bar must not promise a duration |
-| Server outages that lasted 9 or 20 seconds | The retrying described above, tested at every length |
-| A "plate too large" refusal against a cap on a plate's volume | Nothing: there is no such cap. A plate too heavy ends as out of memory or too slow |
-| Hulls thinned to 40 points, so placement distances could be off by about 0.2 mm | The full outline, and a placement check that agrees with the slice service's |
-| Faces and resting positions worked out on generated parts, with an invented threshold for "will need supports" | The same on real exported parts; whether and when to say a part will need supports is undecided |
-| A sample of 99 of Orca's settings in advanced mode | All of about 295, less the programmatic ones |
-| Invented profiles and values for all but one filament | The configuration's real ones |
-| A printer, other users, waiting reasons and a failure reason that were invented | What the printer really reports, which is unknown until it has been recorded in phase 5 |
-| Cancel sending that always worked at once | A cancel that may arrive after the printer has started, in which case the card says the print has started |
-| Download that saved nothing | A real file saved, and the true size in its notification |
-| A configuration name that linked nowhere, a reload glyph that reloaded nothing, and a configuration "opened from a saved link" | The group details and the reload described above. A configuration is never opened from a link, which would bypass the check of the user's group |
-| A "How to pair a printer" link that went nowhere | The documentation page, to be written in phase 5 |
-| A panel dragged between 300 and 900 px | Whatever Onshape really allows, unknown until phase 4 |
-| The page restored after a refresh by pretending the server remembered it | The browser's storage, as designed above |
-| Fonts as they fell on the machine that took the screenshots | PenguinCAM's font stack, which starts with the system's font, so the panel looks slightly different on each system; accepted |
-
 ## Designed here and not in the mockup
 
-The mockup was reviewed step by step and its screens are settled. The screens below were
-never mocked up: they are designed in this guide, in words, following the mockup's
-patterns, and nobody has yet seen them drawn. They are the ones to read hardest.
+The screens below have never been drawn: they are designed in this guide, in words,
+following the mockup's patterns. They are the ones to read hardest. The first table says
+where each is; the second says what this guide chose in designing them that no source
+states. The first fourteen rows are written in the body as the design. The last five are
+only proposed, and four of them belong to an undecided item, which is linked.
 
 | Screen or state | Where it is described |
 |---|---|
 | Signing in, a sign-in that failed, and a sign-in that has run out | [Signing in](#signing-in) |
-| The group details, changing the current group, and Sign in again | [The current group](#the-current-group) |
+| The group details, changing the current group, Sign in again, a group the user no longer belongs to, and a filament or profile gone when the configuration is read again | [The current group](#the-current-group) |
 | A sliced plate that expires while the page is open | [A sliced plate that expires](#a-sliced-plate-that-expires) |
 | A slice waiting behind others, and no room to wait | [Slicing](#slicing) |
 | The pairing form, a wrong code, too many wrong codes, and unpairing | [Pairing a printer](#pairing-a-printer) |
-| A print gone quiet, and Stop following | [A print that has gone quiet](#a-print-that-has-gone-quiet) |
+| A print gone quiet, a print gone quiet at a printer that is Offline, and Stop following | [A print that has gone quiet](#a-print-that-has-gone-quiet) |
 | The page reloading itself for a new version | [The page reloading itself](#the-page-reloading-itself-for-a-new-version) |
 | A slice stopped by a later one from another tab | [Slicing](#slicing) |
 | What a restart shows: the slicing card starting again, and a printer not heard from yet | [Slicing](#slicing), [The printer-status icon](#the-printer-status-icon) |
@@ -1401,15 +1799,52 @@ patterns, and nobody has yet seen them drawn. They are the ones to read hardest.
 | Running out of memory | [When a slice fails](#when-a-slice-fails) |
 | The retry message with its countdown, on the panel line | [When the server is slow](#when-the-server-is-slow-or-cannot-be-reached) |
 | The Send step before there is a printer, with Download as its button | [The Send step](#the-send-step) |
+| Proposed: a confirmation, the box in which the panel asks once more | [How the panel tells the user something](#how-the-panel-tells-the-user-something) |
+| Proposed: a configuration that cannot be read | [The current group](#the-current-group); undecided, [A configuration that cannot be read](#a-configuration-that-cannot-be-read) |
+| Proposed: a part the slice service accepts and the page cannot draw | [A part that cannot be used](#a-part-that-cannot-be-used); undecided, [Failures in the browser that reach no log](#failures-in-the-browser-that-reach-no-log) |
+| Proposed: the printer-status icon and the printer details after a print is no longer followed | [A print that has gone quiet](#a-print-that-has-gone-quiet); undecided, [After a print is no longer followed](#after-a-print-is-no-longer-followed) |
+| Proposed: a part the browser refuses to store | Undecided, [Whether the browser's storage reliably holds a full plate](#whether-the-browsers-storage-reliably-holds-a-full-plate) |
+
+### Choices made in designing these screens
+
+Each row is a choice this guide made that no source decides, or that departs from a
+text marked proposed elsewhere. In the body each is written as the design. Any of them
+can be changed by saying so; the alternative is given so that the change is one sentence.
+
+| | What this guide chose | Why | The alternative | Described under |
+|---|---|---|---|---|
+| 1 | A sign-in that has run out is a message with a button, **Sign in with Onshape**; the page does not leave for Onshape by itself | A user in the middle of dragging an instance would lose their place without knowing why, and nothing is lost by waiting | The page starts the sign-in itself the moment a request is refused as not signed in. That is what three texts marked proposed say: the contract, the front server's guide and this component's details file. They disagree with this guide until one side is changed | [Signing in](#signing-in) |
+| 2 | **Sign in again** is inside the group details, not on the header line | The header's second line stays one row at 320 px | A link on the header line beside the current group's name, which is the letter of the approved design and of the front server's guide; at 320 px the line then wraps or the group's name is cut | [The current group](#the-current-group) |
+| 3 | Changing the current group clears the changes and the slice, cancels a running slice, and keeps the parts and the layout, after a confirmation; changing back does not bring back a print card with Send enabled | Changes and a slice belong to one group's profiles and printer; parts and a layout are the user's work and can be checked against the new plate | Clear everything, which is simpler and loses work; or keep a separate plate for each group, so that changing back restores everything, at the cost of several stored plates in the browser | [The current group](#the-current-group) |
+| 4 | The retry message sits on the panel line, with a link, "Retry now" | It concerns the whole panel and must stay as the user moves between steps. "Retry now" lets a user who has just mended their own network skip the countdown | A notification on the step, which goes when the user leaves the step; and no "Retry now", which nobody asked for and which the decision on retrying does not mention | [When the server is slow](#when-the-server-is-slow-or-cannot-be-reached) |
+| 5 | A sliced plate that expires with the page open is replaced, on the Preview and Send steps only, by a grey message with **Slice again**; the parts, layout and settings stay; the page does not slice again by itself | Nothing went wrong, and a slice takes a place others may be waiting for | Slice again automatically at the expiry; or treat the open page as a returning page is treated and empty the plate | [A sliced plate that expires](#a-sliced-plate-that-expires) |
+| 6 | No room to wait is an amber message with **Slice again**, and the page does not try again by itself | Nothing is wrong with the plate, so not red; a silent queue in the browser would hide from the user how busy the slice service is | The page retries quietly, as it does for a server that does not answer, and the user sees only a longer wait | [Slicing](#slicing) |
+| 7 | A slice that ran out of memory offers no **Slice again** | The same plate would run out of memory the same way | Offer it as for every other failure, for the rare case in which the limit was raised meanwhile | [When a slice fails](#when-a-slice-fails) |
+| 8 | The pairing form is in two places: the printer details and the Send step | A printer can then be paired from any step before anything is sliced, and a user who first finds the printer missing on the Send step need not look for the form | In the printer details only, with a link from the Send step's message | [Pairing a printer](#pairing-a-printer) |
+| 9 | **Stop following** and **Unpair this printer** are open to every user of the group; Unpair is off while a followed print is going on | The sender of a print that has gone quiet may have gone home, and there are no permissions inside a group. Unpairing during a print would leave a print nobody can follow | Stop following for the sender only; Unpair allowed at any time, ending the following of the print | [A print that has gone quiet](#a-print-that-has-gone-quiet), [Pairing a printer](#pairing-a-printer) |
+| 10 | A printer not heard from yet is a grey dot and "…" on the icon and "Waiting to hear from Shop H2S." on the Send step; a print card keeps its last figures | A user sees a state and not a hole | Blank, which is the architecture's word for the seconds after a restart of the front server: no icon and an empty Send step | [The printer-status icon](#the-printer-status-icon) |
+| 11 | The page reloading itself for a new version shows nothing, and waits for ten seconds in which the user has touched nothing | Deploys are frequent and the user can do nothing with the news | One line after the reload ("PenguinSlicer was updated."), or a line before it with a button so that the user chooses the moment | [The page reloading itself](#the-page-reloading-itself-for-a-new-version) |
+| 12 | The Send step exists from phase 2, named Send, with **Download the sliced file** as its one button | The five steps keep their names and order when the printer arrives, and the download has a home | What the plan says: the Send step arrives in phase 5, and in phase 2 the download is a button on the Preview step's result, with four steps until then | [The Send step](#the-send-step) |
+
+Signing out is the thirteenth thing no source decides; it is left open, with a proposal,
+under [Sign-out](#sign-out). Six smaller rules that this guide proposes are marked
+"proposed" where they stand: the form of a confirmation, which use of the panel line
+wins, the waits between retries, what happens to a part the page cannot draw, that a
+followed print's rows win over Offline, and the ten seconds before a self-reload. Two
+more are written as the design and no source states them: when the front server refuses
+the stored group, the page takes the first of the user's groups by itself, where it
+could instead ask the user to choose; and an uploaded file refused as too large is
+followed by the wizard's reminder of how STL files are read. The targets this guide
+proposes for speed and memory are in [How well it must do it](#how-well-it-must-do-it),
+each marked "proposed".
 
 ## What is to be built, by phase
 
-Nothing is built. The mockup that the steps above were settled on is a throwaway and
-shares no code with the wizard.
+Nothing is built. The mockup is to be thrown away and shares no code with the wizard.
 
 | Phase | What of the wizard is built |
 |---|---|
-| 2, one machine | The page opened directly in a browser, with no sign-in. The panel, the header with the current group, and all five steps: parts from STL files; the Settings step and advanced mode; the Layout step with laying on a face, auto-orient, Arrange and the placement check; the Preview step with slicing, every slice failure and the layer preview; the Send step with Download as its button. The browser's storage, sending each part once, coming back, progress streams, retrying, and reloading for a new version |
+| 2, one machine | The page opened directly in a browser, with no sign-in. The panel, the header with the current group, and all five steps: parts from STL files; the Settings step and advanced mode; the Layout step with laying on a face, auto-orient, Arrange and the placement check; the Preview step with slicing, every slice failure and the layer preview; the Send step with Download as its button (the plan gives the Send step to phase 5 and only the download to phase 2; see [the choices](#choices-made-in-designing-these-screens)). The browser's storage, sending each part once, coming back, progress streams, retrying, and reloading for a new version |
 | 3, hosted | Signing in with Onshape, a sign-in that failed or ran out, Sign in again, and the mark on every request that changes something |
 | 4, inside Onshape | The page in Onshape's panel, with parts picked in Onshape and their units, and its storage kept apart from a tab's |
 | 5, the real printer | The printer-status icon and the printer details; pairing and unpairing; Send, the print card, the busy card, Cancel sending, Stop following; the last-print note; coming back to the Send step |
@@ -1422,11 +1857,21 @@ Two things could each show that part of this design cannot be built as written, 
 can be tried before the rest of the wizard exists. They come first because of what a
 failure would change, not because of their size.
 
-**The layer preview's speed on a machine without a graphics card.** What is known: the
-mockup's method takes 10 to 21 seconds a frame on such a machine for a plate of four or
-five instances, and loses the browser's 3D context doing it; the wizard allows 150
-instances; the look that is required (real line widths, shaded walls, no show-through)
-is costlier than thin lines. What is not known: whether any method meets a usable frame
+**The layer preview's speed on a machine without a graphics card.** What is known comes
+from the one method tried, in the mockup, which drew every toolpath segment as a flat
+strip. On an aarch64 Linux machine with no graphics card, where Chrome draws 3D in
+software, one frame cost about 27 millionths of a second for each segment, whatever the
+view's size: 4.2 seconds for one small plate of 152,101 segments, and 10 to 21 seconds
+for four or five instances of some 400,000 segments. Frames that long make Chrome restart
+its graphics process, which blanks every 3D view on the page; after a second such loss no
+view drew again until a reload. On a laptop with a graphics card the same preview was
+fast, though not timed, and showed what the appearance rules forbid: walls and hole edges
+read as combs, and infill showed through near the edges of top surfaces, because a flat
+strip nearly vanishes when seen edge-on. Three quarters of the segments can never be
+seen, being inside the part; drawing only the visible ones made frames about three times
+faster and changed the look, so that shortcut as tried is not acceptable either. The
+wizard allows 150 instances, and the look that is required (real line widths, shaded
+walls, no show-through) is costlier than thin lines. What is not known: whether any method meets a usable frame
 rate at that size with that look. What to try: real sliced files, from the 8.8 MB and
 14.1 MB plates and from a plate at the 150-instance limit, drawn by two or three candidate
 methods on the machine without a graphics card, timed and rendered. What a failure would
@@ -1455,29 +1900,288 @@ Layout step and comes back for a decision.
 
 No document states a frame rate, a browser or a machine for the layer preview; the
 approved requirement says only that there is a frame budget on a machine without a
-graphics card, met at the largest plate. This is the proposal, with its reasons. It is to
-be confirmed or changed once the first risk above has been measured.
+graphics card, met at the largest plate. This is the proposal, with its reasons. The
+reasons given for the frame rates are judgements with no measurement behind them. The
+whole proposal is to be confirmed or changed once the first risk above has been measured.
+
+Two machines are named, closely enough that a measurement on them can be repeated. "With
+a graphics card" means that Chrome draws 3D on the machine's graphics hardware, which
+Chrome's own graphics report page states; "without" means that Chrome draws 3D in
+software, with its built-in software renderer, whether or not the machine has graphics
+hardware.
 
 | | Proposed | Why |
 |---|---|---|
-| Browser | The current version of Chrome on a desktop or laptop | It is the one browser the design supports, and the one Onshape's panel is used in |
-| Machine with graphics | A school-issue laptop with integrated graphics and 8 GB of memory | It is what most users will have; a workstation would prove nothing |
-| Machine without graphics | Chrome drawing 3D in software, on the kind of aarch64 Linux machine the mockup was measured on | It is the worst case that exists in practice (remote desktops, virtual machines, blocked graphics drivers), and the figures above come from it |
-| Frame rate with graphics | At least 30 frames a second while the view is turned or the layer bar dragged, on the 14.1 MB plate and on a plate at the 150-instance limit | Below that, dragging the layer bar stops feeling joined to the hand |
-| Frame rate without graphics | At least 10 frames a second while moving, and no frame longer than one second, on the same plates | Ten is the slowest at which a drag can still be steered; frames of many seconds are what made Chrome restart its graphics process |
-| The look while moving | May be simplified while the view moves or the bar is dragged, provided the four colours and the outlines hold; the full required look within one second of coming to rest | It is the cheapest way to reconcile the look with a frame rate, and the eye does not read fine detail in motion |
+| Browser | The current stable version of Chrome on a desktop or laptop | The reason for Chrome is under [Inside Onshape's panel and outside it](#inside-onshapes-panel-and-outside-it) |
+| The machine with a graphics card | A laptop of the kind schools issue: graphics built into the processor and no separate graphics card, four processor cores, 8 GB of memory, a screen of 1920 × 1080, on mains power, with Chrome reporting that it draws 3D on the graphics hardware | It is what most users will have; a workstation would prove nothing. The make and model of the one machine used are recorded with the first measurement and kept as the reference |
+| The machine without a graphics card | The same class of machine, four processor cores and 8 GB of memory, with Chrome's use of the graphics hardware switched off in its settings, so that it draws 3D in software | It is the worst case that exists in practice (remote desktops, virtual machines, blocked graphics drivers). Drawing in software depends on the number and speed of the cores, so they must be stated. The mockup's figures came from an aarch64 Linux machine whose cores and speed were not recorded; those figures show the size of the problem and are not the reference |
+| The size of the view | The panel at 680 px wide, the view at 4:3 | The widest layout the panel has; the mockup's cost did not depend on the view's size, and a new method's may |
+| Frame rate with a graphics card | At least 30 frames a second while the view is turned or the layer bar dragged, on the 14.1 MB plate and on a plate at the 150-instance limit | Below that, dragging the layer bar stops feeling joined to the hand |
+| Frame rate without a graphics card | At least 10 frames a second while moving, and no frame longer than one second, on the same plates | Ten is taken as the slowest at which a drag can still be steered; frames of many seconds are what made Chrome restart its graphics process |
+| The look while moving | May be simplified while the view moves or the bar is dragged, provided the four colours and the outlines hold; the full required look within one second of coming to rest. **This departs from the accepted requirement,** which asks for the look "by whatever means keeps the look" and for no combs and no show-through "at any viewing angle", with no exception for a view in motion. It needs the owner's yes | It is the cheapest way to reconcile the look with a frame rate, and the eye does not read fine detail in motion |
 | Time to the first picture | Within 5 seconds of the result appearing, with the print time and filament shown at once | The numbers a user plans around should not wait for the picture |
 
-The cost of the proposal: the figure without graphics is roughly a hundredfold cut from
-what the mockup's method takes, so it will shape the method more than any other
-requirement. Setting it lower (5 frames a second) makes the step usable but sticky on such
-machines; dropping it makes the Preview step unusable there, with the browser's 3D context
-lost as a likely result.
+The cost of the proposal: the figure without a graphics card is roughly a hundredfold cut
+from what the mockup's method takes on a plate of four instances, and more on the plates
+the target names, so it will shape the method more than any other requirement. Setting it
+lower (5 frames a second) makes the step usable but sticky on such machines; dropping it
+makes the Preview step unusable there, with the browser's 3D context lost as a likely
+result.
+
+### Gaps in the design
+
+Each item below is something no source decides. None is settled here. Each says what it
+is, what is known, the options with what each costs and what a user would see, and a
+recommendation.
+
+#### Two tabs on one stored plate
+
+**What it is.** The browser's storage is kept for each browser and each address, so two
+tabs opened directly at the wizard's address share one stored plate. (Onshape's panel
+and a tab do not: Chrome keeps their storage apart.) The design covers only the two
+tabs' slices, where the later cancels the earlier. It says nothing of the plate itself.
+
+**What is known.** Each tab reads the stored plate when it opens and afterwards works
+from its own memory, writing every change back. So a part added in one tab is not seen
+in the other, and the other tab's next change writes its own older plate over it: parts,
+layout or settings disappear with no message. Opening a second tab is easy to do by
+accident, with a bookmark or a link.
+
+| Option | What a user sees | What it costs |
+|---|---|---|
+| The last change wins, and each tab reads the stored plate again when it is shown again | A tab the user returns to shows the plate as the other tab left it; the 3D view may jump. Nothing is lost that the user did not overwrite themselves | The page must rebuild its view from storage at any moment, which the self-reload already requires. A slice running for the older plate is cancelled as for any changed plate |
+| One tab owns the plate: a second tab says "PenguinSlicer is open in another tab of this browser." with a button, **Use it here**, which takes the plate over and puts the first tab into that state | No silent loss and no surprise; one more screen | The tabs must tell each other who owns the plate, through the storage they share. A tab that crashed must not hold the plate for ever |
+| A plate for each tab | Two tabs are two independent plates | The record of the work is no longer one plate for a browser; a closed tab's plate would have to be found again or thrown away, and the storage needed doubles |
+| Leave it | Work silently overwritten, rarely | Nothing |
+
+**Recommended:** the second, one tab owning the plate. It is the only option in which a
+user is never surprised, the screen is small and follows the pattern of the message for
+a slice stopped from another tab, and it removes that case too, since two tabs can no
+longer slice against each other.
+
+#### Stored work is not tied to a user
+
+**What it is.** The parts, the layout and the settings are stored for a browser, with no
+note of whose they are. When a sign-in runs out, or after a sign-out if one is added,
+and a different person signs in at the same browser, the page opens with the previous
+user's plate.
+
+**What is known.** The new user sees the previous user's parts, by name and in the 3D
+view. The page then sends those parts to the slice service under the new user, as it
+does for any part the slice service no longer has, so the new user can slice and print
+them. This needs no flaw and no ill will, only a shared computer under one browser
+profile, which is how a school laboratory's computers are often set up. The front
+server tells the page who the user is, so the page can know that the user has changed.
+
+| Option | What a user sees | What it costs |
+|---|---|---|
+| The stored work carries the user it belongs to, and a page that opens signed in as someone else clears it | The second user starts empty. The first user, signing in again later at the same browser, also starts empty | One comparison on opening. The first user loses a plate they may have wanted |
+| The stored work carries its user, and each user's work is kept side by side; a page shows only the signed-in user's | Each user finds their own plate again | Up to 25 parts of 7.5 MB for each person who has used the browser, which makes a full storage likelier. The other users' parts are still in the browser's storage, readable by anyone with the browser's developer tools |
+| Leave it, as an accepted risk for small groups | The next person sees the last person's parts | Nothing. A user's models are shown to someone the user did not choose |
+
+**Recommended:** the first, clearing. It is the smallest change, it leaves nothing of
+one user in front of another, and losing an unprinted plate on a shared computer is a
+smaller harm than showing it. The same clearing should happen at a sign-out
+([Sign-out](#sign-out)).
+
+#### A progress stream that cannot be reopened
+
+**What it is.** The page retries every request and shows the panel line after 20
+seconds. A progress stream is not a request the user waits on: when it closes, the page
+reopens it silently, because closing is routine. No source says what happens when it
+cannot be reopened.
+
+**What is known.** A page that is only following a slice or a print has no other
+request waiting. If the front server is unreachable for minutes, nothing on such a page
+changes: the slicing card's state "The front server cannot be reached" has no moment at
+which it begins, and from phase 5 the print card goes on showing its last figures as
+though they were current. The front server keeps a stream alive at least every fifteen
+seconds, so a stream with no data for much longer than that is itself a sign.
+
+| Option | What a user sees | What it costs |
+|---|---|---|
+| A progress stream that has failed to reopen for 20 seconds is treated as a failed request | The same panel line as for any request, with its countdown and, after 300 seconds, Try again. The slicing card goes to its state "The front server cannot be reached", with Cancel slice off. The print card's figures are greyed, as for a print that has gone quiet | One rule shared with every request. The 20 seconds must be counted from the first failure to reopen, not from each attempt |
+| The same, and a stream that is open but has carried nothing for 45 seconds is also treated as failed | As above, and also when a connection hangs without closing | A second figure, 45 seconds, three times the fifteen at which the front server keeps a stream alive; it is a proposal with no measurement behind it |
+| Leave it silent | A frozen card that looks current | Nothing. The user cannot tell a slow slice from a lost server |
+
+**Recommended:** the second. The first is the least that makes the panel truthful, and
+the hung connection is the case a laptop coming back from sleep produces most often.
+
+#### Failures in the browser that reach no log
+
+**What it is.** The plan's standing requirement "Supportable from the server" is that
+every error a user is shown can be diagnosed from the server's log without asking the
+user for anything. Failures that happen only in the browser reach no server: a part the
+slice service accepted and the page cannot draw; storage refused, full or cleared; a 3D
+drawing context that is lost; the layout code failing on a part; the page's own code
+failing; a sentence the page wrote itself and showed.
+
+**What is known.** The owner supports the service alone and cannot see a user's screen.
+The contract has no request for such a report. The wizard's failures are the ones least
+covered by tests, since the geometry is new code. Parts' names and users' names already
+appear in the log, which is private; a part's geometry never does.
+
+| Option | What the owner can see | What it costs |
+|---|---|---|
+| The page reports each such failure to the front server, which writes one log line: what failed, on which step, the page's version, the browser's name and version, whether 3D is drawn in software, and the fingerprint of the part concerned. Never a part's bytes or geometry, never the contents of the storage. At most a few reports a minute from one page, and a report that cannot be sent is dropped, never retried into a loop | Every browser failure beside the front server's and the slice service's own lines for the same user | One new request in the contract, which must carry the wizard's mark like any request that changes something, and a limit at the front server so that a broken page cannot fill the log |
+| The same, and also a line for each of the page's own sentences shown to a user (a file over the limit, a twenty-sixth part) | As above, and how often users meet the limits | More lines; these are not failures of the software |
+| Nothing is reported | Nothing. A user who says "the view went blank" must be asked for a screenshot | Nothing to build; the standing requirement is not met for the browser |
+
+**Recommended:** the first. It meets the standing requirement at the cost of one request,
+and the fingerprint lets the owner find the part in the slice service's own lines without
+the geometry ever leaving the browser by this path.
+
+#### STL files in millimetres before the edit screens exist
+
+**What it is.** How an uploaded STL file is read, in inches or in millimetres, is one
+option of the configuration, and a row has no switch of its own; that was accepted in
+the mockup on the footing that an administrator could set the option. But the
+configuration's edit screens are in no phase, and until they exist a group uses the
+built-in default or a document the owner of the service writes by hand.
+
+**What is known.** In a group on the built-in default nobody can use an STL file in
+millimetres. Such a file read as inches is 25.4 times too large and is usually refused
+as too large for the printer. Most STL files from other CAD programs and from the
+internet are in millimetres. Phase 2 and phase 3 have no other way to add a part than
+an uploaded file.
+
+| Option | What a user sees | What it costs |
+|---|---|---|
+| Leave it: the configuration's option is the only control | A user with a file in millimetres cannot print it until the owner of the service edits their group's configuration by hand | Nothing to build. Every such user must reach the owner |
+| The built-in default reads uploads in millimetres | Files in millimetres work everywhere by default; a file in inches arrives 25.4 times too small and gets the slice service's warning that it may be in inches | One value. It reverses the accepted decision that uploads are read in inches unless the configuration says otherwise |
+| A switch beside the upload area, "Read STL files in: inches / millimetres", starting at the configuration's value and kept in the browser's storage, until the edit screens exist | The user chooses, before uploading; the line under the upload area follows | A control the mockup's decision removed on purpose, and one more thing stored for a browser. It is taken out again when the edit screens arrive, or kept |
+
+**Recommended:** the third, the switch, for phases 2 and 3, where uploaded files are the
+only parts there are; and to decide again when the edit screens are designed.
+
+#### Starting a second plate
+
+**What it is.** The wizard holds one plate. Its sentences send a user to "a second
+plate" in four places (a twenty-sixth part, more than 150 instances, a slice too slow
+or out of memory), and the print card names "Plate 1". No source says how a second
+plate is started, how a finished one is cleared, or what gives a plate its number.
+
+**What is known.** Today the only way to start again is to remove every row by hand.
+The stored plate is otherwise dropped only when a page opens after its sliced file has
+expired. "Plate 1" is the only number that can appear.
+
+| Option | What a user sees | What it costs |
+|---|---|---|
+| Rows are removed by hand; the number is dropped from every sentence ("Your plate, 16 instances") | Nothing new. A plate of 25 parts takes 25 clicks to clear | Changing sentences the mockup accepted |
+| A **New plate** action on the Parts step, with a confirmation when the plate has parts, which empties the list, the layout and the slice and keeps the filament, the profile and the changes; the number counts the plates this browser has started and is shown from the second on | One click to start again; "Plate 2" on the print card tells a second print from the first in the printer details | One action and one confirmation that no source has. A plate that is printing is no longer on the panel as a plate, only as a print |
+| Several plates kept side by side, with a way to move between them | The rest of an over-full plate can be laid out at once | A large change: every step gains a plate chooser, and the storage holds several plates. The decision that no layout tools go beyond the mockup's argues against it |
+
+**Recommended:** the second, a New plate action. It gives the four sentences something
+true to point at, costs one small screen, and leaves the one-plate design whole.
+
+#### A configuration that cannot be read
+
+**What it is.** A group's configuration can exist and be damaged, since until the edit
+screens exist it may be written by hand. The front server reports that and never puts
+the default in its place. No source says what the wizard shows.
+
+**What is known.** Without a configuration the wizard has no filaments, no profiles and
+no plate size, so no step can work. The user can do nothing about it except tell whoever
+wrote the document. The front server's sentence says that the configuration cannot be
+read and to tell whoever wrote it.
+
+| Option | What a user sees | What it costs |
+|---|---|---|
+| A red message in place of the step's content, on every step, with the front server's sentences and the reload glyph as the one control; the header stays, so the user can change to another group | That nothing can be done here until the document is mended, and why. The stored plate is untouched | One screen |
+| The wizard opens on the built-in default with a notification that the group's own configuration could not be read | The user can go on working | Parts sliced with profiles the group did not choose and perhaps for the wrong printer's plate, which is what the front server's rule exists to prevent |
+
+**Recommended:** the first. It follows the front server's rule, and the sentence names
+no "administrator", only whoever wrote the configuration.
+
+#### After a print is no longer followed
+
+**What it is.** A print stops being followed in two ways: a user confirms Stop
+following, or printer delivery's relay gives the print up after 24 hours of silence.
+No source says what the printer-status icon and the printer details show afterwards.
+
+**What is known.** Printer delivery ends such a delivery job as failed, with a sentence
+that the outcome is unknown. The icon's "Failed" means a fault at the printer that
+someone has to see to, and the printer details' Failed row says when the print stopped
+and at which layer; neither is true here. The daemon is still silent at that moment, so
+the printer's own state is not known either.
+
+| Option | What a user sees | What it costs |
+|---|---|---|
+| A state of its own: the icon shows what the daemon reports once it is heard from (Offline until then), and the printer details carry one line until the next print, "Stopped following Alex Chen's print at 11:40 am. How it ended is not known." or "Gave up following Alex Chen's print after 24 hours without news. How it ended is not known." | The truth, in words that never say the print failed | Printer delivery must report this ending apart from a failure at the printer, which is an ask on it; the line is the wizard's, since it is a state |
+| Shown as Failed | A red icon and "failed" for a print that may have finished well | Nothing to build. It sends someone to the printer to look for a fault |
+| Nothing is shown | The print vanishes from the panel; the sender, coming back, finds no trace of it | Nothing |
+
+**Recommended:** the first.
+
+#### Parts dropped on return and kept while the page is open
+
+**What it is.** Two rules, each with a source, treat an expired sliced plate
+differently. A page that is open when the sliced file expires keeps the parts, the
+layout and the settings and offers Slice again. A page that is next opened after the
+expiry finds the stored parts dropped and starts empty.
+
+**What is known.** A user who leaves a tab open over lunch keeps the plate; one who
+closes the laptop and opens it a minute after the expiry adds every part again. Inside
+Onshape, adding again is a click on each part; outside it, the files must be found
+again. No source gives the reason for dropping the parts; the likely one is that the
+expiry is the one moment at which storage is ever cleared.
+
+| Option | What a user sees | What it costs |
+|---|---|---|
+| Leave both rules | The difference above | Nothing |
+| A returning page keeps the plate too, opens on the Parts step and says "The slice of your earlier plate has expired; slice it again to print it." | The same plate either way; nothing is added twice | Stored parts are then cleared only by the user: by removing rows, or by a New plate action if one is added ([Starting a second plate](#starting-a-second-plate)). It changes a row of the architecture's table of state and the slice service's guide, which both say the stored work is kept until the page finds the sliced file expired |
+| Keep the plate on return for a longer, stated time (proposed: seven days from its last change), then drop it | The same plate for a week, then an empty wizard | A figure nobody has asked for, and a clock in the browser |
+
+**Recommended:** the second, together with a New plate action. Dropping work the user
+did not ask to drop is the more surprising of the two rules.
+
+#### The Layout step by keyboard
+
+**What it is.** The Layout step is a 3D view worked with a mouse. The accepted screens
+give it four keys (zoom to the instances, the view from above, select every instance,
+clear the selection) and no way to move, turn or lay down an instance without a
+pointer, and nothing is said of what a screen reader is told.
+
+**What is known.** The buttons of the step (Arrange, Auto-orient, the view buttons, and
+each message's button) are ordinary buttons and work by keyboard. Parts arrive lying
+their best way and Arrange places them, so a plate can be taken from the Parts step to
+the Send step by keyboard with the wizard's own layout. What cannot be done is to
+choose another face or place an instance by hand.
+
+| Option | What a user sees | What it costs |
+|---|---|---|
+| Leave it: the wizard's own layout by keyboard, the user's by mouse | A keyboard user gets the layout the wizard chooses and cannot change it | Nothing. The limit is stated in [Accessibility](#accessibility) |
+| A list of the instances under the view, reachable by keyboard, each with "Lay it the best way", "Put back as modelled" and a turn of 45°; and the status line and the messages announced to a screen reader | A keyboard user can change how each instance lies and is turned, and Arrange places them | A second way to do part of what the view does, which no source has drawn |
+| Full control by keyboard: arrow keys move the selection, keys turn it, a key steps through the faces | Everything a mouse can do | A large design of its own, with gestures to test beside Onshape's |
+
+**Recommended:** leave it for phase 2, and take the second option up with the first
+user who needs it; the status line and the messages should be announced to a screen
+reader in any case, which costs little.
+
+#### Where the name of the printer comes from
+
+**What it is.** The panel calls the printer by a name, "Shop H2S", on the Send button,
+the print card, the icon and in many sentences. The name is the display name kept in
+the paired-printer record. No source says who gives it or where.
+
+**What is known.** The pairing form has one field, for the code. The daemon knows the
+printer it talks to, and a Bambu printer has a name of its own that its owner set.
+
+| Option | What a user sees | What it costs |
+|---|---|---|
+| The daemon sends the printer's own name when it is paired | Nothing to type; the name is whatever the printer is called at the printer | Printer delivery must read the name and pass it on. A name nobody chose for this purpose may be long or unhelpful |
+| Whoever starts the daemon gives it a name then, beside the pairing code | A name chosen for the group | One more thing to do at the computer beside the printer |
+| A second field on the pairing form, "Name this printer", filled with the printer's own name as a start | The user who pairs chooses, and can see the name others will see | One more field in the wizard, and the name becomes text a user wrote, shown to the group as text only |
+
+**Recommended:** the first, with the third as a later refinement; it is printer
+delivery's to settle in phase 5.
 
 ### The other undecided items
 
-**Where advanced mode's settings come from.** Advanced mode needs, for about 295 settings,
-each one's name, section, group, kind, range and choices, and for each profile its value.
+#### Where advanced mode's settings come from
+
+Advanced mode needs, for Orca's about 295 settings less the programmatic ones,
+each one's name, section, setting group, kind, range and choices, and for each profile its value.
 The slice service holds the profiles, flattened from the pinned Orca. Options: the front
 server serves a list made from the slice service's profiles when the slice service's
 image is built (one source, always matching the Orca in use; costs a new thing to build
@@ -1486,21 +2190,32 @@ and a request on opening advanced mode), or the list is written into the wizard 
 programmatic is the slice service's list, and the wizard shows exactly what the slice
 service accepts.
 
-**Files other than binary STL.** The mockup's upload area named STL and 3MF. The slice
-service takes binary STL only and refuses a text STL. Since the browser never changes a
-part's bytes, it cannot convert either. Options: STL only, with the refusal sentence
-saying so (this guide's text); or the slice service learns to take text STL and 3MF, which
-is its own piece of work and, for 3MF, brings its own units. A user with a 3MF from
-another slicer cannot use it until then.
+#### Files other than binary STL
 
-**Sign-out.** Nothing in the design signs a user out; a sign-in lasts thirty days. On a
+The mockup's upload area named STL and 3MF, and its decision that "a 3MF file states its
+own units" is therefore not carried into this design. The slice service takes binary STL
+only and refuses a text STL with its own sentence, that a binary STL is needed
+([A part that cannot be used](#a-part-that-cannot-be-used)). Since the browser never
+changes a part's bytes, it cannot convert either. Options: binary STL only, as this guide
+has it, where a user with a text STL exports it again and a user with a 3MF from another
+slicer cannot use it at all; or the slice service learns to take text STL and 3MF, which
+is its own piece of work and, for 3MF, brings its own units and so a third source of a
+part's units. Proposed: binary STL only until a user asks for the others.
+
+#### Sign-out
+
+Nothing in the design signs a user out; a sign-in lasts thirty days. On a
 personal computer that is a convenience. On a computer shared under one browser profile
 the next person is signed in as the last, with the last one's parts in the browser's
 storage. Proposed: a **Sign out** link in the group details that ends the sign-in and
-clears the stored work, asking once more when there is a plate to lose. It costs one small
-request and nothing of Onshape's allowance; the next sign-in costs two calls.
+clears the stored work, with a confirmation when there is a plate to lose. It costs one
+small request, which the contract does not hold yet, and nothing of Onshape's allowance;
+the next sign-in costs two calls. The front server's guide leaves the same question open
+([Signing out](../front/README.md#signing-out)).
 
-**Agreement between the wizard's placement check and the slice service's.** Both apply the
+#### Agreement between the placement check of the wizard and of the slice service
+
+Both apply the
 same three rules, but each measures an instance's outline in its own code. What is known:
 the slice service refuses a plate whose instances are too close, and the mockup's thinned
 outlines were off by about 0.2 mm. Proposed: a set of plates, some just passing and some
@@ -1508,41 +2223,76 @@ just failing, kept with the contracts and run by both components' tests; and the
 holding instances a fraction of a millimetre further apart than the rule, so rounding can
 never make it pass a plate the slice service refuses.
 
-**Saying that a part will need supports.** The mockup marked a resting position "needs
-supports" above an invented amount of overhang. The guide's rule is that nothing is said
-about orientation, and the Layout step as accepted shows no such mark. What a user loses:
+#### Saying that a part will need supports
+
+Auto-orient's score charges for overhang above a threshold that was invented for the
+mockup's parts; that threshold is inside the score and is shown to no user. The guide's
+rule is that nothing is said about orientation, and the Layout step shows no mark that a
+part will need supports. What a user loses:
 the first hint that Supports should be on comes as an empty-layers failure on the Preview
 step, with its one-button fix. Options: leave it so; or warn on the Settings or Layout
 step when the plate's overhang is large and Supports is off, which needs a threshold tuned
 on real parts. Proposed: leave it until real parts show how often the failure happens.
 
-**The limit on wrong pairing codes.** Wrong codes are limited for each user, and the
-figure is not set; it is printer delivery's to settle in phase 5. The wizard's message
-says "a few minutes" and must be changed to match.
+#### The limit on wrong pairing codes
 
-**Who writes the one-line description of a plate** ("8 instances of Gusset Plate"): the
-page, with its send, or the front server, from the plate configuration. The page writing
+Wrong codes are limited for each user, and the figure is not set. It is printer
+delivery's to settle in phase 5, and its guide proposes ten a minute for each user, with
+the reasoning
+([The rate limits of phase 5](../delivery/README.md#the-rate-limits-of-phase-5)). The
+sentence is printer delivery's to write and must name the wait that the figure gives:
+with that proposal the wait is under a minute, not the "few minutes" of the example
+quoted under [Pairing a printer](#pairing-a-printer). Nothing here is the wizard's to
+decide beyond showing the sentence.
+
+#### Who writes the one-line description of a plate
+
+The description ("8 instances of Gusset Plate") is written either by the
+page, with its send, or by the front server, from the plate configuration. The page writing
 it is simpler; the front server writing it means another user's panel never shows text a
 page made up. Proposed: the front server.
 
-**Browsers other than Chrome.** Chrome is supported and Safari is not. Edge and Firefox
-are stated nowhere. Proposed: Edge is tested, since it shares Chrome's engine and schools
-issue it; Firefox is neither tested nor blocked.
+#### Browsers other than Chrome
 
-**What only real Onshape can settle,** in phase 4: how wide and how narrow the right panel
+No approved source names a supported browser. The approved design says only that Safari
+is not supported and that the panel depends on how Chrome treats an embedded page; this
+guide and the front server's guide both propose Chrome as the supported browser, for the
+reason given under [Inside Onshape's panel and outside it](#inside-onshapes-panel-and-outside-it).
+Options: Chrome alone is supported and tested, and other browsers are neither tested nor
+blocked, which costs nothing and leaves a user of Edge or Firefox to find out for
+themselves; or Edge is tested as well, since it is built on the same engine as Chrome and
+schools issue it, which costs a second run of the checks that need a real browser; or
+every current browser is supported, which the design inside Onshape's panel cannot
+promise, since it rests on Chrome's handling of an embedded page's cookie and storage.
+Proposed: Chrome is supported; Edge is tested; Firefox is neither tested nor blocked;
+Safari is shown the front server's plain page.
+
+#### What only real Onshape can settle
+
+In phase 4: how wide and how narrow the right panel
 can be dragged (Onshape publishes no limits); whether the panel, and so the page, stays
 open as the user moves between a document's tabs; whether full screen works from inside
 it; how Onshape's trackpad gestures sit beside the Layout step's; and whether Chrome keeps
 allowing an embedded page its cookie and storage, on which signing in and the stored plate
 both depend inside the panel.
 
-**Whether the browser's storage reliably holds a full plate.** Twenty-five parts of 7.5 MB
-is far more than a page usually stores. Browsers allow it, but may clear a site's storage
-when the disk is short. What a user would see is the wizard opening empty. Unmeasured;
-to be tried in phase 2 in a tab and in phase 4 in the panel, where the allowance may
-differ.
+#### Whether the browser's storage reliably holds a full plate
 
-**Whether progress reaches the page unheld when hosted.** Neither Cloudflare nor Railway
+Twenty-five parts of 7.5 MB
+is far more than a page usually stores. Browsers allow it, but may clear a site's storage
+when the disk is short, and may refuse a write when the site's allowance is full. Neither
+case is designed. What a user would see today is, for cleared storage, the wizard opening
+empty, and for a refused write, nothing until a refresh loses the part. Proposed: a part
+the browser refuses to store is still added and sliced, with an amber line on its row,
+"This part could not be saved in this browser, so a refresh will lose it.", and the
+refusal is reported to the server's log
+([Failures in the browser that reach no log](#failures-in-the-browser-that-reach-no-log)).
+Unmeasured; to be tried in phase 2 in a tab and in phase 4 in the panel, where the
+allowance may differ.
+
+#### Whether progress reaches the page unheld when hosted
+
+Neither Cloudflare nor Railway
 promises to pass a progress stream on without holding it back. If one holds it, the
 page asks for the latest progress every second or two instead; the user would see the
 slicing card move in steps
