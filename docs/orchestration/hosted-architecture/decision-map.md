@@ -21,7 +21,7 @@ and each table below follows one section of the spec, in the spec's order.
 | D1 | The design gives no time estimates. | 6 | `docs/plans/penguin-slicer-plan.md` | `docs/architecture.md` |
 | D2 | The design answers the questions the plan lists under phase 3, and of phase 5's security questions those about who may send to a printer, the pairing code, the relay's secret key, what the daemon keeps on its computer and showing who sent a print. | 28-30 | `docs/plans/penguin-slicer-plan.md` | |
 | D3 | The wizard's steps and the preview's drawing are left to phase 2's own design spec. | 30-31 | `docs/plans/penguin-slicer-plan.md` | |
-| D4 | The configuration's edit screens, reading parts from Onshape and what that costs in calls to Onshape are left to phase 4's own design spec. | 31-32 | `docs/plans/penguin-slicer-plan.md` | |
+| D4 | The configuration's edit screens are left to a design spec of their own, in no named phase; reading parts from Onshape and what that costs in calls to Onshape are left to phase 4's own design spec. | 31-32 | `docs/plans/penguin-slicer-plan.md` | |
 | D5 | The messages of the pairing exchange in detail, and what daemon telemetry holds, are left to phase 5's own design spec. | 32-33 | `docs/plans/penguin-slicer-plan.md` | `delivery/README.md` |
 
 ## Short answer
@@ -46,21 +46,21 @@ phrased it.
 
 | Id | Decision | Spec lines | Home | Also needed in |
 |---|---|---|---|---|
-| D16 | Term **group**: the users who share one configuration and one printer, one Onshape company or classroom named by Onshape's id for it; a user who belongs to none is a group of one, named by the user's Onshape id. | 75 | `docs/plans/penguin-slicer-plan.md` | `front/README.md` |
-| D17 | Term **current group**: the one group, of those a user belongs to, whose configuration and printer the user is using now. | 76 | `docs/plans/penguin-slicer-plan.md` | |
+| D16 | Term **group**: the users who share one configuration and one printer, one Onshape company or classroom named by Onshape's id for it; a user who belongs to none is a group of one, named by the user's Onshape id. | 75 | `docs/architecture.md` | `front/README.md`, `docs/plans/penguin-slicer-plan.md` |
+| D17 | Term **current group**: the one group, of those a user belongs to, whose configuration and printer the user is using now. | 76 | `docs/architecture.md` | |
 | D18 | Term **front server**: the one process that runs the server side and, from phase 5, the relay with it; hosted, it runs in its own container on Railway, and in phase 2 it is a process on the one machine (redefined by D362). | 77 | `docs/plans/penguin-slicer-plan.md` | |
-| D19 | Term **slice container**: the container on Railway that runs one slice service process and nothing else. | 78 | `docs/plans/penguin-slicer-plan.md` | |
-| D20 | Term **state bucket**: the object store that holds everything that must outlast a restart of the front server (each group's configuration and paired-printer record, the sliced files, a record of each delivery job). | 79 | `docs/plans/penguin-slicer-plan.md` | |
-| D21 | Term **log bucket**: the object store that holds log lines and daemon telemetry as files. | 80 | `docs/plans/penguin-slicer-plan.md` | |
-| D22 | Term **paired-printer record**: one small document per group in the state bucket holding the id of the group's daemon, the printer's display name, who paired it and when, which of the relay's secret keys the daemon's token was last issued under, and, until the daemon has its token, a hash of the pairing code. | 81 | `docs/plans/penguin-slicer-plan.md` | `delivery/README.md` |
-| D23 | Term **daemon id**: a random id a daemon makes for itself when its `pair` command is run, and keeps; it names the daemon in its token, in the paired-printer record and in the relay's memory. | 82 | `docs/plans/penguin-slicer-plan.md` | `delivery/README.md` |
-| D24 | Term **progress stream**: the connection, of server-sent events, on which a page follows a slice job or a delivery job. | 83 | `docs/plans/penguin-slicer-plan.md` | |
-| D25 | Term **part store**: the slice service's folder of uploaded parts, each kept for two hours after it was last used; it is a cache, and the browser's storage is the record of a user's parts. | 84 | `docs/plans/penguin-slicer-plan.md` | `slice/README.md` |
-| D26 | Term **user key**: the signed-in user's Onshape id, which the front server passes to the slice service with every request; the slice service compares user keys and never interprets them. | 85 | `docs/plans/penguin-slicer-plan.md` | `slice/README.md` |
-| D27 | Term **development identity**: a fixed made-up user and group that the front server signs in when a setting tells it to, for work on one machine. | 86 | `docs/plans/penguin-slicer-plan.md` | `front/README.md` |
-| D28 | Term **send**: the request by which a user's page asks the relay to print a sliced file; it creates a delivery job. | 87 | `docs/plans/penguin-slicer-plan.md` | |
-| D29 | Term **sync**: the request a daemon posts to the relay, carrying the printer's status and its delivery job's progress; the answer tells the daemon what to do. | 88 | `docs/plans/penguin-slicer-plan.md` | |
-| D30 | Term **held wait**: the time, up to 55 seconds, for which the relay holds back its answer to an idle daemon's sync, ending the moment a delivery job arrives for that daemon. | 89 | `docs/plans/penguin-slicer-plan.md` | |
+| D19 | Term **slice container**: the container on Railway that runs one slice service process and nothing else. | 78 | `docs/architecture.md` | |
+| D20 | Term **state bucket**: the object store that holds everything that must outlast a restart of the front server (each group's configuration and paired-printer record, the sliced files, a record of each delivery job). | 79 | `docs/architecture.md` | |
+| D21 | Term **log bucket**: the object store that holds log lines and daemon telemetry as files. | 80 | `docs/architecture.md` | |
+| D22 | Term **paired-printer record**: one small document per group in the state bucket holding the id of the group's daemon, the printer's display name, who paired it and when, which of the relay's secret keys the daemon's token was last issued under, and, until the daemon has its token, a hash of the pairing code. | 81 | `docs/architecture.md` | `delivery/README.md` |
+| D23 | Term **daemon id**: a random id a daemon makes for itself when its `pair` command is run, and keeps; it names the daemon in its token, in the paired-printer record and in the relay's memory. | 82 | `docs/architecture.md` | `delivery/README.md` |
+| D24 | Term **progress stream**: the connection, of server-sent events, on which a page follows a slice job or a delivery job. | 83 | `docs/architecture.md` | |
+| D25 | Term **part store**: the slice service's folder of uploaded parts, each kept for two hours after it was last used; it is a cache, and the browser's storage is the record of a user's parts. | 84 | `docs/architecture.md` | `slice/README.md` |
+| D26 | Term **user key**: the signed-in user's Onshape id, which the front server passes to the slice service with every request; the slice service compares user keys and never interprets them. | 85 | `docs/architecture.md` | `slice/README.md` |
+| D27 | Term **development identity**: a fixed made-up user and group that the front server signs in when a setting tells it to, for work on one machine. | 86 | `docs/architecture.md` | `front/README.md` |
+| D28 | Term **send**: the request by which a user's page asks the relay to print a sliced file; it creates a delivery job. | 87 | `docs/architecture.md` | |
+| D29 | Term **sync**: the request a daemon posts to the relay, carrying the printer's status and its delivery job's progress; the answer tells the daemon what to do. | 88 | `docs/architecture.md` | |
+| D30 | Term **held wait**: the time, up to 55 seconds, for which the relay holds back its answer to an idle daemon's sync, ending the moment a delivery job arrives for that daemon. | 89 | `docs/architecture.md` | |
 
 ## The shape
 

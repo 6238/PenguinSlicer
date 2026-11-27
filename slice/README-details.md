@@ -284,7 +284,9 @@ slicer". Tests: with one running and two queued, the queued ones report 1 and 2 
 the running one ends, the last reports 1. [D54, D55, D302]
 
 **Asked to stop, it finishes the running slice.** When `serve` receives SIGTERM (what a
-container host sends) or Ctrl-C, it refuses new slice jobs (`slice.busy`; *proposed*),
+container host sends) or Ctrl-C, it refuses new slice jobs with an answer of its own that the front server and the page
+try again without telling the user (never `slice.busy`, which a user is shown; the
+answer's name is to be settled; *proposed*),
 cancels the queued ones (`"cancel_reason": "shutdown"`; their pages submit them again;
 *proposed*), lets the running slice job run to its end, bounded by the time limit, keeps
 the HTTP interface answering until the front server has fetched and deleted that slice
@@ -295,8 +297,9 @@ the process, and Orca dies with it (`PR_SET_PDEATHSIG`). Replaces: `JobPool.shut
 which cancels every slice job, and the end of `serve`, which waits only until every Orca is
 gone. Error report: none new. Tests: a stop while a fake Orca runs ends that slice job
 `done` and `serve` exits only after the sliced file is deleted; a queued slice job ends
-`cancelled` with the reason shutdown; a submission after the stop is refused with
-`slice.busy`; a second stop cancels the running slice job. [D230, D306]
+`cancelled` with the reason shutdown; a submission after the stop gets the
+answer that is tried again, not `slice.busy`; a second stop cancels the running slice
+job. [D230, D306]
 
 ### Phase 3: hosted on Railway
 

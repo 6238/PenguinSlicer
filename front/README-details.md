@@ -462,7 +462,11 @@ follows.
 and stores it in the state bucket under the user key and the slice job's id, with
 (*proposed*) the time the slice ended. It then (*proposed*) tells the slice service it has
 stored the file, and the slice container deletes its own copy ([the slice service](../slice/README.md)). A sliced file is
-8.8 to 14.1 MB on the plates measured so far.
+8.8 to 14.1 MB on the plates measured so far. The front server stores the sliced file's
+summary ([the sliced file](../contracts/sliced-file.md#summary)) beside it in the state
+bucket, fetched with the file before the slice service is told, and serves both (added
+after the approved design: the Preview step needs the summary after the slice container
+has deleted its copy).
 
 **The state bucket's copy is the one everything uses.** The browser fetches it through the
 front server to draw the Preview step and to offer the download, and from phase 5 the
@@ -695,7 +699,10 @@ front server:
   the cookie. When a signed-in user types a code that a daemon is offering, the relay
   writes the paired-printer record for the user's current group; a send is accepted when
   the current group has a paired-printer record, and its delivery job goes to the daemon
-  that record names ([printer delivery](../delivery/README.md)).
+  that record names ([printer delivery](../delivery/README.md)). *Proposed:* a send
+  repeated with the same sliced file by the same user while its delivery job is live
+  answers with that delivery job, where the code as built answers
+  `delivery.job_in_flight`.
 - **holds the relay's secret key**, with which the relay signs the daemons' tokens, as an
   environment variable; replacing it is the relay's procedure
   ([printer delivery](../delivery/README.md)).

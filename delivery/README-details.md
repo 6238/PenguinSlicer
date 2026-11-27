@@ -185,6 +185,10 @@ it ([the architecture](../docs/architecture.md)). Every route of the front serve
 a request without a signed-in user except the sign-in routes, the daemon's routes (which
 carry the daemon's token) and the offer of a pairing code ([the front server](../front/README.md)).
 
+*Proposed:* a send repeated with the same sliced file by the same user while its delivery
+job is live answers with that delivery job, where the code as built answers
+`delivery.job_in_flight`.
+
 Unpairing removes the paired-printer record. The daemon's next request is refused, and
 the daemon says plainly that it has been unpaired and waits for `pair` to be run again.
 

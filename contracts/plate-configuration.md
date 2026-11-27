@@ -25,8 +25,18 @@ is true of the code as built.
   one error report listing every missing hash, and the wizard uploads those parts again
   and submits again.
 
-The routes, the field's name and the error report's code are proposed in
+*Proposed* (the design approved by the owner does not fix it): a part's `sha256`, the 64
+hexadecimal characters of the hash, in place of `stl`. The routes and the error report's
+code are proposed in
 [the slice service's detailed guide](../slice/README-details.md#to-be-built).
+
+- **What else in this file changes when this is built.** Five places are true of the code
+  as built and become untrue in phase 2: the opening ("with the STL files it names"); the `stl` row
+  of [Part](#part); the meaning of `MAX_PARTS` in [Limits](#limits) ("It bounds the
+  upload"); check 4 of [Checks](#checks), where a part's own checks move to its upload and
+  `slice.part_missing` comes to mean a hash missing from the part store; and the
+  [Example](#example). Also, from phase 3, `PLATE_SLICE_TIMEOUT_S` in [Limits](#limits)
+  becomes a setting of the slice service rather than a figure fixed in the code.
 
 ## Fields
 

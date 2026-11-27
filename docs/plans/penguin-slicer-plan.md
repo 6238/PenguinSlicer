@@ -20,7 +20,8 @@ says so.
 - **How the components fit together when hosted is designed** and approved by the owner
   (Thu 2026-11-26): it is in [the architecture](../architecture.md). Each component's guide says what
   that design asks of it and what of that is built.
-- **The phases, in the owner's order:** (1) finish the mockup and write the wizard's guide;
+- **The phases, in the owner's order:** (1) write the rest of the wizard's guide from the
+  accepted mockup;
   (2) the wizard and the front server outside Onshape, on one machine, with the slice
   service, ending in a downloaded sliced file; (3) the same hosted on Railway, with
   Onshape sign-in; (4) the wizard inside Onshape, with the Onshape source; (5) the real
@@ -33,12 +34,17 @@ says so.
 | Document | Read after | Explains |
 |---|---|---|
 | This plan | Nothing | What PenguinSlicer is, its terms, the standing requirements, where each component stands, and the phases |
-| [The architecture](../architecture.md) | This plan | What runs where when hosted, where each piece of state lives, restarts and deploys, security, the log |
-| A component's guide, `README.md` in its folder | This plan | What the component does, how to run and test it, what is built and what is to be built |
+| [The architecture](../architecture.md) | This plan | The hosted design's terms, what runs where when hosted, where each piece of state lives, restarts and deploys, security, the log, and what is still to be confirmed |
+| A component's guide: [slice](../../slice/README.md), [delivery](../../delivery/README.md), [wizard](../../wizard/README.md), [front](../../front/README.md) (the Onshape source has none yet) | This plan | What the component does, how to run and test it, what is built and what is to be built |
 | A component's `README-details.md` | Its guide | Everything someone changing the component needs: every figure, rule, error code and required test |
 | [contracts/](../../contracts/README.md) | This plan | The shapes that pass between components |
 | [The mockup's decisions](../mockups/print-wizard/DECISIONS.md) | This plan | Every design choice of the wizard's mockup, until the wizard's guide replaces it |
-| [The hosted architecture design](../specs/2026-11-25-hosted-architecture-design.md) | Nothing | The record of what the owner approved on Thu 2026-11-26; not kept current |
+| [The hosted architecture design](../specs/2026-11-25-hosted-architecture-design.md) | This plan | The record of what the owner approved on Thu 2026-11-26; not kept current, and needed only to check what was approved: nothing else depends on it |
+| [The map of the hosted design's decisions](../orchestration/hosted-architecture/decision-map.md) | The hosted architecture design | Which living document holds each decision of the approved design |
+
+Research, reference material and the build records of each piece of work are under
+`docs/research/`, `docs/reference/` and `docs/orchestration/`; none is needed to read the
+documents above.
 
 ## Terms
 
@@ -68,20 +74,20 @@ code.
 | **memory watchdog** | The slice service's thread that measures Orca's memory while it runs and stops Orca past the memory ceiling. |
 | **sliced file** | The `.gcode.3mf` file Orca writes, which the printer runs. |
 | **printer delivery** | The component that sends a sliced file to a printer and reports how the print goes. It has two halves, the relay and the daemon. |
-| **relay** | The half of printer delivery that runs on the server: it holds delivery jobs for the daemon and the printer's last status. |
+| **relay** | The half of printer delivery that runs inside its caller's process (the front server, from phase 5): it hands delivery jobs to the daemon and holds the printer's last status. |
 | **daemon** | The half of printer delivery that runs on the daemon's computer. It connects outward to the relay and talks to the printer on the local network. |
 | **the daemon's computer** | The computer next to the printer, on the printer's network, that runs the daemon. |
 | **caller** | The application that runs the relay and asks it to deliver sliced files: it signs users in and holds the sliced file. In PenguinSlicer it is the front server, from phase 5. |
-| **pairing code** | The code the daemon shows when its `pair` command is run. A user types it into PenguinSlicer once, which links the user's group to that daemon, and so to its printer; after that the code is dead. |
+| **pairing code** | The code the daemon shows when its `pair` command is run. A user types it into PenguinSlicer once, which links the user's group to that daemon, and so to its printer; after that the code is dead. As built it is still a lasting secret the caller presents; phase 5 changes that. |
 | **delivery job** | One sliced file on its way to one printer, from the moment it is sent until the print ends. |
 | **start command** | The message the daemon sends the printer to begin printing an uploaded file. |
 | **status document** | One message of the printer's own report of its state. |
 | **simulated printer** | A program that answers the daemon as an H2S would, over real network connections, from scripted status documents. |
 | **recording** | A file of status documents saved from the real printer by the daemon's `record` command. |
-| **daemon telemetry** | Messages the daemon sends about its own state to the server, where they are kept in the log. What they hold is not designed. |
+| **daemon telemetry** | Messages the daemon sends about its own state to the relay, after which they are kept in the log. What they hold is not designed. |
 | **wizard** | The component that is the step-by-step user interface, the code in the browser: the Parts, Settings, Layout, Preview and Send steps. It talks only to the front server. It works from 320 px, the narrowest width it must work at, and lays out wider when it has more room. |
 | **front server** | The component, and the one process, that the internet reaches: it serves the wizard's pages, signs users in through Onshape, passes parts and slice jobs to the slice service, keeps sliced files and configurations, and from phase 5 runs the relay as its caller. |
-| **group** | The users who share one configuration and one printer: one Onshape company or classroom, or a user alone who belongs to none. |
+| **group** | The users who share one configuration and one printer: one Onshape company or classroom, named by Onshape's id for it. A user who belongs to none is a group of one, named by the user's Onshape id. |
 | **advanced mode** | The wizard's view that fills the panel with every slicing setting. |
 | **printer-status icon** | The small pill at the right of the wizard's header that shows the printer's state; a click shows its details. |
 | **mockup** | A click-through imitation of the wizard that runs entirely in the browser, with nothing real behind it. |
@@ -106,13 +112,16 @@ to PenguinCAM later.
 
 - **[contracts/](../../contracts/README.md)** defines the shapes that pass between
   components (the plate configuration, the sliced file, the error report and the
-  progress report), each with example files. Not written yet: the part set, the
-  configuration document, and the contract between the wizard and the front server.
+  progress report), each with example files. Not written yet: the part set. Begun: the
+  [configuration](../../contracts/configuration.md), whose contract says what it must
+  hold and whose fields are not written yet, and the
+  [contract between the wizard and the front server](../../contracts/wizard-front-server.md),
+  which says what it must provide and whose routes are not written yet.
 - **The slice service**, in `slice/`, takes a plate configuration and its STL files through
   its HTTP interface, runs Orca under the memory watchdog and returns the sliced file and
   its summary ([its guide](../../slice/README.md)).
 - **Printer delivery**, in `delivery/`, takes a sliced file from the caller and gets it
-  printed: the relay on the server, the daemon on the daemon's computer, and the simulated
+  printed: the relay inside the caller's process, the daemon on the daemon's computer, and the simulated
   printer for tests ([its guide](../../delivery/README.md)).
 - **The wizard**, in `wizard/`, is the user interface: the code in the browser. None of it
   is built. [Its guide](../../wizard/README.md) is begun, with what the architecture asks
@@ -137,9 +146,11 @@ flowchart TB
     de --> pr["printer"]
 ```
 
-The wizard reaches nothing but the front server. The sliced file goes from the slice
+The wizard calls nothing but the front server. The sliced file goes from the slice
 service to printer delivery through the front server, which keeps it as the relay's
 caller. What runs where when hosted is in [the architecture](../architecture.md#the-shape).
+How the Onshape source's part set reaches the wizard is settled in phase 4's design spec;
+the calls to Onshape are the front server's.
 
 Rules that keep the components separate:
 
@@ -252,8 +263,9 @@ As of Thu 2026-11-26:
   be larger than 11 px. The build records of each version are in
   `docs/orchestration/mockup-v6/` to `mockup-v8/`.
 - **The hosted architecture** is designed and approved by the owner (Thu 2026-11-26):
-  [the architecture](../architecture.md). Almost none of it is built; each guide lists, under "To be
-  built", what it asks of that component.
+  [the architecture](../architecture.md). Almost none of it is built; each guide says what
+  it asks of that component: under "To be built" for the slice service and printer
+  delivery, and by phase for the wizard and the front server.
 - **The wizard, the front server and the Onshape source** have no code. The print branch holds code for
   selecting parts in Onshape and exporting them as STL files that has never run against
   real Onshape.
@@ -263,7 +275,7 @@ As of Thu 2026-11-26:
 The order is the owner's. Each phase that builds something starts with a design spec
 agreed with the owner, and a component's guide is updated as the phase changes it.
 
-### Phase 1: finish the mockup
+### Phase 1: the wizard's guide
 
 The owner has reviewed every step, the Layout step included, over versions 6 to 8, and
 accepted version 8 on Thu 2026-11-26. What remains is the rest of the wizard's guide. [The guide](../../wizard/README.md) is
@@ -277,7 +289,7 @@ look unless additive manufacturing is distinctly different; make the common case
 since most prints use one filament and one of a few profiles; keep every slicing setting
 reachable; and bring over what is needed from Orca's Prepare tab (arranging parts on the
 plate) and Preview tab (inspecting the sliced file layer by layer). The mockup is thrown
-away once the wizard's guide exists. The guide cannot settle the questions in
+away once the wizard's guide is complete. The guide cannot settle the questions in
 [DECISIONS.md](../mockups/print-wizard/DECISIONS.md)'s "Please react to these" on its
 own: each is either answered by the owner or carried into the guide with its backing,
 as an open choice.
@@ -307,13 +319,16 @@ stands in for each bucket.
 - **Components:** the wizard and the front server (each built for the first time), the
   slice service (extended as its guide lists under "To be built" for this phase: the part
   store, parts named by hash, the user key, one unfinished slice job for each user,
-  finishing the running slice when asked to stop), and
-  `contracts/` (the part set for parts from files, the contract between the wizard and
-  the front server, the configuration document).
+  finishing the running slice when asked to stop) together with the slice container's half
+  of [Restarts and deploys](../architecture.md#what-a-restart-does), with a test for each
+  row of the table "The slice container restarts", and `contracts/` (the part set for parts from files, the routes of the contract
+  between the wizard and the front server, the fields of the configuration).
 - **Already settled by [the architecture](../architecture.md#where-each-piece-of-state-lives):** how parts
   reach the slice service, where the sliced file is kept, how a page that has lost its
   state comes back to its work, and how the browser reaches the slice service (through
-  the front server, at one address).
+  the front server, at one address, as [the shape](../architecture.md#the-shape) says).
+  Everything under that section is built in this phase, except what it says of Send and
+  of delivery jobs, which waits for phase 5.
 - **What it needs from the slice service, each open until the phase's design spec settles it:**
   - Settings. The HTTP interface takes four overrides (infill, walls, supports, brim), each
     with listed values; the mockup's advanced mode shows every setting of the process
@@ -344,15 +359,25 @@ stands in for each bucket.
 The wizard, the front server and the slice service hosted on Railway, behind Cloudflare,
 at `https://penguinslicer.popcornpenguins.com/`, with Onshape sign-in. The design is
 [the architecture](../architecture.md): two containers, two buckets at Cloudflare R2, and no database.
+Railway is the host because it bills the memory a container actually holds ($10 for a
+gigabyte held for a month; the two containers hold about half a gigabyte between slices,
+about $7 a month while few people slice), it has no operating system to patch, and
+PenguinCAM already runs there. The buckets are at R2 because it has the three things the
+design needs of its object store
+([the architecture](../architecture.md#the-shape)).
 
 - **Done when** a user on another network opens the wizard at that address, signs in
   with Onshape, uploads parts, slices them and downloads the sliced file; a deploy of
   either container while they work costs them a pause and nothing else; and the owner's
   coding agents can read what happened from the log bucket.
-- **Components:** the front server (Onshape sign-in, the cookie, groups, the buckets, the
-  gathering of the log), the slice service (its limits as settings,
-  its log lines), the wizard (retrying, reloading on a new version), and the hosting
-  itself, which is new.
+- **Components:** the front server (Onshape sign-in, the cookie and the two cookie keys that encrypt it,
+  groups, the state bucket and the log bucket, the gathering of the log), the slice
+  service (its limits as settings, its log lines), the wizard (retrying, reloading on a
+  new version), the rules of
+  [Old and new versions together](../architecture.md#old-and-new-versions-together) (a
+  format number on each record in the state bucket, and an installed daemon kept working),
+  the command that reads the log bucket, the check that runs after each deploy, and the
+  hosting itself, which is new.
 - **First, what Railway does at a deploy,** since the standing requirement on deploys
   rests on it: whether one of the two containers can be deployed without the other, and
   how long a stopping container is given.
@@ -361,19 +386,23 @@ at `https://penguinslicer.popcornpenguins.com/`, with Onshape sign-in. The desig
   (6,000 MB is proposed), the time limit and the estimates. Every measurement so far is
   from aarch64 Linux and from plates under 2,600 MB.
 - **Onshape's allowance of calls.** Until the Onshape app is public, its calls count
-  against 2,500 a year on the owner's account. The hosted service makes two at each
-  sign-in and no others in this phase, and counts every one in the log.
+  against a yearly allowance of the account that owns it; Onshape's published figure is
+  2,500 calls a year on a free or education account, and which allowance the owner's
+  account has is still to be confirmed. The owner intends to make the app public; until
+  then development and testing with users must fit inside the allowance with room to
+  spare. The hosted service makes two calls at each sign-in and no others in this phase,
+  and counts every one in the log.
 - **Risks:** feasibility: everything listed in the architecture under
   [To confirm before building on it](../architecture.md#to-confirm-before-building-on-it) is believed
   and not checked, Railway's behaviour at a deploy and Orca's on Railway's machines
-  first among them; resources: an Onshape OAuth app registered for the hosted address,
+  first among them; resources: an Onshape app registered for the hosted address,
   a Railway account and a Cloudflare R2 account, with their secrets.
 
 ### Phase 4: inside Onshape
 
 The wizard in Onshape's right panel, and the Onshape source, which picks parts, exports
 them and reads the document's units. Onshape sign-in and the Onshape app are already
-there from phase 3.
+there from phase 3: the panel uses the same sign-in and the same routes as phase 3.
 
 - **Done when** a user opens PenguinSlicer in Onshape's right panel in a real Part Studio
   and a real Assembly, picks parts there, sees them arrive in the Parts step in the
@@ -382,8 +411,8 @@ there from phase 3.
   branch and brought into line with PenguinCAM's CNC integration), the wizard (its Onshape home), the front server (its calls to Onshape for parts), and
   `contracts/` (the part set from Onshape).
 - **Calls to Onshape.** Reading parts costs several calls for each part against the
-  yearly allowance ([the architecture](../architecture.md#sign-in)). The phase's design spec counts
-  them for each part before anything is built.
+  yearly allowance ([the front server's guide](../../front/README.md#signing-in)). The
+  phase's design spec counts them for each part before anything is built.
 - **Units from Onshape:** the units of the Assembly or Part Studio; failing that, the
   part's own units or Onshape's default units, whichever Onshape's API gives.
 - **Risks:** low in feasibility for the mechanism: PenguinCAM's CNC wizard already runs in
@@ -405,7 +434,7 @@ H2S. Daemon telemetry is part of this phase and is not designed.
   H2S through the relay and the daemon, the printer-status icon follows it to the end,
   every line of the hardware checklist in printer delivery's guide is answered, and daemon
   telemetry does what its own design says.
-- **Components:** printer delivery (the relay on the server, the daemon on the daemon's
+- **Components:** printer delivery (the relay in the front server, the daemon on the daemon's
   computer, the simulated printer's invented sequences replaced by recordings), and the wizard (the Send step and the printer-status icon), and the front server (the relay's
   caller, and the store for the relay's records).
 - **The session at the H2S.** One session at the H2S with the daemon's `record`
@@ -417,13 +446,16 @@ H2S. Daemon telemetry is part of this phase and is not designed.
   signs everyone in, so it is for tests on one machine only, with the relay and the daemon
   on the same computer; a relay the daemon reaches from another machine is the hosted front server of this phase. An agent prepares the print started by the daemon as a written walk and
   tries it against the simulated printer first.
-- **Already settled by [the architecture](../architecture.md#printers):** pairing with a code used
-  once, how often a daemon talks to the relay, what a restart of the front server does
-  to a print, and how the relay's secret key is replaced. What that asks of the relay and
-  the daemon is in [printer delivery's guide](../../delivery/README.md), under "To be
-  built".
+- **Already settled by the architecture:** pairing with a code used once and how often a
+  daemon talks to the relay ([Printers](../architecture.md#printers)), what a restart of
+  the front server does to a print
+  ([What a restart does](../architecture.md#what-a-restart-does)), and how the relay's
+  secret key is replaced ([Security](../architecture.md#security)). What that asks of the
+  relay and the daemon is in [printer delivery's guide](../../delivery/README.md), under
+  "To be built". The messages of the pairing exchange in detail are left to this phase's
+  design spec.
 - **Daemon telemetry.** A protocol by which the daemon sends messages about its own state
-  to the server from the moment it starts, where they are kept. It matters because the
+  to the relay from the moment it starts, where they are kept. It matters because the
   daemon runs on a wide variety of hardware and its problems are hard to foresee: a
   misconfigured network, what the daemon's computer can and cannot do, the user interface,
   the daemon's computer going to sleep or being overloaded, and the daemon timing out
@@ -447,8 +479,10 @@ H2S. Daemon telemetry is part of this phase and is not designed.
 
 The security questions of this phase are answered in
 [the architecture](../architecture.md#security): who may send to a printer, the pairing code, the
-relay's secret key and its replacement, what the daemon keeps on its computer, and
-showing who sent a print. One is still open, for the design of daemon telemetry: what
+relay's secret key and its replacement, and showing who sent a print. What the daemon
+keeps on its computer is in
+[printer delivery's detailed guide](../../delivery/README-details.md#a-daemon-that-was-off).
+One is still open, for the design of daemon telemetry: what
 proves a message comes from a paired daemon, what a message must never hold, and its
 size and rate limits. (The printer's certificate is not a question: by design the daemon
 accepts any, as printer delivery's guide says.)
@@ -463,9 +497,9 @@ Not part of the phases, and in no order.
 | **Taking Orca 2.5.x** | Orca 2.5.x packs the Bambu Lab profiles in one file, `BBL.opc`, that the script building the profile catalog cannot read yet. The pin stays at 2.4.2 until it can; the size of the work is unknown until the format is examined. |
 | **Moving the daemon to Rust or Go**, as one lightweight executable | Checked against the simulated printer, the tests built here and the telemetry protocol. |
 | **Returning to PenguinCAM** | It follows a working whole. |
+| **Edit screens for the configuration** | A feature of their own, in no phase yet, with a design spec of their own. Until they exist a group uses the built-in default, or a document the owner puts into the state bucket through Cloudflare's console, following the annotated example in [its contract](../../contracts/configuration.md). |
 | **Permissions inside a group** | Every user of a group may edit its configuration, pair its printer and send a print from anywhere. Limits are added if a group needs them. |
 | **More than one printer for a group** | The design links one group to one daemon. |
-| **Edit screens for the configuration** | A feature of their own. Until they exist a group uses the built-in default, or a document the owner puts in place by hand. |
 | **Making the Onshape app public** | It lifts the yearly allowance of calls, after which a user's groups are read again each day. |
 | **An asynchronous server for the held wait** | The front server spends one thread on each idle daemon, which serves about fifty; one route moves to a small asynchronous server when the number of daemons calls for it. |
 | **More than one slice container** | The design has one. |
