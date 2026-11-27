@@ -1,0 +1,10 @@
+{
+  "sha256": "9f2c515fe7a5c0923bded93155a72ec43fc785873ac22424e46ae088e85f715f",
+  "units": "in",
+  "measurements": {"triangles": 1288, "size_mm": [50.8, 50.8, 4.775], "volume_mm3": 9910.4},
+  "warnings": [
+    {"code": "slice.part_not_watertight",
+     "message": "This part is not watertight: its mesh has 14 open edges in 2 places. It may still slice and print. If the slice fails, look in your CAD program for faces that do not meet, then add the repaired part again.",
+     "detail": "open edges 14, separate pieces 2"}
+  ]
+}
