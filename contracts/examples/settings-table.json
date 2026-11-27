@@ -1,0 +1,182 @@
+{
+  "format": 1,
+  "orca_version": "2.4.2",
+  "settings": [
+    {
+      "name": "layer_height",
+      "kind": "number",
+      "label": "Layer height",
+      "section": "Quality",
+      "group": "Layer height",
+      "explanation": "Slicing height for each layer. Smaller layer height means more accurate and more printing time.",
+      "unit": "mm",
+      "per_variant": false,
+      "number_form": "decimal",
+      "min": 0
+    },
+    {
+      "name": "initial_layer_line_width",
+      "kind": "number",
+      "label": "First layer",
+      "section": "Quality",
+      "group": "Line width",
+      "explanation": "Line width of initial layer. If expressed as a %, it will be computed over the nozzle diameter.",
+      "unit": "mm or %",
+      "per_variant": false,
+      "number_form": "decimal_or_percent",
+      "min": 0
+    },
+    {
+      "name": "wall_loops",
+      "kind": "number",
+      "label": "Wall loops",
+      "section": "Strength",
+      "group": "Walls",
+      "explanation": "Number of walls of every layer.",
+      "per_variant": false,
+      "number_form": "integer",
+      "min": 0,
+      "max": 1000
+    },
+    {
+      "name": "sparse_infill_density",
+      "kind": "number",
+      "label": "Sparse infill density",
+      "section": "Strength",
+      "group": "Sparse infill",
+      "explanation": "Density of internal sparse infill, 100% turns all sparse infill into solid infill and internal solid infill pattern will be used.",
+      "unit": "%",
+      "per_variant": false,
+      "number_form": "percent",
+      "min": 0,
+      "max": 100
+    },
+    {
+      "name": "sparse_infill_pattern",
+      "kind": "choice",
+      "label": "Sparse infill pattern",
+      "section": "Strength",
+      "group": "Sparse infill",
+      "explanation": "Line pattern for internal sparse infill.",
+      "per_variant": false,
+      "choices": [
+        {"value": "rectilinear", "label": "Rectilinear"},
+        {"value": "grid", "label": "Grid"},
+        {"value": "cubic", "label": "Cubic"},
+        {"value": "gyroid", "label": "Gyroid"},
+        {"value": "crosshatch", "label": "Cross Hatch"}
+      ]
+    },
+    {
+      "name": "outer_wall_speed",
+      "kind": "number",
+      "label": "Outer wall",
+      "section": "Speed",
+      "group": "Other layers speed",
+      "explanation": "Speed of outer wall which is outermost and visible. It's used to be slower than inner wall speed to get better quality.",
+      "unit": "mm/s",
+      "per_variant": true,
+      "number_form": "decimal",
+      "min": 0
+    },
+    {
+      "name": "enable_support",
+      "kind": "choice",
+      "label": "Enable support",
+      "section": "Support",
+      "group": "Support",
+      "explanation": "Enable support generation.",
+      "per_variant": false,
+      "choices": [
+        {"value": "0", "label": "Off"},
+        {"value": "1", "label": "On"}
+      ]
+    },
+    {
+      "name": "support_type",
+      "kind": "choice",
+      "label": "Type",
+      "section": "Support",
+      "group": "Support",
+      "explanation": "Normal (auto) and Tree (auto) are used to generate support automatically. If Normal (manual) or Tree (manual) is selected, only support enforcers are generated.",
+      "per_variant": false,
+      "choices": [
+        {"value": "normal(auto)", "label": "Normal (auto)"},
+        {"value": "tree(auto)", "label": "Tree (auto)"},
+        {"value": "normal(manual)", "label": "Normal (manual)"},
+        {"value": "tree(manual)", "label": "Tree (manual)"}
+      ]
+    },
+    {
+      "name": "brim_type",
+      "kind": "choice",
+      "label": "Brim type",
+      "section": "Others",
+      "group": "Brim",
+      "explanation": "This controls the generation of the brim at outer and/or inner side of models. Auto means the brim width is analyzed and calculated automatically.",
+      "per_variant": false,
+      "choices": [
+        {"value": "auto_brim", "label": "Auto"},
+        {"value": "brim_ears", "label": "Mouse ear"},
+        {"value": "outer_only", "label": "Outer brim only"},
+        {"value": "inner_only", "label": "Inner brim only"},
+        {"value": "outer_and_inner", "label": "Outer and inner brim"},
+        {"value": "no_brim", "label": "No-brim"}
+      ]
+    }
+  ],
+  "process_values": {
+    "0.18mm Balanced Quality @BBL H2S 0.6 nozzle": {
+      "layer_height": "0.18",
+      "initial_layer_line_width": "0.62",
+      "wall_loops": "2",
+      "sparse_infill_density": "15%",
+      "sparse_infill_pattern": "crosshatch",
+      "outer_wall_speed": "200",
+      "enable_support": "0",
+      "support_type": "tree(auto)",
+      "brim_type": "auto_brim"
+    },
+    "0.24mm Balanced Quality @BBL H2S 0.6 nozzle": {
+      "layer_height": "0.24",
+      "initial_layer_line_width": "0.62",
+      "wall_loops": "2",
+      "sparse_infill_density": "15%",
+      "sparse_infill_pattern": "crosshatch",
+      "outer_wall_speed": "200",
+      "enable_support": "0",
+      "support_type": "tree(auto)",
+      "brim_type": "auto_brim"
+    },
+    "0.30mm Standard @BBL H2S 0.6 nozzle": {
+      "layer_height": "0.3",
+      "initial_layer_line_width": "0.62",
+      "wall_loops": "2",
+      "sparse_infill_density": "15%",
+      "sparse_infill_pattern": "crosshatch",
+      "outer_wall_speed": "500",
+      "enable_support": "0",
+      "support_type": "tree(auto)",
+      "brim_type": "auto_brim"
+    }
+  },
+  "catalog": {
+    "printers": [
+      {
+        "name": "Bambu Lab H2S 0.6 nozzle",
+        "printable_area": [[0, 0], [340, 0], [340, 320], [0, 320]],
+        "printable_height": 340
+      }
+    ],
+    "filaments": [
+      {"name": "Generic PETG @BBL H2S", "printers": ["Bambu Lab H2S 0.4 nozzle", "Bambu Lab H2S 0.6 nozzle", "Bambu Lab H2S 0.8 nozzle"]},
+      {"name": "Generic PETG-CF @BBL H2S", "printers": ["Bambu Lab H2S 0.4 nozzle", "Bambu Lab H2S 0.6 nozzle", "Bambu Lab H2S 0.8 nozzle"]},
+      {"name": "Generic PLA @BBL H2S", "printers": ["Bambu Lab H2S 0.4 nozzle", "Bambu Lab H2S 0.6 nozzle", "Bambu Lab H2S 0.8 nozzle"]}
+    ],
+    "processes": [
+      {"name": "0.18mm Balanced Quality @BBL H2S 0.6 nozzle", "printers": ["Bambu Lab H2S 0.6 nozzle"]},
+      {"name": "0.24mm Balanced Quality @BBL H2S 0.6 nozzle", "printers": ["Bambu Lab H2S 0.6 nozzle"]},
+      {"name": "0.30mm Standard @BBL H2S 0.6 nozzle", "printers": ["Bambu Lab H2S 0.6 nozzle"]}
+    ]
+  }
+}

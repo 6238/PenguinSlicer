@@ -1,0 +1,40 @@
+{
+  "slices": [
+    {
+      "job": "j4f2a91c0",
+      "user_key": "5f1e0c2a9b3d4e6f7a8b9c0d",
+      "plate_id": "9a2d6c41-7e0b-4f3a-b5c8-1d2e3f405162",
+      "submission_id": "0c4b8e12-5a6d-4f70-8192-a3b4c5d6e7f8",
+      "progress": {
+        "job": "j4f2a91c0",
+        "state": "done",
+        "stage": "reading_result",
+        "stage_label": "Reading the sliced file",
+        "fraction": 1.0,
+        "elapsed_s": 41.2,
+        "expected_s": 75,
+        "sequence": 38
+      },
+      "file_on_disk": true,
+      "ended_at": "2026-11-27T22:13:58Z"
+    },
+    {
+      "job": "j7c1d03ae",
+      "user_key": "5f1e0c2a9b3d4e6f7a8b9c0d",
+      "plate_id": "3f0c8f2e-6a1b-4d5e-9c27-8b14d0e6a5f1",
+      "submission_id": "b71e2a94-0d3c-4f8a-a6e5-2c9d17f04b38",
+      "progress": {
+        "job": "j7c1d03ae",
+        "state": "running",
+        "stage": "generating_supports",
+        "stage_label": "Checking and generating supports",
+        "fraction": 0.42,
+        "elapsed_s": 31.5,
+        "expected_s": 75,
+        "sequence": 17
+      },
+      "file_on_disk": false,
+      "ended_at": null
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "process": "p3c9e1f07",
+  "lines": [
+    {"n": 42, "time": "2026-11-27T22:13:05.412Z", "component": "slice", "event": "slice_job", "state": "running", "job": "j7c1d03ae", "user_key": "5f1e0c2a9b3d4e6f7a8b9c0d"},
+    {"n": 43, "time": "2026-11-27T22:13:58.207Z", "component": "slice", "event": "slice_job", "state": "done", "job": "j7c1d03ae", "user_key": "5f1e0c2a9b3d4e6f7a8b9c0d", "peak_mb": 612, "orca_s": 52.1}
+  ],
+  "dropped": 0,
+  "more": false
+}

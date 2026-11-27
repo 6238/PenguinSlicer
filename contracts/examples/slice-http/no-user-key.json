@@ -1,0 +1,8 @@
+{
+  "code": "slice.no_user_key",
+  "message": "The slicer was not told whose request this is.",
+  "where": {"stage": "checking"},
+  "remedy": "Try again; if it happens again, the server needs fixing.",
+  "retryable": false,
+  "detail": "POST /parts without X-Penguin-User-Key"
+}

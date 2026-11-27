@@ -1,0 +1,8 @@
+{
+  "code": "slice.part_too_detailed",
+  "message": "This part is too detailed to print here (over 7,500,084 bytes, the size of 150,000 triangles).",
+  "where": {"stage": "checking"},
+  "remedy": "Export the part with a coarser tessellation, or simplify it, and slice again.",
+  "retryable": false,
+  "detail": "upload Content-Length 7,500,085 bytes, cap 7,500,084"
+}

@@ -1,0 +1,15 @@
+{
+  "code": "slice.part_missing",
+  "message": "The slicer no longer has 2 of this plate's parts.",
+  "where": {
+    "stage": "checking",
+    "missing_parts": [
+      {"key": "bracket", "sha256": "f41155dd67adfc26a035de3b56c4997cae15252645388c8f583a1c74ec85f893", "units": "mm"},
+      {"key": "spacer", "sha256": "fb78e3c785af625f95c6c8d63c60354f5bcea552bc5bdf670a0f006ab8608f0d", "units": "mm"}
+    ]
+  },
+  "remedy": "Add the parts again and slice again.",
+  "action": "refresh_parts",
+  "retryable": false,
+  "detail": "missing from the part store: f41155dd67adfc26a035de3b56c4997cae15252645388c8f583a1c74ec85f893 (mm), fb78e3c785af625f95c6c8d63c60354f5bcea552bc5bdf670a0f006ab8608f0d (mm)"
+}

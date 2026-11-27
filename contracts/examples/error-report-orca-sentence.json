@@ -1,0 +1,10 @@
+{
+  "code": "slice.empty_layers",
+  "message": "Tower #1 has nothing to print between 9.9 and 11.34 mm high, so the layers above would start in mid-air.",
+  "where": {"height_mm": 9.9, "instance": "Tower #1", "stage": "slicing"},
+  "remedy": "Turn Supports on, or repair the part in CAD so it has no gap, and slice again.",
+  "retryable": false,
+  "detail": "orca code -100\nexit code 156\norca error_string: Failed slicing the model. Please verify the slicing of all plates on Orca Slicer before uploading.\norca warning_message: Object can't be printed for empty layer between 9.9 and 11.34.\nObject: Tower #1\nMaybe parts of the object at these height are too thin, or the object has faulty mesh\nrun found error, return -100, exit...",
+  "action": "enable_supports",
+  "orca_sentence": "Object can't be printed for empty layer between 9.9 and 11.34."
+}

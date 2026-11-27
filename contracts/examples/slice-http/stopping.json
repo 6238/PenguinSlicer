@@ -1,0 +1,8 @@
+{
+  "code": "slice.stopping",
+  "message": "The slicer is restarting.",
+  "where": {"stage": "queued"},
+  "remedy": "Your plate will be sliced as soon as the slicer is back.",
+  "retryable": true,
+  "detail": "asked to stop; finishing the running slice job before exiting"
+}
