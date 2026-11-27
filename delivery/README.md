@@ -1050,7 +1050,10 @@ waits on an event and never on a duration, and anything that depends on the orde
 events on a network is tested with fakes that let the test put those events in an exact
 order.
 
-**What the fast suite proves.** It opens no network connection and uses no real time.
+**What the fast suite proves.** It opens no network connection and, apart from two tests,
+uses no real time. Those two let the daemon's loop run on the real clock until the test
+stops it; rewriting them, with the four other tests that wait on the real clock in the
+slower suites, is the first piece of phase 5's work on printer delivery.
 The relay and the daemon each take their clock, their waiting and their randomness from
 outside, so a test can make ten minutes pass in a line. The daemon's real code for
 talking to the relay is run against the relay's real code inside one process, through a
