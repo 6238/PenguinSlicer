@@ -1,0 +1,20 @@
+{
+  "sliced_file": {
+    "slice": "3f9a1c2b",
+    "file": "Bracket_plus1-20261009-1432.gcode.3mf",
+    "size_bytes": 1843207,
+    "summary": {
+      "file": "Bracket_plus1-20261009-1432.gcode.3mf",
+      "instances": 3,
+      "print_time_s": 2145.0,
+      "filament_m": 5.37,
+      "filament_g": 16.28,
+      "layer_count": 200,
+      "warnings": [],
+      "part_warnings": []
+    },
+    "slice_ended_at": "2026-11-27T22:31:47Z",
+    "expires_at": "2026-11-28T00:31:47Z",
+    "expires_in_s": 6407
+  }
+}

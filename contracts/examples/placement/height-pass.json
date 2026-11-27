@@ -1,0 +1,29 @@
+{
+  "description": "A 10 by 10 by 340 mm post standing up, exactly the printable height, supports off",
+  "plate_configuration": {
+    "plate_id": "666ab342-7941-56b6-846e-463e71a5b9a1",
+    "submission_id": "c855927e-1e68-5494-a3b2-6351a9f08dec",
+    "parts": {
+      "post": {
+        "name": "Post-340",
+        "sha256": "d3ffaa9d94d2873dd7dd9da654ecbcd6855541b9cc60f13b5758b6916528d268",
+        "units": "mm"
+      }
+    },
+    "instances": [
+      {
+        "ref": "post",
+        "orientation": "+z",
+        "angle": 0,
+        "x": 170.0,
+        "y": 160.0
+      }
+    ],
+    "overrides": {
+      "enable_support": "0"
+    }
+  },
+  "expected": {
+    "accepted": true
+  }
+}

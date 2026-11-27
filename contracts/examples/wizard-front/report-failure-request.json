@@ -1,0 +1,1 @@
+{"page": "c1e07b3a-5d2f-4e91-8a6c-0f3b9d27e4a1", "what": "part_not_drawable", "step": "parts", "browser": "Chrome", "browser_version": "131.0", "software_3d": true, "part_sha256": "9f2c515fe7a5c0923bded93155a72ec43fc785873ac22424e46ae088e85f715f", "detail": "RangeError at mesh.js:212"}

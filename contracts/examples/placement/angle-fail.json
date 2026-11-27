@@ -1,0 +1,38 @@
+{
+  "description": "A bracket turned 37 degrees, 4.99 mm from an unturned bracket at the closest point of their outlines, supports off",
+  "plate_configuration": {
+    "plate_id": "9bd6ebed-a2ea-59b3-970a-696ee79b523b",
+    "submission_id": "66d5b4a7-b19d-5068-a240-2293f790cf90",
+    "parts": {
+      "bracket": {
+        "name": "Bracket",
+        "sha256": "f41155dd67adfc26a035de3b56c4997cae15252645388c8f583a1c74ec85f893",
+        "units": "mm"
+      }
+    },
+    "instances": [
+      {
+        "ref": "bracket",
+        "orientation": "+z",
+        "angle": 37,
+        "x": 100.0,
+        "y": 160.0
+      },
+      {
+        "ref": "bracket",
+        "orientation": "+z",
+        "angle": 0,
+        "x": 149.989936,
+        "y": 160.0
+      }
+    ],
+    "overrides": {
+      "enable_support": "0"
+    }
+  },
+  "expected": {
+    "code": "slice.placement_too_close",
+    "instance": "Bracket #1",
+    "other_instance": "Bracket #2"
+  }
+}

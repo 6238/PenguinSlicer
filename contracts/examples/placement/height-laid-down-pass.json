@@ -1,0 +1,29 @@
+{
+  "description": "The 341 mm post laid on its side and turned 30 degrees, so that it fits inside the margin, supports off",
+  "plate_configuration": {
+    "plate_id": "a7e1c3d8-6dd2-5129-a867-590e748833bd",
+    "submission_id": "e0c8061a-cf32-5bd0-a26b-fc37a5f9dc8f",
+    "parts": {
+      "post": {
+        "name": "Post-341",
+        "sha256": "c1f25129d561dcdaa8a2c3ec28712a32196d69ede714cba179a3281ddcac18c1",
+        "units": "mm"
+      }
+    },
+    "instances": [
+      {
+        "ref": "post",
+        "orientation": "+x",
+        "angle": 30,
+        "x": 170.0,
+        "y": 160.0
+      }
+    ],
+    "overrides": {
+      "enable_support": "0"
+    }
+  },
+  "expected": {
+    "accepted": true
+  }
+}
