@@ -1992,13 +1992,17 @@ worker (run in the same thread by the tests, through the same messages). A page 
 calls `setTimeout`, `setInterval`, `Date.now` or `fetch` directly fails the suite:
 `tests/seams.test.js` searches every `.js` and `.mjs` file under `wizard/src/` outside
 `wizard/src/seams/` for those names, reached directly or through the global object
-(`globalThis.fetch`, `self['fetch']`), skipping comments but not strings, and names each file
-and line. So the suite needs no network and never waits. `tests/page.test.js` holds
+(`globalThis.fetch`, `self['fetch']`, `Date['now']`), skipping comments but not strings or
+regular expression literals, and names each file and line. It does not see a name built from
+pieces (`'set' + 'Timeout'`, `Date[n]`), and it does not search for the other ways to reach
+the time or the network (`new Date()`, `performance.now`, `requestAnimationFrame`,
+`XMLHttpRequest`, `EventSource`, `WebSocket`), which the skeleton (item 2 of
+[By phase](#by-phase)) decides when it builds the seams. So the suite needs no network and never waits. `tests/page.test.js` holds
 `index.html` to the contract's rules: one version placeholder, no inline script, no `style`
 element or attribute, nothing loaded from another site. The tools' tests in
 `wizard/tests/python/` run in the same target, on pytest in a random order (pytest-randomly
-prints the seed in pytest's header, `Using --randomly-seed=<seed>`, and `-p randomly
---randomly-seed=<seed>` repeats an order; the target runs pytest without `-q`, which would
+prints the seed in pytest's header, `Using --randomly-seed=<seed>`, and passing that
+option repeats an order; the target runs pytest without `-q`, which would
 hide the header, and a test checks the seed is printed), each bounded at 120 seconds.
 
 **Tests in a browser** use Playwright for Python in the project's `uv` environment, driving

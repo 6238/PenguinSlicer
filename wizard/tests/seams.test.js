@@ -52,6 +52,30 @@ test('a comment marker inside a string does not hide what follows it', () => {
   assert.deepEqual(findForbidden('const u = `//`; Date.now();').map((f) => f.name), ['Date.now']);
 });
 
+test('Date.now reached by brackets is found', () => {
+  assert.deepEqual(findForbidden("const n = Date['now']();").map((f) => f.name), ['Date.now']);
+  assert.deepEqual(findForbidden('const n = Date [ "now" ];').map((f) => f.name), ['Date.now']);
+  assert.deepEqual(findForbidden('const n = Date[`now`];').map((f) => f.name), ['Date.now']);
+});
+
+test('an escaped quote does not end a string early', () => {
+  // Without the escape, the string would end at \' and the /* after it would hide fetch.
+  assert.deepEqual(findForbidden("const s = 'a\\'/*'; fetch(u); // */").map((f) => f.name), ['fetch']);
+  assert.deepEqual(findForbidden('const s = "a\\"/*"; fetch(u); // */').map((f) => f.name), ['fetch']);
+});
+
+test('a comment marker inside a regular expression literal does not hide what follows it', () => {
+  assert.deepEqual(findForbidden('const r = /a\\/*/; fetch(u); // */').map((f) => f.name), ['fetch']);
+  assert.deepEqual(findForbidden("const r = /'/; setTimeout(f); const q = /'/;").map((f) => f.name), ['setTimeout']);
+  assert.deepEqual(findForbidden('const ok = [/[/*]/, 1]; fetch(u); // */').map((f) => f.name), ['fetch']);
+  assert.deepEqual(findForbidden('if (x) return /\\/\\//.test(s); fetch(u);').map((f) => f.name), ['fetch']);
+});
+
+test('a division is not taken for a regular expression', () => {
+  assert.deepEqual(findForbidden('const h = a / 2; // fetch\nconst w = b / c; /* fetch */').map((f) => f.name), []);
+  assert.deepEqual(findForbidden('const h = (a) / 2 / 3; fetch(u);').map((f) => f.name), ['fetch']);
+});
+
 test('lines are counted across a block comment', () => {
   assert.deepEqual(findForbidden('/*\n\n*/\nfetch(u);'), [{ name: 'fetch', line: 4 }]);
 });
