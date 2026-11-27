@@ -129,6 +129,9 @@ What it never holds:
 
 ### What it exchanges, and under which contract
 
+The table names everything the front server talks to. Each thing that passes is
+explained in the section of this guide that deals with it.
+
 | With | What passes | The contract |
 |---|---|---|
 | The wizard | Pages; parts and plate configurations going up; progress and the sliced file coming down; the group's configuration; the list of settings for advanced mode; the wizard's reports about itself; from phase 5, sends and the printer's status | [The wizard and the front server](../contracts/wizard-front-server.md), whose exact requests are written with phase 2's design; failures as [error reports](../contracts/error-report.md), progress as [progress reports](../contracts/progress-report.md) |
@@ -186,7 +189,10 @@ The first time, Onshape shows the user its approval page. After that a user who 
 signed in to Onshape passes through the trip without being asked anything.
 
 **What starts a trip.** A request for one of the wizard's pages with no signed-in user
-starts one at once. Any other request with no signed-in user is answered that the user
+starts one at once; inside Onshape's panel the first trip in a browser starts from a
+button instead
+([The cookie inside Onshape's panel](#the-cookie-inside-onshapes-panel)). Any other
+request with no signed-in user is answered that the user
 is not signed in, and that answer is what tells an open page to make the trip: it does
 so by itself, at a moment when the user is not in the middle of a gesture, and comes
 back to the same step with the plate as it was. Nothing is lost by it, because the
@@ -325,9 +331,12 @@ there is PenguinCAM's, because it is known to work in production.
   browser, is the baseline the design relies on. A trip the user never sees, with no
   button and no window, is what phase 4 tries for and does not rely on.
 - **After that the sign-in is not felt.** A user can only see the panel while signed in
-  to Onshape, and whenever the cookie is missing or has run out a trip replaces it
-  without asking the user anything. So inside the panel the sign-in lasts as long as the
-  user is signed in to Onshape.
+  to Onshape, and each use of the panel extends the cookie, so a user who opens the
+  panel at least once in thirty days never meets the button again in that browser. For
+  that user the sign-in lasts as long as they are signed in to Onshape. A cookie that
+  is missing or has run out is replaced by one click on Connect, as the first time; if
+  the unseen trip proves possible, it is replaced without the user being asked
+  anything.
 - **A different person at the same browser.** When Onshape says that the person signed
   in to it is not the one the cookie names, the sign-in is made again for that person,
   by the same trip. The page tells the front server whom Onshape names; the front
@@ -567,7 +576,8 @@ A stream that connects late gets the latest progress report at once, so a reconn
 page catches up in one message. The page counts on the fifteen seconds: it treats a
 stream that has carried nothing for 45 seconds as failed.
 
-One user may hold at most four progress streams at once
+One user may hold at most four progress streams at once. The figure is this guide's
+proposal
 ([How many users at once](#how-many-users-at-once-and-what-happens-when-the-threads-run-out)).
 
 A slice job is reported finished on the stream only once its sliced file is in the
@@ -735,9 +745,9 @@ the reload glyph in the wizard's header.
 no saved document gets the **built-in default**, which names the profiles of the Bambu
 Lab H2S, the Popcorn Penguins' printer, so a new group can slice without setting
 anything up. A group whose saved document is invalid (damaged, or of a format the front
-server does not know) gets the built-in default in its place as well. The saved file is left untouched, so a
-hand-written document is never lost to a typing mistake, and the front server writes an
-error to the log naming the group and what is wrong.
+server does not know) gets the built-in default in its place as well. The saved file is
+left untouched, so a hand-written document is never lost to a typing mistake, and the
+front server writes an error to the log naming the group and what is wrong.
 
 With every configuration the front server gives the name of the configuration in use:
 the group's name, or that it is the default. The wizard's header shows that name, which
@@ -863,7 +873,7 @@ PenguinSlicer is deployed continuously: a change goes out when it is ready, at a
 hour, while people are using it. A restart of the front server is therefore routine,
 and the rule is that it interrupts no user and loses nothing a user did. One thing is
 outside the rule: from phase 5, a pairing code typed just after a restart must be typed
-again, as the last row of the table says.
+again, as the last row of the table below says.
 
 ### Why nothing is lost
 
@@ -1061,8 +1071,11 @@ server writes what it has gathered.
 ## The limits that matter
 
 Each figure, what it protects and where it comes from. "The design's choice" means a
-figure this design sets, which nobody else imposes and which has not been measured. A
-figure that is a length of time is checked by a test with a clock the test moves, so no
+figure this design sets, which nobody else imposes and which has not been measured.
+"This guide's proposal" marks three figures that this guide puts forward and that have
+not been ruled on; they are explained under
+[How many users at once](#how-many-users-at-once-and-what-happens-when-the-threads-run-out).
+A figure that is a length of time is checked by a test with a clock the test moves, so no
 test waits; the last column is filled only where the check is something else. The
 limits of the relay (how long it holds an idle daemon's request, how many pairing
 codes may be offered a minute) are in
@@ -1073,9 +1086,9 @@ the page keeps retrying is in
 | Limit | Figure | What it protects | Where it comes from | Checked otherwise than by a moved clock |
 |---|---|---|---|---|
 | Threads serving requests | 100 | The front server's memory, and a known ceiling on what it does at once | The design's choice | The once-a-minute log line |
-| Idle daemons served | About fifty | Room left for users' requests | The design's choice, within the 100 threads | A test that holds that many open; the same log line |
-| Pages following a slice job or a print at once | Forty | A user's request finding a free thread | The design's choice, within the 100 threads | The same test and log line |
-| Progress streams one user may hold | Four | One user not taking every thread | The design's choice | A test with a fifth stream |
+| Idle daemons served | About fifty | Room left for users' requests | This guide's proposal, within the 100 threads | A test that holds that many open; the same log line |
+| Pages following a slice job or a print at once | Forty | A user's request finding a free thread | This guide's proposal, within the 100 threads | The same test and log line |
+| Progress streams one user may hold | Four | One user not taking every thread | This guide's proposal | A test with a fifth stream |
 | One part | At most 7.5 MB | The slice service's checks and memory | The plate configuration's contract | A test at the limit; one real upload |
 | A sliced file | At most 50 MB; 8.8 to 14.1 MB so far | Every fetch staying inside the 100 MB Cloudflare allows one request | The design's choice; the range is measured on the plates sliced so far | A test with a larger file; the log line that records each stored file's size |
 | A progress stream with nothing to report | A line at least every 15 seconds | The stream staying open, and the page's 45 seconds | Cloudflare's and Railway's limits | |
@@ -1126,15 +1139,20 @@ of these holds one for as long as it lasts:
   three;
 - an upload or a download in progress, and every short request for the moment it takes.
 
-**The target** is about fifty idle daemons and forty pages following a slice job or a
-print at once. With three threads following slice jobs, that leaves seven for uploads,
-downloads and short requests. The use intended at first, a few groups with a printer
-each, is far below it.
+**The target, which is this guide's proposal,** is about fifty idle daemons and forty
+pages following a slice job or a print at once. The sum is 50 threads for idle daemons,
+40 for pages following, 3 for the front server's own following of slice jobs and 7 left
+for uploads, downloads and short requests: 100. The use intended at first, a few groups
+with a printer each, is far below it.
 
-**One user may hold at most four progress streams.** Without a limit, one user with
-fifty tabs open would hold fifty threads. A fifth stream is refused, with an answer
-that says the user has too many open; what that page then shows is the wizard's to
-design ([The fifth progress stream](#the-fifth-progress-stream)).
+**One user may hold at most four progress streams,** which is this guide's proposal as
+well. Without a limit, one user with fifty tabs open would hold fifty threads; with it,
+ten users with four streams each fill the forty. A fifth stream is refused, with an
+answer that says the user has too many open; what that page then shows is the wizard's
+to design ([The fifth progress stream](#the-fifth-progress-stream)).
+
+The three proposed figures are listed, with what depends on them, under
+[The figures for users at once](#the-figures-for-users-at-once).
 
 **When no thread is free, a request waits its turn.** The page's retrying covers the
 wait: nothing for 20 seconds, then the message that the server is being slow, then
@@ -1238,9 +1256,9 @@ the front server's own.
 | The group's saved configuration is invalid | No error. The wizard works with the built-in default, and its header names the default | Whoever wrote the document reads what is wrong in the log |
 | The sliced file has expired | That it has expired | Slice the plate again |
 | There is no such sliced file of theirs | That it is not known | Slice the plate again |
-| A sliced file larger than 50 MB reached the front server | That the sliced file is too large to keep. In practice the slice service ends such a slice first, with its own sentences | Slice fewer parts on the plate |
+| A sliced file larger than 50 MB reached the front server | That the sliced file is too large to keep. In practice the slice service ends such a slice first, with its own sentences | Put fewer instances on the plate, or use a new plate |
 | The user already holds four progress streams | The wizard's to design | Close a tab |
-| The slice service is stopping for a deploy | The slice shown as waiting, with words that the slicer is restarting | Nothing: the page submits again by itself |
+| The slice service is stopping for a deploy | The slice shown as waiting, with words that the slicer is restarting | Nothing: the page submits again by itself, for up to 300 seconds |
 | The slice service did not answer | Nothing at first, then that the server is being slow | Nothing: the page retries |
 | The state bucket did not answer | The same | Nothing: the page retries |
 
@@ -1373,8 +1391,9 @@ reading a signed-in user's groups once a day.
 ## What is undecided or unmeasured
 
 What remains is what only the real host, real Onshape or real Chrome can show, and
-four points that the design leaves open. Each item says what is to be learned, why it
-matters and what decision depends on it.
+five points that the design leaves open, one of which is three figures this guide
+proposes. Each item says what is to be learned or settled, why it matters and what
+decision depends on it.
 
 ### About the host
 
@@ -1431,14 +1450,17 @@ To be learned: the monthly bill. By Railway's published rates the two containers
 together cost about $7 a month with a few slices a day, and the buckets cost cents; the
 figure is the architecture's
 ([To confirm before building on it](../docs/architecture.md#to-confirm-before-building-on-it)).
-What depends on it: nothing in the design unless the real figure is several times
-larger.
+Why it matters: the owner pays it, and anyone with an Onshape account may slice. What
+depends on it: nothing in the design unless the real figure is several times larger.
 
 #### A daemon through Cloudflare
 
 To be learned: whether Cloudflare's protection against automated clients ever
-challenges a daemon's requests. It concerns the front server because the daemon's
-address is the front server's. The item is printer delivery's
+challenges a daemon's requests. Why it matters: a daemon cannot answer a challenge
+meant for a browser, so a challenged daemon receives no sends. What depends on it:
+whether the daemon's requests need an exception at Cloudflare. It concerns the front
+server because the daemon's address is the front server's. The item is printer
+delivery's
 ([Whether Cloudflare challenges a daemon](../delivery/README.md#whether-cloudflare-challenges-a-daemon)).
 
 ### About Onshape and Chrome
@@ -1486,8 +1508,9 @@ Onshape until the app is public, and what
 #### Which allowance the owner's account has
 
 To be learned: which kind of account owns the app. 2,500 calls a year is Onshape's
-figure for a free or education account. The design spends so little that only a much
-smaller figure would change anything.
+figure for a free or education account. Why it matters: every count of calls in this
+guide is set against that figure. What depends on it: the design spends so little that
+only a much smaller figure would change anything.
 
 #### Whether a second Onshape app shares the allowance
 
@@ -1505,9 +1528,10 @@ least one call beyond the calls for parts, and phase 4's count must include it.
 
 #### What Onshape answers for an account with no company or classroom
 
-To be learned: what Onshape returns for such an account. The design says such a user is
-a group of one, named by their own Onshape id, and the sign-in must reach a group of
-one from whatever the answer is.
+To be learned: what Onshape returns for such an account. Why it matters: signing in is
+open to anyone, so such accounts will arrive, and each is a group of one, named by the
+user's own Onshape id. What depends on it: only how the sign-in recognises the case; it
+must reach a group of one from whatever the answer is.
 
 #### Replacing the Onshape app's secret
 
@@ -1529,6 +1553,22 @@ them, which removes most of its size; any design that keeps part of the sign-in 
 server instead would give up "no sessions" for that part.
 
 ### Left open by the design
+
+#### The figures for users at once
+
+Three figures are this guide's proposal and have not been ruled on: about fifty idle
+daemons served, forty pages following a slice job or a print at once, and at most four
+progress streams for one user. They are sized to the 100 threads: 50 + 40 + 3 for the
+front server's own following of slice jobs + 7 for uploads, downloads and short
+requests = 100
+([How many users at once](#how-many-users-at-once-and-what-happens-when-the-threads-run-out)).
+Why it matters: past the target a request waits for a free thread, which a user sees
+as a slow server, and a user's fifth stream is refused, so the figures decide when a
+user first meets a limit; the use intended at first is far below all three. What depends on them: the test that holds the target
+open, the refusal of a fifth stream, and what the fifth tab shows
+([The fifth progress stream](#the-fifth-progress-stream)). Changing a figure changes
+nothing else in the design, provided the sum stays within the 100 threads; whether 100
+is itself safe waits on [The front server's memory](#the-front-servers-memory).
 
 #### A configuration that names a profile the catalog has lost
 
@@ -1566,7 +1606,9 @@ with the send.
 
 The front server refuses a user's fifth progress stream. With a plate for each tab, a
 user with several tabs slicing or following a print could meet that limit, and what the
-fifth tab shows is not designed. The item is the wizard's to settle. One answer costs
+fifth tab shows is not designed. The item is the wizard's to settle
+([its guide](../wizard/README.md#open-items-of-the-other-guides-that-would-change-the-panel)).
+One answer costs
 the front server nothing new: the page without a stream asks for the latest progress
 report by short requests, as in the fallback under
 [Whether progress arrives as it is sent](#whether-progress-arrives-as-it-is-sent), and
