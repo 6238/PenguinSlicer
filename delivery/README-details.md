@@ -74,6 +74,12 @@ it replaces in the code as built, the error report it produces where there is on
 the tests it needs. When an item is built, its text moves into the body of this file and
 [README.md](README.md) is updated to match.
 
+Names and figures marked *proposed* below are this guide's suggestions; the design
+approved by the owner does not fix them, and the phase's design spec settles them. The
+tests listed in each paragraph "*Tests:*" are likewise this guide's proposal, derived from
+the design; the design itself requires tests for the restarts of the front server and for
+the replacement of the relay's secret key.
+
 **Terms used here.** A **group** is the users who share one configuration and one
 printer (one Onshape company or classroom, or one user alone); a user's **current
 group** is the one whose printer the user is using now. The **front server** is the one
@@ -108,7 +114,7 @@ and what daemon telemetry holds, are left to phase 5's own design spec
 #### Pairing
 
 Pairing links a group to the daemon beside its printer, and the pairing code is used
-once.
+once. Pairing needs the code on the daemon's screen.
 
 1. **The daemon makes the code and its daemon id.** The `pair` command makes a pairing
    code (forty random bits, as built) and a daemon id, shows the code, and offers both to
@@ -147,13 +153,14 @@ daemon trades its code every 30 s (`EXCHANGE_INTERVAL`) for as long as it has no
 The relay instead keeps what it knows of each daemon by daemon id, writes the
 paired-printer record, and checks an offered code against the hash in it. The daemon
 gains its daemon id, offers it with its code, and makes a new code after fifteen minutes.
-The same answer for every refusal is kept: as built every refused exchange is
-`404 {"error": "not paired"}`.
+As built every refused exchange is `404 {"error": "not paired"}`; keeping that status and
+body for a refused offer is *proposed*.
 
-*Error report:* a typed code that no daemon is offering, or any other wrong code, is a
-new error report (retryable) saying that no daemon is showing that code and to try again
-in a moment; one code serves every wrong case. Over the limit for the user it is
-`delivery.rate_limited`, as built.
+*Error report:* a typed code that no daemon is offering, or any other wrong code, gets the
+same answer, telling the user that no daemon is showing that code and to try again in a
+moment (the design fixes that sentence and that the answer is the same). That this answer
+is a new error report, retryable, with one code for every wrong case, is *proposed*; so is
+`delivery.rate_limited`, as built, for wrong attempts past the user's limit.
 
 *Tests:* a typed code a daemon is offering writes the record for the current group, with
 the hash, and the next offer gets a token naming the daemon id and the group; the hash is
@@ -184,24 +191,24 @@ the daemon says plainly that it has been unpaired and waits for `pair` to be run
 *Replaces in the code as built:* `identify` answers a `Team` whose pairing code is the
 only field the relay trusts, and a send is keyed on that code; one job slot per code
 already gives one delivery job at a time, and a final report is already kept 24 hours
-(`FINAL_TTL_SECONDS`), but in memory. `identify` instead answers the user key, the
-user's display name and the current group, and the send looks up the group's
-paired-printer record. There is no unpairing as built: a token verifies by its signature
+(`FINAL_TTL_SECONDS`), but in memory. The send instead looks up the group's
+paired-printer record; *proposed*: `identify` answers the user key, the user's display
+name and the current group. There is no unpairing as built: a token verifies by its signature
 alone (`authenticated_code` in `routes.py`), and the only refusal a daemon meets is
 `401 {"error": "repair"}` for a token that does not verify, on which the daemon blanks
 its token and trades its code again (`TokenRejected` in `run_loop.py`). Under the design a
-token that verifies but names a daemon no paired-printer record names is refused with an
-answer of its own, and the daemon stops syncing, says it has been unpaired and how to
-pair again, and waits.
+token that verifies but names a daemon no paired-printer record names is refused, and the
+daemon says it has been unpaired and waits. *Proposed:* the refusal is an answer of its
+own, distinct from `repair`, and the daemon's message also says how to pair again.
 
-*Error report:* a send for a group with no paired-printer record is `delivery.not_paired`,
-whose meaning changes from "the request's identity has no pairing code" to "the current
-group has no paired-printer record". The unpaired daemon's answer is not an error report
-to a user: it is the daemon's log line.
+*Error report:* *proposed*: a send for a group with no paired-printer record is
+`delivery.not_paired`, whose meaning changes from "the request's identity has no pairing
+code" to "the current group has no paired-printer record". *Proposed:* the unpaired
+daemon's answer is not an error report to a user but the daemon's log line.
 
 *Tests:* a send with a record goes to the daemon it names and no other; a send without
-one is `delivery.not_paired`; a second send while the daemon holds a delivery job is
-refused as built (`delivery.job_in_flight`); a record of an ended delivery job is read
+one is refused; a second send while the daemon holds a delivery job is refused
+(*proposed*: as built, `delivery.job_in_flight`); a record of an ended delivery job is read
 back for a day and gone after; after unpairing, the daemon's next sync is refused, its
 log says it was unpaired and what to run, and it sends nothing more until `pair` is run.
 
@@ -267,23 +274,26 @@ printing, whether PenguinSlicer sent the print or someone started it at the prin
 screen, so it has nothing to tell that daemon that cannot wait ten seconds.
 
 **What the relay concludes from silence.** A daemon is online if its last sync was within
-2 minutes; past that the printer-status icon shows Offline and Send is disabled. A
+2 minutes; past that the printer-status icon shows Offline and Send is disabled (a
+healthy idle daemon is never silent for much more than a minute, so two minutes is two
+missed rounds). A
 running delivery job's report is fresh if the daemon's last sync was within 40 seconds;
 past that it is marked stale, and that is how long a daemon that died during a print goes
 unnoticed (four missed syncs at ten seconds). A stale delivery job whose print was started
 may be given up by the user ("stop following"), which lets the relay accept the next send
 once the daemon is back and the printer is idle.
 
-**After a restart of the front server** every held sync closes at once, and each daemon
+**After a restart of the front server** every held sync closes at the same moment, and each daemon
 waits a short random time before it syncs again, so they do not all arrive together.
 
 *Replaces in the code as built:* the daemon syncs every 5 s when nothing changes
 (`SYNC_INTERVAL`) and at most once a second when a delivery job's progress changes
 (`PROGRESS_SYNC_SECONDS`); the relay answers every sync at once; a running delivery job's
 report is stale after 20 s (`STALE_AFTER_SECONDS` in `deliveries.py`). The relay gains the
-held wait. The daemon gains the thread that holds a sync, a sync each second while it
-takes a delivery job, the 10-second rhythm during a print, and the random wait before it
-syncs again after losing the relay; the stale limit becomes 40 seconds. Already built and
+held wait. The daemon gains the thread that holds a sync, the 10-second rhythm during a
+print, and the random wait before it syncs again after losing the relay; the stale limit
+becomes 40 seconds. A sync each second while it takes a delivery job follows from the
+table above; replacing the built once-a-second-on-progress rule with it is *proposed*. Already built and
 kept: a sync at once when the snapshot's `state` changes (`_sync` in `run_loop.py`); the
 answer carrying the job, its `cancel` and `start_granted`; online within 2 minutes
 (`STATUS_ONLINE_SECONDS`, `DAEMON_ONLINE_SECONDS`); the refusal of a send to a busy or
@@ -317,10 +327,10 @@ start gate's grant (`start_granted_to`, set by `grant_start` in `relay.py`) live
 process's memory, so a restarted relay answers `404 delivery.job_unknown` for every
 delivery job and refuses a held job at the start gate (`unknown`); see
 [Restarts and cleanup](#restarts-and-cleanup) and "One relay process" under
-[Delivery jobs](#delivery-jobs). The grant must be written to the store before the gate
-answers yes. `delivery.job_unknown` then means only an id the relay never had or whose
-record has gone, and `delivery.daemon_never_reported` ("no daemon heard since the relay
-started") means no daemon heard since the printer was paired.
+[Delivery jobs](#delivery-jobs). *Proposed:* the grant is written to the store before the
+gate answers yes; `delivery.job_unknown` then means only an id the relay never had or
+whose record has gone; and `delivery.daemon_never_reported` ("no daemon heard since the
+relay started") means no daemon heard since the printer was paired.
 
 *Tests:* the front server restarted while a delivery job waits for its daemon: the
 daemon's next sync is accepted and receives the job from its record; restarted during a
@@ -344,13 +354,16 @@ off.
 or a `stream`; a stream is copied once into the relay's spool directory
 (`SlicedFileStore` in `sliced_files.py`), and the daemon fetches the file from
 `GET /printer/download/<token>`, with the token in the path as its whole authority
-(30 a minute per address, `DOWNLOAD_LIMIT`). The spool directory and its sweep go. The age
+(30 a minute per address, `DOWNLOAD_LIMIT`). The design does not say how the daemon's
+fetch is authorised once the file comes from the store, nor whether it is counted for the
+daemon or still for the address; keeping the token in the path and the count per address
+is *proposed*. The spool directory and its sweep go. The age
 limit is `SLICE_MAX_AGE_SECONDS` in `routes.py`, 40 minutes, which becomes two hours. A
 fetch cut off mid-way already raises in `RelayClient.download` ("the download failed
 after N bytes"), leaves no partial file, and is tried again from the start by `_download`
 in `run_loop.py`, up to three attempts (`DOWNLOAD_ATTEMPTS`) with backoff.
 
-*Error report:* a send of a sliced file sliced more than two hours before is
+*Error report:* *proposed*: a send of a sliced file sliced more than two hours before is
 `delivery.sliced_file_too_old`, with its figure changed; a fetch that fails three times is
 `delivery.download_failed`, as built.
 
@@ -396,10 +409,13 @@ user.
 minute) are counted for each pairing code (`code_key` in `routes.py`), as are
 `SYNC_LIMIT` (120) and `DAEMON_LIMIT` (60) for the code in the daemon's token;
 `EXCHANGE_LIMIT` (60) is counted for the whole relay only; `DOWNLOAD_LIMIT` (30) for the
-request's address, as `ProxyFix` reports it after the trusted proxies.
+request's address, as `ProxyFix` reports it after the trusted proxies. The design gives
+no figure for the limits counted per user and per daemon, nor for wrong pairing codes per
+user; carrying over 120 and 10 a minute per user, and 120 and 60 a minute per daemon, is
+*proposed*, and the limit on wrong codes is not decided.
 
-*Error report:* `delivery.rate_limited` on a caller's route, as built; a daemon's route
-answers `429` with `Retry-After`, as built.
+*Error report:* *proposed*: `delivery.rate_limited` on a caller's route, as built; a
+daemon's route answers `429` with `Retry-After`, as built.
 
 *Tests:* two users of one group each have their own allowance; two daemons each have
 theirs; offers from one address past its count are refused while offers from another
@@ -411,7 +427,8 @@ user's limit are refused for that user only.
 Asked to stop, the relay closes its progress streams and answers its held syncs, so pages
 and daemons reconnect to the front server that replaces it; the front server also
 finishes the uploads and downloads in progress ([the front server](../front/README.md)).
-The daemon waits and tries again when the relay does not answer.
+The daemon waits and tries again when the relay does not answer. *Proposed:* a held sync
+answered on stopping carries no job, as at the end of the 55 seconds.
 
 *Replaces in the code as built:* nothing in the relay reacts to being asked to stop: a
 progress stream (`GET /printer/jobs/<id>/events`) runs until its delivery job ends or the
@@ -464,8 +481,9 @@ The wizard's approved mockup lists what it needs of printer delivery under
 
 The mockup's printer details also show, for a failed print, when it stopped and at which
 layer (its decision 44). Provided in part: a final report keeps the last `layer` the
-printer reported, but carries no time at which it stopped. So a delivery job's record
-carries the sender's display name, the plate's one-line description, the time the
+printer reported, but carries no time at which it stopped. The design approved by the
+owner does not decide any of this section; the answer below and the mockup's 12 hours are
+*proposed*. So a delivery job's record carries the sender's display name, the plate's one-line description, the time the
 delivery job ended and, for a failure, the layer at which it stopped; and a page that has
 lost its state can ask for its user's live delivery job and that user's last print.
 

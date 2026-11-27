@@ -306,7 +306,8 @@ stands in for each bucket.
   the preview and downloads the sliced file.
 - **Components:** the wizard and the front server (each built for the first time), the
   slice service (extended as its guide lists under "To be built" for this phase: the part
-  store, parts named by hash, the user key, one unfinished slice job for each user), and
+  store, parts named by hash, the user key, one unfinished slice job for each user,
+  finishing the running slice when asked to stop), and
   `contracts/` (the part set for parts from files, the contract between the wizard and
   the front server, the configuration document).
 - **Already settled by [the architecture](../architecture.md#where-each-piece-of-state-lives):** how parts
@@ -349,7 +350,7 @@ at `https://penguinslicer.popcornpenguins.com/`, with Onshape sign-in. The desig
   either container while they work costs them a pause and nothing else; and the owner's
   coding agents can read what happened from the log bucket.
 - **Components:** the front server (Onshape sign-in, the cookie, groups, the buckets, the
-  gathering of the log), the slice service (its limits as settings, stopping gracefully,
+  gathering of the log), the slice service (its limits as settings,
   its log lines), the wizard (retrying, reloading on a new version), and the hosting
   itself, which is new.
 - **First, what Railway does at a deploy,** since the standing requirement on deploys

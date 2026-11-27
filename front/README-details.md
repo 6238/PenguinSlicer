@@ -4,6 +4,9 @@ Nothing of the front server is built. This whole document is the design, written
 whoever builds it. The guide for a human reader is [README.md](README.md); each section
 here goes deeper into the section of the same subject there.
 
+Names and figures marked *proposed* below are this guide's suggestions; the design
+approved by the owner does not fix them, and the phase's design spec settles them.
+
 The **front server** is the one process the internet reaches. It serves the wizard's
 pages, signs users in with Onshape, passes parts and slice jobs to the slice service,
 stores and serves sliced files, reads and writes each group's configuration, gathers the
@@ -94,7 +97,8 @@ The sign-in, step by step:
 
 1. A request arrives with no cookie that the front server can read. The sign-in route
    sends the browser to Onshape's authorization page with a value of its own making
-   (OAuth's `state`), which it also remembers in the browser for the callback.
+   (*proposed*: OAuth's `state`, which it also remembers in the browser for the
+   callback).
 2. Onshape sends the browser back to the callback route at
    `https://penguinslicer.popcornpenguins.com/`. The callback checks that the value
    Onshape returns is the one it sent out, and refuses the sign-in otherwise.
@@ -140,8 +144,8 @@ other route answers with an [error report](#error-reports).
 
 - A request with no cookie, to every route but the three exceptions, is refused; the test
   enumerates the routes from the application itself, so a new route cannot be missed.
-- The callback with a `state` value other than the one sent out is refused, and the
-  refusal is logged as a failed sign-in.
+- The callback with a `state` value other than the one sent out is refused, and
+  (*proposed*) the refusal is logged as a failed sign-in.
 - The callback when the stand-in for Onshape refuses the code, and when it does not
   answer, each produce their error report.
 - A sign-in against the stand-in for Onshape makes exactly two calls, sets the cookie, and
@@ -159,8 +163,8 @@ Onshape tokens (the access token and the refresh token). It is encrypted, so the
 can neither read nor change it.
 
 **Thirty days.** The cookie lasts thirty days, long enough that signing in, which costs
-calls to Onshape, is rare. The thirty days count from the sign-in: rewriting the cookie
-(for renewed tokens or a new cookie key, below) keeps its end. This is what makes the
+calls to Onshape, is rare. *Proposed*: the thirty days count from the sign-in, and
+rewriting the cookie (for renewed tokens or a new cookie key, below) keeps its end. This is what makes the
 groups in a cookie stand for at most thirty days, which
 [Groups and the current group](#groups-and-the-current-group) relies on.
 
@@ -170,7 +174,7 @@ something in its memory. So a restart signs nobody out.
 
 **Embedded pages.** Inside Onshape's panel the page is embedded in another site, so the
 cookie must be one that browsers send to an embedded page: in Chrome, a cookie marked
-`SameSite=None` and `Secure`. That is why the cookie alone does not prove a request came
+(*proposed*) `SameSite=None` and `Secure`. That is why the cookie alone does not prove a request came
 from the wizard (see [Requests from other sites](#requests-from-other-sites)).
 
 **Onshape's tokens.** Onshape's access token lasts an hour. It is renewed with its
@@ -189,7 +193,7 @@ measure.
 
 The **cookie key** is the secret that encrypts the cookie. The front server holds two: the
 current one, and the previous one for reading only. A cookie read with the previous key is
-written back with the current one, keeping its end. The front server writes a log line
+written back with the current one, keeping its end (*proposed*, as above). The front server writes a log line
 each time the previous key is used.
 
 A planned replacement: the current key becomes the previous one and a new key becomes
@@ -203,7 +207,7 @@ as a procedure ([the architecture](../docs/architecture.md)).
 ### Tests
 
 - A cookie made with the current key is read; one changed by a single byte, or made with
-  an unknown key, is treated as no cookie.
+  an unknown key, is treated as no cookie (*proposed*).
 - A cookie made with the previous key is accepted, written back with the current key with
   the same end, and the use of the previous key is logged.
 - A cookie past its thirty days is treated as no cookie (fake clock, no real waiting).
@@ -222,13 +226,29 @@ The wizard's header names it and the user changes it there; the choice is kept i
 browser and sent with each request ([the wizard](../wizard/README.md)).
 
 **The check against the cookie.** The front server accepts a current group only if the
-cookie lists that group among the user's. A request that needs a group and names none, or
-names one the cookie does not list, is refused with an error report and logged as a
-refusal. Every route that reads or writes a configuration, and from phase 5 every route of
-pairing, sending and unpairing, makes this check. It is what keeps a user from another
-group's configuration and printer: a print is started only by a signed-in user whose
-current group has a paired-printer record naming the daemon
-([the architecture](../docs/architecture.md)).
+cookie lists that group among the user's. Every request that acts for a group carries the
+current group and makes this check:
+
+- reading and writing the configuration;
+- uploading a part, submitting a plate configuration, asking about, following or
+  cancelling a slice job, and fetching a sliced file;
+- from phase 5, pairing, sending, following a delivery job and the printer's status,
+  stopping following, cancelling a delivery job, and unpairing.
+
+A request that needs no group carries none: the wizard's pages, the sign-in routes, and
+the request for the user and their groups (below). A request that needs a group and names none, or names one
+the cookie does not list, is refused with an error report and (*proposed*) logged as a
+refusal. The check is what keeps a user from another group's configuration and printer: a
+print is started only by a signed-in user whose current group has a paired-printer record
+naming the daemon ([the architecture](../docs/architecture.md)). It is also what makes the
+group in each log line about a slice or a send a group the user belongs to (see
+[The log](#the-log)).
+
+**The user and their groups.** The cookie is encrypted, so the page cannot read from it
+who the user is or which groups they belong to. A route (*proposed*) answers the
+signed-in user's name and their groups, each with its id and name, from the cookie, so
+the wizard can offer a current group. It needs a signed-in user and no current group, and
+makes no call to Onshape.
 
 **Reading the groups again.** How often a signed-in user's groups are read again from
 Onshape is a setting. Until the OAuth app is public it is "never": the groups in the
@@ -240,8 +260,12 @@ the tokens and writes them back to the cookie.
 
 ### Tests
 
-- A request naming a group the cookie lists is accepted; one naming another group, or
-  none, is refused with its error report and a refusal line.
+- On every route that acts for a group, one test each, a request naming a group the
+  cookie lists is accepted; one naming another group, or none, is refused with its error
+  report and a refusal line. The test enumerates those routes from the application, so a
+  new one cannot be missed.
+- The request for the user and their groups, with no current group, answers the cookie's
+  user and groups.
 - With the setting "never", no request reads the groups again, however old the cookie
   (fake clock).
 - With the setting one day, the first request after a day reads the groups again from
@@ -274,14 +298,15 @@ allowance ([the architecture](../docs/architecture.md)).
 Onshape, and the command that reads the log bucket reports the year's total.
 
 **Not known** ([the architecture](../docs/architecture.md)): what allowance the project
-owner's account has; whether the development OAuth app and the hosted one draw on the
-same allowance, as two apps of one account; and whether renewing a token counts as a
+owner's account has; whether a second OAuth app of the same account, registered for
+development, would draw on the same allowance as the hosted one; and whether renewing a token counts as a
 call, which matters from phase 4.
 
 ### Tests
 
 - The whole fast suite runs with no route to Onshape at all: the client for Onshape is
-  given the stand-in, and a test fails if any other client is built during the suite.
+  given the stand-in, and (*proposed*) a test fails if any other client is built during
+  the suite.
 - Each call to the stand-in writes exactly one log line naming the call.
 - A sign-in writes two such lines.
 
@@ -291,16 +316,16 @@ Inside Onshape's panel the cookie is one that browsers send to an embedded page,
 cookie alone does not prove a request came from the wizard. So:
 
 - **Every route that changes something on the strength of the cookie** also requires a
-  header that only the wizard's own page can set, and checks the request's origin: the
-  `Origin` header must be the front server's own address. These routes are uploading a
-  part, submitting a plate configuration, cancelling a slice job, writing the
-  configuration, and from phase 5 pairing, sending, stopping following, cancelling a
-  delivery job and unpairing.
-- **No route allows cross-origin requests**: the front server sends no header that would
-  let another site's page read its answers.
+  header that only the wizard's own page can set, and checks the request's origin
+  (*proposed*: the `Origin` header must be the front server's own address). These routes
+  are (*proposed* list) uploading a part, submitting a plate configuration, cancelling a
+  slice job, writing the configuration, and from phase 5 pairing, sending, stopping
+  following, cancelling a delivery job and unpairing.
+- **No route allows cross-origin requests**: the front server (*proposed*) sends no header
+  that would let another site's page read its answers.
 - **The sign-in callback checks the value it sent out** (see
   [Onshape sign-in](#onshape-sign-in)).
-- **The pages may be embedded by Onshape only**: every page carries a
+- **The pages may be embedded by Onshape only**: every page carries (*proposed*) a
   `Content-Security-Policy` whose `frame-ancestors` names Onshape's address alone.
 
 ### Tests
@@ -322,9 +347,9 @@ key of everything done under it, and its group is the only group in its cookie.
 
 **It can never be on in the hosted service.** The command that launches the hosted front
 server never sets the setting, and the front server refuses to start with it on when it
-finds itself on Railway (by the environment variables Railway sets in its containers) or
-finds Onshape credentials in its environment. A refusal to start writes one log line
-saying why and ends the process with a failure status.
+finds itself on Railway (*proposed*: by the environment variables Railway sets in its
+containers) or finds Onshape credentials in its environment. A refusal to start
+(*proposed*) writes one log line saying why and ends the process with a failure status.
 
 ### Tests
 
@@ -344,8 +369,8 @@ compares user keys and never interprets them
 The front server sets the user key from the cookie, and only from the cookie. The browser
 cannot name one: a user key in a request from the browser, in any field or header, is
 never read. So a user reaches only their own parts, slice jobs and sliced files. A request
-for a slice job or a sliced file that is not the user's is answered as for one that does
-not exist, so nobody learns whether another user's id exists; when the slice service
+for a slice job or a sliced file that is not the user's is (*proposed*) answered as for
+one that does not exist, so nobody learns whether another user's id exists; when the slice service
 reports that the slice job belongs to another user key, the front server logs it as a
 refusal of a request for something that belongs to another user.
 
@@ -360,7 +385,7 @@ refusal of a request for something that belongs to another user.
 
 The slice service's HTTP interface is reached only from the front server
 ([the slice service](../slice/README.md)). The front server passes each request on with
-the user key and passes the answer back, error reports included, unchanged.
+the user key and passes the answer back, error reports included (*proposed*: unchanged).
 
 **Parts.** The wizard uploads each part by itself at the moment the user adds it, in one
 request of at most 7.5 MB, the plate configuration's limit for one part
@@ -369,7 +394,8 @@ with the user key. The slice service checks it as it arrives and keeps it in its
 store** (its folder of uploaded parts, each kept for two hours after it was last used)
 under the user key and the SHA-256 hash of its bytes; a part that cannot be sliced is
 refused there, and its error report reaches the page on the part's own row. The front
-server keeps no copy of a part. Cloudflare allows a request 100 MB; Railway's limit on a
+server keeps no copy of a part; the browser's storage is the record of a user's parts
+([the wizard](../wizard/README.md)). Cloudflare allows a request 100 MB; Railway's limit on a
 request body is not stated in its documents, and one real upload of a 7.5 MB part settles
 it ([the architecture](../docs/architecture.md)).
 
@@ -401,14 +427,14 @@ data, and Cloudflare after 125 seconds without data, so every progress stream se
 comment line at least every fifteen seconds while it has nothing to report
 ([the slice service](../slice/README.md)), and the page reconnects when one closes. A
 progress stream that connects late gets the latest progress report at once. The front
-server reports a slice job finished on the stream only once the sliced file is in the
-state bucket, because that is where the page fetches it from.
+server (*proposed*) reports a slice job finished on the stream only once the sliced file
+is in the state bucket, because that is where the page fetches it from.
 
 Whether Cloudflare and Railway pass server-sent events on without holding them back was
 not checked. If one does hold them, the page asks for the latest progress report every
 second or two instead, by a route both interfaces have
-([the architecture](../docs/architecture.md)); the front server's route for asking about
-a slice job is that route.
+([the architecture](../docs/architecture.md)); (*proposed*) the front server's route for
+asking about a slice job is that route.
 
 ### Tests
 
@@ -429,18 +455,19 @@ a slice job is that route.
 
 **The front server follows every unfinished slice job itself**, whether or not a page is
 open: for each one it holds the slice service's own progress stream. That is how it learns
-that a slice has ended; the pages' progress streams are served from what it follows.
+that a slice has ended; (*proposed*) the pages' progress streams are served from what it
+follows.
 
 **When a slice ends**, the front server fetches the sliced file from the slice container
-and stores it in the state bucket under the user key and the slice job's id, with the time
-the slice ended. It then tells the slice service it has stored the file, and the slice
-container deletes its own copy ([the slice service](../slice/README.md)). A sliced file is
+and stores it in the state bucket under the user key and the slice job's id, with
+(*proposed*) the time the slice ended. It then (*proposed*) tells the slice service it has
+stored the file, and the slice container deletes its own copy ([the slice service](../slice/README.md)). A sliced file is
 8.8 to 14.1 MB on the plates measured so far.
 
 **The state bucket's copy is the one everything uses.** The browser fetches it through the
 front server to draw the Preview step and to offer the download, and from phase 5 the
 relay hands it to the daemon. The browser does not store the sliced file and never uploads
-one, so the front server has no route that takes a sliced file from a browser, and a
+one, so (*proposed*) the front server has no route that takes a sliced file from a browser, and a
 printer only ever receives a file the slice service made
 ([the wizard](../wizard/README.md)).
 
@@ -458,8 +485,8 @@ that was running across a restart of the front server is stored when it ends.
   unstored slice job follows the first and stores the second.
 - A finished slice job whose sliced file is already in the state bucket is not fetched
   again at start.
-- The slice service failing mid-fetch leaves nothing half-written in the state bucket,
-  and the fetch is tried again.
+- (*proposed*) The slice service failing mid-fetch leaves nothing half-written in the
+  state bucket, and the fetch is tried again.
 - The page's fetch of a sliced file serves the state bucket's copy.
 
 ## Two hours, deleting, and the backstop
@@ -467,12 +494,12 @@ that was running across a restart of the front server is stored when it ends.
 A sliced file can be previewed, downloaded, sent, and sent again after a print, for two
 hours after its slice ended. The front server enforces this:
 
-- it refuses a sliced file older than two hours, with an error report saying it has
-  expired, and deletes it;
-- it deletes each sliced file when it turns two hours old, in a regular sweep, so that a
-  file nobody asks for again is gone on time too;
+- it refuses a sliced file older than two hours, with an error report (*proposed*: saying
+  it has expired), and deletes it;
+- it deletes each sliced file when it turns two hours old, in (*proposed*) a regular
+  sweep, so that a file nobody asks for again is gone on time too;
 - from phase 5, a sliced file that a delivery job still needs is kept until the daemon has
-  fetched it, and deleted then if it is older than two hours.
+  fetched it, and (*proposed*) deleted then if it is older than two hours.
 
 R2's own rule for deleting old files cannot do this alone: it counts in whole days, and
 Cloudflare says a file is typically removed within 24 hours after it falls due. So a
@@ -493,7 +520,8 @@ server failed to delete, and such a file can rest at R2 for up to about two days
 A group's **configuration** is one JSON document in the state bucket, read whole and
 written whole; it holds the group's filaments and the units of uploaded files, and no
 secret. Its shape, with an annotated example, is in
-[the configuration's contract](../contracts/configuration.md).
+[the configuration's contract](../contracts/configuration.md). A group's document is kept
+until edited: an edit replaces it, and nothing else deletes it.
 
 - **A default.** A group with no document gets a built-in default configuration, so a new
   group can slice without setting anything up.
@@ -502,12 +530,12 @@ secret. Its shape, with an annotated example, is in
 - **Writing.** An edit writes the whole document on the condition that it has not changed
   since it was read, so two users editing at once cannot silently overwrite each other;
   the second gets an error report telling them to reload. The front server reads the
-  document's version marker with the document and writes only if the state bucket's
+  document's (*proposed*) version marker with the document and writes only if the state bucket's
   marker still matches.
 - **The log.** Every edit writes a log line with the user's name and what changed.
-- **A document that cannot be read** (not JSON, or not of a format number the front
-  server knows) is answered with an error report, and its contents are never written over
-  by the default.
+- **A document that cannot be read** (*proposed*: not JSON, or not of a format number
+  the front server knows) is answered with an error report, and (*proposed*) its contents
+  are never written over by the default.
 
 Until the configuration's edit screens exist, a group uses the default or a document the
 project's owner puts into the state bucket through Cloudflare's console, following the
@@ -526,14 +554,14 @@ must expect a document written by hand.
 ## The bucket interface
 
 The front server reaches each bucket through one interface with two implementations: R2,
-hosted, and a folder, on one machine. Both give the same four things: read a file with its
+hosted, and a folder, on one machine. Both give (*proposed*) the same four things: read a file with its
 version marker, write a file, write a file only if its version marker has not changed,
 and delete a file. Each record the front server writes to the state bucket carries the
 number of its format ([the contracts](../contracts/README.md)).
 
 The fast suite runs against the folder implementation, in a temporary folder made for
-each test. The R2 implementation is tested against R2's interface in a suite of its own,
-outside the fast suite.
+each test. The R2 implementation is tested against R2's interface (*proposed*) in a suite
+of its own, outside the fast suite.
 
 ### Tests
 
@@ -559,10 +587,11 @@ daemon it concerns.
   it belongs to ([the architecture](../docs/architecture.md));
 - every exception, with its stack trace, including one that no user saw because the
   request was tried again;
-- every refusal: a failed sign-in, a current group the cookie does not list, a request
-  for something that belongs to another user, a request without the wizard's header or
-  from another origin;
-- every transition of a job it sees: a sliced file stored, served, expired, deleted;
+- every refusal: a failed sign-in, a request for something that belongs to another user,
+  and (*proposed*) a current group the cookie does not list and a request without the
+  wizard's header or from another origin;
+- every transition of a job it sees (*proposed* list: a sliced file stored, served,
+  expired, deleted);
 - once a minute, one line: the memory it holds, the slices running and waiting, the
   connections held open and the threads in use
   ([the architecture](../docs/architecture.md));
@@ -595,8 +624,8 @@ No log line holds a secret, a token, a pairing code or a part's geometry.
 
 ## The version on every answer
 
-Every answer of the front server carries the front server's version, in a header, errors
-and progress streams included. A page that sees a newer version reloads itself at the next
+Every answer of the front server carries the front server's version (*proposed*: in a
+header, errors and progress streams included). A page that sees a newer version reloads itself at the next
 moment when nothing is in flight ([the wizard](../wizard/README.md)). A page loaded before
 a deploy keeps working against the new front server, and a record in the state bucket
 written by the old front server is read by the new one
@@ -611,9 +640,10 @@ written by the old front server is read by the new one
 
 ## Stopping
 
-Asked to stop (as at every deploy), the front server stops accepting new requests,
-finishes the uploads and downloads in progress, closes its progress streams, from phase 5
-answers its held syncs, and writes the log lines it has gathered to the log bucket, so
+Asked to stop (as at every deploy), the front server (*proposed*) stops accepting new
+requests, finishes the uploads and downloads in progress, closes its progress streams,
+from phase 5 answers its held syncs, and (*proposed*) writes the log lines it has gathered
+to the log bucket, so
 that pages and daemons reconnect to its replacement and only a crash loses log lines. It
 has the time Railway allows a stopping container. How long that is, whether Railway starts
 the new container before stopping the old, and whether it deploys the front server alone
@@ -633,9 +663,10 @@ a request that falls in the gap is repeated and the user sees a pause, not an er
 ## Threads
 
 The front server's server runs with 100 threads. From phase 5 it spends one thread on
-every idle daemon, for the held wait of its sync, so it has room for about fifty idle
-daemons beside the users' requests and progress streams, including the progress streams
-it holds itself to follow slice jobs. A small asynchronous server may take over the held
+every idle daemon, for the held wait of its sync, up to 55 seconds
+([printer delivery](../delivery/README.md)), so it has room for about fifty idle daemons
+beside the users' requests and progress streams (*proposed*: including the progress
+streams it holds itself to follow slice jobs, which the approved design does not count). A small asynchronous server may take over the held
 wait's route later and hold thousands of daemons; that is decided when the number of
 daemons calls for it ([the plan](../docs/plans/penguin-slicer-plan.md)). What the front
 server's memory is with fifty held syncs was never measured
@@ -686,9 +717,10 @@ Limits on the rate of requests are counted for the signed-in user or the daemon
 Every failure a caller can see is an [error report](../contracts/error-report.md), with a
 test that produces it on purpose. The front server passes the slice service's error
 reports (`slice.*`) and, from phase 5, the relay's (`delivery.*`) to the page unchanged.
-Its own failures are below. Each gets a stable code of the form `front.<what>`; the codes
-are named when [the contract with the wizard](../contracts/wizard-front-server.md) is
-written, and listed here then.
+Its own failures are below. Each gets a stable code (*proposed*: of the form
+`front.<what>`); the codes are named when
+[the contract with the wizard](../contracts/wizard-front-server.md) is written, and listed
+here then. The table's rows and each one's "Retryable" are *proposed*.
 
 | Failure | When | Retryable |
 |---|---|---|
@@ -699,11 +731,15 @@ written, and listed here then.
 | Not from the wizard's page | A changing route without the wizard's header, or from another origin | No |
 | Configuration changed | The configuration was written by someone else since it was read; reload | No |
 | Configuration unreadable | The group's document is not JSON or not of a known format number | No |
-| Sliced file expired | Older than two hours, or unknown under the user's key | No |
+| Sliced file expired | Older than two hours | No |
+| Sliced file unknown | No sliced file of that slice job under the user's key | No |
 | Slice service did not answer | The private network or the slice service is down | Yes |
 | State bucket did not answer | Reading or writing the state bucket failed | Yes |
 
 ## Tests
+
+The front server will be its own `uv` project, in `front/`, whose commands run with
+`make -C front ...`, as every component's do.
 
 Each section above lists the tests its subject needs. All of them follow the project's
 rule for the fast suite: no real network, no real waiting and no fixed ports, passing in
@@ -723,21 +759,23 @@ it and asserts what the caller sees.
 ## By phase
 
 What of the front server is built in each phase, from
-[the plan](../docs/plans/penguin-slicer-plan.md).
+[the plan](../docs/plans/penguin-slicer-plan.md). The approved design does not place
+every item: those marked *proposed* below are placed by this guide.
 
 **Phase 2, one machine.** The front server, without the relay, runs beside one slice
 service process on one machine, with the development identity. A folder stands in for
 each bucket, behind the same interface. Built here:
 
 - serving the wizard's pages;
-- the development identity and the cookie it sets, with one cookie key;
+- the development identity and the cookie it sets, with (*proposed*) one cookie key;
 - the user key, and the check of the current group against the cookie;
 - passing parts and slice jobs to the slice service, asking about a slice job, and the
   progress streams;
 - following every unfinished slice job, storing its sliced file, collecting at start;
 - the two-hour rule and deleting;
 - reading and writing the configuration, with the default and the conditional write;
-- the log lines, gathered once a minute into the folder that stands in for the log bucket.
+- (*proposed*) the log lines, gathered once a minute into the folder that stands in for
+  the log bucket.
 
 **Phase 3, hosted.** The first thing tried is what Railway does at a deploy, since the
 rest of restarts and deploys rests on it. Then:
@@ -747,11 +785,11 @@ rest of restarts and deploys rests on it. Then:
   private network;
 - the state bucket and the log bucket at R2, with the one-day backstop rule;
 - Onshape sign-in, with the stand-in for Onshape in the tests, counting every call;
-- the checks on requests from other sites;
+- (*proposed*) the checks on requests from other sites;
 - two cookie keys and the procedure for replacing one;
 - the version on every answer, and the other rules for old and new versions together;
-- finishing work in flight when asked to stop;
-- the refusal to start with the development identity on Railway.
+- (*proposed*) finishing work in flight when asked to stop;
+- (*proposed*) the refusal to start with the development identity on Railway.
 
 **Phase 4, inside Onshape.** The panel uses the same sign-in and the same routes. Reading
 parts from Onshape, and what that costs in calls to Onshape, is designed in phase 4.

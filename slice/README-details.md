@@ -62,6 +62,11 @@ When an item is built, its text moves into the body of this file and out of this
 and [README.md](README.md) is updated to match. The ids in brackets name the decisions in
 [the map of the hosted architecture's decisions](../docs/orchestration/hosted-architecture/decision-map.md).
 
+Names and figures marked *proposed* below are this guide's suggestions; the design
+approved by the owner does not fix them, and the phase's design spec settles them. Where
+the approved design states a figure that a measurement or the code as built corrects, the
+item says so in one sentence.
+
 ### Terms used below
 
 - The **front server** is the one process the browser talks to (in `front/`, see
@@ -74,6 +79,8 @@ and [README.md](README.md) is updated to match. The ids in brackets name the dec
 - The **user key** is the signed-in user's Onshape id, which the front server passes with
   every request to say whose part or slice job it is. The slice service compares user
   keys and never interprets them.
+- A **follower** of a slice job is a connection that follows its progress stream; the code
+  as built calls it a "subscriber", which is the same thing.
 - The **part store** is the slice service's folder of uploaded parts, each kept for two
   hours after it was last used. It is a cache: the browser's storage is the record of a
   user's parts.
@@ -140,54 +147,56 @@ The front server and one slice service process run on the one machine. Everythin
 is built in phase 2, with its tests.
 
 **The user key on every request.** Every request to the HTTP interface carries the user
-key in the header `X-Penguin-User-Key`. A part is stored, and a slice job is held, under the
+key in the header `X-Penguin-User-Key` (*proposed*). A part is stored, and a slice job is held, under the
 user key that sent it. A request about a slice job of another user key answers exactly as
-for an unknown slice job (`slice.unknown_job`, HTTP 404), so nobody learns that the slice
+for an unknown slice job (`slice.unknown_job`, HTTP 404; *proposed*), so nobody learns that the slice
 job exists, and is logged as a refusal. The one route that is not scoped to a user key is
-the list of slice jobs (below), which only the front server calls. Replaces: nothing; as
+the list of slice jobs (below; *proposed*), which only the front server calls. Replaces: nothing; as
 built the slice service knows no user. Error report: a request without the header, or with
-an empty one, is refused with `slice.no_user_key` (HTTP 400), a new code added to
+an empty one, is refused with `slice.no_user_key` (HTTP 400; *proposed*), a new code added to
 `errors.CODES` and to [Error codes](#error-codes). Tests: each route refuses a request
 without the user key; every route about a slice job (`GET`, `events`, `DELETE`, `file`,
 `summary`) answers `slice.unknown_job` for another user key's slice job and logs the
 refusal. [D295]
 
-**The part store.** A route, `POST /parts`, takes one part (a binary STL as the request
-body) and checks it on arrival, so a part that cannot be sliced is refused on the wizard's
+**The part store.** A route, `POST /parts` (*proposed*), takes one part (a binary STL as the request
+body; *proposed*) and checks it on arrival, so a part that cannot be sliced is refused on the wizard's
 Parts step, on its own row, before the user has laid anything out. The checks are those of
 [Checks on every part](#checks-on-every-part); the fit test (`slice.part_too_large`) runs
-on arrival against the largest printer of the catalog and again, as built, against the
+on arrival against the largest printer of the catalog (*proposed*) and again, as built, against the
 plate configuration's printer when a plate configuration names the part. A part that passes
 is kept in the part store under the user key and the SHA-256 hash of its bytes, and the
-answer (HTTP 201) carries that hash (hexadecimal), the part's measurements (triangles,
-size, volume) and its warnings (`slice.part_not_watertight`, `slice.part_inside_out`,
-`slice.part_maybe_inches`). The same bytes sent again by the same user key answer the same
-and count as a use. The figures and rules:
+answer (HTTP 201 carrying that hash in hexadecimal, the part's measurements (triangles,
+size, volume) and its warnings: *proposed*) lists `slice.part_not_watertight`,
+`slice.part_inside_out` and `slice.part_maybe_inches` among those warnings. The same bytes
+sent again by the same user key answer the same and count as a use (*proposed*). The
+figures and rules:
 
 - A request body over `MAX_PART_BYTES` (7,500,084 bytes, 7.5 MB, the plate
   configuration's limit for one part) is refused with `slice.part_too_detailed`
-  (HTTP 413) before it is read.
-- A part stays in the part store for two hours (7,200 s) after it was last used; its upload
-  and each slice that names it count as a use. The job pool's sweeper (`SWEEP_INTERVAL_S`,
-  10 s) removes expired parts.
+  (HTTP 413) before it is read (the code, status and refusal before reading: *proposed*).
+- A part stays in the part store for two hours (7,200 s) after it was last used; each
+  slice that names it counts as a use, and so does its upload (*proposed*). The job pool's
+  sweeper (`SWEEP_INTERVAL_S`, 10 s) removes expired parts (*proposed*).
 - The part store holds at most 25 parts for one user key (`MAX_PARTS`, the most a plate
   can use). When a twenty-sixth arrives, that user key's least recently used part is
   removed; the page uploads it again if a plate ever names it.
 - The part store has a limit on the disk it may take in all, a setting of the slice
-  service. Past it, the least recently used parts of any user key are removed. Its
+  service (*proposed*). Past it, the least recently used parts of any user key are removed. Its
   default is not set: the part store's disk use was never measured.
 - A part is found only under its user key, so two users who upload the same file each have
   their own entry, and nobody can learn whether someone else uploaded a given file.
 - The slice service empties the part store when it starts. This adds to
   `service.clean_stale_scratch`, which removes only the scratch of processes no longer
   running.
-- A slice job takes its own link to each part's file when it is accepted, so removing a
+- A slice job takes its own link to each part's file when it is accepted (*proposed*), so removing a
   part from the part store never touches a slice job already accepted.
 
 Replaces: the parts sent as file fields of `POST /slices`, saved into each slice job's own
 `parts/` folder (`web.UPLOADS`). Error reports: each check's code as listed in
-[Checks on every part](#checks-on-every-part), now answered by `POST /parts` (HTTP 422);
-a part store that cannot be written is `slice.scratch_unwritable` (HTTP 500). Tests:
+[Checks on every part](#checks-on-every-part), now answered by `POST /parts` (HTTP 422;
+*proposed*); a part store that cannot be written is `slice.scratch_unwritable` (HTTP 500;
+*proposed*). Tests:
 a good part answers its SHA-256; each refusal code of the checks produced through
 `POST /parts`; a body over `MAX_PART_BYTES` refused before it is read; the twenty-sixth
 part of one user key removes that user key's least recently used part and no other user
@@ -200,19 +209,20 @@ D81, D82, D83, D291, D294]
 **A plate configuration names parts by hash.** `POST /slices` takes the plate
 configuration as a JSON body, its parts naming the hashes of parts in the part store, and
 carries no files ([the plate configuration contract](../contracts/plate-configuration.md)
-defines the field). Slicing again uploads nothing. The body is at most 1 MB, the allowance
-the form has as built. Replaces: the route that takes a whole plate's files in one request,
+defines the field). Slicing again uploads nothing. The body is JSON of at most 1 MB
+(*proposed*), the allowance the form has as built. Replaces: the route that takes a whole plate's files in one request,
 with `web.FORM_FIELD`, `web.UPLOAD_NAME_RE` and `web.MAX_UPLOAD_BYTES`
 (`MAX_PARTS x MAX_PART_BYTES` plus a megabyte); the route is removed. Error report: a plate
 configuration that names parts no longer in the part store is answered with one error
 report listing every missing hash, `slice.part_missing` (stage `checking`, HTTP 422, action
-`refresh_parts`, its detail and `where` listing the hashes). The page then uploads those
+`refresh_parts`, its detail and `where` listing the hashes; all *proposed*). The page then uploads those
 parts again from the browser's storage and submits again, and the user sees nothing of it.
 Replaces in `slice.part_missing`: the meanings "the part's STL file is missing" and "lies
 outside the files sent"; an instance naming a part the plate configuration does not list
 keeps the code. Tests: a plate configuration naming two missing hashes gets one report
 listing both; after both are uploaded the same plate configuration is accepted;
-`tests/test_errors.py` produces the new meaning on purpose; a multipart body is refused.
+`tests/test_errors.py` produces the new meaning on purpose; a multipart body is refused
+(*proposed*).
 [D78, D292]
 
 **One unfinished slice job per user key.** Submitting a plate configuration cancels the
@@ -220,10 +230,10 @@ same user key's earlier unfinished slice job (queued or running), which is what 
 Preview step does when a plate changes; with the wizard open in two tabs, the later slice
 wins. The cancel is a cancel as built (a queued slice job at once, a running one once Orca
 and every child are gone), and its final report is `cancelled`, saying it was replaced by a
-later slice of the same user key ([the progress report contract](../contracts/progress-report.md)
-names the field), with `"cancel_reason": "replaced"` in its log lines. The earlier slice job
-gives up its place in the queue before the new one is counted, so a user key holds at most
-one place. Replaces: nothing; as built any number of slice jobs may come from one caller.
+later slice of the same user key (*proposed*; [the progress report contract](../contracts/progress-report.md)
+names the field), with `"cancel_reason": "replaced"` (*proposed*) in its log lines. The
+earlier slice job gives up its place among those waiting before the new one is counted
+(*proposed*), so a user key holds at most one place. Replaces: nothing; as built any number of slice jobs may come from one caller.
 Error report: none new. Tests: a second submission cancels the first while queued and while
 running (a hanging fake Orca); the first's final report says replaced; another user key's
 slice job is untouched; a user key that resubmits while the queue is full is not refused.
@@ -231,7 +241,7 @@ slice job is untouched; a user key that resubmits while the queue is full is not
 
 **A slice job goes on without its page.** Once submitted, a slice job runs to its end
 whether or not anything follows it: through a refresh, a dropped connection or a closed
-lid. A slice whose user never returns holds an Orca until it ends, which the time limit
+lid (the mockup's [decision 46](../docs/mockups/print-wizard/DECISIONS.md)). A slice whose user never returns holds an Orca until it ends, which the time limit
 bounds (accepted). Replaces: `jobs.ABANDON_GRACE_S` (120 s), the sweep's cancel of a slice
 job nobody follows, `"cancel_reason": "abandoned"` and the paragraph "Cleanup" under
 [Progress, cancellation and cleanup](#progress-cancellation-and-cleanup) as far as it
@@ -242,20 +252,21 @@ D96, D297]
 **Slice jobs remembered for two hours; the sliced file deleted once stored.** The slice
 service remembers a slice job for two hours (7,200 s) after it ends; a finished one is also
 known by its sliced file in the state bucket. Once the front server has stored the sliced
-file, it says so with `DELETE /slices/<job>/file`, and the slice service deletes its own
-copy at once; the record stays until it expires. A sliced file never collected goes with
-its record. Replaces: `jobs.RECORD_TTL_S` (3,600 s), and the sliced file kept beside its
+file, it says so with `DELETE /slices/<job>/file` (*proposed*), and the slice service deletes its own
+copy at once; the record stays until it expires (*proposed*). A sliced file never collected goes with
+its record (*proposed*). Replaces: `jobs.RECORD_TTL_S` (3,600 s), and the sliced file kept beside its
 record for that hour. Error reports: the file or summary of a slice job whose file was
-deleted is `slice.file_gone` (HTTP 410), as built; `DELETE /slices/<job>/file` on a slice
-job not done is `slice.not_ready` (HTTP 409); on an unknown slice job,
-`slice.unknown_job`. Tests: on a fake clock the record is there at 7,199 s and gone at
+deleted is `slice.file_gone` (HTTP 410), as built (its use after the delete *proposed*);
+`DELETE /slices/<job>/file` on a slice job not done is `slice.not_ready` (HTTP 409;
+*proposed*); on an unknown slice job, `slice.unknown_job`; a second delete answers as the
+first (*proposed*). Tests: on a fake clock the record is there at 7,199 s and gone at
 7,200 s; after the delete, the file and the summary answer `slice.file_gone` and the
 progress report is still served; a second delete answers the same as the first; a delete
 before the slice ends is refused. [D90, D100, D298, D299]
 
-**A route lists the slice jobs.** `GET /slices` answers every slice job the slice service
+**A route lists the slice jobs.** `GET /slices` (*proposed*) answers every slice job the slice service
 process knows: for each, its id, its user key, its latest progress report and whether its
-sliced file is still on the disk. A restarted front server uses it to find the slices it
+sliced file is still on the disk (the fields *proposed*). A restarted front server uses it to find the slices it
 must still follow or collect. Replaces: nothing. Error report: none beyond those of every
 route. Tests: the list holds a queued, a running, a done, a failed and a cancelled slice
 job with their states; it is empty in a newly started process; a done slice job whose file
@@ -264,8 +275,8 @@ was deleted shows the file gone. [D296]
 **A waiting slice job says how many are ahead.** A slice that cannot start yet waits, and
 its user is shown that it is waiting and how many slices are ahead of it. A queued slice
 job's progress report carries the number of slice jobs ahead of it (those running and those
-queued before it), and a new report (`sequence` plus one) is sent whenever that number
-changes ([the progress report contract](../contracts/progress-report.md) names the field).
+queued before it; *proposed*), and a new report (`sequence` plus one) is sent whenever that
+number changes (*proposed*) ([the progress report contract](../contracts/progress-report.md) names the field).
 When no more slice jobs may wait, the user is told the slice service is busy and to try
 again shortly: that is `slice.busy` (HTTP 503, retryable, "The slicer is busy, try again in
 a minute."), as built. Replaces: the queued report, which says only "Waiting for the
@@ -273,11 +284,12 @@ slicer". Tests: with one running and two queued, the queued ones report 1 and 2 
 the running one ends, the last reports 1. [D54, D55, D302]
 
 **Asked to stop, it finishes the running slice.** When `serve` receives SIGTERM (what a
-container host sends) or Ctrl-C, it refuses new slice jobs (`slice.busy`), cancels the
-queued ones (`"cancel_reason": "shutdown"`; their pages submit them again), lets the
-running slice job run to its end, bounded by the time limit, keeps the HTTP interface
-answering until the front server has fetched and deleted that slice job's sliced file,
-and then exits 0. A second SIGTERM or Ctrl-C cancels the running slice job as built.
+container host sends) or Ctrl-C, it refuses new slice jobs (`slice.busy`; *proposed*),
+cancels the queued ones (`"cancel_reason": "shutdown"`; their pages submit them again;
+*proposed*), lets the running slice job run to its end, bounded by the time limit, keeps
+the HTTP interface answering until the front server has fetched and deleted that slice
+job's sliced file (*proposed*), and then exits 0 (*proposed*). A second SIGTERM or Ctrl-C
+cancels the running slice job as built (*proposed*).
 Railway gives a stopping container a time of its own, not yet known; past it Railway kills
 the process, and Orca dies with it (`PR_SET_PDEATHSIG`). Replaces: `JobPool.shutdown`,
 which cancels every slice job, and the end of `serve`, which waits only until every Orca is
@@ -293,7 +305,8 @@ ceiling or the time limit and reports each as an error the wizard explains: pass
 memory ceiling is `slice.out_of_memory`, passing the time limit is `slice.timeout`, both as
 built. Both limits, and how many Orcas run at once and how many slice jobs may wait behind
 them, are settings of the slice service, each refused at start with a message that names it
-and exit status 2, as `PENGUIN_SLICE_MAX_PEAK_MB` is as built:
+and exit status 2 (*proposed*), as `PENGUIN_SLICE_MAX_PEAK_MB` is as built. The settings'
+names are *proposed*:
 
 | Setting | Default | Replaces |
 |---|---|---|
@@ -318,12 +331,14 @@ high ceiling costs money only while a heavy plate is slicing, since Railway bill
 memory a container holds at each moment. By the figures of "Sizing the host" under
 [Plate limits](#plate-limits), Orca can pass the ceiling by the rise between two of the
 watchdog's readings (502 MB, the largest measured) and a host is sized for 400 MB of the
-slice service beside Orca, so 6,000 MB plus both is 6,902 MB, under the 8 GB. The slice container never runs more Orcas than fit in its memory
+slice service beside Orca, so 6,000 MB plus both is 6,902 MB, under the 8 GB (the sum
+*proposed*). The 400 MB was measured without the part store and without the checks of
+parts on arrival, so it is confirmed with the measurements below. The slice container never runs more Orcas than fit in its memory
 with each at the memory ceiling: with 6,000 MB that is one, and two at once would need a
 ceiling of about 3,000 MB each, and so smaller plates. Orca uses several processors by
 itself, so a second Orca would share them, not use idle ones. Replaces: the 2,000 MB the
 service runs at as built, and the rule in the docstring of `jobs.py` (min of the CPUs and
-memory over one slice's peak). Error report: `slice.out_of_memory`, as built. Tests: none
+memory over one slice's peak; *proposed*). Error report: `slice.out_of_memory`, as built. Tests: none
 new in the fast suite (the setting's tests exist); the measurements below. [D44, D45, D53,
 D303]
 
@@ -331,7 +346,10 @@ D303]
 measured peaked at 2,569 MB (six Stanford bunnies with supports on). The plates the Popcorn
 Penguins print took at most 22.5 s of Orca's time (four-each-b with supports on), and the
 slowest plate of their parts measured, twelve Elevator Block Bottom Inners with supports on
-at a 3,000 MB ceiling, 34.3 s. All of it was measured on aarch64 machines, where Railway's
+at a 3,000 MB ceiling, 34.3 s. The approved design says the slowest plate of the Popcorn
+Penguins' real parts took 22 seconds, a tenth of the time limit of 240 s; the measurement
+of that plate of twelve Elevator Block Bottom Inners shows 34.3 s, a seventh of it, which
+is what holds. All of it was measured on aarch64 machines, where Railway's
 are believed to be x86_64, and on plates far lighter than 6,000 MB; a plate that heavy will
 take longer. The time limit must be long enough that every plate which would finish does
 finish, and no longer, because a slice that hangs holds up everyone waiting behind it. So
@@ -341,9 +359,9 @@ slowest plate that finishes; until then it starts at 240 seconds. For plates hea
 any measured, the slice service's estimates of memory and time are extended beyond what
 was measured: the memory and time models (`limits.estimate_peak_mb`,
 `limits.estimate_seconds`) are linear in the instances and the volume, and are refitted on
-these runs (`scripts/measure_plate.py --fit`). Replaces: `limits.MEASURE_STOP_MB`
+these runs (`scripts/measure_plate.py --fit`; *proposed*). Replaces: `limits.MEASURE_STOP_MB`
 (3,072 MB), the ceiling `scripts/measure_plate.py` slices under, which stops a measurement
-below the hosted ceiling and must rise above it; the time limit a measurement runs under
+below the hosted ceiling and must rise above it (*proposed*); the time limit a measurement runs under
 (`slicer.slice_plate`'s default, `PLATE_SLICE_TIMEOUT_S`, 240 s; `limits.MEASURE_MAX_SECONDS`,
 180, is defined and used nowhere); and the models' constants (`MEMORY_*`, `TIME_*`).
 Tests: the fast suite's tests of the models follow their new constants. [D46, D47, D48,
@@ -351,8 +369,8 @@ D49, D50]
 
 **A comment line on a quiet progress stream.** Railway closes a request after fifteen
 minutes, or after five without data, and Cloudflare after 125 seconds without data. So the
-progress stream sends a comment line (`: keep-alive`) at least every fifteen seconds while
-it has nothing to report, as the relay's does. Replaces: `JobPool.follow` repeating the
+progress stream sends a comment line (`: keep-alive`, *proposed*) at least every fifteen seconds while
+it has nothing to report, as the relay's does. Replaces (*proposed*): `JobPool.follow` repeating the
 latest progress report, with its same `sequence`, every `jobs.WAIT_S` (15 s) when nothing
 changes. Error report: none. Tests: with the wait injected, a quiet stream sends a comment
 line and no repeated report; a new report follows the comment line. [D60, D300]
@@ -360,36 +378,40 @@ line and no repeated report; a new report follows the comment line. [D60, D300]
 **Orca as a Unix user of its own.** Orca runs as a Unix user of its own that can write
 only the scratch folder of its slice job, so a flaw in Orca cannot alter the slice service
 or reach another slice job's files. The slice container's image makes the user, and the
-slice service starts Orca as it. Replaces: Orca run as the slice service's own user (with
+slice service starts Orca as it (*proposed*). Replaces: Orca run as the slice service's own user (with
 its allowlisted environment and its `HOME` in the scratch folder, which stay). Error report:
-an Orca that cannot be started as that user is `slice.orca_unstartable`. Tests: in the fast
+an Orca that cannot be started as that user is `slice.orca_unstartable` (*proposed*). Tests: in the fast
 suite, the command the slice service builds names the user; in the slice container's
 image, a fake Orca that tries to write outside its scratch folder is refused. [D253, D305]
 
 **A new Orca version is a new image.** A new Orca version is rolled out as a new image of
 the slice container, built with the version pinned in `scripts/install-orca.sh` after
-`make upgrade-orca` and the upstream check pass, and deployed like any other change. The
-image installs the distribution's packages listed under [Orca Slicer](#orca-slicer), since
-the install script stops instead when it runs as root. Replaces: nothing; as built Orca is
-installed into `tools/orca` on the machine that runs the service. Tests: the image's build
-runs `make test-upstream`. [D42]
+`make upgrade-orca` (*proposed*) and the upstream check pass, and deployed like any other change. The
+image installs the distribution's packages listed under [Orca Slicer](#orca-slicer)
+(*proposed*), since the install script stops instead when it runs as root. Replaces:
+nothing; as built Orca is installed into `tools/orca` on the machine that runs the
+service. Tests: the image's build runs `make test-upstream` (*proposed*). [D42]
 
 **The log.** The slice service's log lines reach the log bucket through the front server:
 
-- A route, `GET /log`, gives the front server the lines written since the last it fetched
-  (by a sequence number it passes back). The lines wait in a bounded buffer in memory; each
-  line also goes to stderr, so one dropped from a full buffer is still in Railway's log
-  view. Every line gains the time and the user key. [D307]
+- A route, `GET /log` (*proposed*), gives the front server the lines written since the last it fetched
+  (by a sequence number it passes back; *proposed*). The lines wait in a bounded buffer in
+  memory; each line also goes to stderr (*proposed*), so one dropped from a full buffer is
+  still in Railway's log view. Every line gains the time and the user key. [D307]
 - The line that ends a slice job, which already carries Orca's peak memory
   (`peak_rss_kb`), the estimates (`estimated_peak_mb`, `expected_s`), the memory ceiling
   (`memory_ceiling_mb`), its times (`orca_wall_s`, `wall_s`) and each part's measurements,
   gains the bytes of each part, the bytes of the sliced file and how long the slice job
-  waited before it ran. [D188, D308]
+  waited before it ran. It also carries the number of parts and the number of instances
+  as figures of their own. The approved design says the line gains the memory ceiling;
+  the code as built shows it there already (`memory_ceiling_mb`), which is what holds.
+  [D188, D308]
 - A slice that passes 80 percent of the memory ceiling or of the time limit also writes a
   line marked as a warning, so that near misses can be found without reading every slice:
-  with 6,000 MB and 240 s, a peak over 4,800 MB or Orca running over 192 s. [D190]
-- Once a minute a line gives the memory the slice service process and its Orcas hold, and
-  the slices running and waiting (`JobPool.counts`). [D309]
+  with 6,000 MB and 240 s, a peak over 4,800 MB or Orca running over 192 s (the derived
+  figures *proposed*). [D190]
+- Once a minute a line gives the memory the slice service process and its Orcas hold
+  together (*proposed*), and the slices running and waiting (`JobPool.counts`). [D309]
 - A line for every exception and every refusal, whichever route it comes from. As built
   only the refusals of `POST /slices` (`"state": "refused"`) and the exceptions of the
   routes (`slice_http_error`), the sweeper and the cleanup are logged; the refusal of
@@ -400,7 +422,7 @@ none; a log that fails never changes an answer, as built (`jobs.SafeLog`). Tests
 of line produced on purpose (a fake Orca reporting a peak over 80 percent of a ceiling the
 test sets, a fake clock past 80 percent of the time limit, the once-a-minute line on a fake
 clock, a refusal at every route); `GET /log` gives lines in order and only those after the
-number passed; a full buffer drops the oldest and counts it.
+number passed; a full buffer drops the oldest and counts it (*proposed*).
 
 ## Use
 
@@ -683,7 +705,8 @@ decides.
 
 The limits that refuse a plate configuration before slicing are the instances
 (`MAX_INSTANCES`, 150), the different parts they use (`MAX_PARTS`, 25), the triangles and
-bytes of one part, and each part's size against the plate and the printer. Memory refuses
+bytes of one part (`MAX_PART_TRIANGLES`, 150,000; `MAX_PART_BYTES`, 7,500,084 bytes,
+7.5 MB), and each part's size against the plate and the printer. Memory refuses
 nothing before slicing, and neither do the triangles of the whole plate: the memory
 watchdog, not the instance count, is what protects the machine.
 
@@ -722,7 +745,8 @@ refuse such a plate before the watchdog stops it and never refuse a plate that s
 hubs of 20,000 triangles, 0.5 million, slice at 842 MB), so the watchdog decides. The
 placement check compares every pair (11,175 for 150 instances on one spot, a few
 hundredths of a second) and its refusal's detail lists at most 20 of the problems; the
-time limit (`PLATE_SLICE_TIMEOUT_S`, 240 s) is twenty times what 150 spacers take.
+time limit (`PLATE_SLICE_TIMEOUT_S`, 240 s) is about twenty-five times what 150 spacers
+take (9.4 s).
 
 **The Popcorn Penguins' real parts.** These are the project's first measurements of real
 parts: the eight parts of the robot of the Popcorn Penguins (FRC Team 6238) in
