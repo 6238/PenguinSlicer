@@ -7,7 +7,9 @@ Orca's or any other AGPL or GPL code
 kept byte for byte as its release published it, at the same path inside its package, so
 that the relative imports between its files still work; a file is never edited here. The
 wizard's fast suite checks each file's SHA-256 against the table below, and that every file
-in this folder is in the table.
+in this folder is in the table. The folder's own `.gitignore` (not in the table) undoes a
+global rule that ignores folders named `build/`, which would otherwise keep three.js's core
+out of every commit; the fast suite checks that git ignores no file in the table.
 
 ## three.js 0.170.0
 
