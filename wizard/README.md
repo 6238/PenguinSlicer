@@ -103,16 +103,18 @@ The plan's terms hold here. The ones this guide leans on, each in a sentence:
 - The **configuration** is the current group's shared settings: its filaments, each with a
   colour and its own profiles; the printer's Orca profile, which gives the plate's size and
   height; and whether uploaded files are read in inches or millimetres.
-- A **profile** is a named set of slicing settings in the configuration, such as
-  "Structural". A **change** is one setting set differently from the profile.
+- A **profile** is one of Orca's named bundles of settings. The wizard offers the
+  profiles the configuration lists for a filament, each under the group's own name, such
+  as "Structural". A **change** is one setting set differently from the profile.
 - A **plate configuration** is the description of what to slice: the parts, where each
   instance sits and how it is turned, the profile and the changes. A **slice job** is one
   plate configuration being sliced by the slice service. The **sliced file** is what Orca
   writes and the printer runs.
 - A **delivery job** is one sliced file on its way to one printer, from Send to the end of
   its print. The **daemon** is printer delivery's program on the computer beside the
-  printer; the wizard never talks to it, and the panel calls it "the PenguinSlicer program
-  on the computer beside the printer". The **relay** is printer delivery's other half,
+  printer (the plan calls that computer the daemon's computer); the wizard never talks to
+  it, and the panel calls it "the PenguinSlicer program on the computer beside the
+  printer". The **relay** is printer delivery's other half,
   which runs inside the front server, hands delivery jobs to the daemon and holds the
   printer's last status.
 
@@ -142,13 +144,16 @@ Three places hold what is the owner's to change, and they can be read without th
 - **What is undecided or unmeasured.**
   [What is undecided or unmeasured](#what-is-undecided-or-unmeasured) holds the two risks
   to try first, the Preview step's targets, the
-  eleven [gaps in the design](#gaps-in-the-design) that no source decides, each with its
-  options and a recommendation (two tabs on one stored plate, stored work that is not
-  tied to a user, a progress stream that cannot be reopened, failures in the browser
-  that reach no log, STL files in millimetres, starting a second plate, a configuration
-  that cannot be read, a print no longer followed, parts dropped on return, the Layout
-  step by keyboard, and where the printer's name comes from), and
-  [eleven smaller open items](#the-other-undecided-items).
+  twelve [gaps in the design](#gaps-in-the-design), each with its options and a
+  recommendation: one on which two sources disagree (whether a user may read Orca's own
+  sentence about a failed slice) and eleven that no source decides (two tabs on one
+  stored plate, stored work that is not tied to a user, a progress stream that cannot be
+  reopened, failures in the browser that reach no log, STL files in millimetres,
+  starting a second plate, a configuration that cannot be read, a print no longer
+  followed, parts dropped on return, the Layout step by keyboard, and where the
+  printer's name comes from), and
+  [twelve smaller open items](#the-other-undecided-items), the last of which lists the
+  open items of the other three guides that would change what the panel shows.
 
 Everything else in the guide follows the mockup's accepted decisions or a decision
 recorded in the plan or the architecture, except the targets this guide proposes for
@@ -271,12 +276,15 @@ which is kept for the server's log and never shown. **The component that failed 
 the sentences.** This is a requirement on the boundary between components, and every
 failure this guide describes follows it.
 
-One thing a user can read is not written by a component of PenguinSlicer. On the two
-slice failures that carry folded Details, the Details quote Orca Slicer's own sentence
-with the heights, marked as Orca's, beside the slice service's sentence of where to look
-on the part ([When a slice fails](#when-a-slice-fails)). The slice service puts that
-quotation into its error report among what is for the user; the wizard still shows the
-report as it is and never reads the detail kept for the log.
+Whether one thing a user reads may be written by something other than a component of
+PenguinSlicer is undecided. The accepted screens quote Orca Slicer's own sentence, with
+the heights, under the folded Details of two slice failures; the slice service's guide
+and the error report's contract keep Orca's words for the log and show none of them.
+Both sides, what a user sees under each and a recommendation are in
+[Orca's own sentence under Details](#orcas-own-sentence-under-details). Under either
+answer the wizard shows the error report as it is and never reads the detail kept for
+the log: if the quotation is wanted, the slice service puts it, marked as Orca's, among
+what its error report holds for the user.
 
 | The failure is | Its sentences are written by | The wizard |
 |---|---|---|
@@ -300,10 +308,10 @@ that wrote it, and in its tests. Two consequences:
   component's wording as its own guide gives it, or an example of the kind of sentence
   expected. Where the two differ, the other component's guide wins: the remedy for a
   slice that ran out of memory is the slice service's, for example
-  ([When a slice fails](#when-a-slice-fails)). The one place where this guide asks
-  another component for something its guide does not have is Orca's sentence under
-  Details, which is listed as an ask
-  ([What the other components do not provide yet](#what-the-wizard-asks-of-the-front-server)).
+  ([When a slice fails](#when-a-slice-fails)). The one place where this guide and
+  another component's guide disagree about a sentence is Orca's sentence under Details,
+  which is undecided
+  ([Orca's own sentence under Details](#orcas-own-sentence-under-details)).
 
 States that are not failures are the wizard's to put into words, from the figures it is
 sent: a slice waiting behind others, a busy printer, a printer not heard from, a print
@@ -322,7 +330,7 @@ configuration's units for uploads. The wizard never guesses units from a part's 
 | A part's own size, on every step | The part's units. Inches are decimal to three places, as a machinist reads a drawing ("2.000 × 2.000 × 0.188 in"); millimetres to 0.1 mm |
 | Printer and plate figures: the plate's size, the height limit, the spacing between instances, distances between instances, a height above the plate, the layer readout | Always millimetres, as the printer's maker gives them: heights and the spacing to 1 mm, distances between instances to 0.1 mm |
 | A comparison of a part's figure with a printer's | Millimetres for both, with the part's own units in brackets when they are inches ("stands 352.7 mm (13.885 in) tall; the printer prints up to 340 mm") |
-| Slicing settings, and Orca's own sentence quoted under Details on a failed slice | Always millimetres, as in Orca and in the profiles |
+| Slicing settings, and Orca's own sentence if it is quoted under Details on a failed slice ([undecided](#orcas-own-sentence-under-details)) | Always millimetres, as in Orca and in the profiles |
 
 A size is rounded once, from the exact millimetres, in the unit shown, so a part has one
 size on every step. A size is never cut short: in a narrow panel it wraps.
@@ -365,7 +373,10 @@ server is being slow" until that slice has ended and the replacement has started
 at most the slice service's time limit of 240 seconds plus the replacement's start; past
 300 seconds they see "The server could not be reached" and must press Try again. Their
 plate is kept either way. Whether that is acceptable is undecided in
-[the slice service's guide](../slice/README.md#what-a-user-sees-while-the-slice-service-stops).
+[the slice service's guide](../slice/README.md#what-a-user-sees-while-the-slice-service-stops),
+which owns the item. Its recommendation is that the front server keeps such a submission
+and hands it to the new slice service; the user would then see the slicing card waiting,
+with a stage line that says the slicer is restarting, and never this message.
 
 ### The three widths
 
@@ -474,7 +485,7 @@ has been told that a filament or a profile was added. If the chosen filament or 
 gone from the new configuration, the first one takes its place and a notification says
 which. The configuration cannot be edited from the wizard: its edit screens are a feature
 of their own, in no phase yet, and until they exist a group uses the built-in default or
-a document the owner of the service writes by hand. A group that has no configuration
+a document the owner writes by hand. A group that has no configuration
 gets the built-in default, so a new group can slice without setting anything up.
 
 **A configuration that cannot be read.** A configuration that exists but is damaged is
@@ -846,8 +857,8 @@ to leave is to look at something and come back, and a slice thrown away is a wai
 | Slicing | The ring, the stage and the times, as above |
 | The front server cannot be reached | The figures stop, the time-left line says "no news since 0:41", and Cancel slice is off, with one line: "Cancel slice is off until the server can be reached again; the slice may still be running." When this state begins for a page that is only following progress is undecided; proposed, when the progress stream has failed to reopen for 20 seconds ([A progress stream that cannot be reopened](#a-progress-stream-that-cannot-be-reopened)) |
 | Reconnected | One line on the card: "Reconnected at 1:05. The slice kept running; the progress below is up to date." |
-| The slice service restarted | The ring and the stages go back to the start, and one line on the card says "The slicer restarted, so this slice began again." The page has sent the parts and the plate again by itself; the user did nothing |
-| Cancelled by the user | A grey message: "Slice cancelled at 0:23, during “Generating perimeters”. Nothing was saved or sent to the printer.", with **Slice again** and Back to Layout |
+| The slice service restarted | The ring and the stages go back to the start, and one line on the card says "The slicer restarted, so this slice began again." The page has sent the parts and the plate again by itself; the user did nothing. The same holds for a slice that was still waiting when the slice service was asked to stop for a deploy: the slice service cancels it, saying why, and the page submits it again by itself |
+| Cancelled by the user | A grey message: "Slice cancelled at 0:23, during “Generating walls”. Nothing was saved or sent to the printer.", with **Slice again** and Back to Layout |
 
 **No room to wait.** The slice service runs one slice at a time and lets two more wait.
 When a fourth arrives it is refused, and the step shows an amber message in place of the
@@ -879,16 +890,19 @@ it names one; **Slice again** when the report says the same plate may succeed un
 and its own Back to Layout or Back to Parts, whichever step holds the remedy. Two
 failures carry folded Details: a part with empty layers while supports are off, and the
 same finding with supports already on, which is a fault in the part's mesh. The Details
-of both hold Orca Slicer's own sentence with the heights, quoted and marked as Orca's,
-and the slice service's sentence of where to look on the part. Nothing else of Orca's
-output is shown, on these failures or on any other. The slice service as built keeps Orca's words for the log only, so the quotation
-is an ask on it
-([What the other components do not provide yet](#what-the-wizard-asks-of-the-front-server)).
+of both hold the slice service's sentence of where to look on the part. Whether they
+also hold Orca Slicer's own sentence with the heights, quoted and marked as Orca's, is
+undecided: the accepted screens show it, and the slice service's guide and the error
+report's contract keep Orca's words for the log and show none of them
+([Orca's own sentence under Details](#orcas-own-sentence-under-details)). The table
+below is written with the quotation. Nothing else of Orca's output is shown, on these
+failures or on any other.
 
 | Failure | What the slice service's sentences say | The wizard's buttons |
 |---|---|---|
 | The plate is not acceptable to the slice service, although the Layout step passed it | Which instance is off the plate or too tall, or which two instances are closer than the spacing. This is a disagreement between the wizard's placement check and the slice service's, and so a defect in one of them | Back to Layout |
-| A part has a gap with nothing under it (empty layers) | Which instance, and between which heights above the plate nothing would be printed; with supports off, to turn supports on, which is the single action; with supports already on, that the part itself must be repaired in CAD and added again. An example of the kind: "Gusset Plate #2 has empty layers at about 12.4 mm above the plate." Details, in both cases: Orca's own sentence with the heights, and where to look on the part | With supports off: **Turn on Supports and slice again**; Back to Layout. With supports on: Back to Parts |
+| A part has a gap with nothing under it (empty layers) | Which instance, and between which heights above the plate nothing would be printed; with supports off, to turn supports on, which is the single action; with supports already on, that the part itself must be repaired in CAD and added again. An example of the kind: "Gusset Plate #2 has empty layers at about 12.4 mm above the plate." Details, in both cases: where to look on the part and, if the undecided item is answered that way, Orca's own sentence with the heights | With supports off: **Turn on Supports and slice again**; Back to Layout. With supports on: Back to Parts |
+| A profile or setting is not accepted by the slice service | To choose from the lists. The page offers only what the configuration and the list of settings hold, so this is a configuration that names a profile the slice service does not have, or a disagreement between the wizard's list of settings and the slice service's | Proposed, since no source has the row: Back to Settings |
 | Two instances' paths would meet | Which two, and that supports are the likely cause when they are on; to spread them out, turn supports off or use a second plate | Back to Layout |
 | Nothing printable was found | That no layers were found, or that the print is empty, naming the part when the plate has one; to repair the part in CAD or check its size | Back to Parts |
 | Too slow: the slice passed the slice service's time limit, today 240 seconds | "The slicer took too long on this plate.", and the remedies: fewer instances or a second plate | **Slice again**, since the slice service may only have been busy; Back to Parts |
@@ -1046,11 +1060,16 @@ The step shows the **print card** at its top: the plate in words ("Plate 1, 16 i
 on Shop H2S"), its stage on a track (Sending, Starting, Heating, Printing, Done), and its
 figures: percent, layer of total, time left, expected finish and when it was sent. The
 button is off and follows the stage ("Sending…", "Heating…", "Printing…", "Waiting for a
-person…").
+person…"). Under the track the card gives the stage in the words of printer delivery's
+progress report, whose nine stages are in
+[printer delivery's guide](../delivery/README.md#the-stages-what-a-user-sees-and-what-can-be-cancelled).
+Which of them stands under which word of the track is stated in no source; proposed:
+the three waits (for the daemon, for the printer, for an earlier print), the fetch and
+the upload under Sending, and starting and "start not shown yet" under Starting.
 
 | State | What the user sees and can do |
 |---|---|
-| On its way, before the printer starts | **Cancel sending** is offered. Cancelling leaves a notification: "Sending cancelled. Nothing reached Shop H2S and nothing will print. Your sliced plate is still here." It goes when the plate is sent again. If the printer had already started when the cancel arrived, the card says the print has started and goes on following it |
+| On its way, until printer delivery allows the print to start | **Cancel sending** is offered. Cancelling leaves a notification: "Sending cancelled. Nothing reached Shop H2S and nothing will print. Your sliced plate is still here." It goes when the plate is sent again. From the moment the relay has allowed the start, a cancel is refused and Cancel sending is no longer offered. A cancel that arrives just after that moment is answered with printer delivery's sentence, shown on the card: that the start command may already have been sent, or has been sent, so the plate can no longer be cancelled from here. Neither says that the print started; the card goes on following the plate |
 | Printing | The figures. Pausing or stopping a print is done at the printer's screen; the panel offers neither, because a stop from a browser that the printer never received would be worse than no button |
 | Waiting for a person | An amber message says what to do at the printer, in printer delivery's sentences, of this kind: "Filament ran out. Load new filament, then resume the print on the printer's screen." It is a stage, never an end |
 | Failed | The card says so, in printer delivery's sentences, of this kind: "The print stopped at layer 51 of 134 (38%): the printer reported a filament tangle or a clogged nozzle. Clear the plate and check the filament path at the printer, then send the plate again from here. The sliced file is still here." Details: where the printer's screen shows the fault and what to check |
@@ -1088,7 +1107,8 @@ has cleared.
 ### A print that has gone quiet
 
 During a print the daemon reports every ten seconds. If nothing has arrived for 40 seconds
-the print has **gone quiet**: the print card keeps its last figures, greyed, and an amber
+the print has **gone quiet** (printer delivery's guide calls such a progress report
+stale): the print card keeps its last figures, greyed, and an amber
 line on it says "No news from Shop H2S since 11:02 am. The print may still be running;
 these figures are from then." It clears by itself when the next report arrives. After two
 minutes without news the printer-status icon turns to Offline. "Gone quiet" is about a
@@ -1107,11 +1127,11 @@ following this print? PenguinSlicer will no longer show its progress and cannot 
 ended. The print itself is not stopped; that is done at the printer's screen." with **Stop
 following** and Keep following. After it, the card goes, a notification says "Stopped
 following Plate 1 on Shop H2S. How it ended is not known.", and Send comes back once the
-daemon answers again and the printer is idle. If the printer starts reporting
+daemon answers again and the printer is free. If the printer starts reporting
 the print again before the user confirms, stopping is refused and the card simply shows
 the fresh figures. A print nobody stops following is given up by printer delivery's relay
-after 24 hours of silence. A plate that had not yet started needs none of this: Cancel
-sending is still offered.
+after 24 hours of silence. A plate that the relay had not yet allowed to start needs
+none of this: Cancel sending is still offered.
 
 What the printer-status icon and the printer details show after Stop following, or after
 the relay gives a print up, is designed in no source and is undecided. The icon's
@@ -1197,7 +1217,7 @@ takes the code in capitals or small letters, with or without its hyphen.
 |---|---|
 | The code is one a daemon is showing | The form goes. A notification says "Paired with Shop H2S. Everyone in 6238 (Popcorn Penguins) can now send to it." The icon shows a grey dot and "…" until the daemon first reports, within about half a minute, and then the printer's state |
 | No daemon is showing that code | At once, in red under the field, printer delivery's sentence, of this kind: "No computer beside a printer is showing that code right now. Check the code and try again in a moment." Every wrong code gets this one answer, whether it was mistyped, has run out or was already used, so that a guesser learns nothing from the answer. It is also the answer for a right code typed in the half minute after the front server restarts, which is why it says "in a moment" |
-| Too many wrong codes from this user | The field and the button are off, with printer delivery's sentence, of this kind: "Too many wrong codes. Wait a few minutes, then try again." |
+| Too many wrong codes from this user | The field and the button are off, with printer delivery's sentence, of this kind: "Too many wrong codes. Wait a minute, then try again." The wait it names follows from printer delivery's limit, proposed at ten wrong codes a minute for each user |
 
 **Unpairing.** At the bottom of the printer details, whenever a printer is paired, is a
 quiet link, **Unpair this printer**. It asks in a confirmation: "Unpair Shop H2S? Nobody
@@ -1289,7 +1309,7 @@ user's models rest outside their own browser only as short-lived copies.
 
 | What the page keeps | Kept until |
 |---|---|
-| The parts: each part's file exactly as it arrived, with its name, its units and its fingerprint (a SHA-256 hash of its bytes, by which the slice service knows the part) | The page, on opening, finds the plate's sliced file expired |
+| The parts: each part's file exactly as it arrived, with its name, its units and its hash (the SHA-256 hash of its bytes, by which the slice service knows the part) | The page, on opening, finds the plate's sliced file expired |
 | The layout: where each instance sits and how it is turned | The same |
 | The chosen settings: the filament, the profile and every change | The same |
 | Which slice is the plate's, and when the page submitted it | The same |
@@ -1318,8 +1338,8 @@ Three consequences follow, and each is deliberate.
   nothing of it.
 
 **Each part is sent once, when it is added,** and from then on is named by its
-fingerprint. On the Preview step the page sends only the
-plate configuration, which names each part by fingerprint and carries no files. So slicing
+hash. On the Preview step the page sends only the
+plate configuration, which names each part by hash and carries no files. So slicing
 again after moving a part or changing a setting uploads nothing, and a part that cannot be
 sliced is found when it is added.
 
@@ -1359,11 +1379,10 @@ measuring the page multiplies an inch part's coordinates by 25.4, in memory only
 slice service alone applies the scale to what is sliced, and uses the units in its checks
 when the part arrives.
 
-The reason is that a part is named by the fingerprint of its bytes. If the browser
-rewrote a file to convert its units, two components would each hold their own version of
-"the part", and a difference between them would be a wrong-sized print with no error
-anywhere. With the bytes untouched and the units a label, the same file read in inches and
-in millimetres is simply two different parts to the slice service.
+The reason is that a part is named by the hash of its bytes: a browser that rewrote a
+file to convert its units would hold a different part from the one the slice service
+checked. The rule and its reasons are the slice service's, in
+[its guide](../slice/README.md#units).
 
 ### Finding the faces a part can lie on
 
@@ -1506,7 +1525,7 @@ phase 2's design. In words:
   and a way to start signing in and signing in again.
 - **The current group's configuration,** whole, on opening and when the reload glyph is
   pressed.
-- **To take one part,** check it and answer with its fingerprint, its measurements and any
+- **To take one part,** check it and answer with its hash, its measurements and any
   warnings, or with the reason it cannot be used.
 - **To take a plate configuration** and answer with the slice it started; or with the list
   of parts it no longer has; or that there is no room to wait.
@@ -1534,20 +1553,21 @@ first answer was lost must not start a second print. And a page loaded before a 
 must keep working against the front server deployed after it, until it reloads.
 
 **What the other components do not provide yet,** and the wizard as designed needs. The
-first three rows are asks that the contract between the wizard and the front server does
+first four rows are asks that the contract between the wizard and the front server does
 not hold yet.
 
 | Needed | From | For |
 |---|---|---|
-| The moment a sliced file will be refused as expired, as the front server reckons it, sent with the sliced file's summary and again when a print of the plate ends. The contract carries no such moment, and the page's own clock may be wrong | The front server, and the contract | [A sliced plate that expires](#a-sliced-plate-that-expires) |
+| The moment a sliced file will be refused as expired, as the front server reckons it, sent with the sliced file's summary and again when a print of the plate ends. The contract carries no such moment, and the page's own clock may be wrong. Undecided, in the front server's guide ([Telling the page when a sliced file expires](../front/README.md#telling-the-page-when-a-sliced-file-expires)) | The front server, and the contract | [A sliced plate that expires](#a-sliced-plate-that-expires) |
 | A request by which the page reports a failure that happened only in the browser. Undecided ([Failures in the browser that reach no log](#failures-in-the-browser-that-reach-no-log)) | The front server, and the contract | Support from the server's log |
 | Signing out, if the proposal under [Sign-out](#sign-out) stands | The front server, and the contract | A shared computer |
+| A report that tells a slice cancelled because the slice service was asked to stop from one cancelled by the user or by a later slice | The slice service and the front server, with the contract's requests | The slicing card starting again by itself ([Slicing](#slicing)) |
 | Units for each part in the plate configuration, applied by the slice service | The slice service and the plate configuration's contract | Parts in inches |
 | Every setting of Orca's that is a parameter with a value accepted as a change; as built, four are | The slice service | Advanced mode |
-| The list of those settings, with each one's kind, range and choices, and each profile's value for it. Not in the contract; to be added when it is settled | Undecided where from ([Where advanced mode's settings come from](#where-advanced-modes-settings-come-from)) | Advanced mode, the changes box |
-| Orca's own sentence with the heights, as a quotation for the user in the error reports of the two slice failures that carry Details. The slice service's guide and the error report's contract keep Orca's words for the log and show none of them | The slice service and the error report's contract | [When a slice fails](#when-a-slice-fails) |
+| The list of those settings, with each one's kind, range and choices, and each profile's value for it. Not in the contract; to be added when it is settled | Undecided where from; the slice service's guide owns the item and recommends that the slice service supplies the list through the front server ([Where advanced mode's settings come from](#where-advanced-modes-settings-come-from)) | Advanced mode, the changes box |
+| Orca's own sentence with the heights, as a quotation for the user in the error reports of the two slice failures that carry Details, if the owner decides that a user may read it. Undecided ([Orca's own sentence under Details](#orcas-own-sentence-under-details)) | The slice service and the error report's contract | [When a slice fails](#when-a-slice-fails) |
 | Sentences in the slice service's and printer delivery's error reports that say "your CAD program" and never a role word or "the print server" | The slice service and printer delivery, as their known future work | [Who writes the sentences of a failure](#who-writes-the-sentences-of-a-failure) |
-| A slice that runs on when its page goes away, one unfinished slice for each user, parts kept and named by fingerprint, a waiting slice's place | The slice service, phase 2 | The Preview step and coming back |
+| A slice that runs on when its page goes away, one unfinished slice for each user, parts kept and named by hash, a waiting slice's place | The slice service, phase 2 | The Preview step and coming back |
 | Who sent a print, a one-line description of the plate, when the last print ended and who sent it, the layer of a failure | Printer delivery, phase 5 | The printer details, the busy card, the last-print note |
 | The signed-in user's own running print and last print | Printer delivery, phase 5 | A page coming back |
 | The time a daemon went silent, kept across a restart of the front server | Printer delivery, phase 5 | "Not heard from for 7 minutes." |
@@ -1725,8 +1745,8 @@ to the front server, and what such a report may carry, is undecided
 ([Failures in the browser that reach no log](#failures-in-the-browser-that-reach-no-log)).
 
 **Cancelling.** A slice can be cancelled at any moment from the slicing card, which stops
-Orca itself and leaves the plate ready to slice again. A send can be cancelled until the
-printer starts. A print is stopped at the printer.
+Orca itself and leaves the plate ready to slice again. A send can be cancelled until
+printer delivery allows the print to start. A print is stopped at the printer.
 
 **A restart or a deploy** costs a user a pause and, with one known exception, nothing
 else. The front server restarting pauses requests, which are retried, and closes progress
@@ -1749,7 +1769,7 @@ The rules are the project's, applied to code in a browser.
 - **The front server is a fake the test controls.** Anything that depends on the order of
   events over the network is tested with a stand-in front server that lets the test put
   the events in an exact order: an answer lost and the request repeated, a progress
-  connection closed mid-slice, a slice cancelled from another tab, a part the slice service has
+  stream closed mid-slice, a slice cancelled from another tab, a part the slice service has
   forgotten, a newer version announced while a request is waiting.
 - **Every row is a test.** Each row of each table in this guide that describes a state or
   a message has a test that reaches that state on purpose and checks what the user sees:
@@ -1813,8 +1833,8 @@ can be changed by saying so; the alternative is given so that the change is one 
 
 | | What this guide chose | Why | The alternative | Described under |
 |---|---|---|---|---|
-| 1 | A sign-in that has run out is a message with a button, **Sign in with Onshape**; the page does not leave for Onshape by itself | A user in the middle of dragging an instance would lose their place without knowing why, and nothing is lost by waiting | The page starts the sign-in itself the moment a request is refused as not signed in. That is what three texts marked proposed say: the contract, the front server's guide and this component's details file. They disagree with this guide until one side is changed | [Signing in](#signing-in) |
-| 2 | **Sign in again** is inside the group details, not on the header line | The header's second line stays one row at 320 px | A link on the header line beside the current group's name, which is the letter of the approved design and of the front server's guide; at 320 px the line then wraps or the group's name is cut | [The current group](#the-current-group) |
+| 1 | A sign-in that has run out is a message with a button, **Sign in with Onshape**; the page does not leave for Onshape by itself | A user in the middle of dragging an instance would lose their place without knowing why, and nothing is lost by waiting | The page starts the sign-in itself the moment a request is refused as not signed in. That is what two texts marked proposed still say: the contract and this component's details file. They disagree with this guide and with the front server's guide until they are changed | [Signing in](#signing-in) |
+| 2 | **Sign in again** is inside the group details, not on the header line | The header's second line stays one row at 320 px | A link on the header line beside the current group's name, which is the letter of the approved design and of the contract ("the header's action"); at 320 px the line then wraps or the group's name is cut | [The current group](#the-current-group) |
 | 3 | Changing the current group clears the changes and the slice, cancels a running slice, and keeps the parts and the layout, after a confirmation; changing back does not bring back a print card with Send enabled | Changes and a slice belong to one group's profiles and printer; parts and a layout are the user's work and can be checked against the new plate | Clear everything, which is simpler and loses work; or keep a separate plate for each group, so that changing back restores everything, at the cost of several stored plates in the browser | [The current group](#the-current-group) |
 | 4 | The retry message sits on the panel line, with a link, "Retry now" | It concerns the whole panel and must stay as the user moves between steps. "Retry now" lets a user who has just mended their own network skip the countdown | A notification on the step, which goes when the user leaves the step; and no "Retry now", which nobody asked for and which the decision on retrying does not mention | [When the server is slow](#when-the-server-is-slow-or-cannot-be-reached) |
 | 5 | A sliced plate that expires with the page open is replaced, on the Preview and Send steps only, by a grey message with **Slice again**; the parts, layout and settings stay; the page does not slice again by itself | Nothing went wrong, and a slice takes a place others may be waiting for | Slice again automatically at the expiry; or treat the open page as a returning page is treated and empty the plate | [A sliced plate that expires](#a-sliced-plate-that-expires) |
@@ -1827,9 +1847,11 @@ can be changed by saying so; the alternative is given so that the change is one 
 | 12 | The Send step exists from phase 2, named Send, with **Download the sliced file** as its one button | The five steps keep their names and order when the printer arrives, and the download has a home | What the plan says: the Send step arrives in phase 5, and in phase 2 the download is a button on the Preview step's result, with four steps until then | [The Send step](#the-send-step) |
 
 Signing out is the thirteenth thing no source decides; it is left open, with a proposal,
-under [Sign-out](#sign-out). Six smaller rules that this guide proposes are marked
+under [Sign-out](#sign-out). Eight smaller rules that this guide proposes are marked
 "proposed" where they stand: the form of a confirmation, which use of the panel line
-wins, the waits between retries, what happens to a part the page cannot draw, that a
+wins, the waits between retries, what happens to a part the page cannot draw, the
+button for a profile or setting the slice service does not accept, which of printer
+delivery's stages stands under which word of the print card's track, that a
 followed print's rows win over Offline, and the ten seconds before a self-reload. Two
 more are written as the design and no source states them: when the front server refuses
 the stored group, the page takes the first of the user's groups by itself, where it
@@ -1930,9 +1952,43 @@ result.
 
 ### Gaps in the design
 
-Each item below is something no source decides. None is settled here. Each says what it
-is, what is known, the options with what each costs and what a user would see, and a
-recommendation.
+Each item below is something no source decides, except the first, on which two sources
+disagree. None is settled here. Each says what it is, what is known, the options with
+what each costs and what a user would see, and a recommendation.
+
+#### Orca's own sentence under Details
+
+**What it is.** Two slice failures carry folded Details: a part with empty layers while
+supports are off, and the same finding with supports already on
+([When a slice fails](#when-a-slice-fails)). Two sources disagree about what a user may
+read there. The accepted screens quote Orca Slicer's own sentence, with the heights,
+beside the slice service's sentence of where to look on the part, and say that the
+quotation is in millimetres. The slice service's guide and
+[the error report's contract](../contracts/error-report.md) say that the underlying
+detail, Orca's own words among it, is kept for the server's log and is "never shown to a
+user as it is". The choice is the owner's, and neither guide states either side as the
+design.
+
+**What is known.** In the pinned Orca the sentence reads "Object can't be printed for
+empty layer between 9.9 and 11.34 ... Object: Tower #1". The slice service already reads
+that sentence and writes its own from it, naming the instance and the heights, so the
+facts reach the user under either answer. The sentence is in English and in Orca's
+terms. The upstream check pins its wording, because the slice service reads it, so a new
+Orca version that changes it fails that check before any user sees the change. The error
+report has one place for the sentences a user reads and one for the detail kept for the
+log, and today Orca's sentence is only in the second.
+
+| Option | What a user sees | What it costs, and what it risks |
+|---|---|---|
+| Quote it: on these two failures only, the slice service puts Orca's sentence, marked as Orca's, among what its error report holds for the user | The message as today. Opening Details shows two things: "Orca Slicer: Object can't be printed for empty layer between 9.9 and 11.34", and the slice service's sentence of where to look on the part | One more field in the error report's contract and in the slice service, with its tests. A user reads words PenguinSlicer did not write, which may read oddly beside its own and which change when Orca changes them. The rule that the component that failed writes every sentence gains an exception, and so does the contract's "never shown" |
+| Never quote it: the Details hold only the slice service's own sentence of where to look | The same message, with the heights in its first sentence. Opening Details shows where to look on the part and nothing of Orca's | Nothing to build. An accepted screen changes. A user who knows Orca, or who searches for the failure, has none of Orca's words to go by. With one sentence left under it, the fold may no longer be worth having on these two failures |
+
+**Recommended:** quote it, on these two failures only. The screen was accepted with the
+quotation, the cost is one field, and the wording is one the upstream check already
+pins. If the owner prefers the second answer, this guide's passages that mention the
+quotation lose it and nothing else changes.
+[The slice service's guide](../slice/README.md#orcas-own-sentence-in-an-error-report)
+carries the same item from its side.
 
 #### Two tabs on one stored plate
 
@@ -2023,13 +2079,16 @@ appear in the log, which is private; a part's geometry never does.
 
 | Option | What the owner can see | What it costs |
 |---|---|---|
-| The page reports each such failure to the front server, which writes one log line: what failed, on which step, the page's version, the browser's name and version, whether 3D is drawn in software, and the fingerprint of the part concerned. Never a part's bytes or geometry, never the contents of the storage. At most a few reports a minute from one page, and a report that cannot be sent is dropped, never retried into a loop | Every browser failure beside the front server's and the slice service's own lines for the same user | One new request in the contract, which must carry the wizard's mark like any request that changes something, and a limit at the front server so that a broken page cannot fill the log |
+| The page reports each such failure to the front server, which writes one log line: what failed, on which step, the page's version, the browser's name and version, whether 3D is drawn in software, and the hash of the part concerned. Never a part's bytes or geometry, never the contents of the storage. At most a few reports a minute from one page, and a report that cannot be sent is dropped, never retried into a loop | Every browser failure beside the front server's and the slice service's own lines for the same user | One new request in the contract, which must carry the wizard's mark like any request that changes something, and a limit at the front server so that a broken page cannot fill the log |
 | The same, and also a line for each of the page's own sentences shown to a user (a file over the limit, a twenty-sixth part) | As above, and how often users meet the limits | More lines; these are not failures of the software |
 | Nothing is reported | Nothing. A user who says "the view went blank" must be asked for a screenshot | Nothing to build; the standing requirement is not met for the browser |
 
 **Recommended:** the first. It meets the standing requirement at the cost of one request,
-and the fingerprint lets the owner find the part in the slice service's own lines without
-the geometry ever leaving the browser by this path.
+and the hash lets the owner find the part in the slice service's own lines without
+the geometry ever leaving the browser by this path. The front server's side of it (the
+request, the log line and the limit) is listed in
+[the front server's guide](../front/README.md#what-the-wizards-guide-asks-of-the-front-server),
+with the same recommendation.
 
 #### STL files in millimetres before the edit screens exist
 
@@ -2037,7 +2096,7 @@ the geometry ever leaving the browser by this path.
 option of the configuration, and a row has no switch of its own; that was accepted in
 the mockup on the footing that an administrator could set the option. But the
 configuration's edit screens are in no phase, and until they exist a group uses the
-built-in default or a document the owner of the service writes by hand.
+built-in default or a document the owner writes by hand.
 
 **What is known.** In a group on the built-in default nobody can use an STL file in
 millimetres. Such a file read as inches is 25.4 times too large and is usually refused
@@ -2047,7 +2106,7 @@ an uploaded file.
 
 | Option | What a user sees | What it costs |
 |---|---|---|
-| Leave it: the configuration's option is the only control | A user with a file in millimetres cannot print it until the owner of the service edits their group's configuration by hand | Nothing to build. Every such user must reach the owner |
+| Leave it: the configuration's option is the only control | A user with a file in millimetres cannot print it until the owner edits their group's configuration by hand | Nothing to build. Every such user must reach the owner |
 | The built-in default reads uploads in millimetres | Files in millimetres work everywhere by default; a file in inches arrives 25.4 times too small and gets the slice service's warning that it may be in inches | One value. It reverses the accepted decision that uploads are read in inches unless the configuration says otherwise |
 | A switch beside the upload area, "Read STL files in: inches / millimetres", starting at the configuration's value and kept in the browser's storage, until the edit screens exist | The user chooses, before uploading; the line under the upload area follows | A control the mockup's decision removed on purpose, and one more thing stored for a browser. It is taken out again when the edit screens arrive, or kept |
 
@@ -2111,7 +2170,9 @@ the printer's own state is not known either.
 | Shown as Failed | A red icon and "failed" for a print that may have finished well | Nothing to build. It sends someone to the printer to look for a fault |
 | Nothing is shown | The print vanishes from the panel; the sender, coming back, finds no trace of it | Nothing |
 
-**Recommended:** the first.
+**Recommended:** the first. Printer delivery's guide notes its part of it, an ending
+reported apart from a failure at the printer
+([its pointer](../delivery/README.md#what-the-wizards-guide-asks-of-printer-delivery)).
 
 #### Parts dropped on return and kept while the page is open
 
@@ -2174,7 +2235,8 @@ printer it talks to, and a Bambu printer has a name of its own that its owner se
 | A second field on the pairing form, "Name this printer", filled with the printer's own name as a start | The user who pairs chooses, and can see the name others will see | One more field in the wizard, and the name becomes text a user wrote, shown to the group as text only |
 
 **Recommended:** the first, with the third as a later refinement; it is printer
-delivery's to settle in phase 5.
+delivery's to build in phase 5, and its guide notes the same recommendation
+([its pointer](../delivery/README.md#what-the-wizards-guide-asks-of-printer-delivery)).
 
 ### The other undecided items
 
@@ -2182,13 +2244,15 @@ delivery's to settle in phase 5.
 
 Advanced mode needs, for Orca's about 295 settings less the programmatic ones,
 each one's name, section, setting group, kind, range and choices, and for each profile its value.
-The slice service holds the profiles, flattened from the pinned Orca. Options: the front
-server serves a list made from the slice service's profiles when the slice service's
-image is built (one source, always matching the Orca in use; costs a new thing to build
-and a request on opening advanced mode), or the list is written into the wizard by hand
-(nothing to build; drifts at every new Orca). Proposed: the first. Which settings count as
-programmatic is the slice service's list, and the wizard shows exactly what the slice
-service accepts.
+Where that list comes from is undecided, and the item is the slice service's, since the
+slice service alone holds Orca's profiles and settings for the pinned version:
+[Where the wizard gets the list of settings and the profile catalog's names](../slice/README.md#where-the-wizard-gets-the-list-of-settings-and-the-profile-catalogs-names).
+Its recommendation is that the slice service supplies the list and the front server
+passes it to the wizard, so that the list changes with the Orca version and is kept in
+one place. For the wizard that means a request when advanced mode opens, and settings
+drawn from each one's kind and not from a design made by hand for each setting. Which
+settings count as programmatic is the slice service's list, and the wizard shows exactly
+what the slice service accepts.
 
 #### Files other than binary STL
 
@@ -2210,8 +2274,11 @@ the next person is signed in as the last, with the last one's parts in the brows
 storage. Proposed: a **Sign out** link in the group details that ends the sign-in and
 clears the stored work, with a confirmation when there is a plate to lose. It costs one
 small request, which the contract does not hold yet, and nothing of Onshape's allowance;
-the next sign-in costs two calls. The front server's guide leaves the same question open
-([Signing out](../front/README.md#signing-out)).
+the next sign-in costs two calls. The other choice is to leave it out: a user then stops
+being signed in only when the cookie ends or is cleared in the browser. This guide owns
+the item; the front server's part of it, removing the cookie, is noted in
+[its guide](../front/README.md#signing-out), which recommends building it in phase 3
+with Sign in again.
 
 #### Agreement between the placement check of the wizard and of the slice service
 
@@ -2221,7 +2288,9 @@ the slice service refuses a plate whose instances are too close, and the mockup'
 outlines were off by about 0.2 mm. Proposed: a set of plates, some just passing and some
 just failing, kept with the contracts and run by both components' tests; and the wizard
 holding instances a fraction of a millimetre further apart than the rule, so rounding can
-never make it pass a plate the slice service refuses.
+never make it pass a plate the slice service refuses. The shared plates are work for the
+slice service's tests too, and its guide notes the proposal
+([its pointer](../slice/README.md#shared-plates-for-the-two-placement-checks)).
 
 #### Saying that a part will need supports
 
@@ -2241,16 +2310,18 @@ delivery's to settle in phase 5, and its guide proposes ten a minute for each us
 the reasoning
 ([The rate limits of phase 5](../delivery/README.md#the-rate-limits-of-phase-5)). The
 sentence is printer delivery's to write and must name the wait that the figure gives:
-with that proposal the wait is under a minute, not the "few minutes" of the example
-quoted under [Pairing a printer](#pairing-a-printer). Nothing here is the wizard's to
-decide beyond showing the sentence.
+with that proposal the wait is under a minute, as in the example quoted under
+[Pairing a printer](#pairing-a-printer). Nothing here is the wizard's to decide beyond
+showing the sentence.
 
 #### Who writes the one-line description of a plate
 
 The description ("8 instances of Gusset Plate") is written either by the
 page, with its send, or by the front server, from the plate configuration. The page writing
 it is simpler; the front server writing it means another user's panel never shows text a
-page made up. Proposed: the front server.
+page made up. Proposed: the front server, which hands the description to the relay with
+the send; the front server's and printer delivery's guides note the same proposal from
+their sides.
 
 #### Browsers other than Chrome
 
@@ -2274,7 +2345,9 @@ can be dragged (Onshape publishes no limits); whether the panel, and so the page
 open as the user moves between a document's tabs; whether full screen works from inside
 it; how Onshape's trackpad gestures sit beside the Layout step's; and whether Chrome keeps
 allowing an embedded page its cookie and storage, on which signing in and the stored plate
-both depend inside the panel.
+both depend inside the panel. What happens when Chrome withholds the cookie is the front
+server's item, with a trial proposed as the first step of phase 4
+([The cookie inside Onshape's panel](../front/README.md#the-cookie-inside-onshapes-panel)).
 
 #### Whether the browser's storage reliably holds a full plate
 
@@ -2294,6 +2367,41 @@ allowance may differ.
 
 Neither Cloudflare nor Railway
 promises to pass a progress stream on without holding it back. If one holds it, the
-page asks for the latest progress every second or two instead; the user would see the
-slicing card move in steps
-([the architecture](../docs/architecture.md#to-confirm-before-building-on-it)).
+page asks for the latest progress report every second or two instead, and the user sees
+progress up to two seconds late. The item is the front server's
+([Whether progress arrives as it is sent](../front/README.md#whether-progress-arrives-as-it-is-sent));
+one slice on the hosted service, in phase 3, settles it.
+
+#### Open items of the other guides that would change the panel
+
+Each of these is owned by another component's guide, with its options and a
+recommendation there. It is listed here because its answer changes what a user sees or
+what the page does.
+
+- **A plate configuration submitted twice.** The page retries a submission whose answer
+  was lost, and a repeat can cancel the slice its own first attempt made. The front
+  server's guide recommends that the page gives each submission a value of its own
+  making, by which a repeat is answered with the first attempt's slice
+  ([A plate configuration submitted twice](../front/README.md#a-plate-configuration-submitted-twice)).
+  It is to be settled before phase 2 is built.
+- **Following a print without a progress stream.** The front server's guide recommends
+  that the page follows a print and the printer's status by a short request every ten
+  seconds, keeps progress streams for slices only, and that one user may hold at most
+  four streams (proposed), so that a fifth tab is refused its stream
+  ([How many users at once](../front/README.md#how-many-users-at-once-and-what-happens-when-the-threads-run-out)).
+  A user would see the same figures, since a printing daemon reports every ten seconds.
+- **Pairing again.** A group that types a code while it has a printer, and a pairing
+  whose daemon never finishes it, are undecided in printer delivery's guide; its
+  recommendations add a refusal with printer delivery's sentence (the group already has
+  a printer, unpair it first) and a state in which the panel says that the PenguinSlicer
+  program on the computer beside the printer has not finished pairing
+  ([Pairing again: three cases](../delivery/README.md#pairing-again-three-cases)).
+- **An old daemon.** Printer delivery's guide recommends that the printer details tell
+  the group when its daemon is older than the current one, with how to install the new
+  one ([Daemon versions](../delivery/README.md#daemon-versions)).
+- **What the printer's required mode costs a group,** which the page on how to pair a
+  printer must state once it is known
+  ([The printer's required mode](../delivery/README.md#the-printers-required-mode)).
+- **Who may sign in.** If a list of permitted groups is kept, a user outside it lands on
+  the plain page of a sign-in that failed, with the front server's sentence
+  ([Who may sign in](../front/README.md#who-may-sign-in)).

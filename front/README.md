@@ -131,10 +131,10 @@ What it never holds:
 
 | With | What passes | The contract |
 |---|---|---|
-| The wizard | Pages; parts and plate configurations going up; progress and the sliced file coming down; the group's settings both ways; from phase 5, sends and the printer's status | [The wizard and the front server](../contracts/wizard-front-server.md), whose exact requests are written with phase 2's design; failures as [error reports](../contracts/error-report.md), progress as [progress reports](../contracts/progress-report.md) |
+| The wizard | Pages; parts and plate configurations going up; progress and the sliced file coming down; the group's configuration both ways; from phase 5, sends and the printer's status | [The wizard and the front server](../contracts/wizard-front-server.md), whose exact requests are written with phase 2's design; failures as [error reports](../contracts/error-report.md), progress as [progress reports](../contracts/progress-report.md) |
 | The slice service | Parts and [plate configurations](../contracts/plate-configuration.md) going in; progress, the [sliced file](../contracts/sliced-file.md) and log lines coming out | The slice service's own interface ([its guide](../slice/README.md)) |
 | Onshape | Who a user is and which companies and classrooms they belong to; from phase 4, the parts a user selected | Onshape's public interface |
-| The state bucket | Each group's settings, the sliced files and, from phase 5, what the relay must remember | [The configuration's contract](../contracts/configuration.md) for the settings |
+| The state bucket | Each group's configuration, the sliced files and, from phase 5, what the relay must remember | [The configuration's contract](../contracts/configuration.md) for the configuration |
 | The relay, from phase 5 | Who is asking; a place to keep what it must remember; the sliced file | The relay's interface to its caller ([printer delivery's guide](../delivery/README.md)) |
 
 What spans all the components (the two containers, where every kind of state lives,
@@ -172,16 +172,22 @@ A sign-in goes like this.
    signed in by a link someone else prepared.
 3. The front server asks Onshape who the user is and which companies and classrooms they
    belong to. That is two calls to Onshape, and they are the only two.
-4. It sets the cookie, reads the configuration of the user's current group, and writes
-   a log line with the user and their groups.
+4. It sets the cookie and writes a log line with the user and their groups. The page,
+   once it opens, asks for the configuration of the current group.
 
 A request for one of the wizard's pages with no signed-in user starts the sign-in. Any
-other request with no signed-in user is answered that the user is not signed in, and
-the page starts the sign-in itself.
+other request with no signed-in user is answered that the user is not signed in. The
+page does not leave for Onshape by itself on that answer: it shows the front server's
+sentences (that the sign-in has ended, and that the user's parts, layout and settings
+are kept in the browser) with one button, Sign in with Onshape, so that a user in the
+middle of something keeps their place. A sign-in that failed lands on a plain page with
+the front server's sentence and the same button. Both screens are in
+[the wizard's guide](../wizard/README.md#signing-in).
 
-Chrome is the supported browser. Safari is not supported, in Onshape's panel or outside
-it. What a user of Safari is shown is not designed; proposed: a plain page saying that
-PenguinSlicer needs Chrome.
+Chrome is proposed as the supported browser; no approved source names one, and the item
+is in [the wizard's guide](../wizard/README.md#browsers-other-than-chrome). Safari is
+not supported, in Onshape's panel or outside it. What a user of Safari is shown is not
+designed; proposed: a plain page saying that PenguinSlicer needs Chrome.
 
 Inside Onshape's panel the sign-in is the same exchange, and it depends on Chrome
 sending the cookie to a page embedded in another site. Whether Chrome always does, and
@@ -237,8 +243,9 @@ Three consequences are accepted.
   their cookie ends,** up to thirty days, because the groups are read at sign-in and,
   for now, at no other time.
 - **A user added to an Onshape company does not see the new group** until they sign in
-  again. The header has a "sign in again" action beside the current group's name for
-  exactly this. It costs two calls, and nothing limits how often it is used, which is
+  again. The group details, the small box that opens from the current group's name in
+  the wizard's header, hold a "sign in again" link for exactly this
+  ([the wizard's guide](../wizard/README.md#the-current-group)). It costs two calls, and nothing limits how often it is used, which is
   undecided (see [Sign-ins and the allowance](#sign-ins-and-the-allowance)).
 - **Inside Onshape's panel the cookie must be one the browser sends to a page embedded
   in another site.** A cookie of that kind is sent with requests that other sites cause
@@ -406,11 +413,17 @@ a plate changes; with the wizard open in two tabs, the later slice job wins. The
 server also passes on a user's own cancel.
 
 When no more slice jobs may wait, the slice service says so and the front server passes
-that on: the user is told the slicer is busy and to try again shortly. A slice service
-that is merely stopping for a deploy must not be reported that way. The user is to
-notice nothing of a deploy, so in that case the page must be answered that the service
-did not answer, which it retries silently; whether the slice service says so itself or
-the front server turns its refusal into that answer is settled with phase 2's design.
+that on: the user is told the slicer is busy and to try again in a minute, and the page
+does not try again by itself. A slice service
+that is merely stopping for a deploy must not be reported that way. The slice service
+then refuses a new slice job with an answer of its own, different from "busy", and the
+front server passes it to the page as an answer the page tries again quietly, like a
+service that did not answer
+([the slice service's guide](../slice/README.md#when-things-go-wrong), under "When asked
+to stop"). A user who submits during a long stop can still see the message that the
+server is being slow; whether the front server should keep such a submission instead is
+undecided
+([A plate configuration submitted while the slice service stops](#a-plate-configuration-submitted-while-the-slice-service-stops)).
 
 ### Progress
 
@@ -420,7 +433,8 @@ waiting slice job the report says how many are ahead of it.
 
 Three limits of the hosts shape this. Railway closes any request after fifteen minutes,
 and after five minutes if no data has passed; Cloudflare closes one after 125 seconds
-without data. So a stream with nothing to report sends an empty line at least every
+without data ([the architecture](../docs/architecture.md#progress-streams)). So a stream
+with nothing to report sends a comment line at least every
 fifteen seconds, which keeps it open through both, and the page reconnects whenever a
 stream closes, which is how it survives the fifteen-minute cut and every restart of the
 front server. A stream that connects late gets the latest progress report at once, so a
@@ -487,7 +501,13 @@ It gives one of five answers.
 | Unknown | Neither the slice service nor the state bucket knows it, or it is another user's |
 
 What the page does with each answer is the wizard's business and is in
-[the wizard's guide](../wizard/README.md).
+[the wizard's guide](../wizard/README.md#coming-back-to-running-work).
+
+One more case needs its own report. A slice job that the slice service cancelled while
+it was still waiting, because the slice service was asked to stop for a deploy, is
+reported to the page as cancelled for that reason, and the page submits it again by
+itself. How the report tells that cancel from the user's own and from a later slice
+job's is written with the contract's requests, before phase 2 is built.
 
 ## How long a sliced file lives
 
@@ -572,8 +592,9 @@ explains every field.
 
 ### Reading it and writing it
 
-The front server reads a group's document when a user signs in and again whenever the
-wizard asks, always for the current group. A group with no document gets a default
+The front server reads a group's document whenever the wizard asks, always for the
+current group: when a page opens, and so after every sign-in, and when the user presses
+the reload glyph in the wizard's header. A group with no document gets a default
 built into the front server, which names the profile of the Bambu Lab H2S, the Popcorn
 Penguins' printer, so a new group can slice
 without setting anything up.
@@ -644,21 +665,30 @@ job is still live, is answered with that same delivery job. It does not start a 
 print and is not refused on the grounds that the printer is now busy. Printer delivery
 as built refuses the repeat instead; changing that is part of phase 5.
 
-**It spends a thread on each idle daemon.** While a printer is idle its daemon keeps
-one request open to the relay, so that a send reaches it at once although nothing can
-call the daemon. Each such open request occupies one of the front server's threads; see
-[The limits that matter](#the-limits-that-matter).
+**It spends a thread on each idle daemon.** A daemon's regular request to the relay is
+the **sync**. While a printer is idle the relay holds its answer to the daemon's sync
+for up to 55 seconds (the **held wait**), so that a send reaches the daemon at once
+although nothing can call the daemon. Each held sync occupies one of the front server's
+threads; see [The limits that matter](#the-limits-that-matter).
 
 **It lets the daemon's requests in without a sign-in.** A daemon has no cookie; its
 requests carry a token the relay issued and checks, and a daemon not yet paired offers
 its pairing code with neither.
 
-The front server also holds the relay's secret key, answers the daemons' open requests
+The front server also holds the relay's secret key, answers the held syncs
 when stopping, and gathers the relay's log lines with its own. The relay's own
-mechanisms are in [printer delivery's guide](../delivery/README.md): how long it holds
-an idle daemon's request, the limits on offers and on wrong pairing codes, and the note
-it makes in the paired-printer record when a daemon goes offline (no request from it
-for two minutes), which is the time of that daemon's last request, written once.
+mechanisms are in [printer delivery's guide](../delivery/README.md): the held wait,
+the limits on offers and on wrong pairing codes, and the note
+it makes in the paired-printer record when a daemon goes offline (no sync from it
+for two minutes), which is the time of that daemon's last sync, written once.
+
+Two things about a send are proposed in the wizard's guide and are not settled: that
+the front server, not the page, writes the one-line description of the plate that goes
+into the delivery job's record
+([Who writes the one-line description of a plate](../wizard/README.md#who-writes-the-one-line-description-of-a-plate));
+and that a page follows a print by short requests and not on a progress stream, which
+is this guide's own recommendation under
+[How many users at once](#how-many-users-at-once-and-what-happens-when-the-threads-run-out).
 
 ## Restarts and deploys
 
@@ -682,7 +712,7 @@ the relay's memory.
 | Submitted a slice job that is still running | The slice container | It keeps running; the front server finds it again when it starts |
 | Finished a slice | The state bucket | Untouched |
 | Edited the configuration | The state bucket | Untouched |
-| Paired a printer; sent a print (phase 5) | The state bucket | Untouched; the print goes on, and the printer's status is blank until the daemon's next request, within about ten seconds |
+| Paired a printer; sent a print (phase 5) | The state bucket | Untouched; the print goes on, and the printer's status is not known until the daemon's next sync, within about ten seconds. The wizard shows a grey dot and "…" on the printer-status icon meanwhile |
 | Typed a pairing code in the half minute after a restart (phase 5) | The relay's memory, which the restart emptied | Told that no daemon is showing that code; typing it again a moment later works, because each unpaired daemon offers its code again within half a minute |
 
 **When it starts,** the front server asks the slice service for all its slice jobs, and
@@ -692,7 +722,7 @@ ended while the front server was down is stored a moment after it comes back.
 
 **When it is asked to stop,** as at every deploy, it takes no new requests, lets
 uploads and downloads in progress finish, closes its progress streams and, from phase
-5, answers the daemons' open requests, so that pages and daemons reconnect to its
+5, answers the held syncs, so that pages and daemons reconnect to its
 replacement; and it writes the log lines it has gathered to the log bucket. It has
 whatever time Railway allows a stopping container, which is not known (see
 [What Railway does at a deploy](#what-railway-does-at-a-deploy)).
@@ -706,8 +736,10 @@ repeat itself cancelled, and how that is met is not designed (see
 
 What the user sees is the wizard's doing: nothing at all if the gap is under 20
 seconds; after that a message that the server is being slow and the browser is
-retrying, with a countdown to the next attempt; and an error with an offer to try again
-only after 300 seconds. Nothing of the user's work is dropped at any point.
+retrying, with a countdown to the next attempt; and a message that the server could not
+be reached, with an offer to try again, only after 300 seconds. Nothing of the user's
+work is dropped at any point
+([the wizard's guide](../wizard/README.md#when-the-server-is-slow-or-cannot-be-reached)).
 
 All of this is a deploy that works. Nothing is designed for one that does not: a new
 front server that fails to start, or fails the check that runs after each deploy. Users
@@ -732,6 +764,14 @@ The same holds for what the old front server wrote: every record in the state bu
 carries the number of its format, a cookie set by the old one is read by the new one,
 and from phase 5 an installed daemon keeps working. These rules are in
 [the architecture](../docs/architecture.md#old-and-new-versions-together).
+
+The architecture has no rule for the front server and the slice service, which are
+deployed separately, so a new one of either meets the previous one of the other.
+Proposed, in the same words as
+[the slice service's guide](../slice/README.md#when-things-go-wrong): a change to the
+plate configuration's contract or to the slice service's HTTP interface is made so that
+the previous version of the front server still works against the new slice service, and
+the previous slice service against the new front server.
 
 ## Secrets
 
@@ -824,7 +864,7 @@ the page keeps retrying is in
 | Users served at once | None set | A user's request finding a free thread | Undecided | |
 | One part | At most 7.5 MB | The slice service's checks and memory | The plate configuration's contract | A test at the limit; one real upload |
 | A sliced file | No ceiling of its own; 8.8 to 14.1 MB so far | A fetch staying inside the 100 MB Cloudflare allows one request | Measured on the plates sliced so far | The log line that ends each slice |
-| A progress stream with nothing to report | An empty line at least every 15 seconds | The stream staying open | Cloudflare's and Railway's limits | |
+| A progress stream with nothing to report | A comment line at least every 15 seconds | The stream staying open | Cloudflare's and Railway's limits | |
 | Any one request | Closed by Railway after 15 minutes | Nothing of ours | Railway's limit | Tried on the hosted service |
 | The cookie | Thirty days from sign-in | Onshape's allowance | The design's choice | |
 | The cookie's size | About 4 KB | The user being able to sign in | Browsers' limit | A test with many groups |
@@ -839,12 +879,12 @@ the page keeps retrying is in
 A sentence more on each row that needs one.
 
 **Threads are the front server's scarce resource.** Each of these holds one thread for
-as long as it lasts: a page's open progress stream; an idle daemon's open request; the
+as long as it lasts: a page's open progress stream; an idle daemon's held sync; the
 front server's own following of an unfinished slice job; an upload or a download in
 progress. The slice service starts with one slice running and two allowed to wait, so
 following slice jobs takes at most three. The figure of about fifty daemons assumes the
 other threads are enough for the users. When the number of daemons calls for it, the
-daemons' open requests can move to a small server of a different kind that holds
+held syncs can move to a small server of a different kind that holds
 thousands of idle connections cheaply; that is known future work, not part of any
 phase.
 
@@ -955,10 +995,10 @@ the front server's own.
 
 | What happened | What the user sees | What they can do |
 |---|---|---|
-| The cookie is missing, unreadable or past its thirty days | The sign-in | Sign in; their work is still in the browser |
-| Onshape refused the sign-in, or the returned value was not the one sent | That signing in failed | Try again |
-| Onshape did not answer | That Onshape could not be reached | Nothing at first: the page retries |
-| The request names no group, or one the user is not in | That they are not in that group | Choose another group, or "sign in again" if they were added recently |
+| The cookie is missing, unreadable or past its thirty days | On a request for a page: the sign-in. On any other request: that the sign-in has ended and that their work is kept in the browser, with the button Sign in with Onshape | Sign in; their work is still in the browser |
+| Onshape refused the sign-in, or the returned value was not the one sent | A plain page saying that PenguinSlicer could not sign them in with Onshape, and what is specific, with the button Sign in with Onshape | Try again |
+| Onshape did not answer during a sign-in | The same plain page, saying that Onshape did not answer | Try again |
+| The request names no group, or one the user is not in | That they are not in that group. The page then takes the first of the user's groups by itself and says so | Choose another group in the group details, or "sign in again" there if they were added recently |
 | A changing request without the wizard's mark | Nothing, in honest use; this is the refusal of another site's attempt | Nothing |
 | Someone else changed the configuration first | That it was changed by someone else | Reload and make the edit again |
 | The group's configuration cannot be understood | That the configuration cannot be read | Tell whoever wrote it; the document is left as it is |
@@ -1073,7 +1113,7 @@ server gives it who is asking, the place for its records and the sliced file; ap
 the second half of the sliced file's rule (two hours after the last print, and storing
 afresh at each send); holds the relay's secret key; lets the daemons' requests in;
 applies the limits on how fast one user or one daemon may send the relay requests;
-answers the daemons' open requests when stopping; and gathers the relay's log lines and
+answers the held syncs when stopping; and gathers the relay's log lines and
 what the daemons report about themselves.
 
 In no phase: the configuration's edit screens, permissions inside a group, more than
@@ -1141,7 +1181,7 @@ often anyone signs in.
 - Expected use is small: twenty users signing in once in thirty days spend about 80
   calls in two months.
 - 1,250 sign-ins spend the whole allowance. One person can repeat a sign-in in three
-  ways: by "sign in again" in the header; by clearing the cookie or opening a private
+  ways: by "sign in again" in the group details; by clearing the cookie or opening a private
   window; and without meaning to, when the browser withholds the cookie and the sign-in
   repeats by itself
   ([The cookie inside Onshape's panel](#the-cookie-inside-onshapes-panel)). A person
@@ -1184,7 +1224,7 @@ says what happens when every thread is held.
 
 - What holds a thread is listed under
   [The limits that matter](#the-limits-that-matter): a page's progress stream, an idle
-  daemon's open request, the front server's own following of a slice job, an upload or
+  daemon's held sync, the front server's own following of a slice job, an upload or
   a download.
 - Following slice jobs is bounded by the slice service: with one slice running and two
   waiting there are at most three unfinished slice jobs, though each may be followed
@@ -1304,7 +1344,102 @@ arrive out of order.
 
 **Recommended:** the value of the page's own making, designed with the contract's
 requests before phase 2 is built, because it is exact and is the same idea as the
-repeated send.
+repeated send. The slice service's and the wizard's guides point here, since the value
+is made by the page and remembered by the slice service.
+
+#### A plate configuration submitted while the slice service stops
+
+**What it is.** A slice service asked to stop for a deploy finishes its running slice,
+bounded by the time limit of 240 seconds, and meanwhile refuses new slice jobs with an
+answer the page tries again. A user who submits during that time sees nothing for 20
+seconds, then the message that the server is being slow, and after 300 seconds that the
+server could not be reached. The item, with what is known and all three options, is the
+slice service's:
+[What a user sees while the slice service stops](../slice/README.md#what-a-user-sees-while-the-slice-service-stops).
+Its recommendation changes the front server, so it is stated here from this side.
+
+**What it would ask of the front server.** To keep a plate configuration that arrives
+while the slice service is stopping, and to hand it to the new slice service when that
+is up. The front server would then hold plate configurations in its memory for up to
+the time limit and the replacement's start, and report a state of its own for them: a
+slice job that is waiting, with words that say the slicer is restarting. A plate
+configuration it holds is lost if the front server itself restarts, and the page then
+submits again as it does today. The new slice service starts with an empty part store,
+so the page uploads the parts again when the plate configuration is handed over. This
+is the one place where the front server would hold something of a user's in memory.
+
+**What a user would see.** A slicing card that is waiting, and then its ordinary
+progress; never a slow server, however long the running slice takes.
+
+**Recommended,** as in the slice service's guide: the front server keeps the submission
+and hands it over, because the user then sees what is true and the design no longer
+depends on the time limit staying under the 300 seconds for which the page retries.
+Until it is built, phase 2 gives the first option: the page retries.
+
+#### The list of settings and the profile catalog's names
+
+**What it is.** The wizard's advanced mode needs every setting the slice service
+accepts, with its kind, its permitted values and the chosen profile's own value; and
+whoever writes or checks a configuration needs the profile catalog's names, since a
+configuration names Orca's profiles by Orca's names. No source says where either comes
+from. The item, with what is known and the three options, is the slice service's:
+[Where the wizard gets the list of settings and the profile catalog's names](../slice/README.md#where-the-wizard-gets-the-list-of-settings-and-the-profile-catalogs-names).
+
+**What it would ask of the front server.** To ask the slice service for the list and
+for the catalog's names, and to pass the list to the wizard on request: one more
+request in the contract between the wizard and the front server, and one more in the
+slice service's HTTP interface. With the catalog's names in hand the front server can
+also check a configuration against the catalog that will slice it, when it starts and
+when a configuration is edited, and report a configuration that names a profile the
+catalog has lost before any user meets it
+([the slice service's item](../slice/README.md#who-notices-a-configuration-that-names-a-profile-the-catalog-has-lost)).
+The front server keeps no copy from one start to the next, so the list always matches
+the slice service that is running.
+
+**Recommended,** as in the slice service's guide: the slice service supplies the list
+and the catalog's names, and the front server passes them on and makes the check.
+Advanced mode is built in phase 2, so this is to be answered before phase 2 is built.
+
+#### Telling the page when a sliced file expires
+
+**What it is.** The front server refuses a sliced file past its two limits and deletes
+it. The wizard's guide has the page show, at the moment of expiry, a message that the
+plate's slice has expired, with Slice again
+([A sliced plate that expires](../wizard/README.md#a-sliced-plate-that-expires)). For
+that the page must know the moment. No source says how, and the contract carries no
+such moment.
+
+**What is known.** The front server stores the time the slice ended beside each sliced
+file, and from phase 5 learns when a print of it ends from the delivery job's record,
+so it can reckon the moment at any time. The page's own clock may be wrong.
+
+| Choice | What a user sees | What it costs |
+|---|---|---|
+| The front server sends the moment with the sliced file's summary, and again when a print of the plate ends | The message appears at the true moment, whatever the page's clock says | One field in two answers, and the page acting on a time counted from the answer's arrival |
+| The page reckons the moment itself, from the time the slice ended and its own clock | The same, when the clock is right; a message too early or too late when it is not | Nothing in the front server |
+| The page is told nothing and learns of the expiry when a request is refused | A result that looks ready until the user presses Send or Download, and then the front server's sentence that it has expired | Nothing to build |
+
+**Recommended:** the first, written into the contract's requests before phase 2 is
+built. It is what the wizard's guide asks for, and it costs one field.
+
+#### What the wizard's guide asks of the front server
+
+Three more items are owned by the wizard's guide, with their options there. Each would
+add a request to the front server, so each is noted here with the same recommendation.
+
+- **A report of a failure that happened only in the browser.** Recommended there: the
+  page reports each such failure and the front server writes one log line for it. For
+  the front server that is one request, which must carry the wizard's mark, one kind of
+  log line that never holds a part's shape, and a limit so that a broken page cannot
+  fill the log
+  ([Failures in the browser that reach no log](../wizard/README.md#failures-in-the-browser-that-reach-no-log)).
+- **Signing out.** See [Signing out](#signing-out), below.
+- **The one-line description of a plate.** Proposed there: the front server writes it
+  from the plate configuration and hands it to the relay with the send, so that another
+  user's panel never shows text a page made up
+  ([Who writes the one-line description of a plate](../wizard/README.md#who-writes-the-one-line-description-of-a-plate)).
+  That means the front server keeps the description, or what it is made from, beside
+  the sliced file until the send.
 
 ### About the host
 
@@ -1345,7 +1480,10 @@ it, progress would arrive in lumps or not until the end. The fallback is designe
 page asks for the latest progress report every second or two, using the same request a
 returning page uses. The user would see progress up to two seconds late; the front
 server would answer a short request every second or two for each watching page instead
-of holding one connection open. One slice on the hosted service settles it.
+of holding one connection open. One slice on the hosted service settles it. This guide
+owns the item for all four; printer delivery's guide adds what asking would cost
+against its limits on the rate of requests
+([Progress streams through Cloudflare and Railway](../delivery/README.md#progress-streams-through-cloudflare-and-railway)).
 
 #### Railway's limit on one request
 
@@ -1371,7 +1509,10 @@ the first month's bill settles it.
 
 Whether Cloudflare's protection against automated
 clients ever challenges a daemon's requests is unchecked. It concerns the front server
-because the daemon's address is the front server's.
+because the daemon's address is the front server's. The item is printer delivery's,
+which recommends checking it with a daemon on another machine as soon as the hosted
+front server runs the relay
+([Whether Cloudflare challenges a daemon](../delivery/README.md#whether-cloudflare-challenges-a-daemon)).
 
 ### About Onshape
 
@@ -1478,12 +1619,14 @@ rest. For each: what a user sees, and what the other choice would cost.
 
 Nothing is designed for it. A user stops being signed in when the
 cookie ends, or when they clear it in the browser. On a shared computer the next person
-at that browser is the previous user for up to thirty days. Whether the header needs a
-"sign out" beside "sign in again" is open; it would cost no call to Onshape, only the
-removal of the cookie, and the user's next visit would cost the two calls of a sign-in.
+at that browser is the previous user for up to thirty days. The item is the wizard's
+([Sign-out](../wizard/README.md#sign-out)), which proposes a "sign out" link in the
+group details that also clears the work stored in the browser. The front server's part
+is one small request that removes the cookie; it costs no call to Onshape, and the
+user's next visit costs the two calls of a sign-in.
 
-Recommended: add it in phase 3 with "sign in again", since it is one small request and
-without it a shared computer cannot be handed from one user to the next.
+Recommended, as there: add it in phase 3 with "sign in again", since without it a shared
+computer cannot be handed from one user to the next.
 
 #### Smaller points this guide proposes or leaves to a phase's design
 
@@ -1502,11 +1645,10 @@ yes or a correction.
   [The front server follows every slice job itself](#the-front-server-follows-every-slice-job-itself)).
   Holding them whole is simpler to build and makes the front server's memory grow with
   the number of files passing through at once.
-- Which component makes a slice service that is stopping for a deploy look, to the
-  page, like a service that did not answer: the slice service itself, or the front
-  server turning its refusal into that answer
-  ([A plate configuration](#a-plate-configuration)). A user sees the same either way.
-  It is settled with phase 2's design.
+- The rule for old and new versions of the front server and the slice service
+  together, which the slice service's guide proposes in the same words
+  ([Old and new versions together](#old-and-new-versions-together)). If it is accepted
+  it belongs in the architecture as well.
 
 #### Rate limits and the sweep's interval
 

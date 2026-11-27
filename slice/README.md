@@ -415,7 +415,7 @@ should present it as a rough guide.
 
 A stream with nothing new to say must not go silent, because the hosts in front of it
 close a quiet connection: Railway after five minutes without data, and Cloudflare after
-125 seconds. Today a quiet stream repeats its latest report every 15 seconds. From phase 3
+125 seconds ([the architecture](../docs/architecture.md#progress-streams)). Today a quiet stream repeats its latest report every 15 seconds. From phase 3
 it sends an empty comment line at least every 15 seconds, which keeps the connection open
 without pretending something happened. Railway also closes any request after fifteen
 minutes, whatever it carries; whoever follows the stream opens it again and gets the
@@ -461,8 +461,9 @@ user.
 
 This only works because the front server, not the page, collects the result. The front
 server follows every unfinished slice job itself, whether or not a page is open, fetches
-the sliced file when the slice ends and stores it. The slice service's side of that
-bargain is three small things:
+the sliced file when the slice ends and stores it
+([the front server's guide](../front/README.md#the-front-server-follows-every-slice-job-itself)).
+The slice service's side of that bargain is three small things:
 
 - **It can list its slice jobs.** A front server that has just restarted asks for every
   slice job the slice service process knows, with whose it is, its latest progress report
@@ -824,7 +825,11 @@ the same sign-in as anyone else.
 
 Every failure reaches the user as one sentence saying what happened and one saying what to
 do, with a single action offered when one action fixes it. The underlying evidence (Orca's
-own words, its exit, the measured peak) goes to the log and is never shown as it is.
+own words, its exit, the measured peak) goes to the log and is never shown as it is. One
+exception is undecided: whether, on the two failures about a gap with nothing under it,
+the error report also carries Orca's own sentence as a quotation for the user, as the
+wizard's accepted screens show it
+([Orca's own sentence in an error report](#orcas-own-sentence-in-an-error-report)).
 
 | What happened | What the user is told | What they can do |
 |---|---|---|
@@ -841,7 +846,7 @@ own words, its exit, the measured peak) goes to the log and is never shown as it
 | Orca failed and gave only a general reason | "The slicer could not slice this plate.", with Orca's warnings added and labelled as possibly unrelated | Act on a warning if one fits |
 | Orca crashed, or something on the server killed it | That the slicer crashed, or was stopped before it finished | Slice again |
 | Orca finished but its file is missing, damaged or incomplete | That the sliced file is damaged or missing | Slice again |
-| The server could not write into the slice job's folder (a full disk, for one) | That the print server could not write the slicer's working files | Slice again; if it persists it is for whoever runs the service to fix |
+| The server could not write into the slice job's folder (a full disk, for one) | That the print server could not write the slicer's working files | Slice again; if it persists it is for the owner to fix |
 | The slice service has a bug | "The slicer failed unexpectedly." The full trace goes to the log | Slice again |
 | The slice job is not known (it expired, or the slice service restarted) | From phase 2: if the slice was waiting or running and was submitted less than two hours ago, nothing, the page submits it again by itself. If it had finished, nothing: the page finds its sliced file through the front server, which keeps it until two hours after the slice ended or two hours after its last print ended, whichever is later. Once the sliced file itself has expired, the page opens on the Parts step and says so | Nothing, or start a new plate |
 | A part is no longer in the part store (phase 2) | Nothing: the page uploads it again and submits again | Nothing |
@@ -868,8 +873,10 @@ one loss is time: a slice that was cut off runs again from its start.
   Orca is gone, and exits.
 - *From phase 2* it does better, because the project is deployed continuously. It stops
   accepting new slice jobs, with an answer of its own that the front server and the page
-  try again without an error. It cancels the slice jobs still waiting, which their pages
-  submit again. It lets the running slice finish, bounded by the time limit, keeps
+  try again without an error. It cancels the slice jobs still waiting, with a report
+  that says the slice service is stopping, so that their pages submit them again by
+  themselves and do not take the cancel for the user's own or for a later slice job's.
+  It lets the running slice finish, bounded by the time limit, keeps
   answering until the front server has fetched and stored that sliced file, and then
   exits. A second request to stop cancels the running slice too.
 
@@ -905,7 +912,7 @@ and the previous slice service against the new front server.
 output. To be built in phase 3: the route by which the front server collects the lines,
 the time and user key on every line, and the three new kinds of line.*
 
-Whoever runs the service runs it alone and cannot look at a user's screen, so the log has
+The owner runs the service alone and cannot look at a user's screen, so the log has
 to answer what went wrong and whether the service is the right size. The slice service
 writes one line for every change of a slice job's state, and one for a plate refused
 before any slice job exists. The line that ends a slice job carries the figures for
@@ -1101,15 +1108,18 @@ helps if Railway allows the time. If it allows less than a slice needs, a deploy
 slice costs that user the slice's time over again, as a crash does. Nor is it known
 whether Railway starts the replacement before the old container has stopped; if it does,
 two slice service processes share one address for a time, which this design does not
-allow for.
+allow for. What Railway does at a deploy is one item for both containers, owned by the
+front server's guide and tried first in phase 3
+([What Railway does at a deploy](../front/README.md#what-railway-does-at-a-deploy)).
 
 **How long the replacement takes to start,** and so how long past the running slice's end
 a user who submits during a stop goes on retrying. If the time limit rises above 240
 seconds after phase 3's measurements, the wait can pass the 300 seconds for which the page
 retries, and that user is then told the server could not be reached.
 
-**Railway's limit on the body of a request.** Its documents state none. A part of 7.5 MB
-should pass; one real upload settles it.
+**Railway's limit on the body of a request.** A part of 7.5 MB must pass it. The item is
+the front server's, since the upload arrives there
+([Railway's limit on one request](../front/README.md#railways-limit-on-one-request)).
 
 **How often two users slice at once.** This decides whether one running and two waiting is
 right. The once-a-minute log line and the wait recorded on each slice job's last line are
@@ -1151,7 +1161,12 @@ settings and their short lists are fixed in the slice service.
 version, supplies the list, and the front server passes it to the wizard. The list then
 changes with the Orca version and never has to be kept in two places. The same answer
 serves the configuration: the catalog's names come from the slice service by the same
-route, so a configuration can be checked against the catalog that will slice it.
+route, so a configuration can be checked against the catalog that will slice it. The
+wizard's advanced mode is built in phase 2, so this is to be answered before phase 2 is
+built. The front server's guide carries the same item from its side, with the same
+recommendation
+([The list of settings and the profile catalog's names](../front/README.md#the-list-of-settings-and-the-profile-catalogs-names)),
+and the wizard's guide points here.
 
 #### What a user sees while the slice service stops
 
@@ -1182,7 +1197,9 @@ seconds, and the user is then told the server could not be reached.
 sees what is true, a slice that is waiting, and not a message about a slow server when
 nothing is wrong; and the design no longer depends on the time limit staying under the
 300 seconds for which the page retries. This is new design in the front server, not only
-here, and until it is built the first option is what phase 2 gives.
+here, and until it is built the first option is what phase 2 gives. The front server's
+guide carries the same item from its side, with the same recommendation
+([A plate configuration submitted while the slice service stops](../front/README.md#a-plate-configuration-submitted-while-the-slice-service-stops)).
 
 #### How the list of accepted settings is made
 
@@ -1240,7 +1257,8 @@ catalog is the slice service's, and a component depends only on contracts. If th
 service supplies the catalog's names, as recommended under
 [Where the wizard gets the list of settings and the profile catalog's names](#where-the-wizard-gets-the-list-of-settings-and-the-profile-catalogs-names),
 the front server can make the check itself, when it starts and when a configuration is
-edited.
+edited; that is this guide's recommendation, and the front server's guide carries it in
+[the same item](../front/README.md#the-list-of-settings-and-the-profile-catalogs-names).
 
 #### A part whose first layer is empty
 
@@ -1258,6 +1276,41 @@ part shows the need, which is also the cheapest to reverse.
 They are not detected. Orca sliced the cases tried, so nothing is refused wrongly; what a
 user might get is a print that is not what they meant, with no warning. Detecting it is
 real work on large parts and is not proposed until a real part shows the need.
+
+#### Orca's own sentence in an error report
+
+The rule here is that Orca's own words go to the log and are never shown as they are;
+the slice service writes its own sentence from them, naming the instance and the heights.
+The wizard's accepted screens show one exception: on the two failures about a gap with
+nothing under it (with supports off, and with supports already on), the folded Details
+quote Orca's own sentence, marked as Orca's. The two cannot both stand, and the choice is
+the owner's. The item, with both sides, what a user sees under each, what each risks and
+a recommendation (to quote it, on those two failures only), is in the wizard's guide:
+[Orca's own sentence under Details](../wizard/README.md#orcas-own-sentence-under-details).
+If the quotation is wanted, the slice service's part is one more field of the error
+report, filled on those two failures, with a test for each, and
+[the error report's contract](../contracts/error-report.md) gains the field; if it is
+not, nothing here changes.
+
+#### A plate configuration submitted twice
+
+The page retries a submission whose answer it did not receive, and a new submission
+cancels the same user's earlier unfinished slice job, so a repeat can cancel the slice
+job its own first attempt made. The item is the front server's
+([A plate configuration submitted twice](../front/README.md#a-plate-configuration-submitted-twice)).
+Its recommendation asks one thing of the slice service: to remember, beside each slice
+job, a value the page made for that submission, and to answer a repeat that carries the
+same value with the first attempt's slice job. It is to be settled with the contract's
+requests before phase 2 is built.
+
+#### Shared plates for the two placement checks
+
+The wizard's Layout step applies the same three placement rules as the slice service,
+each in its own code, and a plate the wizard passes and the slice service refuses is a
+defect in one of them. The wizard's guide proposes a set of plates, some just passing
+and some just failing, kept with the contracts and run by both components' tests
+([Agreement between the placement check of the wizard and of the slice service](../wizard/README.md#agreement-between-the-placement-check-of-the-wizard-and-of-the-slice-service)).
+For the slice service that is one more set of tests against files it does not own.
 
 ### Proposed, and the owner's to change
 

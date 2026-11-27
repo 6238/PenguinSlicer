@@ -224,9 +224,10 @@ never collects its token
 ([Pairing again: three cases](#pairing-again-three-cases)).
 
 **What a user sees.** With no printer paired, the printer-status icon reads "No printer",
-Send is disabled, and the Send step says that no printer is paired with PenguinSlicer and
-links to how to pair one. The screen on which the code is typed is the wizard's
-([its guide](../wizard/README.md)).
+and the Send step offers no Send: it says that no printer is paired with PenguinSlicer,
+shows the form in which the code is typed, links to how to pair a printer, and offers
+the download of the sliced file. The form, and what it shows for a wrong code, are the
+wizard's ([its guide](../wizard/README.md#pairing-a-printer)).
 
 ### Pairing as built
 
@@ -760,6 +761,11 @@ the relay as built gives each only in part:
   As built a page can ask only for the printer's most recent delivery job, and cannot
   tell whose it is.
 
+The wizard also shows a print that was started at the printer's own screen, as a busy
+printer with no sender and no description. It needs nothing of a record for that: such
+a print has no delivery job, and the printer's status, which the relay holds whoever
+started the print, gives which file is printing and how far through.
+
 Users of one group do see each other's names and plate descriptions; that is intended.
 
 A record is kept for a day after its delivery job ends, so that the Send step and the
@@ -1280,8 +1286,9 @@ No source decides any of these. Each is described as it would be met by a user.
    or remove a record whose token was not collected within the code's fifteen minutes,
    so that the group reads "No printer" again and the pairing form returns.
    Recommendation: remove it after the fifteen minutes, and have the wizard say until
-   then that the printer's computer has not finished pairing. The time is this guide's
-   proposal.
+   then that the daemon has not finished pairing, in the wizard's own words for the
+   daemon ("the PenguinSlicer program on the computer beside the printer"). The time is
+   this guide's proposal.
 
 #### Printed files left on the printer
 
@@ -1365,8 +1372,9 @@ pass through Cloudflare and Railway
 For wrong pairing codes the proposal, this guide's, is ten a minute for each user: with
 forty random bits and a code that lasts fifteen minutes, that is 150 guesses at a code,
 which leaves guessing hopeless, and a stricter limit costs a user who mistypes. The
-wizard's guide already promises the sentence "Too many wrong codes. Wait a few minutes,
-then try again."
+sentence a user over the limit reads is printer delivery's to write, and it names the
+wait the figure gives; with ten a minute it is of this kind, which the wizard's guide
+quotes as its example: "Too many wrong codes. Wait a minute, then try again."
 
 #### A send repeated while its delivery job is live
 
@@ -1427,6 +1435,32 @@ design in phase 5.
 The steps are designed; the exact messages, and
 what the daemon shows on its screen at each, are left to phase 5's design spec.
 
+#### What the wizard's guide asks of printer delivery
+
+Four items are owned by another guide, with their options there. Each would change
+printer delivery, so each is noted here with the same recommendation.
+
+- **Where the printer's name comes from.** The paired-printer record holds the printer's
+  display name, and no source says who gives it. Recommended in the wizard's guide: the
+  daemon reads the printer's own name and sends it when it is paired, which is one more
+  field in the pairing exchange
+  ([Where the name of the printer comes from](../wizard/README.md#where-the-name-of-the-printer-comes-from)).
+- **A print that is no longer followed.** After Stop following, or after the relay gives
+  a delivery job up at 24 hours, the delivery job ends as failed. Recommended in the
+  wizard's guide: the relay reports that ending apart from a failure at the printer, so
+  that the wizard can say that how the print ended is not known and never that it failed
+  ([After a print is no longer followed](../wizard/README.md#after-a-print-is-no-longer-followed)).
+- **Who writes the one-line description of a plate.** Proposed in the wizard's guide:
+  the front server writes it from the plate configuration and hands it to the relay
+  with the send; the relay only keeps it in the delivery job's record
+  ([Who writes the one-line description of a plate](../wizard/README.md#who-writes-the-one-line-description-of-a-plate)).
+- **Following a print without a progress stream.** Recommended in the front server's
+  guide: a page follows a print and the printer's status by a short request every ten
+  seconds, so that a print lasting hours holds none of the front server's threads. The
+  relay already answers such a request; what changes is the contract and the count of
+  status requests for each user
+  ([How many users at once](../front/README.md#how-many-users-at-once-and-what-happens-when-the-threads-run-out)).
+
 ### Waiting for a measurement
 
 #### The two timed limits on a start
@@ -1454,16 +1488,18 @@ it is known, and treat the requirement as unconfirmed until the session at the H
 #### Progress streams through Cloudflare and Railway
 
 Neither Cloudflare nor Railway promises to pass a progress stream on without holding its
-events back ([the architecture](../docs/architecture.md#to-confirm-before-building-on-it)
-lists it). The
+events back. The question is one item for every progress stream, owned by the front
+server's guide and settled by one slice on the hosted service in phase 3
+([Whether progress arrives as it is sent](../front/README.md#whether-progress-arrives-as-it-is-sent));
+what follows is printer delivery's part of it. The
 relay as built sends a comment line on a quiet stream every 15 seconds to keep the
 connection open, which does not show that events arrive promptly. If either holds them
 back, the page asks for the latest progress report every second or two, which the relay
 already answers. A user would see the same progress, a second or two later. The cost is
 in the allowance for status requests: a page asking every second uses 60 of the proposed
 120 a minute for each user, and two pages of one user use all of it. Recommendation:
-measure on the hosted front server in phase 5; if asking is needed, count those requests
-apart from the status requests.
+if the measurement shows that asking is needed, count those requests apart from the
+status requests.
 
 #### Every timing that concerns the printer
 
@@ -1499,5 +1535,7 @@ session at the H2S tries the daemon on Windows.
 
 What the front server's memory is with fifty held syncs, and how long the
 fetch and the upload of a 14 MB sliced file take on a real link and a real H2S, were
-never measured. The first is measured on the hosted front server of phase 5 before the
-figure of fifty daemons is relied on; the second at the session at the H2S.
+never measured. The first is the front server's item
+([The front server's memory](../front/README.md#the-front-servers-memory)) and is
+measured on the hosted front server of phase 5 before the figure of fifty daemons is
+relied on; the second is measured at the session at the H2S.
