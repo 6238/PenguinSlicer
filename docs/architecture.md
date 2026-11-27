@@ -209,9 +209,11 @@ print ended, whichever is later, which the front server enforces. Its last print
 when the latest delivery job that used it ended, so Send is enabled again for the same
 sliced plate after a print of any length. R2's own rule for deleting old files counts in
 whole days and removes a file
-typically within 24 hours after it falls due, so it cannot enforce two hours; a one-day
+typically within 24 hours after it falls due, so it cannot enforce two hours; a three-day
 rule on the sliced files is set as well, to catch any file the front server failed to
-delete, and such a file can rest at R2 for up to about two days after it falls due. How the front server
+delete. Three days, because the rule counts from when a file was stored and must outlast
+the longest print and the two hours after it. Such a file can rest at R2 for up to about
+four days after it was stored. How the front server
 follows slice jobs, and the rules for keeping and
 deleting sliced files, are in [the front server's guide](../front/README.md).
 
@@ -467,7 +469,7 @@ everyone.
 **Users' models.** Outside the browser, a part exists only in the slice container, for
 two hours after its last use. A sliced file is in the state bucket at Cloudflare R2 until two
 hours after its slice ended or two hours after its last print ended, whichever is later,
-or up to about two days after that if the front server fails to delete it
+or up to about four days after it was stored if the front server fails to delete it
 (see [The sliced file](#the-sliced-file)). The bucket is private: the front server's
 credential reads it, and otherwise only the owner. A user reaches only their own parts, slice jobs and
 sliced files: the front server sets the user key from the cookie and the browser cannot

@@ -93,8 +93,8 @@ More: [Onshape sign-in](README-details.md#onshape-sign-in), [The cookie](README-
    deletes its own copy.
 5. **The user previews and downloads** the state bucket's copy, through the front server,
    until two hours after the slice ended or after its last print ended, whichever is later;
-   past that the front server refuses and deletes it, and a one-day rule at R2 catches any
-   it missed (such a file rests up to about two days after it falls due).
+   past that the front server refuses and deletes it, and a three-day rule at R2 catches any
+   it missed (such a file rests up to about four days after it was stored).
 
 More: [Parts and slice jobs](README-details.md#parts-and-slice-jobs-passed-to-the-slice-service), [Two hours](README-details.md#two-hours-deleting-and-the-backstop).
 

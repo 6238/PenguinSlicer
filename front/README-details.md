@@ -512,9 +512,11 @@ enforces this:
 
 R2's own rule for deleting old files cannot do this alone: it counts in whole days, and
 Cloudflare says a file is typically removed within 24 hours after it falls due. So a
-one-day R2 deletion rule on the sliced files is set as well, to catch any file the front
-server failed to delete, and such a file can rest at R2 for up to about two days after it
-falls due ([the architecture](../docs/architecture.md)).
+three-day R2 deletion rule on the sliced files is set as well, to catch any file the front
+server failed to delete. The rule counts from when a file was stored, so it is set at three
+days to outlast the longest print and the two hours after it; a print that runs longer
+than that loses its sliced file to the rule, and the user slices the plate again to send
+it again. Such a file can rest at R2 for up to about four days after it was stored ([the architecture](../docs/architecture.md)).
 
 ### Tests
 
@@ -814,7 +816,7 @@ rest of restarts and deploys rests on it. Then:
 - the front server in a container of its own on Railway, at
   `https://penguinslicer.popcornpenguins.com/`, calling the slice container over the
   private network;
-- the state bucket and the log bucket at R2, with the one-day backstop rule;
+- the state bucket and the log bucket at R2, with the three-day backstop rule;
 - Onshape sign-in, with the stand-in for Onshape in the tests, counting every call;
 - (*proposed*) the checks on requests from other sites;
 - the second cookie key and the procedure for replacing one;

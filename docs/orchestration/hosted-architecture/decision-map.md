@@ -621,6 +621,7 @@ each on Fri 2026-11-27 (Pacific time); the numbers are those of
 | 2.3: a page can find its user's live delivery job and last print (route names still *proposed*) | [The contract](../../../contracts/wizard-front-server.md#printers-from-phase-5) |
 | 2.5: the configuration holds each profile's own name and purpose | [The configuration's contract](../../../contracts/configuration.md) |
 | 2.6: there is no "plate too large" error | [The wizard's details](../../../wizard/README-details.md#errors-the-wizard-explains) |
+| The backstop rule at R2 for sliced files is three days, not one, since a sliced file now lives until two hours after its last print ended; a file the front server failed to delete can rest at R2 for up to about four days after it was stored. | `front/README.md` |
 
 ## Possible disagreements in the spec
 
