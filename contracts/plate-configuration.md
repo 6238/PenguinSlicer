@@ -13,8 +13,8 @@ in the slice service's detailed guide).
 
 ## To be built
 
-Phase 2 changes how a plate configuration names its parts. Everything else in this file
-is true of the code as built.
+Phase 2 changes how a plate configuration names its parts, gives each part its units and
+widens the settings it accepts. Everything else in this file is true of the code as built.
 
 - **A part is named by the SHA-256 hash of its bytes,** where as built its `stl` names a
   file sent with the plate configuration. Each part is uploaded once, by itself, when the user
@@ -24,18 +24,34 @@ is true of the code as built.
   configuration names parts the part store no longer holds, the slice service answers with
   one error report listing every missing hash, and the wizard uploads those parts again
   and submits again.
+- **Each part carries its units,** inches or millimetres, as a label beside it. The
+  browser reads a part to draw it and lay it out and never changes its bytes; only the
+  slice service applies the scale. The units travel with the part when it is uploaded,
+  the slice service uses them in its checks on arrival (the size, the fit on the plate,
+  the warning that a part may be in inches), and a part in the part store is identified
+  by its bytes and its units together, so the same file under different units is a
+  different part. Instances' positions on the plate stay in millimetres.
+- **Every setting Orca allows that is a parameter with a value** is accepted: a choice
+  from a list, a number or a piece of text, each checked against what Orca allows for it.
+  All of them are available in the wizard's advanced mode. Settings that are programmatic
+  are refused: those that run a program, those that name a file on the server, and custom
+  G-code. This replaces the four overrides of [Overrides](#overrides) with their listed
+  values; a refused setting gets an error report naming it.
 
-*Proposed* (the design approved by the owner does not fix it): a part's `sha256`, the 64
-hexadecimal characters of the hash, in place of `stl`. The routes and the error report's
-code are proposed in
+*Proposed* (the design approved by the owner does not fix it; the builder settles it):
+a part's `sha256`, the 64 hexadecimal characters of the hash, in place of `stl`; a part's
+`units`, `"mm"` or `"in"`; `overrides` keeping its name, its keys becoming Orca's own
+setting names, and a refused one keeping the code `slice.bad_overrides`. The routes and
+the error reports' codes are proposed in
 [the slice service's detailed guide](../slice/README-details.md#to-be-built).
 
-- **What else in this file changes when this is built.** Five places are true of the code
-  as built and become untrue in phase 2: the opening ("with the STL files it names"); the `stl` row
-  of [Part](#part); the meaning of `MAX_PARTS` in [Limits](#limits) ("It bounds the
-  upload"); check 4 of [Checks](#checks), where a part's own checks move to its upload and
-  `slice.part_missing` comes to mean a hash missing from the part store; and the
-  [Example](#example). Also, from phase 3, `PLATE_SLICE_TIMEOUT_S` in [Limits](#limits)
+- **What else in this file changes when this is built.** Seven places are true of the
+  code as built and become untrue in phase 2: the opening ("with the STL files it names");
+  the `stl` row of [Part](#part), which gains the units; "The part" under
+  [Coordinates](#coordinates), whose STL is then in the part's units; [Overrides](#overrides);
+  the meaning of `MAX_PARTS` in [Limits](#limits) ("It bounds the upload"); check 4 of
+  [Checks](#checks), where a part's own checks move to its upload and `slice.part_missing`
+  comes to mean a hash missing from the part store; and the [Example](#example). Also, from phase 3, `PLATE_SLICE_TIMEOUT_S` in [Limits](#limits)
   becomes a setting of the slice service rather than a figure fixed in the code.
 
 ## Fields

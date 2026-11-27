@@ -28,7 +28,7 @@ the hosted architecture design the owner approved on Thu 2026-11-26, whose conte
 [the architecture](../docs/architecture.md) now holds.
 
 Names and figures marked *proposed* below are this guide's suggestions; the design
-approved by the owner does not fix them, and the phase's design spec settles them.
+approved by the owner does not fix them, and the builder settles them while building.
 
 ## Contents
 
@@ -285,7 +285,8 @@ slice ends in `slice.out_of_memory`.
 ## Retrying every request
 
 **The page retries every request it makes,** so a request that falls in the gap of a
-deploy is repeated and the user sees a pause, not an error. [D234, D338] The project is
+deploy is repeated, and a user sees nothing of a gap shorter than 20 seconds. [D338] The
+project is
 deployed continuously, and a deploy at any moment interrupts no user
 ([the architecture](../docs/architecture.md#restarts-and-deploys)). (*Proposed*:) a
 request is retried when it gets no answer, when its connection fails, and when its answer
@@ -304,8 +305,9 @@ service did not answer ([the contract](../contracts/wizard-front-server.md#submi
 - After 20 seconds of failed retries it shows a message saying the server is being slow
   and the browser is retrying, with a countdown to the next attempt (as Gmail's
   "retrying in 28s" does). So the waits between attempts grow, to leave something to
-  count down. (*Proposed*:) the waits double from one second up to thirty seconds, and the
-  message reads "The server is being slow. Your browser is retrying in 28 s."
+  count down. The exact waits and words are the builder's. (*Proposed*:) the waits double
+  from one second up to thirty seconds, and the message reads "The server is being slow.
+  Your browser is retrying in 28 s."
 - It keeps retrying for up to 300 seconds in all.
 - After 300 seconds it stops, tells the user the server could not be reached, and offers
   to try again. (*Proposed*:) the message reads "The server could not be reached.", and
@@ -353,7 +355,7 @@ group's name. It reads the user's groups afresh, for two calls to Onshape. Until
 Onshape app is public, a signed-in user's groups are read only at sign-in, so a user
 added to an Onshape company after signing in does not see the new group until they use
 this action. [D134, D340] The front server owns the route
-([the front server](../front/README.md#signing-in)); (*proposed*) the page's stored work
+([the front server](../front/README.md)); (*proposed*) the page's stored work
 is untouched by it.
 
 **Requests from other sites.** Every request of the page's that changes something carries
@@ -378,9 +380,16 @@ What the header looks like with a choice of groups, and with "sign in again" bes
 A group's **configuration** holds its filaments, each with a colour and its own profiles,
 the printer's Orca profile, and the units of uploaded files
 ([its contract](../contracts/configuration.md)). The page always uses the current
-group's configuration, read through the front server, never one opened from a link: a
-link would bypass the check of the current group against the sign-in cookie. The front
-server reads it when a user signs in and again when the wizard asks.
+group's configuration, read through the front server, which checks the current group
+against the sign-in cookie. The front server reads it when a user signs in and again when
+the wizard asks. An edit writes the whole document on the condition that it has not
+changed since it was read, so two users editing at once cannot silently overwrite each
+other; the second is told to reload ([the front server](../front/README.md)). [D115] The
+configuration's edit screens are a feature of their own, in no phase yet, with a design
+spec of their own
+([the plan, Known future work](../docs/plans/penguin-slicer-plan.md#known-future-work)).
+Until they exist there is a fixed set of configurations, and (*proposed*) the wizard only
+reads the configuration.
 
 What the wizard takes from it:
 
@@ -392,23 +401,20 @@ What the wizard takes from it:
   comes from the paired-printer record. A group with no configuration document gets the
   built-in default, the H2S profile. The spacing, 12 mm with supports on and 5 mm off, is
   the plate configuration's ([its limits](../contracts/plate-configuration.md#limits)).
-- **Profiles by the group's own names.** The Settings step offers each filament's
-  profiles by the names the configuration gives them ("Structural, Pulley, Camera
-  mount") and shows each profile's purpose as its option's tooltip.
+- **Profiles by the group's own names.** The Settings step offers, for each filament,
+  the profiles the configuration lists for it and no others, by the names the
+  configuration gives them ("Structural, Pulley, Camera mount"), and shows each profile's
+  purpose as its option's tooltip.
+- **The units of uploaded files,** which the page sends beside each part uploaded from a
+  file as its label. The page reads a part to draw it and lay it out and never changes its
+  bytes; only the slice service applies the scale
+  ([the plate configuration](../contracts/plate-configuration.md#to-be-built)).
 - **A colour for each filament,** shown where the user chooses a filament, so that two
   filaments of one material (a red PLA and a green PLA) can be told apart. The layer
   preview never uses it: it draws every plate in four fixed colours, one for each set of
   line types, whatever the filament (walls blue `#2b5c9e`, infill orange `#e0912f`, top
   and bottom surfaces green `#2f9e7a`, supports and brim violet-grey `#9a8fb8`), chosen
   to stay apart in every common kind of colour blindness.
-
- An edit writes the whole document
-on the condition that it has not changed since it was read, so two users editing at once
-cannot silently overwrite each other; the second is told to reload
-([the front server](../front/README.md)). [D115] The configuration's edit screens are a
-feature of their own, in no phase yet, with a design spec of their own
-([the plan, Known future work](../docs/plans/penguin-slicer-plan.md#known-future-work));
-(*proposed*) until they exist the wizard only reads the configuration.
 
 ## The sliced file
 
@@ -418,13 +424,16 @@ the relay hands it to the daemon ([the front server](../front/README.md)). [D85]
 file can be previewed, downloaded, sent, and sent again after a print, until two hours
 after its slice ended or two hours after its last print ended, whichever is later; past
 that the front server refuses it with an error report saying it has expired
-([the front server](../front/README.md)). [D91] Its last print ended when the latest
+([the front server](../front/README.md)). Its last print ended when the latest
 delivery job that used it ended. So after a print of any length, whether it finished or
 failed, Send is enabled again for the same sliced plate, and a user whose long print
 failed at the last layer can send it again at once. The two hours count from when the
-slice ended, which the front server knows from the time stored with the sliced file, not
-from when the user left the page. A sliced file is 8.8 to 14.1 MB on the plates measured
-so far.
+slice ended, which the front server knows from the time stored with the sliced file. A
+three-day rule at Cloudflare R2 backs this up, counted from the last time the sliced file
+was stored, and a send stores it afresh; a send whose sliced file has gone is answered
+that the sliced file has expired and the plate must be sliced again
+([the front server](../front/README-details.md#two-hours-deleting-and-the-backstop)). A
+sliced file is 8.8 to 14.1 MB on the plates measured so far.
 
 ## Printers, from phase 5
 
@@ -442,9 +451,12 @@ reports through the front server. What the design fixes:
   icon shows Offline and Send is disabled; the daemon's first sync puts both back
   ([printer delivery](../delivery/README.md)). [D163] An offline printer's details say
   how long it has been silent ("Not heard from for 7 minutes."), and so does the Send
-  step. The relay notes the time in the paired-printer record when a daemon goes offline,
-  one write at that moment, and the printer's status returns it, so the duration is true
-  even after a restart of the front server.
+  step. The relay notes the time of the daemon's last sync before it went offline in the
+  paired-printer record, one write at that moment, and the printer's status returns it,
+  so the duration is true even after a restart of the front server. A daemon that went
+  silent just before such a restart has no time noted; for it the printer's status says
+  it has been silent for at least the time since the front server started, and the page
+  says "Not heard from for at least 3 minutes." (*proposed* wording).
 - **A printing printer.** The relay refuses a send to a printer that is printing, whether
   PenguinSlicer sent the print or someone started it at the printer's own screen
   ([printer delivery](../delivery/README-details.md#how-often-a-daemon-talks-to-the-relay)). [D174]
@@ -517,11 +529,12 @@ follows this guide where the two differ, in these places:
 | The mockup's decision | What the mockup says | What this guide says |
 |---|---|---|
 | Terms, "configuration" | The configuration holds the printer | The paired-printer record links the group to its printer; the configuration names the printer's Orca profile ([The configuration](#the-configuration)) |
-| Terms, "administrator"; 42 | An administrator pairs the printer, from the computer beside it | Any signed-in user of the group types the pairing code, from any computer ([Printers](#printers-from-phase-5)) |
+| Terms, "administrator"; 42, 58 | An administrator pairs the printer, from the computer beside it | Any signed-in user of the group types the pairing code, from any computer ([Printers](#printers-from-phase-5)) |
 | 13 | Advanced mode's changes last for this page load | The changes are in the browser's storage and outlast a refresh ([What the page keeps](#what-the-page-keeps-in-the-browsers-storage)) |
-| 17 | After 20 seconds of failed retries, a notification that the part was not added, to be clicked in Onshape again | After 20 seconds, a message that the server is being slow, with a countdown; retrying for up to 300 seconds, then an error with Try again; the part keeps its row ([Retrying](#retrying-every-request)) |
+| 17 | After 20 seconds of failed retries, a notification that the part was not added, to be clicked in Onshape again | Quiet retries, then after 20 seconds a message that the server is being slow and the browser is retrying, with a countdown to the next attempt, the waits growing; retrying for up to 300 seconds in all, then the message that the server could not be reached, with Try again; nothing of the user's work is dropped and the part keeps its row ([Retrying](#retrying-every-request)) |
 | 33; the requirement on the configuration | No colour for each filament | The configuration holds a colour for each filament, shown where the user chooses one and never in the layer preview ([The configuration](#the-configuration)) |
-| 45, 46; the requirement on the slice service | A refresh throws the page's state away; the server finds the user's slice job and restores the parts and layout | The browser's storage keeps the work and the slice job's id; work does not follow to another browser ([What a returning page does](#what-a-returning-page-does)) |
+| 33, "How the view draws" | The layer preview is drawn by the method the mock's test renders settled | The guide states what must be achieved (Orca makes the sliced file; the user inspects it layer by layer at a stated frame rate, in a stated browser, on a stated machine, with the appearance decision 33 requires); the method is found while building and is not in the guide ([Still to be written](#still-to-be-written)) |
+| 45, 46, 47; the requirement on the slice service | A refresh throws the page's state away and, with no slice job, opens an empty Parts step; the server finds the user's slice job and restores the parts and layout | The browser's storage keeps the work and the slice job's id; work does not follow to another browser ([What a returning page does](#what-a-returning-page-does)) |
 | 47, 48 | Otherwise the Parts step; a failed print is a notification on the Parts step, the parts not kept | A page whose stored plate has a delivery job, running or ended, opens on the Send step ([What a returning page does](#what-a-returning-page-does)) |
 | 48; M18 | A finished unsent slice is gone after two hours away | A sliced file is kept until two hours after its slice ended or its last print ended, whichever is later ([The sliced file](#the-sliced-file)) |
 | What is fake, 9 | A "plate too large" error against a cap on a plate's volume | No such error; a plate too big to slice ends in `slice.out_of_memory` ([Errors](#errors-the-wizard-explains)) |
@@ -530,7 +543,8 @@ follows this guide where the two differ, in these places:
 ## Screens the design needs that the mockup does not show
 
 Twelve screens or states the design requires that no step of the mockup shows. Each is
-designed when the steps are written. The numbers are those of
+designed in words in the wizard's guide when the steps are written, following the
+patterns the mockup established; no mockup of them is made first. The numbers are those of
 [the comparison of the mockup with the design](../docs/orchestration/hosted-architecture/mockup-against-design.md).
 
 | | The screen or state | What the design says | Where it would appear |
@@ -550,15 +564,27 @@ designed when the steps are written. The numbers are those of
 
 ## Still to be written
 
-- **The steps,** from [the mockup's decisions](../docs/mockups/print-wizard/DECISIONS.md):
-  every screen, message and decision of the Parts, Settings, Layout, Preview and Send
-  steps and of the printer-status icon, with the twelve screens above, and this guide in
-  place of the mockup wherever
+- **The steps,** completed here from the wizard's guide once that is written, from
+  [the mockup's decisions](../docs/mockups/print-wizard/DECISIONS.md): every screen,
+  message and decision of the Parts, Settings, Layout, Preview and Send steps and of the
+  printer-status icon, with the twelve screens above, and this guide in place of the
+  mockup wherever
   [Where this guide departs from the mockup's decisions](#where-this-guide-departs-from-the-mockups-decisions)
-  says so.
-- **The mockup's open questions,** "Please react to these" (M1, M2, M3, M6, M7, M11, M16,
-  M17, M21, M22, M23, M25, M26, M29; M18 is answered by
-  [The sliced file](#the-sliced-file)): each is either answered by the owner
-  or carried into this guide as an open choice with its backing.
+  says so. The steps carry the answers to the mockup's questions of "Please react to
+  these":
+  - **The Layout step.** Lay on face offers the faces on the part's convex hull (M1). The
+    mouse works in the view as it does in Onshape (M2). Parts arrive lying their best way
+    (M3). Arrange and Auto-orient stay two buttons, and Arrange never turns an instance
+    (M6; decision 64). There are no layout tools beyond those the final mockup shows
+    (M16). The bounding-box patches keep their rule, end patches included and the
+    30-degree angle unchanged, as a starting point to be tuned on real parts (M29). The
+    pointer line stays 11 px.
+  - **The Preview step.** Leaving it does not stop the slice (M17;
+    [One unfinished slice job at a time](#one-unfinished-slice-job-at-a-time)). Orca
+    makes the sliced file, and the user inspects it layer by layer at a stated frame
+    rate, in a stated browser, on a stated machine, with the appearance decision 33
+    requires; how it is drawn is found while building.
+  - **The sliced file's lifetime** (M18) is [The sliced file](#the-sliced-file).
+  - M7, M11, M21, M22, M23, M25 and M26 stand as the mockup has them.
 - **The mockup is thrown away** once this guide is complete and the owner has agreed it
   ([the plan](../docs/plans/penguin-slicer-plan.md#phase-1-the-wizards-guide)).

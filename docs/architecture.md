@@ -37,7 +37,8 @@ each decision made there now lives.
 - **The browser holds the user's parts and layout,** in its own storage. The slice
   container keeps a copy of each part for two hours after its last use, and the state
   bucket keeps each sliced file until two hours after its slice ended or two hours after
-  its last print ended, whichever is later.
+  its last print ended, whichever is later, so the same plate can be sent again after a
+  print of any length.
 - **What must last is in two object stores.** The state bucket holds each group's
   configuration and paired-printer record (which daemon is the group's), the sliced
   files, and a record of each delivery job. The log bucket holds log lines.
@@ -76,7 +77,7 @@ server** and **wizard** are the plan's too, repeated here with what the hosted d
 | **slice container** | The container on Railway that runs one slice service process and nothing else. |
 | **state bucket** | The object store that holds everything that must outlast a restart of the front server: each group's configuration and paired-printer record, the sliced files, and a record of each delivery job. |
 | **log bucket** | The object store that holds log lines and daemon telemetry as files. |
-| **paired-printer record** | One small document per group in the state bucket: the id of the group's daemon, the printer's display name, who paired it and when, which of the relay's secret keys the daemon's token was last issued under, the time the daemon last went offline, and, until the daemon has its token, a hash of the pairing code. |
+| **paired-printer record** | One small document per group in the state bucket: the id of the group's daemon, the printer's display name, who paired it and when, which of the relay's secret keys the daemon's token was last issued under, the time of the daemon's last sync before it last went offline, and, until the daemon has its token, a hash of the pairing code. |
 | **daemon id** | A random id a daemon makes for itself when its `pair` command is run, and keeps. It names the daemon in its token, in the paired-printer record and in the relay's memory. |
 | **progress stream** | The connection, of server-sent events, on which a page follows a slice job or a delivery job. |
 | **part store** | The slice service's folder of uploaded parts, each kept for two hours after it was last used. It is a cache: the browser's storage is the record of a user's parts. |
@@ -206,16 +207,18 @@ fetch by a browser or a daemon is small against the 100 MB Cloudflare allows.
 
 A sliced file is kept until two hours after its slice ended or two hours after its last
 print ended, whichever is later, which the front server enforces. Its last print ended
-when the latest delivery job that used it ended, so Send is enabled again for the same
-sliced plate after a print of any length. R2's own rule for deleting old files counts in
-whole days and removes a file
+when the latest delivery job that used it ended, and each delivery job's record names the
+sliced file it used, so Send is enabled again for the same sliced plate after a print of
+any length. R2's own rule for deleting old files counts in whole days and removes a file
 typically within 24 hours after it falls due, so it cannot enforce two hours; a three-day
 rule on the sliced files is set as well, to catch any file the front server failed to
-delete. Three days, because the rule counts from when a file was stored and must outlast
-the longest print and the two hours after it. Such a file can rest at R2 for up to about
-four days after it was stored. How the front server
-follows slice jobs, and the rules for keeping and
-deleting sliced files, are in [the front server's guide](../front/README.md).
+delete. The rule counts from when a file was stored, and a send stores the sliced file
+afresh, so the backstop runs from the last send and three days outlast the longest print
+and the two hours after it. A file the front server failed to delete can rest at R2 for
+up to about four days after it was last stored. A send whose sliced file has gone is
+answered that the sliced file has expired and the plate must be sliced again. How the
+front server follows slice jobs, and the rules for keeping and deleting sliced files, are
+in [the front server's guide](../front/README.md).
 
 ### Coming back
 
@@ -230,14 +233,14 @@ follow a user to another computer or browser.
 ### The configuration
 
 A group's configuration is one JSON document in the state bucket, read whole and written
-whole, holding the group's filaments (each with a colour, which the wizard shows where the
-user chooses a filament and never uses in the layer preview, and with its profiles, each
-under the group's own name and purpose), the printer's Orca profile (from which the
-plate's size and height come) and the units of uploaded files, and no secret. An edit is written on the condition that the document has
-not changed since it was read, so two users cannot silently overwrite each other. A
-group with no document gets a built-in default configuration. Reading and writing it are
-in [the front server's guide](../front/README.md); what it must hold is in
-[its contract](../contracts/configuration.md), whose fields are not written yet.
+whole, holding the group's filaments, each with a colour and with the profiles the wizard
+offers for it; the printer's Orca profile, from which the plate's size and height come;
+and the units of uploaded files; and no secret. An edit is written on the condition that
+the document has not changed since it was read, so two users cannot silently overwrite
+each other. A group with no document gets a built-in default configuration, and until
+the edit screens exist the configurations are a fixed set. Reading and writing it are in
+[the front server's guide](../front/README.md); what it must hold is in
+[its contract](../contracts/configuration.md).
 
 ## Sign-in
 
@@ -254,7 +257,7 @@ service makes two at each sign-in, and each is logged and counted.
 
 The whole of this, with the allowance, the routes that need no sign-in and the protection
 against requests from other sites, is in
-[the front server's guide](../front/README.md#signing-in). Safari is not supported.
+[the front server's guide](../front/README.md). Safari is not supported.
 
 ## Printers
 
@@ -268,9 +271,12 @@ printer is idle the relay holds its answer for up to 55 seconds (the held wait),
 idle daemon costs about one request a minute and a send still reaches it at once. During
 a print the daemon syncs every 10 seconds; the printer-status icon shows Offline after 2
 minutes without a sync, and a running delivery job's report is stale after 40 seconds.
-When a daemon goes offline the relay notes the time in the paired-printer record, one
-write at that moment, so the wizard can say how long a printer has been silent even after
-a restart of the front server.
+When a daemon goes offline the relay notes the time of its last sync in the paired-printer
+record, one write at that moment, so the wizard can say how long a printer has been
+silent even after a restart of the front server. A daemon that went silent just before
+a restart has no time noted; after the restart, a paired daemon not heard from within two
+minutes, for which the record holds no offline time, is shown as silent for at least the
+time since the front server started.
 
 Pairing, sending and unpairing, the syncs and every limit are in
 [printer delivery's guide](../delivery/README.md), and in full in its
@@ -361,10 +367,10 @@ file is described under
 | Uploaded parts | The part store, in the slice container | Two hours after last use | Gone; the page uploads them again, unasked |
 | Slice jobs | The slice service process's memory | Until two hours after the slice ends | Gone; the page submits a waiting or running plate again, unasked, and a finished one is known by its sliced file |
 | A sliced file not yet collected | The slice container's disk | The moments until the front server has stored it | Gone; that slice runs again |
-| Sliced files | The state bucket | Until two hours after the slice ended or two hours after its last print ended, whichever is later | Kept |
+| Sliced files | The state bucket | Until two hours after the slice ended or two hours after its last print ended, whichever is later; at most about four days after it was last stored, by R2's backstop rule | Kept |
 | Configuration | The state bucket, one document per group | Until edited | Kept |
-| Paired-printer record, with the time its daemon last went offline | The state bucket, one per group | Until unpaired; the time is written once each time the daemon goes offline | Kept |
-| Delivery jobs | The state bucket, one record each | Until a day after the delivery job ends | Kept |
+| Paired-printer record, with the time of its daemon's last sync before it last went offline | The state bucket, one per group | Until unpaired; the time is written once each time the daemon goes offline | Kept |
+| Delivery jobs, each naming the sliced file it used | The state bucket, one record each | Until a day after the delivery job ends | Kept |
 | Printer status and the progress of a print | The relay's memory | Until the next sync replaces them | Gone; the daemon's next sync brings them back, within seconds |
 | Pairing codes that daemons are offering | The relay's memory | Fifteen minutes at most, while the daemon keeps offering | Gone; back within half a minute, as each daemon offers again |
 | Log lines, daemon telemetry | The log bucket | Ninety days | Kept, except the last minute before a crash, which stays only in Railway's log view (seven days) |
@@ -374,8 +380,8 @@ file is described under
 The project is deployed continuously: a change goes out when it is ready, at any time of
 day, while people are using the service. So a restart of a container is routine, and the
 design's rule is that **a deploy at any moment interrupts no user.** A user may see a
-pause while the container comes back and its clients reconnect. No work of a user's is
-lost and a print goes on. Two things can take longer than the pause itself: a slice that
+pause while the container comes back and its clients reconnect, and after 20 seconds a
+message that the server is being slow. No work of a user's is lost and a print goes on. Two things can take longer than the pause itself: a slice that
 was cut off runs again from its start, and a pairing code typed just after a restart has
 to be typed again.
 
@@ -385,7 +391,7 @@ to be typed again.
 
 | What was happening | What the user sees |
 |---|---|
-| A slice was waiting or running | Progress starts again. A page that is open uploads its parts again from the browser's storage and submits the same plate, unasked. A page that is closed does so when it is next opened, if that is within two hours of submitting; later it opens on the Parts step as for an expired sliced file ([the wizard's guide](../wizard/README.md#when-a-user-comes-back)) |
+| A slice was waiting or running | Progress starts again. A page that is open uploads its parts again from the browser's storage and submits the same plate, unasked. A page that is closed does so when it is next opened, if that is within two hours of submitting; later it opens on the Parts step as for an expired sliced file ([the wizard's guide](../wizard/README.md)) |
 | A slice had finished | Nothing. The sliced file is in the state bucket |
 | A print was being sent or was printing | Nothing. Printer delivery does not pass through the slice container |
 
@@ -397,6 +403,7 @@ to be typed again.
 | A slice was running | It keeps running in the slice container. The page shows its progress again once reconnected, and the front server, having asked the slice service for its slice jobs at start, stores the sliced file when the slice ends |
 | A delivery job was waiting for its daemon | The daemon's next sync is accepted, since its token still verifies, and receives the delivery job from its record in the state bucket. It fetches the sliced file through the front server, which reads it from the state bucket |
 | A print was running | It goes on. The printer-status icon and the Send step are blank until the daemon's next sync brings the printer's status and progress back, which is within ten seconds, plus the daemon's short random wait, of the front server answering again |
+| A daemon had gone silent just before the restart | Its offline time was never noted. Two minutes after the restart its printer shows Offline, silent for at least the time since the front server started |
 | A pairing code had just been typed in | The paired-printer record is already in the state bucket, and the daemon gets its token when it next offers its code, which the relay checks against the record |
 | A user types a pairing code in the half minute after the restart | They are told, as for any wrong code, that no daemon is showing that code and to try again in a moment |
 
@@ -426,11 +433,13 @@ A crash gets the treatment above. A deploy is planned, so it can do better.
   container stops is submitted again by its page.
 - **Every client retries.** The daemon waits and tries again when the relay does not
   answer. The page does the same for every request it makes, so a request that falls in
-  the gap is ridden out by retrying. A user sees nothing if the gap is under 20 seconds,
-  a message that the server is being slow and the browser is retrying, with a countdown
-  to the next attempt, if it is longer, and an error only after 300 seconds; nothing of
-  the user's work is dropped
-  ([the wizard's guide](../wizard/README-details.md#retrying-every-request)).
+  the gap is ridden out by retrying. It retries quietly at first, so a user sees nothing
+  if the gap is under 20 seconds. After 20 seconds of failed retries it shows a message
+  that the server is being slow and the browser is retrying, with a countdown to the next
+  attempt, the waits between attempts growing. It keeps retrying for up to 300 seconds in
+  all, then stops, says the server could not be reached and offers to try again. Nothing
+  of the user's work is dropped
+  ([the wizard's guide](../wizard/README.md)).
 
 ### Old and new versions together
 
@@ -469,7 +478,7 @@ everyone.
 **Users' models.** Outside the browser, a part exists only in the slice container, for
 two hours after its last use. A sliced file is in the state bucket at Cloudflare R2 until two
 hours after its slice ended or two hours after its last print ended, whichever is later,
-or up to about four days after it was stored if the front server fails to delete it
+or up to about four days after it was last stored if the front server fails to delete it
 (see [The sliced file](#the-sliced-file)). The bucket is private: the front server's
 credential reads it, and otherwise only the owner. A user reaches only their own parts, slice jobs and
 sliced files: the front server sets the user key from the cookie and the browser cannot

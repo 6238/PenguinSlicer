@@ -1,8 +1,9 @@
 # Printer delivery
 
-This is the detailed guide, for someone changing printer delivery; a shorter guide is in
-[README.md](README.md). Everything outside the section [To be built](#to-be-built) is true
-of the code as built.
+This is the detailed guide, for someone building or changing printer delivery; the guide
+for the person who decides is [README.md](README.md), in plain words, and this file holds
+the code-level names a builder needs. Everything outside the section
+[To be built](#to-be-built) is true of the code as built.
 
 Printer delivery takes a sliced file (`.gcode.3mf`) and gets it printed on a Bambu Lab printer, reporting how the print goes. It has two halves:
 
@@ -19,9 +20,7 @@ sliced file. Printer delivery knows nothing of slicing, of how the caller signs 
 or of where the caller keeps the pairing code it presents (as built; phase 5 replaces
 this, see [To be built](#to-be-built)).
 
-This began as a port of the printer relay and daemon from PenguinCAM's
-`feature/onshape-test-bed` branch (commit `da39282`); the hardening since is described in
-each section below, and the two faults the first hardware test found are fixed (see
+The two faults the first hardware test found are fixed (see
 [The two faults of the first hardware test](#the-two-faults-of-the-first-hardware-test)).
 
 ## Where it stands
@@ -74,7 +73,7 @@ the tests it needs. When an item is built, its text moves into the body of this 
 [README.md](README.md) is updated to match.
 
 Names and figures marked *proposed* below are this guide's suggestions; the design
-approved by the owner does not fix them, and the phase's design spec settles them. The
+approved by the owner does not fix them, and the builder settles them while building. The
 tests listed in each paragraph "*Tests:*" are likewise this guide's proposal, derived from
 the design; the design itself requires tests for the restarts of the front server and for
 the replacement of the relay's secret key.
@@ -88,8 +87,9 @@ that holds what must outlast a restart of the front server; on one machine a fol
 stands in for it. The **user key** is the signed-in user's Onshape id. A **paired-printer
 record** is one small document per group in the state bucket holding the id of the
 group's daemon, the printer's display name, who paired it and when, which of the relay's
-secret keys the daemon's token was last issued under, the time the daemon last went
-offline, and, until the daemon has its token, a hash of the pairing code. A **daemon id** is a random id a daemon makes for
+secret keys the daemon's token was last issued under, the time of the daemon's last sync
+before it last went offline, and, until the daemon has its token, a hash of the pairing
+code. A **daemon id** is a random id a daemon makes for
 itself when its `pair` command is run, and keeps; it names the daemon in its token, in
 the paired-printer record and in the relay's memory. A **send** is the request by which a
 user's page asks the relay to print a sliced file; it creates a delivery job. A **sync**
@@ -109,6 +109,42 @@ idle daemons beside users' requests and progress streams
 ([the front server](../front/README.md)). The messages of the pairing exchange in detail,
 and what daemon telemetry holds, are left to phase 5's own design spec
 ([the plan](../docs/plans/penguin-slicer-plan.md)).
+
+#### First: the tests on a fake clock
+
+The first piece of phase 5's work on printer delivery rewrites its tests that wait on the
+wall clock to use a fake clock and fakes that put network events in an exact order, and
+every item below is built on those fakes: a test never sleeps and never waits a number of
+seconds to see whether something has happened, and waits on an event, never on a duration
+([the plan's standing requirement "Tests"](../docs/plans/penguin-slicer-plan.md#standing-requirements)).
+[The audit](../docs/orchestration/guides/sleep-audit.md) found six tests that wait on the
+wall clock today:
+
+- in the fast suite, the two tests of `TestStoppingWithAJobInFlight` in
+  `daemon/tests/test_daemon_run_loop.py`, which give the run loop `time.monotonic` and its
+  default sleep, so its job thread waits on the real clock until the test calls `stop()`;
+- under `make test-sim`, `test_a_reconnect_with_no_new_document_keeps_the_old_age`, which
+  waits out the printer library's own one-second reconnect delay, and
+  `test_the_simulated_printer_runs_on_its_own_and_plays_a_print`, which plays a print in
+  real time, a status document every 0.05 s;
+- under `make test-together`, the two tests of the together run, on real threads and a
+  clock twenty times faster than real time.
+
+*Replaces in the code as built:* those six tests' waits. The fakes the rest of the suite
+uses (`FakeClock` and `SleepBound` in `daemon/tests/daemon_fakes.py`, the shop of faults in
+`tests/link_faults.py`) already move the clock by hand; what is new is a fake for the
+network that lets a test put messages, drops and reconnects in an exact order, including
+those of the printer library's MQTT client, which the suite against the simulated printer
+today takes in the order loopback sockets deliver them. *Proposed:* the stop event of the
+run loop becomes a wait the fake clock can end, so the two fast-suite tests need no real
+clock; the reconnect and the played print are driven by the network fake; the together
+run keeps one test on real threads, outside the fast suite, as the check that the halves
+work together on a real clock.
+
+*Tests:* the fast suite, the suite against the simulated printer and the together run
+each find no wait on the wall clock (*proposed*: a check that fails on `time.sleep`,
+`time.monotonic` or `time.time` reached from a test outside the marked real-time test);
+each rewritten test still fails when the behaviour it pins is broken by hand.
 
 #### Pairing
 
@@ -138,8 +174,8 @@ limited for each signed-in user. The offer of a pairing code is the one request 
 neither a user nor a daemon: it is limited to sixty a minute for the whole relay and also
 counted for the address Cloudflare reports it came from, so one stranger cannot use up
 everyone's offers (see [Limits on the rate of requests](#limits-on-the-rate-of-requests)).
-The pairing code is typed into PenguinSlicer once and is then dead; it is no longer kept
-in the configuration ([the plan](../docs/plans/penguin-slicer-plan.md)).
+The pairing code is typed into PenguinSlicer once and is then dead; it is never kept in
+the configuration ([the plan](../docs/plans/penguin-slicer-plan.md)).
 
 *Replaces in the code as built:* the code is a lasting secret that the daemon keeps in
 `config.toml` (`pairing_code`) and the caller presents from the configuration
@@ -321,8 +357,11 @@ bucket hosted, a folder on one machine), not in the relay's memory, because a da
 that the relay no longer knows its delivery job treats it as finished and drops it. Before
 a daemon sends the printer the start command it asks the relay, which allows it once for
 each delivery job, and the record holds whether that was allowed, which keeps a print from
-starting twice. A record is kept for a day after its delivery job ends. Each record kept
-in the state bucket carries the number of its format ([the contracts](../contracts/README.md)).
+starting twice. A record names the slice job whose sliced file the delivery job sends,
+which is how the front server knows when a sliced file's last print ended
+([the front server](../front/README-details.md#two-hours-deleting-and-the-backstop)). A
+record is kept for a day after its delivery job ends. Each record kept in the state bucket
+carries the number of its format ([the contracts](../contracts/README.md)).
 
 *Replaces in the code as built:* every delivery job (`Delivery` in `deliveries.py`), the
 job slot (`_Record.job`), the printer's last start granted (`_Record.last_grant`) and the
@@ -341,7 +380,8 @@ print: the print goes on and the printer-status icon and Send step come back wit
 seconds, plus the daemon's short random wait, of the front server answering again; restarted between the gate's yes and the
 daemon's word: the record still says the start was allowed, and the start is never
 allowed again; a record is read back for a day after its delivery job ends; a record
-written by the previous version is read by the new one.
+names the slice job of its sliced file; a record written by the previous version is read
+by the new one.
 
 #### The sliced file
 
@@ -353,7 +393,10 @@ after its last print ended, whichever is later; its last print ended when the la
 delivery job that used it ended ([the front server](../front/README-details.md#two-hours-deleting-and-the-backstop)).
 The relay's limit on the age of a sliced file it will send becomes that rule: a sliced
 file may be sent while it is kept, so Send works again for the same sliced plate after a
-print of any length. The daemon fetches again a sliced file whose fetch was cut
+print of any length. A send stores the sliced file afresh, which restarts the count of
+the three-day backstop rule at Cloudflare R2, so the backstop runs from the last send; a
+send whose sliced file has gone is answered that the sliced file has expired and the
+plate must be sliced again. The daemon fetches again a sliced file whose fetch was cut
 off.
 
 *Replaces in the code as built:* `find_sliced_file` answers a `SlicedFile` with a `path`
@@ -370,13 +413,16 @@ fetch cut off mid-way already raises in `RelayClient.download` ("the download fa
 after N bytes"), leaves no partial file, and is tried again from the start by `_download`
 in `run_loop.py`, up to three attempts (`DOWNLOAD_ATTEMPTS`) with backoff.
 
-*Error report:* *proposed*: a send of a sliced file no longer kept is
-`delivery.sliced_file_too_old`, with its rule changed; a fetch that fails three times is
-`delivery.download_failed`, as built.
+*Error report:* *proposed*: a send of a sliced file no longer kept, or gone from the
+state bucket, is `delivery.sliced_file_too_old`, with its rule changed, telling the user
+the sliced file has expired and the plate must be sliced again; a fetch that fails three
+times is `delivery.download_failed`, as built.
 
 *Tests:* a send of a never-printed sliced file at 1 h 59 min after its slice is accepted
 and one at 2 h 1 min refused; a send of a sliced file one hour after the end of a
 five-hour print of it is accepted, and one at 2 h 1 min after that print ended refused;
+a send stores the sliced file afresh; a send whose sliced file the store no longer holds
+gets the expired answer;
 the daemon's fetch reads the store and the relay writes no file of its own; a fetch cut
 off mid-way through the front server is fetched again and the delivery job goes on; a
 sliced file a running delivery job uses is still there when the daemon fetches it, past
@@ -499,7 +545,9 @@ hours of it is written with the wizard's steps. So a delivery job's record carri
 sender's display name, the plate's one-line description, the time the delivery job ended
 and, for a failure, the layer at which it stopped, and the printer's status returns them;
 and a page that has lost its state can ask for its user's live delivery job and that
-user's last print. These are requirements; the routes and field names that carry them
+user's last print. A delivery job's record also carries the slice job whose sliced file
+it sends ([The records of delivery jobs](#the-records-of-delivery-jobs)). These are
+requirements; the routes and field names that carry them
 are *proposed* with phase 5's design spec.
 
 *Tests:* the status of a busy printer names the sender and the description; a final
@@ -509,16 +557,22 @@ a day after it finished, and not after (fake clock).
 
 **How long a printer has been silent.** The mockup's printer details say "Not heard from
 for 7 minutes." When a daemon goes offline (no sync within 2 minutes), the relay writes
-the time to the group's paired-printer record, one write at that moment and not one a
-minute, and the printer's status returns it, so the wizard can say how long a printer has
-been silent even after a restart of the front server. The relay's memory alone would
-lose it at a restart. *Replaces in the code as built:* nothing; it adds to the
-relay as built, which keeps the time it last heard from a daemon (`daemon_seen_at` in
-`relay.py`) in its memory only.
+the time of the daemon's last sync to the group's paired-printer record, one write at
+that moment and not one a minute, and the printer's status returns it, so the wizard can
+say how long a printer has been silent, counted from the last sync, even after a restart
+of the front server. The relay's memory alone would lose it at a restart. A daemon that
+goes silent just before a restart of the front server has no time written, since the
+relay's memory of its last sync is lost: after a restart, a paired daemon not heard from
+within two minutes, for which the record holds no offline time, is shown as silent "for
+at least" the time since the front server started. *Replaces in the code as built:*
+nothing; it adds to the relay as built, which keeps the time it last heard from a daemon
+(`daemon_seen_at` in `relay.py`) in its memory only.
 
-*Tests:* a daemon that goes offline writes its offline time once, and stays at one write
-however long it stays off (fake clock); after a restart of the front server the printer's
-status returns the same time; the daemon's next sync puts the printer back online.
+*Tests:* a daemon that goes offline writes the time of its last sync once, and stays at
+one write however long it stays off (fake clock); after a restart of the front server
+the printer's status returns the same time; a daemon silent from just before a restart
+of the front server is shown, two minutes after the restart, as silent for at least the
+time since the restart; the daemon's next sync puts the printer back online.
 
 #### Already built, kept as they are
 

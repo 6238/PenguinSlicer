@@ -2,7 +2,8 @@
 
 What the contract between the wizard and the front server must provide. **Its routes are
 not written yet:** their paths, the shapes of their requests and answers, and the codes of
-the front server's own error reports are written with phase 2's design. Until then this
+the front server's own error reports are written before phase 2's building starts. Until
+then this
 file collects every decision that binds them, so that nothing is lost when they are
 written.
 
@@ -20,7 +21,7 @@ Railway; phase 4, inside Onshape; phase 5, the real printer.
 Each requirement below links to the guide that owns its full explanation.
 
 Names and figures marked *proposed* are this file's suggestions; the design approved by
-the owner does not fix them.
+the owner does not fix them, and the builder settles them while building.
 
 ## Every request and every answer
 
@@ -32,8 +33,11 @@ the owner does not fix them.
   ([the front server](../front/README-details.md#error-reports)).
 - **Every request is safe to repeat.** The page retries every request it makes, so a
   request that falls in the gap of a deploy is repeated. It retries quietly for 20
-  seconds, then shows that the server is being slow, with a countdown to the next
-  attempt, and stops with an error, offering to try again, only after 300 seconds
+  seconds, then shows that the server is being slow and the browser is retrying, with a
+  countdown to the next attempt, the waits between attempts growing, and stops with an
+  error, saying the server could not be reached and offering to try again, only after
+  300 seconds in all; nothing of the user's work is dropped. So a request may arrive
+  several times over five minutes, and each must be safe to repeat
   ([the wizard](../wizard/README-details.md#retrying-every-request)). (*Proposed*,
   since the design says only that the page retries:) a request sent twice because its
   first answer was lost must leave the same result as one sent once: uploading the same
@@ -188,14 +192,20 @@ also looks for its sliced file in the state bucket
   print time, the filament used, the layer count and the warnings;
   [the sliced file](sliced-file.md#summary)),
   is fetched through the front server too, for as long as the file itself, so the front
-  server keeps it beside the file in the state bucket and serves both (added after the
-  approved design: the Preview step needs the summary after the slice container has
-  deleted its copy;
+  server keeps it beside the file in the state bucket and serves both (the Preview step
+  needs the summary after the slice container has deleted its copy;
   [the front server](../front/README-details.md#following-slice-jobs-and-storing-sliced-files)).
 - **How long it is kept.** A sliced file can be previewed, downloaded, sent and sent again
   after a print until two hours after its slice ended or two hours after its last print
-  ended (the end of the latest delivery job that used it), whichever is later; past that
-  it is answered with an error report saying it has expired, and deleted
+  ended (the end of the latest delivery job that used it), whichever is later, so the same
+  plate can be sent again after a print of any length; past that it is answered with an
+  error report saying it has expired, and deleted
+  ([the front server](../front/README-details.md#two-hours-deleting-and-the-backstop)).
+- **The backstop.** A three-day rule at Cloudflare R2 deletes any sliced file the front
+  server failed to delete. Sending a sliced file stores it afresh, which restarts the
+  rule's count, so the backstop runs from the last send. A send, a preview or a download
+  whose sliced file has gone is answered with the error report saying the sliced file has
+  expired and the plate must be sliced again
   ([the front server](../front/README-details.md#two-hours-deleting-and-the-backstop)).
 
 ## The configuration
@@ -225,14 +235,20 @@ All of these pass through the front server to the relay of
   It also carries who sent the print going on, a one-line description of its plate, and
   how the last print ended (its sender, its end time and, for a failure, its layer)
   ([printer delivery](../delivery/README-details.md#from-the-wizards-mockup)). For an
-  offline printer it carries the time its daemon went offline, which the relay writes to
-  the paired-printer record once, at that moment, so the page can say how long the
-  printer has been silent ("Not heard from for 7 minutes.") even after a restart of the
-  front server. The fields' names are *proposed* with the routes.
+  offline printer it carries the time of the daemon's last sync before it went offline,
+  which the relay writes to the paired-printer record once, when the daemon goes offline,
+  so the page can say how long the printer has been silent ("Not heard from for
+  7 minutes.") even after a restart of the front server. After a restart, a paired daemon
+  not heard from within two minutes of the front server starting, for which the record
+  holds no offline time, is answered as silent for at least the time since the front
+  server started, and the page says "at least". The fields' names are *proposed* with the routes.
 - **Sending.** A send is accepted when the current group has a paired-printer record, and
   its delivery job goes to the daemon that record names; a send to a printer that is
   printing is refused, whoever started the print
-  ([printer delivery](../delivery/README-details.md#sending-and-unpairing)).
+  ([printer delivery](../delivery/README-details.md#sending-and-unpairing)). The delivery
+  job's record names the sliced file it used, which is how the front server knows when a
+  sliced file's last print ended; and the send stores the sliced file afresh (see
+  [The sliced file](#the-sliced-file)).
 - **Cancelling** a delivery job, and **"stop following"** a stale delivery job whose print
   was started, which lets the relay accept the next send once the daemon is back and the
   printer is idle ([printer delivery](../delivery/README-details.md#how-often-a-daemon-talks-to-the-relay)).

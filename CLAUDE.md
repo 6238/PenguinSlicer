@@ -12,8 +12,17 @@ on [contracts/](contracts/README.md).
   [the architecture](docs/architecture.md): what runs where when hosted, where state
   lives, restarts and deploys, security and the log.
 - **Before changing a component, read its `README-details.md`.** A component's `README.md`
-  is its guide for a person and is kept short; `README-details.md` beside it holds every
-  figure, rule, error code and required test. In a component that has code, everything
+  is its guide, written for the person who decides: a product manager and an engineering
+  manager at once, who must be able to tell from it whether the component is being built
+  correctly. It holds the architectural decisions, the user-interface decisions and the
+  requirements, functional and non-functional, with the approach to each hard part, the
+  performance and security requirements and each key limit in plain words with its
+  figure. It is prose, in plain words, with no line limit, and free of code-level names:
+  no make targets, route paths, setting or constant names, error codes, function or class
+  names, file paths inside the code or test names. `README-details.md` beside it is the
+  builder's document and holds those names, with every figure, rule, error code and
+  required test; a detail marked *proposed* there is the builder's to settle while
+  building. In a component that has code, everything
   in the details file outside the section "To be built" is true of the code as built;
   when you build an item of "To be built", move its text into the body and update the
   `README.md` to match. Never let the two files disagree.
@@ -55,9 +64,14 @@ file, nothing else.
 
 ## The quality bar
 
-- The fast suites use no real Orca, no real printer, no real waiting and no fixed ports,
-  and must pass in any order, any number of times. A test that fails once is fixed at its
-  cause, never retried or skipped.
+- A test never sleeps and never waits a number of seconds to see whether something has
+  happened: time passes through a fake clock that the test moves, and a test waits on an
+  event, never on a duration.
+- Code that talks over a network or depends on the order of events is tested with fakes
+  that let the test put the events in an exact order.
+- The fast suites use no real Orca, no real printer and no fixed ports, and must pass in
+  any order, any number of times. A test that fails once is fixed at its cause, never
+  retried or skipped.
 - Every failure a caller can see is an error report
   ([contracts/error-report.md](contracts/error-report.md)) with a test that produces it on
   purpose. Every long job sends progress reports and can be cancelled.
@@ -65,7 +79,8 @@ file, nothing else.
   random order, mutate the changed checks by hand, and try hostile inputs.
 - One interface per component is the default, not a hard rule. The slice service has one,
   its HTTP interface. The wizard may exist both inside Onshape and as a page reached
-  directly from a browser, and the Onshape source may likewise have two homes.
+  directly from a browser, and the Onshape integration (the component that makes
+  PenguinSlicer work inside Onshape) may likewise have two homes.
 
 ## Gotchas learned the hard way
 

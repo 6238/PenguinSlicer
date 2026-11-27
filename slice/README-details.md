@@ -1,7 +1,8 @@
 # Slice service
 
-**The detailed guide, for someone changing the slice service.** A shorter guide for a
-person is [README.md](README.md). Everything in this file outside the section
+**The detailed guide, for someone building or changing the slice service.** The guide
+for the person who decides is [README.md](README.md), in plain words; this file holds
+the code-level names a builder needs. Everything in this file outside the section
 [To be built](#to-be-built) is true of the code as built.
 
 Takes a [plate configuration](../contracts/plate-configuration.md) (the parts as STL files,
@@ -63,7 +64,7 @@ and [README.md](README.md) is updated to match. The ids in brackets name the dec
 [the map of the hosted architecture's decisions](../docs/orchestration/hosted-architecture/decision-map.md).
 
 Names and figures marked *proposed* below are this guide's suggestions; the design
-approved by the owner does not fix them, and the phase's design spec settles them. Where
+approved by the owner does not fix them, and the builder settles them while building. Where
 the approved design states a figure that a measurement or the code as built corrects, the
 item says so in one sentence.
 
@@ -167,11 +168,13 @@ and does not add the part
 [Checks on every part](#checks-on-every-part); the fit test (`slice.part_too_large`) runs
 on arrival against the largest printer of the catalog (*proposed*) and again, as built, against the
 plate configuration's printer when a plate configuration names the part. A part that passes
-is kept in the part store under the user key and the SHA-256 hash of its bytes, and the
+is kept in the part store under the user key, the SHA-256 hash of its bytes and its units
+(see "Units beside each part", below), and the
 answer (HTTP 201 carrying that hash in hexadecimal, the part's measurements (triangles,
 size, volume) and its warnings: *proposed*) lists `slice.part_not_watertight`,
 `slice.part_inside_out` and `slice.part_maybe_inches` among those warnings. The same bytes
-sent again by the same user key answer the same and count as a use (*proposed*). The
+sent again by the same user key under the same units answer the same and count as a use
+(*proposed*). The
 figures and rules:
 
 - A request body over `MAX_PART_BYTES` (7,500,084 bytes, 7.5 MB, the plate
@@ -226,6 +229,51 @@ listing both; after both are uploaded the same plate configuration is accepted;
 `tests/test_errors.py` produces the new meaning on purpose; a multipart body is refused
 (*proposed*).
 [D78, D292]
+
+**Units beside each part.** The units of a part, inches or millimetres, travel beside it
+as a label: with its upload to `POST /parts` (*proposed*: a `units` query parameter or
+header, `mm` or `in`) and in the plate configuration's part (*proposed*: `units`; [the
+plate configuration contract](../contracts/plate-configuration.md#to-be-built) defines the
+field). The browser reads a part to draw it and lay it out and never changes its bytes;
+only the slice service applies the scale (25.4 for inches), to the mesh it measures and to
+the model it writes for Orca. The part store's entry is identified by the user key, the
+bytes' hash and the units, so the same file under different units is a different part. The
+checks on arrival run on the scaled mesh: the size checks (`MIN_PART_EXTENT_MM`), the fit
+on the largest printer of the catalog, and `slice.part_maybe_inches` (`MAYBE_INCHES_MM`),
+which (*proposed*) is not raised for a part labelled in inches. Replaces: an STL read
+as millimetres always, with no units anywhere in the plate configuration, and the
+warning `slice.part_maybe_inches` as the only sign of a part drawn in inches. Error
+report: a missing or unknown units label is refused (*proposed*:
+`slice.bad_plate_configuration` in a plate configuration, and a new code on `POST /parts`).
+Tests: one file uploaded in millimetres and in inches gives two entries; a part in inches
+is measured and checked 25.4 times larger, and its sliced footprint matches; a part in
+inches small enough to warn in millimetres does not warn; a plate configuration naming a
+hash under units it was not uploaded with gets `slice.part_missing`.
+
+**Every setting Orca allows that is a parameter.** The plate configuration may set every
+setting Orca allows that is a parameter with a value (a choice from a list, a number, a
+piece of text), and all of them are available in the wizard's advanced mode. Settings that
+are programmatic are refused: those that run a program, those that name a file on the
+server, and custom G-code (*proposed*, the list to be drawn from the pinned Orca's option
+definitions: the post-processing scripts, `post_process`; any setting holding a path; and
+the `*_gcode` settings, such as `machine_start_gcode` and `before_layer_change_gcode`). Each
+accepted value is checked against what Orca allows for it: a choice against its list, a
+number against its range, text against its length (*proposed*: from the option
+definitions of the pinned Orca, regenerated by `make upgrade-orca` like the profile
+catalog). As built, the plate configuration's `overrides` accepts four keys only, each
+from a listed set of values (`print_config.OVERRIDE_CHOICES`: `infill` 10, 15, 20, 30,
+40, 60 or 100 to `sparse_infill_density`; `walls` 2, 3, 4 or 6 to `wall_loops`;
+`supports` `off` or `on` to `enable_support` with `support_type` `tree(auto)`; `brim`
+`auto`, `off` or `outer` to `brim_type`), validated by `print_config.validate_overrides`,
+and refuses anything else with `slice.bad_overrides`. Replaces: those four keys and their
+lists (*proposed*: `overrides` keeps its name and takes Orca's own setting names as keys).
+Error report: a refused or out-of-range setting is `slice.bad_overrides`, as built, its
+detail naming the setting and why (*proposed*). Tests: a setting of each kind (choice,
+number, text) accepted and reaching Orca's process file; an unknown setting, a value off
+its list, a number out of range, a setting that runs a program, one that names a file and
+each custom G-code setting each refused with the setting named; the upstream check fails
+when a new Orca adds a setting that runs a program or names a file and the list of refused
+settings does not name it (*proposed*).
 
 **One unfinished slice job per user key.** Submitting a plate configuration cancels the
 same user key's earlier unfinished slice job (queued or running), which is what the

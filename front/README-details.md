@@ -5,7 +5,7 @@ whoever builds it. The guide for a human reader is [README.md](README.md); each 
 here goes deeper into the section of the same subject there.
 
 Names and figures marked *proposed* below are this guide's suggestions; the design
-approved by the owner does not fix them, and the phase's design spec settles them.
+approved by the owner does not fix them, and the builder settles them while building.
 
 The **front server** is the one process the internet reaches. It serves the wizard's
 pages, signs users in with Onshape, passes parts and slice jobs to the slice service,
@@ -465,9 +465,8 @@ and stores it in the state bucket under the user key and the slice job's id, wit
 stored the file, and the slice container deletes its own copy ([the slice service](../slice/README.md)). A sliced file is
 8.8 to 14.1 MB on the plates measured so far. The front server stores the sliced file's
 summary ([the sliced file](../contracts/sliced-file.md#summary)) beside it in the state
-bucket, fetched with the file before the slice service is told, and serves both (added
-after the approved design: the Preview step needs the summary after the slice container
-has deleted its copy).
+bucket, fetched with the file before the slice service is told, and serves both (the
+Preview step needs the summary after the slice container has deleted its copy).
 
 **The state bucket's copy is the one everything uses.** The browser fetches it through the
 front server to draw the Preview step and to offer the download, and from phase 5 the
@@ -497,26 +496,32 @@ that was running across a restart of the front server is stored when it ends.
 ## Two hours, deleting, and the backstop
 
 A sliced file can be previewed, downloaded, sent, and sent again after a print, until two
-hours after its slice ended or two hours after its last print ended, whichever is later.
-Its last print ended when the latest delivery job that used it ended (from phase 5;
-before phase 5 nothing is printed, so the two hours after the slice ended are the whole
-rule). A sliced file is **due** once both of those two hours have passed. The front server
-enforces this:
+hours after its slice ended or two hours after its last print ended, whichever is later,
+so the same plate can be sent again after a print of any length. Its last print ended
+when the latest delivery job that used it ended (from phase 5; before phase 5 nothing is
+printed, so the two hours after the slice ended are the whole rule). A sliced file is
+**due** once both of those two hours have passed. The front server enforces this:
 
 - it refuses a sliced file that is due, with an error report (*proposed*: saying it has
   expired), and deletes it;
 - it deletes each sliced file when it falls due, in (*proposed*) a regular sweep, so that
   a file nobody asks for again is gone on time too;
 - from phase 5, a sliced file that a running delivery job uses is never due, since that
-  delivery job has not ended; when it ends, the file is kept two hours more.
+  delivery job has not ended; when it ends, the file is kept two hours more. The front
+  server finds a sliced file's delivery jobs by the slice job each delivery job's record
+  names ([printer delivery](../delivery/README-details.md#the-records-of-delivery-jobs)).
 
 R2's own rule for deleting old files cannot do this alone: it counts in whole days, and
 Cloudflare says a file is typically removed within 24 hours after it falls due. So a
 three-day R2 deletion rule on the sliced files is set as well, to catch any file the front
-server failed to delete. The rule counts from when a file was stored, so it is set at three
-days to outlast the longest print and the two hours after it; a print that runs longer
-than that loses its sliced file to the rule, and the user slices the plate again to send
-it again. Such a file can rest at R2 for up to about four days after it was stored ([the architecture](../docs/architecture.md)).
+server failed to delete. The rule counts from when a file was last stored, and from
+phase 5 a send stores the sliced file afresh (*proposed*: a copy of the object onto
+itself), which restarts the count, so the backstop runs from the last send. Three days
+outlast the longest print and the two hours after it. A file the front server failed to
+delete can rest at R2 for up to about four days after it was last stored
+([the architecture](../docs/architecture.md)). A send whose sliced file has gone, to the
+rule or otherwise, is answered with the error report saying the sliced file has expired
+and the plate must be sliced again.
 
 ### Tests
 
@@ -528,14 +533,19 @@ it again. Such a file can rest at R2 for up to about four days after it was stor
   after that delivery job ended, and refused and deleted at two hours after it (phase 5).
 - A sliced file used by a running delivery job is kept and served to the daemon past two
   hours after its slice (phase 5).
+- A send stores the sliced file afresh, and a send whose sliced file the state bucket no
+  longer holds is answered as expired (phase 5).
 
 ## The configuration
 
 A group's **configuration** is one JSON document in the state bucket, read whole and
-written whole; it holds the group's filaments (each with a colour, which the wizard shows
-where the user chooses a filament and never uses in the layer preview, and with its
-profiles, each under the group's own name and purpose), the printer's Orca profile (from
-which the plate's size and height come) and the units of uploaded files, and no secret.
+written whole; it holds the group's filaments, each with a colour and with the profiles
+the wizard offers for it, each profile under the group's own name and purpose and naming
+the Orca profile it uses; the printer's Orca profile, from which the plate's size and
+height come; and the units of uploaded files; and no secret. A filament's colour is shown
+where the user chooses a filament, so that two filaments of one material can be told
+apart, and is never used in the layer preview, which uses four fixed colours for groups
+of line types.
 Its shape, with an annotated example, is in
 [the configuration's contract](../contracts/configuration.md). A group's document is kept
 until edited: an edit replaces it, and nothing else deletes it.
@@ -557,9 +567,9 @@ until edited: an edit replaces it, and nothing else deletes it.
 The configuration's edit screens are a feature of their own, in no phase yet, with a
 design spec of their own
 ([the plan, Known future work](../docs/plans/penguin-slicer-plan.md#known-future-work)).
-Until they exist, a group uses the default or a document the owner puts into the state
-bucket through Cloudflare's console, following the annotated example. So the front server
-must expect a document written by hand.
+Until they exist there is a fixed set of configurations: a group uses the default or a
+document the owner puts into the state bucket through Cloudflare's console, following the
+annotated example. So the front server must expect a document written by hand.
 
 ### Tests
 
@@ -719,9 +729,14 @@ front server:
   writes the paired-printer record for the user's current group; a send is accepted when
   the current group has a paired-printer record, and its delivery job goes to the daemon
   that record names ([printer delivery](../delivery/README.md)). When the group's daemon
-  goes offline, the relay writes the time to the paired-printer record, once, so the
-  printer's status can say how long the printer has been silent across a restart of the
-  front server. *Proposed:* a send
+  goes offline, the relay writes the time of the daemon's last sync to the paired-printer
+  record, once, so the printer's status can say how long the printer has been silent
+  across a restart of the front server; after a restart, a paired daemon not heard from
+  within two minutes, for which the record holds no offline time, is shown as silent
+  "for at least" the time since the front server started. Each delivery job's record
+  names the slice job whose sliced file it sends, and a send stores that sliced file
+  afresh ([Two hours, deleting, and the backstop](#two-hours-deleting-and-the-backstop)).
+  *Proposed:* a send
   repeated with the same sliced file by the same user while its delivery job is live
   answers with that delivery job, where the code as built answers
   `delivery.job_in_flight`.
@@ -740,8 +755,10 @@ Limits on the rate of requests are counted for the signed-in user or the daemon
 - A send from a current group with no paired-printer record is refused; one with a record
   reaches that record's daemon.
 - A sliced file a delivery job needs is served to the daemon after two hours.
-- A daemon going offline writes the time to its paired-printer record once; a restarted
-  front server reports the same time for it.
+- A daemon going offline writes the time of its last sync to its paired-printer record
+  once; a restarted front server reports the same time for it; a daemon silent from just
+  before a restart is reported, two minutes after it, as silent for at least the time
+  since the restart.
 
 ## Error reports
 
@@ -762,7 +779,7 @@ here then. The table's rows and each one's "Retryable" are *proposed*.
 | Not from the wizard's page | A changing route without the wizard's header, or from another origin | No |
 | Configuration changed | The configuration was written by someone else since it was read; reload | No |
 | Configuration unreadable | The group's document is not JSON or not of a known format number | No |
-| Sliced file expired | Past two hours after its slice ended and two hours after its last print ended | No |
+| Sliced file expired | Past two hours after its slice ended and two hours after its last print ended, or gone from the state bucket; the plate must be sliced again | No |
 | Sliced file unknown | No sliced file of that slice job under the user's key | No |
 | Slice service did not answer | The private network or the slice service is down | Yes |
 | State bucket did not answer | Reading or writing the state bucket failed | Yes |
@@ -831,6 +848,8 @@ parts from Onshape, and what that costs in calls to Onshape, is designed in phas
 **Phase 5, the real printer.** The relay joins the front server: pairing, the syncs and
 the held wait, the records of delivery jobs in the state bucket, replacing the relay's
 secret key, and daemon telemetry ([printer delivery](../delivery/README.md)). The front
-server supplies the relay its store and the sliced files, answers held syncs when
+server supplies the relay its store and the sliced files; keeps a sliced file until two
+hours after its last print ended, found by the slice job each delivery job's record
+names, and stores it afresh at each send; answers held syncs when
 stopping, gathers the relay's lines, and spends one of its 100 threads on each idle
 daemon.

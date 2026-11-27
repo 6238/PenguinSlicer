@@ -598,13 +598,20 @@ phrased it.
 
 ### Decided by the owner on Fri 2026-11-27
 
-Where the wizard's approved mockup (version 8) and the spec differed. The owner decided
-each on Fri 2026-11-27 (Pacific time); the numbers are those of
-[the comparison of the mockup with the design](mockup-against-design.md).
+Where the wizard's approved mockup (version 8) and the spec differed, and the owner's
+further decisions of that day. The owner decided each on Fri 2026-11-27 (Pacific time).
+The numbers such as 1.1 are those of
+[the comparison of the mockup with the design](mockup-against-design.md); the rows
+headed "Item" are the items of
+[the record of that day's decisions](../guides/decisions-2026-11-27.md), where "proposed"
+marks a proposal the owner did not object to.
+
+These decisions replace what the rows above record of the spec: 1.1 and the row on R2's
+backstop replace D7, D91, D92, D93, D94 and D247; 1.9 replaces D234; 1.5 replaces D111.
 
 | Decision | Home |
 |---|---|
-| 1.1: a sliced file is kept until two hours after its slice ended or two hours after its last print ended (the end of the latest delivery job that used it), whichever is later; Send is enabled again after a print of any length; the one-day rule at R2 stays as the backstop | [The front server's details](../../../front/README-details.md#two-hours-deleting-and-the-backstop) |
+| 1.1: a sliced file is kept until two hours after its slice ended or two hours after its last print ended (the end of the latest delivery job that used it), whichever is later; Send is enabled again after a print of any length; a three-day rule at R2 is the backstop (the row on R2's backstop, below) | [The front server's details](../../../front/README-details.md#two-hours-deleting-and-the-backstop) |
 | 1.9: the page retries quietly; after 20 seconds of failed retries it says the server is being slow, with a countdown to the next attempt; it retries for up to 300 seconds, then says the server could not be reached and offers to try again; no work is dropped | [The wizard's details](../../../wizard/README-details.md#retrying-every-request) |
 | 2.4: the relay writes the time a daemon goes offline to the paired-printer record, once, so how long a printer has been silent survives a restart of the front server | [Printer delivery's details](../../../delivery/README-details.md#from-the-wizards-mockup) |
 | 1.5: the layer preview uses four fixed colours whatever the filament; the configuration still holds a colour for each filament, shown where the user chooses a filament | [The configuration's contract](../../../contracts/configuration.md) |
@@ -621,7 +628,31 @@ each on Fri 2026-11-27 (Pacific time); the numbers are those of
 | 2.3: a page can find its user's live delivery job and last print (route names still *proposed*) | [The contract](../../../contracts/wizard-front-server.md#printers-from-phase-5) |
 | 2.5: the configuration holds each profile's own name and purpose | [The configuration's contract](../../../contracts/configuration.md) |
 | 2.6: there is no "plate too large" error | [The wizard's details](../../../wizard/README-details.md#errors-the-wizard-explains) |
-| The backstop rule at R2 for sliced files is three days, not one, since a sliced file now lives until two hours after its last print ended; a file the front server failed to delete can rest at R2 for up to about four days after it was stored. | `front/README.md` |
+| The backstop rule at R2 for sliced files is three days, not one, since a sliced file now lives until two hours after its last print ended; a file the front server failed to delete can rest at R2 for up to about four days after it was stored. | [The front server's details](../../../front/README-details.md#two-hours-deleting-and-the-backstop) |
+| Item 1: a component's guide is for the person who decides, a product manager and an engineering manager at once, and holds the architectural and user-interface decisions and the requirements | [CLAUDE.md](../../../CLAUDE.md) |
+| Item 2: a guide is prose, with no line limit and no code-level names; key limits are in it in plain words with their figures | [CLAUDE.md](../../../CLAUDE.md) |
+| Item 3: `README-details.md` holds the code-level names; the details marked *proposed* are the builder's to settle while building | [CLAUDE.md](../../../CLAUDE.md) |
+| Item 4: once reviewed, the guides, their details files and the contracts are enough to write the software; phase 2 is built from them | [The plan](../../plans/penguin-slicer-plan.md#phase-2-the-wizard-and-the-front-server-outside-onshape-on-one-machine) |
+| Item 5: the slice service accepts every setting Orca allows that is a parameter with a value, all in advanced mode, and refuses programmatic ones (running a program, naming a file on the server, custom G-code) | [The slice service's details](../../../slice/README-details.md#phase-2-one-machine) |
+| Item 6: a part's units travel beside it as a label; the browser never changes its bytes; only the slice service scales and checks with them; the same file under other units is another part | [The plate configuration's contract](../../../contracts/plate-configuration.md#to-be-built) |
+| Item 7: the thirteen design rulings of the two older guides (R1 to R3, R5 to R12, R14, R18) stand, open to revisiting | The guides of the slice service and printer delivery |
+| Item 8: the profiles the wizard offers for each filament are in the configuration; until the edit screens exist there is a fixed set of configurations | [The configuration's contract](../../../contracts/configuration.md) |
+| Item 12 (proposed): a send stores the sliced file afresh, restarting R2's count; a send whose file has gone answers that it has expired | [The front server's details](../../../front/README-details.md#two-hours-deleting-and-the-backstop) |
+| Item 13 (proposed): a delivery job's record names the sliced file it used | [Printer delivery's details](../../../delivery/README-details.md#the-records-of-delivery-jobs) |
+| Item 14: the retrying of 1.9, with the waits between attempts growing; the exact waits and words are the builder's | [The wizard's details](../../../wizard/README-details.md#retrying-every-request) |
+| Item 16: the mockup's open questions are answered (M1, M2, M3, M6, M16, M17, M18, M29 as decided; M7, M11, M21, M22, M23, M25, M26 and the 11 px pointer line as the mockup has them) | [The wizard's details](../../../wizard/README-details.md#still-to-be-written) |
+| Item 17: the twelve screens the mockup never showed are designed in words in the wizard's guide, on the mockup's patterns, with no mockups first | [The wizard's details](../../../wizard/README-details.md#screens-the-design-needs-that-the-mockup-does-not-show) |
+| Item 18: the Preview step's guide states what must be achieved (frame rate, browser, machine, decision 33's appearance); the method is found while building | [The wizard's details](../../../wizard/README-details.md#where-this-guide-departs-from-the-mockups-decisions) |
+| Item 19 (proposed part): the time written is that of the daemon's last sync; after a restart of the front server, a daemon not heard from within two minutes is shown silent "for at least" the time since the start | [Printer delivery's details](../../../delivery/README-details.md#from-the-wizards-mockup) |
+| Item 20: printer delivery's tests that wait on the wall clock move to a fake clock and fakes that order network events, first in phase 5 | [Printer delivery's details](../../../delivery/README-details.md#first-the-tests-on-a-fake-clock) |
+| Item 21: the component for working inside Onshape is the Onshape integration: the app and its panel, the exchange with Onshape's page, and the export of the selected parts with their units; signing in is the front server's; its split between browser and server is for phase 4 | [The plan](../../plans/penguin-slicer-plan.md#the-repository) |
+| Item 22: where the code came from leaves the plan, except one mention in phase 4 of the branch to port from | [The plan](../../plans/penguin-slicer-plan.md#phase-4-inside-onshape) |
+| Item 23: returning to PenguinCAM is a possible direction, not decided, which the design keeps open | [The plan](../../plans/penguin-slicer-plan.md#the-repository) |
+| Item 24: the strong preference is not to patch upstream code, a workaround almost always preferred; a small patch is reasonable when a goal needs it, for an error, progress or a minor feature; each is paid for again at every upstream version | [The plan](../../plans/penguin-slicer-plan.md#standing-requirements) |
+| Item 25: a test never sleeps or waits a duration; time is a fake clock; network and ordering are tested with fakes that set the order | [The plan](../../plans/penguin-slicer-plan.md#standing-requirements) |
+| Item 26: the plan holds only what a reader with nothing else needs, and no figure, default or mechanism another document owns unless its own point needs it | [The plan](../../plans/penguin-slicer-plan.md) |
+| Item 27: the Layout step's risk is laying on a face, orienting and arranging on real exported parts; direct manipulation at 320 px is shown by the mockup | [The plan](../../plans/penguin-slicer-plan.md#phase-1-the-wizards-guide) |
+| Item 28: the README opens with PenguinSlicer as 3D printing from Onshape, with FRC teams as its first users | [README.md](../../../README.md) |
 
 ## Possible disagreements in the spec
 
