@@ -2029,10 +2029,13 @@ that needs other code is held to the same rule.
 **The build, as built.** `build.py` writes `wizard/dist/index.html` and puts every other file
 of `wizard/src/` flat in `wizard/dist/assets/` as
 `<name>.<first 12 hexadecimal characters of its SHA-256>.<extension>`, bytes unchanged, and
-rewrites each `src="..."` and `href="..."` of `index.html` that names one of them to
-`/assets/<that name>`. It refuses, with a sentence that says why: no `index.html`; no version
-placeholder, or more than one; a reference to another site or to a file not in `wizard/src/`;
-two files that would get the same built name. Not yet built (the skeleton, item 2 of
+rewrites each `src` and `href` of `index.html` that names one of them, its value in double
+quotes, single quotes or none, to `/assets/<that name>`, keeping its quotes; a link within the
+page (`href="#..."`) is left as it is. It refuses, with a sentence that says why: no
+`index.html`; no version placeholder, or more than one; a reference to another site or to a
+file not in `wizard/src/`; two files that would get the same built name. Only `src` and
+`href` are read: an address in another attribute (`srcset`, `poster`, `data`) is neither
+rewritten nor refused, and the content security policy is what stops it loading. Not yet built (the skeleton, item 2 of
 [By phase](#by-phase)): rewriting the names inside an asset (a module's or a worker's
 imports, a style sheet's addresses) and building in `wizard/vendor/`.
 

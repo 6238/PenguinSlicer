@@ -3,8 +3,9 @@
 
 `wizard/dist/index.html` is the page; every other file of `wizard/src/` goes flat into
 `wizard/dist/assets/` as `<name>.<first 12 hexadecimal characters of its SHA-256>.<extension>`,
-its bytes unchanged, and each `src="..."` or `href="..."` of index.html that names one of them
-becomes `/assets/<that name>`. The build refuses, saying why: a page with no version
+its bytes unchanged, and each `src` or `href` of index.html that names one of them (its value
+in double quotes, single quotes or none) becomes `/assets/<that name>`; a link within the page
+(`#...`) is left as it is. The build refuses, saying why: a page with no version
 placeholder or with more than one, a reference to a file that is not in `wizard/src/`, a
 reference to another site, and two files that would get the same built name.
 
@@ -21,7 +22,11 @@ from pathlib import Path
 
 WIZARD = Path(__file__).resolve().parent
 PLACEHOLDER = '<meta name="penguinslicer-version" content="__PENGUINSLICER_VERSION__">'
-REFERENCE = re.compile(r'(\s(?:src|href)=")([^"]*)(")', re.IGNORECASE)
+# A src or href attribute with its value in double quotes, single quotes or none, as HTML
+# allows: group 1 is up to the value's opening quote, group 2 the value, group 3 the closing
+# quote (empty when there is none).
+REFERENCE = re.compile(
+    r"""(\s(?:src|href)\s*=\s*)(?:"([^"]*)(")|'([^']*)(')|([^\s"'=<>`]+)())""", re.IGNORECASE)
 OTHER_SITE = re.compile(r"^(?:[a-z][a-z0-9+.-]*:|//)", re.IGNORECASE)
 
 
@@ -57,12 +62,16 @@ def build(src, dist):
         assets[relative] = built_name(path)
 
     def replace(match):
-        value = match.group(2)
+        start = match.group(1)
+        value, quote = next((match.group(i), match.group(i + 1)) for i in (2, 4, 6) if match.group(i) is not None)
+        opening = match.group(0)[len(start)] if quote else ""
         if OTHER_SITE.match(value):
             raise BuildError(f"index.html loads {value} from another site; the page loads nothing from another site")
+        if value.startswith("#"):
+            return match.group(0)                 # a link within the page
         if value not in assets:
             raise BuildError(f"index.html names {value}, which is not in {src}")
-        return f"{match.group(1)}/assets/{assets[value]}{match.group(3)}"
+        return f"{start}{opening}/assets/{assets[value]}{quote}"
 
     built_html = REFERENCE.sub(replace, html)
 

@@ -48,6 +48,26 @@ def test_index_html_names_each_asset_by_its_built_address(tmp_path):
     assert html.count(VERSION_META) == 1
 
 
+@pytest.mark.parametrize("reference, built", [
+    ("src='main.js'", "src='/assets/{main}'"),
+    ("src=main.js", "src=/assets/{main}"),
+    ('src = "main.js"', 'src = "/assets/{main}"'),
+])
+def test_a_reference_in_single_quotes_or_none_is_rewritten_too(tmp_path, reference, built):
+    index = f'<html><head>{VERSION_META}<script type="module" {reference}></script></head></html>'
+    src = page(tmp_path, {"main.js": "export {};\n"}, index=index)
+    build.build(src, tmp_path / "dist")
+    html = (tmp_path / "dist" / "index.html").read_text()
+    assert built.format(main=hashed("main.js", "export {};\n")) in html
+
+
+def test_a_link_within_the_page_is_left_as_it_is(tmp_path):
+    index = f'<html><head>{VERSION_META}<script src="main.js"></script></head><a href="#steps">Steps</a></html>'
+    src = page(tmp_path, {"main.js": "export {};\n"}, index=index)
+    build.build(src, tmp_path / "dist")
+    assert '<a href="#steps">' in (tmp_path / "dist" / "index.html").read_text()
+
+
 def test_the_bytes_of_each_asset_are_unchanged(tmp_path):
     src = page(tmp_path, {"main.js": "export const a = 'é';\n"})
     build.build(src, tmp_path / "dist")
@@ -80,6 +100,16 @@ def test_the_real_page_builds(tmp_path):
     (f'<html>{VERSION_META}<link href="//cdn.example/x.css"></html>',
      "index.html loads //cdn.example/x.css from another site"),
     (f'<html>{VERSION_META}<script src="../secret.js"></script></html>', "index.html names ../secret.js, which is not in"),
+    (f"<html>{VERSION_META}<script src='https://cdn.example/x.js'></script></html>",
+     "index.html loads https://cdn.example/x.js from another site"),
+    (f"<html>{VERSION_META}<script src=https://cdn.example/x.js></script></html>",
+     "index.html loads https://cdn.example/x.js from another site"),
+    (f'<html>{VERSION_META}<script SRC = "https://cdn.example/x.js"></script></html>',
+     "index.html loads https://cdn.example/x.js from another site"),
+    (f"<html>{VERSION_META}<link href=//cdn.example/x.css></html>",
+     "index.html loads //cdn.example/x.css from another site"),
+    (f"<html>{VERSION_META}<script src='missing.js'></script></html>", "index.html names missing.js, which is not in"),
+    (f"<html>{VERSION_META}<script src=missing.js></script></html>", "index.html names missing.js, which is not in"),
 ])
 def test_a_page_the_contract_forbids_is_refused_saying_why(tmp_path, index, says):
     src = page(tmp_path, {"main.js": "export {};\n"}, index=index)
