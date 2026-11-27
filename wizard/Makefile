@@ -33,7 +33,7 @@ test-page:
 	$(NODE) --test --test-randomize --test-timeout=$(NODE_TEST_TIMEOUT_MS) '$(CURDIR)/tests/**/*.test.js'
 
 test-tools:
-	$(PY) -m pytest -q $(CURDIR)/tests/tools
+	$(PY) -m pytest -q $(CURDIR)/tests/python
 
 # The tests in Chromium, after the build.
 test-browser: build

@@ -20,7 +20,7 @@ dev = [
 package = false
 
 [tool.pytest.ini_options]
-# The tools' tests (tests/tools/) and the browser tests (tests_browser/) are run by path from
+# The tools' tests (tests/python/) and the browser tests (tests_browser/) are run by path from
 # the Makefile; the page's own tests run on Node's test runner.
 pythonpath = ["."]
 addopts = "-p no:cacheprovider --strict-markers"
