@@ -1997,7 +1997,9 @@ and line. So the suite needs no network and never waits. `tests/page.test.js` ho
 `index.html` to the contract's rules: one version placeholder, no inline script, no `style`
 element or attribute, nothing loaded from another site. The tools' tests in
 `wizard/tests/python/` run in the same target, on pytest in a random order (pytest-randomly
-prints the seed), each bounded at 120 seconds.
+prints the seed in pytest's header, `Using --randomly-seed=<seed>`, and `-p randomly
+--randomly-seed=<seed>` repeats an order; the target runs pytest without `-q`, which would
+hide the header, and a test checks the seed is printed), each bounded at 120 seconds.
 
 **Tests in a browser** use Playwright for Python in the project's `uv` environment, driving
 the Chromium build Playwright installs (`playwright install chromium`), headless, with a

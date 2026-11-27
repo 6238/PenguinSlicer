@@ -33,18 +33,19 @@ install-browser:
 	$(PY) -m playwright install chromium
 
 # The fast suite, without a browser window: the page's tests on Node's own runner, in a
-# random order (Node prints the seed), then the tools' tests (pytest-randomly prints its seed).
+# random order (Node prints the seed), then the tools' tests (pytest-randomly prints its seed
+# in pytest's header, "Using --randomly-seed=<seed>", so pytest runs without -q, which hides it).
 test: check-node test-page test-tools
 
 test-page:
 	$(NODE) --test --test-randomize --test-timeout=$(NODE_TEST_TIMEOUT_MS) '$(CURDIR)/tests/**/*.test.js'
 
 test-tools:
-	$(PY) -m pytest -q $(CURDIR)/tests/python
+	$(PY) -m pytest $(CURDIR)/tests/python
 
 # The tests in Chromium, after the build.
 test-browser: build
-	$(PY) -m pytest -q $(CURDIR)/tests_browser
+	$(PY) -m pytest $(CURDIR)/tests_browser
 
 # wizard/dist/ from wizard/src/ (and, from the skeleton on, wizard/vendor/).
 build:
