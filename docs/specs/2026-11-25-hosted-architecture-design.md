@@ -6,7 +6,8 @@ restart does, how a daemon is told to print, and where the project's owner reads
 happened. It gives no time estimates.
 
 Written Wed 2026-11-25 and revised Thu 2026-11-26, Pacific time, from design discussions
-with the project's owner. The owner has reviewed "The shape", "Where each piece of state
+with the project's owner. The owner has reviewed "The shape" (except its last subsection, "Progress streams",
+which was moved there since), "Where each piece of state
 lives", "Sign-in", and an earlier form of "Restarts and deploys" and of the table of all
 the state. On Thu 2026-11-26 the owner decided how often a daemon talks to the relay,
 what the log holds and how a secret is replaced, and has not yet read "Printers",
@@ -208,7 +209,7 @@ page and the configuration in turn. Once sign-in, printers and the logs have bee
 2. **The user lays out the plate and chooses settings.** This exists only in the
    browser's storage.
 3. **The user goes to the Preview step.** The page sends the front server a plate
-   configuration: the layout, the settings, and the name of each part. It carries no
+   configuration: the layout, the settings, and the hash of each part. It carries no
    files, because the parts are already in the part store. The slice job waits or runs
    in the slice container.
 4. **The slice ends.** The front server fetches the sliced file from the slice container
@@ -221,7 +222,7 @@ page and the configuration in turn. Once sign-in, printers and the logs have bee
 
 ### Parts
 
-A part is uploaded once and then referred to by name. The wizard uploads each part by
+A part is uploaded once and then referred to by its hash. The wizard uploads each part by
 itself at the moment the user adds it, in one request of at most 7.5 MB (the plate
 configuration's limit for one part), far under the 100 MB that Cloudflare allows a
 request. The front server passes the part to the slice service with the user key, and
@@ -357,7 +358,8 @@ A sign-in sets one cookie in the browser. It holds the user's identity, groups a
 Onshape tokens, is encrypted, and lasts thirty days: long enough that signing in is rare, since each sign-in costs calls to
 Onshape (below). Nothing about a session is kept on the front server, so a restart signs
 nobody out. Onshape's access token lasts an hour. It is renewed with its refresh token
-only when a call to Onshape needs one, which nothing does before phase 4, and the renewed
+only when a call to Onshape needs one, which nothing does before phase 4 unless the app is public by then, when reading the
+groups again does, and the renewed
 tokens are written back to the cookie.
 
 ### Calls to Onshape
@@ -400,8 +402,7 @@ Onshape, and the command that reads the log bucket reports the year's total (see
 ### Requests from other sites
 
 Inside Onshape's panel the cookie must be one that browsers send to an embedded page, so
-the cookie alone does not prove a request came from the wizard. Every route that changes
-something therefore also requires a header that only the wizard's own page can set and
+the cookie alone does not prove a request came from the wizard. Every route that changes something on the strength of the cookie therefore also requires a header that only the wizard's own page can set and
 checks the request's origin; no route allows cross-origin requests; the sign-in callback
 checks the value it sent out; and the pages may be embedded by Onshape only.
 
@@ -430,8 +431,8 @@ Pairing links a group to the daemon beside its printer. The pairing code is used
    which code.
 2. A signed-in user types the code into PenguinSlicer. If a daemon is offering that code,
    the relay writes the paired-printer record for the user's current group to the state
-   bucket, naming that daemon and holding a hash of the code. If none is, the user is
-   told at once that no daemon is showing that code.
+   bucket, naming that daemon and holding a hash of the code. If none is, the user is told at once that no daemon is showing that code and to try
+   again in a moment.
 3. The daemon's next offer is answered with its token, provided the code it offers
    matches the hash in the record. The hash is then removed from the record, and the
    code is dead.
@@ -655,15 +656,15 @@ to be typed again.
 | A delivery job was waiting for its daemon | The daemon's next sync is accepted, since its token still verifies, and receives the delivery job from its record in the state bucket. It fetches the sliced file through the front server, which reads it from the state bucket |
 | A print was running | It goes on. The printer-status icon and the Send step are blank until the daemon's next sync brings the printer's status and progress back, which is within ten seconds of the front server answering again |
 | A pairing code had just been typed in | The paired-printer record is already in the state bucket, and the daemon gets its token when it next offers its code, which the relay checks against the record |
-| A user types a pairing code in the half minute after the restart | They are told no daemon is showing that code yet and to try again in a moment |
+| A user types a pairing code in the half minute after the restart | They are told, as for any wrong code, that no daemon is showing that code and to try again in a moment |
 
-The records of delivery jobs are in the state bucket, not its memory, because a
+The records of delivery jobs are in the state bucket, not the relay's memory, because a
 daemon that is told the relay no longer knows its delivery job treats the job as finished
 and drops it. Before a daemon sends the printer the command to start, it asks the relay,
 which allows it once for each delivery job. The record holds whether that was allowed,
 which is what keeps a print from being started twice.
 
-Beyond those, a crash (not a deploy) loses the last minute of log lines, which stays
+Beyond what the two tables show, a crash (not a deploy) loses the last minute of log lines, which stays
 only in Railway's log view, and a slice whose sliced file the front server had not yet
 stored, which runs again.
 
@@ -747,8 +748,8 @@ the same sign-in as anyone else.
 - **Sending needs a sign-in to the group.** A print is started only by a signed-in user
   whose current group has a paired-printer record naming the daemon, and the front
   server accepts a current group only if the cookie lists it.
-- **Nothing read from storage can start a print.** Neither the state bucket nor the
-  configuration holds anything that, once read, does: a paired-printer record holds a hash of the code only until
+- **Nothing read from the state bucket can start a print.** Nothing it holds, the
+  configuration included, does once read: a paired-printer record holds a hash of the code only until
   its daemon has its token (see [Pairing](#pairing)). The two keys in the list of secrets
   below could forge a sign-in or a daemon's token, which is why they are secrets. Someone who
   could write to the state bucket could plant a record of a delivery job, which is why
@@ -775,8 +776,8 @@ is kept with the project owner's other secrets and reaches a coding agent as env
 variables. The sixth is the owner's alone. None is in the repository, a bucket, a log line or a page.
 
 **Replacing a secret.** Every secret can be replaced, and a planned replacement
-interrupts nobody. Replacing one changes a setting of the front server, which restarts
-as at any deploy.
+interrupts nobody. Replacing any of the first four changes a setting of the front server, which restarts as
+at any deploy.
 
 | Secret | How a planned replacement loses nothing |
 |---|---|
@@ -794,7 +795,8 @@ relay's secret key is replaced must be paired again. Likewise a user who does no
 PenguinSlicer in the week after the cookie's key is replaced signs in again. With no
 replacement under way neither limit applies.
 
-In an emergency, when a key has leaked, its previous key is removed at once. Every user
+In an emergency, when a key has leaked, it is replaced and is not kept as the previous
+key. Every user
 then signs in again, or every printer is paired again. That cost is accepted.
 
 The steps are written down in the repository as a procedure, and a test covers each
@@ -857,7 +859,7 @@ own design specs to take up.
   must still follow or collect.
 - The rule that cancels a slice job nobody has followed for 120 seconds is removed.
 - It remembers an ended slice job for two hours, where it does so for one, and deletes
-  its copy of a sliced file once the front server has fetched it, where it keeps that
+  its copy of a sliced file once the front server has stored it, where it keeps that
   for an hour.
 - Its progress stream sends a comment line when it has nothing to report, as the relay's
   does.
