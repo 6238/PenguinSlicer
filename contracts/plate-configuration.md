@@ -11,6 +11,23 @@ A plate configuration is a JSON object, sent to the slice service's HTTP interfa
 the STL files it names ([The HTTP interface](../slice/README-details.md#the-http-interface)
 in the slice service's detailed guide).
 
+## To be built
+
+Phase 2 changes how a plate configuration names its parts. Everything else in this file
+is true of the code as built.
+
+- **A part is named by the SHA-256 hash of its bytes,** where as built its `stl` names a
+  file sent with the plate configuration. Each part is uploaded once, by itself, when the user
+  adds it, and the slice service keeps it in its part store under the user key and that
+  hash; no file is sent with the plate configuration, so slicing again uploads nothing.
+- **An error report lists the hashes missing from the part store.** When a plate
+  configuration names parts the part store no longer holds, the slice service answers with
+  one error report listing every missing hash, and the wizard uploads those parts again
+  and submits again.
+
+The routes, the field's name and the error report's code are proposed in
+[the slice service's detailed guide](../slice/README-details.md#to-be-built).
+
 ## Fields
 
 | Field | Type | Required | Meaning |
