@@ -5,8 +5,8 @@
 It listens on 127.0.0.1 only, prints the serial and access code a hand-run `pair` asks for,
 and plays the scenario's print one status document every `--step-seconds` once a start
 command has arrived, so a hand-run daemon sees a whole print go by. Every login, file,
-command and status document is printed. Ctrl-C stops it. See the guide's "Try it on one
-machine"; the suites drive the same class step by step instead (simulator/printer.py).
+command and status document is printed. Ctrl-C stops it. See "Try it on one machine" in
+delivery/README-details.md; the suites drive the same class step by step instead (simulator/printer.py).
 """
 
 import argparse

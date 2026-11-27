@@ -140,11 +140,12 @@ class TestSlicedFile:
 class TestIndex:
     def test_contracts_readme_links_both_documents(self):
         readme = (CONTRACTS / "README.md").read_text()
-        assert "| Plate configuration | Wizard | Slice service | [plate-configuration.md](plate-configuration.md) |" \
+        assert "| Plate configuration | Wizard, through the front server | Slice service | "\
+            "[plate-configuration.md](plate-configuration.md) |" \
             in readme
-        assert "| Sliced file | Slice service | Printer delivery | [sliced-file.md](sliced-file.md) |" in readme
+        assert "| Sliced file | Slice service | Front server, then printer delivery | [sliced-file.md](sliced-file.md) |" in readme
 
     def test_guide_lists_every_code(self):
-        guide = (SLICE_ROOT / "README.md").read_text()
+        guide = (SLICE_ROOT / "README-details.md").read_text()
         listed = re.findall(r"^\| `(slice\.[a-z_]+)` \|", section(guide, "## Error codes"), re.M)
         assert listed == list(CODES)

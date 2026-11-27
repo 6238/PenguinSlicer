@@ -17,7 +17,7 @@
    the message says how to go back.
 
 Every step prints what it did; the first that fails stops the command with its reason.
-The regenerated files are left for review (see slice/README.md, "Taking a new upstream
+The regenerated files are left for review (see slice/README-details.md, "Taking a new upstream
 version"); nothing is committed.
 
 Standard library only. GH_TOKEN, when set, is sent to GitHub to lift the rate limit; it is
@@ -84,7 +84,7 @@ def check_patches(directory=PATCHES):
     patches = sorted(directory.glob("*.patch")) if directory.is_dir() else []
     if patches:
         raise UpgradeError(f"{len(patches)} patch(es) in {directory}: patching Orca needs a source build, which "
-                           f"this command does not do, and a patch to Orca is the owner's decision (slice/README.md, "
+                           f"this command does not do, and a patch to Orca is the owner's decision (slice/README-details.md, "
                            f"\"Taking a new upstream version\")")
 
 

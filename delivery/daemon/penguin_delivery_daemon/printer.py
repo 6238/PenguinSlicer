@@ -39,8 +39,8 @@ UNRECOGNISED_STATE = 'unrecognised'
 #
 # The one table. Every printer state (`gcode_state`), stage code (`stg_cur`) and error field
 # (`print_error`, the severity of an `hms` entry) the daemon reads is in it, in one of six
-# classes. The guide prints it ("What the printer's report means"), and a test checks that
-# the guide and this table agree.
+# classes. README-details.md prints it ("What the printer's report means"), and a test
+# checks that README-details.md and this table agree.
 #
 # - going: the print is under way;
 # - waiting: the print is under way but the printer is waiting for a person (a pause, an
@@ -183,7 +183,7 @@ def printer_stage(stage_code):
 
 
 def values_table():
-    """The table as the guide prints it: one Markdown row per value."""
+    """The table as README-details.md prints it: one Markdown row per value."""
     names = {GOING: 'going', WAITING: 'waiting for a person', ENDED_WELL: 'ended well',
              ENDED_BADLY: 'ended badly', NO_PRINT: 'no print',
              UNRECOGNISED: 'unrecognised as a whole'}
@@ -376,7 +376,7 @@ def classify(report):
       stage", its raw value kept;
     - no main state in the document at all: it says nothing about whether a print is going
       on, whatever its stage code, figures or file name say. Unrecognised as a whole, so it
-      is never free (see "How a start is decided" in the guide)."""
+      is never free (see "How a start is decided" in README-details.md)."""
     unrecognised = []
     raw_state = report.get('gcode_state')
     state_key = str(raw_state).upper() if raw_state not in (None, '') else None

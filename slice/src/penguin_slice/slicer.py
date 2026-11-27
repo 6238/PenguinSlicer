@@ -171,7 +171,7 @@ ORCA_RETURN_CODES = {
     -50: ("slice.nothing_on_plate", "No part is fully on the plate."),
 }
 # -101's sentence when the debug log names the pair, and the clause added when supports are
-# on (their supports are what met in every refusal measured: slice/README.md, "Spacing").
+# on (their supports are what met in every refusal measured: slice/README-details.md, "Spacing").
 TOO_CLOSE_PAIR_MESSAGE = "{first} and {second} are too close together: the slicer found that their paths would meet."
 TOO_CLOSE_SUPPORTS_CLAUSE = ", most likely their supports, which need more room between instances."
 # Orca's reasons, as its result.json and log word them (pinned Orca).

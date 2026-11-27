@@ -1,4 +1,4 @@
-"""How a start is decided (the guide's section of that name), on the whole path: the relay
+"""How a start is decided (the section of that name in README-details.md), on the whole path: the relay
 app, the real run loop and relay client, the stand-in printer, fake clocks. Review 4's
 defects 1 to 4 and the reviewer's sequences, then random sequences of the same faults
 with the invariants: one start command per file, no two files overlapping on the printer,

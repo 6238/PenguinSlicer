@@ -8,7 +8,35 @@ service. An instance is one placement of a part on the plate; a part printed onc
 instance.
 
 A plate configuration is a JSON object, sent to the slice service's HTTP interface with
-the STL files it names ([slice/README.md](../slice/README.md), "The HTTP interface").
+the STL files it names ([The HTTP interface](../slice/README-details.md#the-http-interface)
+in the slice service's detailed guide).
+
+## To be built
+
+Phase 2 changes how a plate configuration names its parts. Everything else in this file
+is true of the code as built.
+
+- **A part is named by the SHA-256 hash of its bytes,** where as built its `stl` names a
+  file sent with the plate configuration. Each part is uploaded once, by itself, when the user
+  adds it, and the slice service keeps it in its part store under the user key and that
+  hash; no file is sent with the plate configuration, so slicing again uploads nothing.
+- **An error report lists the hashes missing from the part store.** When a plate
+  configuration names parts the part store no longer holds, the slice service answers with
+  one error report listing every missing hash, and the wizard uploads those parts again
+  and submits again.
+
+*Proposed* (the design approved by the owner does not fix it): a part's `sha256`, the 64
+hexadecimal characters of the hash, in place of `stl`. The routes and the error report's
+code are proposed in
+[the slice service's detailed guide](../slice/README-details.md#to-be-built).
+
+- **What else in this file changes when this is built.** Five places are true of the code
+  as built and become untrue in phase 2: the opening ("with the STL files it names"); the `stl` row
+  of [Part](#part); the meaning of `MAX_PARTS` in [Limits](#limits) ("It bounds the
+  upload"); check 4 of [Checks](#checks), where a part's own checks move to its upload and
+  `slice.part_missing` comes to mean a hash missing from the part store; and the
+  [Example](#example). Also, from phase 3, `PLATE_SLICE_TIMEOUT_S` in [Limits](#limits)
+  becomes a setting of the slice service rather than a figure fixed in the code.
 
 ## Fields
 
@@ -185,12 +213,13 @@ surface facing inwards, or a size that suggests an inch file read as millimetres
 sliced, and carries a warning in the sliced file's summary (`part_warnings`, see
 [sliced-file.md](sliced-file.md)).
 
-Orca may still refuse a plate that passes these checks; the slice service's guide,
-[slice/README.md](../slice/README.md), lists every code.
+Orca may still refuse a plate that passes these checks; the slice service's detailed guide,
+[Error codes](../slice/README-details.md#error-codes), lists every code.
 
 ## Example
 
 See [examples/plate-configuration.json](examples/plate-configuration.json), which places
 two instances of [examples/parts/bracket.stl](examples/parts/bracket.stl) and one of
 [examples/parts/spacer.stl](examples/parts/spacer.stl). Each `stl` is the name the file
-is sent under ([slice/README.md](../slice/README.md) shows the `curl` command).
+is sent under ([Use](../slice/README-details.md#use), in the slice service's detailed
+guide, shows the `curl` command).

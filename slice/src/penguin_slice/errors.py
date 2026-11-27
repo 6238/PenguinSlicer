@@ -20,7 +20,7 @@ SERVER_REMEDY = "Slice again; if it fails again, ask a mentor to check the print
 REEXPORT_REMEDY = "Export the part again and send a new slice."
 
 # code -> (stage, retryable, action, remedy). Every code the slice service can produce;
-# slice/README.md lists the same codes in this order, and tests/test_errors.py produces
+# slice/README-details.md lists the same codes in this order, and tests/test_errors.py produces
 # each on purpose and states what its report must say.
 CODES = {
     "slice.bad_plate_configuration": ("checking", False, None,

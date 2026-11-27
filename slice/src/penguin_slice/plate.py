@@ -13,7 +13,7 @@ import re
 
 from shapely.geometry import Polygon
 
-# The least distance between two footprints, with supports off and on (slice/README.md,
+# The least distance between two footprints, with supports off and on (slice/README-details.md,
 # "Spacing"): measured with the pinned Orca on pairs of the team's real parts, every pair
 # tried sliced 1 mm apart with supports off, and with supports on Orca refused pairs up to
 # 8 mm apart (their supports' paths meet, return code -101) and sliced every pair at 8.5 mm.

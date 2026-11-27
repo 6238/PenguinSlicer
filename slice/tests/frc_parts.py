@@ -120,8 +120,8 @@ FOUR_EACH_A = ([instance(ref, x, y) for x in (50, 152) for ref, y in
 FOUR_EACH_B = [dict(i, x=2 * PLATE_CENTRE[0] - i["x"]) for i in FOUR_EACH_A]
 FOUR_EACH = {"four-each-a": FOUR_EACH_A, "four-each-b": FOUR_EACH_B}
 
-# Full plates, measured for the guide's memory figures and not sliced by the real-Orca suite
-# (see slice/README.md, "Plate limits"): as many instances of one part as fit the plate,
+# Full plates, measured for the detailed guide's memory figures and not sliced by the real-Orca suite
+# (see slice/README-details.md, "Plate limits"): as many instances of one part as fit the plate,
 # and a full plate of the small parts, with supports off (gaps 5.8 to 10 mm); and the
 # heaviest of them spaced for supports, measured with supports on. full-pulleys (150
 # instances) passed 2,500 MB.

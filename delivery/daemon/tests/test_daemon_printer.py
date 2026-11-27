@@ -332,7 +332,7 @@ class TestWhatTheReportMeans(unittest.TestCase):
 
     def test_the_guide_prints_the_table(self):
         guide = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..',
-                             'README.md')
+                             'README-details.md')
         with open(guide, encoding='utf-8') as fh:
             self.assertIn(pr.values_table(), fh.read())
 

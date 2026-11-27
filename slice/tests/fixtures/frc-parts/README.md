@@ -6,7 +6,7 @@ service must accept, place and slice each of them: a refusal, an untrue warning 
 slice of one is a defect in the slice service, not in the part. The tests that use them
 are `tests/test_frc_parts.py` (the fast suite) and `tests_orca/test_frc_parts.py` (the
 real Orca); the figures measured from them are in `tests/frc_parts.py` and in the slice
-service's guide, [slice/README.md](../../../README.md), "Plate limits".
+service's detailed guide, [Plate limits](../../../README-details.md#plate-limits).
 
 | File | Original file name | Triangles | Size (mm) |
 |---|---|---|---|

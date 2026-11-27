@@ -1,6 +1,6 @@
 # PenguinSlicer: notes for agents
 
-Read [README.md](README.md) first: four components, each its own project, depending only
+Read [README.md](README.md) first: five components, each its own project, depending only
 on [contracts/](contracts/README.md).
 
 ## Working here
@@ -8,7 +8,24 @@ on [contracts/](contracts/README.md).
 - The repository is `6238/PenguinSlicer` on GitHub. Every change reaches `main` through a
   pull request from a branch; never commit or push to `main` directly.
 - Start from [the plan](docs/plans/penguin-slicer-plan.md): the terms, the standing
-  requirements, where each component stands and the phases of work.
+  requirements, where each component stands and the phases of work. Then
+  [the architecture](docs/architecture.md): what runs where when hosted, where state
+  lives, restarts and deploys, security and the log.
+- **Before changing a component, read its `README-details.md`.** A component's `README.md`
+  is its guide for a person and is kept short; `README-details.md` beside it holds every
+  figure, rule, error code and required test. In a component that has code, everything
+  in the details file outside the section "To be built" is true of the code as built;
+  when you build an item of "To be built", move its text into the body and update the
+  `README.md` to match. Never let the two files disagree.
+- The project is deployed continuously: a deploy at any moment must interrupt no user.
+  Treat a restart at any moment as normal in every design and change (the plan's
+  standing requirement "Deploys").
+- [docs/specs/2026-11-25-hosted-architecture-design.md](docs/specs/2026-11-25-hosted-architecture-design.md)
+  is the record of the design the owner approved on Thu 2026-11-26. It is not edited. A
+  change to something decided there is made in the living documents, in a pull request
+  whose description names the decision it changes;
+  [the map of its decisions](docs/orchestration/hosted-architecture/decision-map.md)
+  says where each one lives.
 - Specs, plans, research, the mockup and the build records live under `docs/`
   (`docs/plans/`, `docs/research/`, `docs/mockups/`, `docs/handoffs/`,
   `docs/orchestration/`).
@@ -28,7 +45,8 @@ named as such); an **instance** is
 one placement of a part on the plate (a part printed once has one instance); a **plate
 configuration** is what to slice (the parts, where each instance sits, the profiles and
 settings), a description, not work; a **slice job** is one plate configuration being
-sliced by the slice service; a **slice service process** is one running slice service,
+sliced by the slice service; the **wizard** is the code in the browser and the **front server** is everything
+behind its address (never "the wizard's server side"); a **slice service process** is one running slice service,
 holding its slice jobs in its memory (never called an "instance"); the **HTTP interface**
 is the slice service's web routes;
 **PenguinSlicer** is the repository and the product. "Copy" means duplicating bytes or a

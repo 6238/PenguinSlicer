@@ -195,8 +195,8 @@ class TestWholePrint(SimTestCase):
         self.assertEqual(self.link.delete(SUFFIXED), (pr.NOT_ON_PRINTER, '550 No such file.'))
 
     def test_any_certificate_is_accepted(self):
-        """The daemon accepts any certificate the printer presents (the guide's Upstream
-        section): the library connects with verification off on both protocols. Pinned
+        """The daemon accepts any certificate the printer presents (the Upstream section
+        of README-details.md): the library connects with verification off on both protocols. Pinned
         here so a change upstream is noticed."""
         self.assertEqual(self.link.snapshot()['state'], pr.IDLE)
 

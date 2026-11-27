@@ -4,7 +4,7 @@ refuse them. Imports only os and re.
 One source for every cap the plate configuration reader, the mesh reader and the plate
 slice enforce, and for the sentence a student sees when one is reached; each sentence that
 names a number is formatted from the cap, so the two cannot differ. The caps were set from
-slices measured on an aarch64 Linux machine (slice/README.md, "Plate limits").
+slices measured on an aarch64 Linux machine (slice/README-details.md, "Plate limits").
 """
 import os
 import re
@@ -13,7 +13,7 @@ import re
 MAX_PART_TRIANGLES = 150_000
 MAX_PART_BYTES = 84 + 50 * MAX_PART_TRIANGLES     # a binary STL of exactly that many triangles
 
-# One plate, one plate configuration. Hex shaft spacers in a grid (slice/README.md, "Plate
+# One plate, one plate configuration. Hex shaft spacers in a grid (slice/README-details.md, "Plate
 # limits"): 100 peaked at 488 to 513 MB, 150 at 643 to 649 MB, 196 at 815 to 829 MB. Larger
 # parts cost more an instance (a real 19 mm pulley of 4,608 triangles about 20 MB, so 150 of
 # them pass 2.5 GB); the memory watchdog, not this count, is what protects the machine.
@@ -29,7 +29,7 @@ PLATE_SLICE_TIMEOUT_S = 240                       # the sample part keeps slicer
 # The memory model: a rough estimate of Orca's peak resident memory for a plate, in MB,
 #   (BASE + PER_INSTANCE * instances + PER_CM3 * part volume on the plate in cm3) * (SUPPORTS if supports on)
 # where a part's volume is its mesh's when the mesh is watertight, else its bounding box's
-# (mesh.analyse). Fitted as the upper envelope of the plates in slice/README.md, "Plate
+# (mesh.analyse). Fitted as the upper envelope of the plates in slice/README-details.md, "Plate
 # limits", it is wrong both ways on other plates (a 100 mm solid cube: 1,158 MB estimated,
 # 269 MB measured; 25 hubs of 20,000 triangles: 792 MB estimated, 842 MB measured), so it
 # refuses nothing: it is logged with each slice job and feeds nothing else.
@@ -40,11 +40,11 @@ MEMORY_PER_CM3_MB = 0.985
 MEMORY_SUPPORTS_FACTOR = 1.4
 # The memory ceiling: a setting (environment variable), 2,000 MB by default. The slice
 # service's memory watchdog (slicer.run_process) stops an Orca whose processes pass it. The
-# team's real plates set it (slice/README.md, "The team's real parts", where each figure is
+# team's real plates set it (slice/README-details.md, "The Popcorn Penguins' real parts", where each figure is
 # given with its plate): the mechanical mentor's target plates peak at up to 1,415 MB with
 # supports on, a full plate of one block at up to 1,410 MB with supports off, all over the
 # old 900 MB. Orca can pass the ceiling by one watchdog interval's rise before it is stopped
-# (slice/README.md, "Sizing the host").
+# (slice/README-details.md, "Sizing the host").
 MAX_PEAK_MB_ENV = "PENGUIN_SLICE_MAX_PEAK_MB"
 DEFAULT_MAX_PEAK_MB = 2000
 _PEAK_MB_RE = re.compile(r"[0-9]{1,6}")           # plain ASCII digits only: no "²", no "٣"

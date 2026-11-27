@@ -19,7 +19,7 @@ from daemon_fakes import SimulatedTimeExceeded
 from relay_fakes import CODE, IDLE, Caller, FakeClock, make_app, running
 
 HTTPS = {'base_url': 'https://relay.test'}
-#: How long the guide says a final delivery job's report is kept (round 3, defect 5).
+#: How long README-details.md says a final delivery job's report is kept (round 3, defect 5).
 A_DAY = 24 * 60 * 60
 JOB_FILE = 'sample_part.gcode.3mf'
 

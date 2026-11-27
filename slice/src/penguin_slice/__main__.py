@@ -29,7 +29,7 @@ def cap_malloc_arenas(libc=None):
     Each thread that allocates gets an arena of its own, up to 8 per CPU, and an arena keeps
     what it freed: with a new thread per request and per slice job, a slice service process
     that had served 16 of the largest plates in a row peaked at 365 MB, against 178 MB on its
-    first; with the cap, 261 MB (see the guide's "The cost of the largest plate"). A C library
+    first; with the cap, 261 MB (see slice/README-details.md, "The cost of the largest plate"). A C library
     without mallopt (macOS) is left alone."""
     libc = ctypes.CDLL(None) if libc is None else libc
     mallopt = getattr(libc, "mallopt", None)
