@@ -17,9 +17,7 @@ Railway; phase 4, inside Onshape; phase 5, the real printer.
 
 **Read after:** [the architecture](../docs/architecture.md#terms), whose terms it uses.
 
-Each requirement below links to the guide that owns its full explanation. Some depend on
-an item that needs the owner's choice or the owner's yes; those say so and link
-[the wizard's list of them](../wizard/README-details.md#where-the-mockup-and-the-design-differ).
+Each requirement below links to the guide that owns its full explanation.
 
 Names and figures marked *proposed* are this file's suggestions; the design approved by
 the owner does not fix them.
@@ -33,11 +31,10 @@ the owner does not fix them.
   (*proposed*: unchanged); its own get codes (*proposed*: of the form `front.<what>`)
   ([the front server](../front/README-details.md#error-reports)).
 - **Every request is safe to repeat.** The page retries every request it makes, so a
-  request that falls in the gap of a deploy is repeated and the user sees a pause, not an
-  error ([the wizard](../wizard/README-details.md#retrying-every-request)). This may
-  change: an item awaits the owner's choice
-  ([item 1.9](../wizard/README-details.md#19-retrying-then-an-error-after-20-seconds),
-  how long the page retries before it shows an error). (*Proposed*,
+  request that falls in the gap of a deploy is repeated. It retries quietly for 20
+  seconds, then shows that the server is being slow, with a countdown to the next
+  attempt, and stops with an error, offering to try again, only after 300 seconds
+  ([the wizard](../wizard/README-details.md#retrying-every-request)). (*Proposed*,
   since the design says only that the page retries:) a request sent twice because its
   first answer was lost must leave the same result as one sent once: uploading the same
   part again answers the same; a repeated submission must not leave the page following a
@@ -105,8 +102,8 @@ in [the front server's guide](../front/README-details.md#groups-and-the-current-
   the answer gives that hash, with the part's measurements and warnings
   ([the slice service](../slice/README-details.md#to-be-built)).
 - **A part that cannot be used** is answered with an error report the page shows on the
-  Parts step as a notification, and the part is not added (not yet confirmed by the
-  owner: [item 1.8](../wizard/README-details.md#18-a-part-that-cannot-be-used)).
+  Parts step as a notification, and the part is not added
+  ([the wizard](../wizard/README-details.md#uploading-each-part-when-it-is-added)).
 
 ## Submitting a plate configuration
 
@@ -195,14 +192,11 @@ also looks for its sliced file in the state bucket
   approved design: the Preview step needs the summary after the slice container has
   deleted its copy;
   [the front server](../front/README-details.md#following-slice-jobs-and-storing-sliced-files)).
-- **Two hours.** A sliced file can be previewed, downloaded, sent and sent again after a
-  print for two hours after its slice ended; an older one is answered with an error report
-  saying it has expired, and deleted
+- **How long it is kept.** A sliced file can be previewed, downloaded, sent and sent again
+  after a print until two hours after its slice ended or two hours after its last print
+  ended (the end of the latest delivery job that used it), whichever is later; past that
+  it is answered with an error report saying it has expired, and deleted
   ([the front server](../front/README-details.md#two-hours-deleting-and-the-backstop)).
-  The two hours start when the slice ended (not yet confirmed by the owner:
-  [item 1.4](../wizard/README-details.md#14-when-the-two-hours-start)). How long a sliced
-  file lives may change: an item awaits the owner's choice
-  ([item 1.1](../wizard/README-details.md#11-sending-the-same-plate-again-after-a-long-print)).
 
 ## The configuration
 
@@ -215,10 +209,9 @@ also looks for its sliced file in the state bucket
   answer to a read carries a marker of the document's version, and a write names the
   marker it was based on.
 - **Its shape** is [the configuration's contract](configuration.md). The Layout step
-  reads from it the plate's size and height, from the printer's Orca profile it names,
-  and the Settings step each profile's own name and purpose (not yet confirmed by the
-  owner: [item 1.7](../wizard/README-details.md#17-whether-the-printer-is-in-the-configuration)
-  and [item 2.5](../wizard/README-details.md#25-a-profiles-name-and-purpose)).
+  reads from it the plate's size and height, from the printer's Orca profile it names;
+  the Settings step, each profile's own name and purpose and each filament's colour
+  ([the wizard](../wizard/README-details.md#the-configuration)).
 
 ## Printers, from phase 5
 
@@ -229,13 +222,13 @@ All of these pass through the front server to the relay of
   starting, printing with percent, layer and time left, waiting for a person, failed,
   offline (no sync within 2 minutes), or no printer paired; a running delivery job's
   report marked stale when the daemon's last sync was more than 40 seconds ago.
-  (*Proposed*:) it also carries who sent the print going on, a one-line description of
-  its plate, and how the last print ended (its sender, its end time and, for a failure,
-  its layer) ([printer delivery](../delivery/README-details.md#from-the-wizards-mockup)).
-  As designed, the status does not say how long an offline daemon has been silent
-  ("Not heard from for 7 minutes") once the front server has restarted, since the relay
-  holds printer status in its memory. This may change: an item awaits the owner's choice
-  ([item 2.4](../wizard/README-details.md#24-not-heard-from-for-7-minutes)).
+  It also carries who sent the print going on, a one-line description of its plate, and
+  how the last print ended (its sender, its end time and, for a failure, its layer)
+  ([printer delivery](../delivery/README-details.md#from-the-wizards-mockup)). For an
+  offline printer it carries the time its daemon went offline, which the relay writes to
+  the paired-printer record once, at that moment, so the page can say how long the
+  printer has been silent ("Not heard from for 7 minutes.") even after a restart of the
+  front server. The fields' names are *proposed* with the routes.
 - **Sending.** A send is accepted when the current group has a paired-printer record, and
   its delivery job goes to the daemon that record names; a send to a printer that is
   printing is refused, whoever started the print
@@ -243,19 +236,18 @@ All of these pass through the front server to the relay of
 - **Cancelling** a delivery job, and **"stop following"** a stale delivery job whose print
   was started, which lets the relay accept the next send once the daemon is back and the
   printer is idle ([printer delivery](../delivery/README-details.md#how-often-a-daemon-talks-to-the-relay)).
-- **The user's live delivery job and last print** (*proposed*). A page that has lost its
-  state asks for the signed-in user's live delivery job and that user's last print, since
-  the browser's storage holds no delivery job's id
+- **The user's live delivery job and last print** (the route *proposed*). A page that has
+  lost its state asks for the signed-in user's live delivery job and that user's last
+  print, since the browser's storage holds no delivery job's id
   ([printer delivery](../delivery/README-details.md#from-the-wizards-mockup)). The page
   opens on the Send step while its plate is stored and has a delivery job, running or
-  ended (not yet confirmed by the owner:
-  [item 1.10](../wizard/README-details.md#110-where-a-returning-page-opens-after-its-print-ended)).
+  ended ([the wizard](../wizard/README-details.md#what-a-returning-page-does)).
 - **Typing a pairing code.** When a daemon is offering the typed code, the relay writes the
   paired-printer record for the user's current group. When none is, the answer, at once,
   is that no daemon is showing that code and to try again in a moment; every wrong code
   gets that one answer, whatever was wrong with it, and wrong attempts are limited for each
   user ([printer delivery](../delivery/README-details.md#pairing)). Any signed-in user of
-  the group may type it, from any computer (not yet confirmed by the owner:
-  [item 1.6](../wizard/README-details.md#16-who-pairs-the-printer-and-where)).
+  the group may type it, from any computer
+  ([the wizard](../wizard/README-details.md#printers-from-phase-5)).
 - **Unpairing** removes the current group's paired-printer record
   ([printer delivery](../delivery/README-details.md#sending-and-unpairing)).

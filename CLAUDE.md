@@ -39,7 +39,8 @@ on [contracts/](contracts/README.md).
 ## Terms
 
 One name per thing, in code, documents and the sentences users read: the **user** is the
-person using PenguinSlicer, and an **administrator** is whoever edits the configuration
+person using PenguinSlicer, and an **administrator** is whoever edits the configuration and pairs the printer, which is
+every user of a group
 (never "student", "mentor" or "team" for either; FRC Team 6238, the Popcorn Penguins, is
 named as such); an **instance** is
 one placement of a part on the plate (a part printed once has one instance); a **plate

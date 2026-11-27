@@ -14,10 +14,24 @@ who belongs to none). The [front server](../front/README.md) keeps it and the
 - **One JSON document for each group,** kept in the state bucket, the object store where
   the front server keeps what must outlast its restart. It is read whole and written whole.
 - **The group's filaments.** For each filament, the profiles to slice with, named by Orca's
-  own names, with any settings that replace a profile's own, and no colour for the layer
-  preview (not yet confirmed by the owner:
-  [item 1.5](../wizard/README-details.md#15-a-colour-for-each-filament), below). Each
-  filament has its own profiles, not one list for all.
+  own names, with any settings that replace a profile's own. Each filament has its own
+  profiles, not one list for all.
+- **A colour for each filament,** which the wizard shows where the user chooses a
+  filament, so that two filaments of one material (a red PLA and a green PLA) can be told
+  apart. It is never used in the layer preview, which draws every plate in four fixed
+  colours, one for each set of line types, whatever the filament
+  ([the wizard](../wizard/README-details.md#the-configuration)).
+- **The group's own name and purpose for each profile,** beside the Orca profile it uses.
+  The Settings step offers profiles by the group's names (such as "Structural") and shows
+  a profile's purpose as its option's tooltip; Orca's own profile names are not names a
+  group would choose, and say nothing of a profile's purpose.
+- **The printer's Orca profile,** from which the plate's size and height come (the
+  profile's `printable_area` and `printable_height`), for the Layout step and for the plate
+  configuration's `printer`. The group's printer is linked to its daemon by the
+  paired-printer record, written only by pairing, not by the configuration; the
+  configuration names only the profile to slice for. Nothing checks that the named profile
+  matches the paired printer, so a group that names the wrong one sees the wrong plate. The
+  built-in default names the H2S profile.
 - **The units of uploaded files:** whether a part uploaded from a file (an STL carries no
   units) is read in inches or in millimetres.
 - **No secret.** The document holds no token, key or pairing code; the pairing code is
@@ -41,27 +55,3 @@ who belongs to none). The [front server](../front/README.md) keeps it and the
   bucket through Cloudflare's console, following that example
   ([the plan](../docs/plans/penguin-slicer-plan.md)). So (*proposed*) the example must say
   what every field means and which may be left out.
-
-## Recommended, needing the owner's yes
-
-The first is a disagreement between the wizard's approved mockup and the approved design;
-the other two are things the mockup shows that the design's configuration cannot give.
-Each is explained, with both sides, in
-[the wizard's list of them](../wizard/README-details.md#where-the-mockup-and-the-design-differ).
-
-- **No colour for each filament.** The design gives each filament "the colour for the
-  layer preview"; the mockup's version 8 draws the layer preview in four fixed colours,
-  one for each set of line types, whatever the filament. Recommended: the configuration
-  holds no colour ([item 1.5](../wizard/README-details.md#15-a-colour-for-each-filament)).
-- **The printer's Orca profile.** The group's printer is linked to its daemon by the
-  paired-printer record, not by the configuration. Recommended: the configuration names
-  the printer's Orca profile, from which the plate's size and height come, for the Layout
-  step and for the plate configuration's `printer`
-  ([item 1.7](../wizard/README-details.md#17-whether-the-printer-is-in-the-configuration),
-  [item 2.1](../wizard/README-details.md#21-the-plates-size-and-height)).
-- **The group's own name and purpose for each profile.** The mockup's Settings step offers
-  profiles by names such as "Structural" and shows a profile's purpose as its option's
-  tooltip (its decision 10). Orca's own profile names are not names a group would choose,
-  and say nothing of a profile's purpose. Recommended: each profile carries
-  the group's own name and its purpose beside the Orca profile it uses
-  ([item 2.5](../wizard/README-details.md#25-a-profiles-name-and-purpose)).

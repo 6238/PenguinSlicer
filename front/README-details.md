@@ -393,8 +393,8 @@ with the user key. The slice service checks it as it arrives and keeps it in its
 store** (its folder of uploaded parts, each kept for two hours after it was last used)
 under the user key and the SHA-256 hash of its bytes; a part that cannot be sliced is
 refused there, and its error report reaches the page, which shows it on the Parts step
-as a notification and does not add the part (not yet confirmed by the owner:
-[item 1.8 of the wizard's guide](../wizard/README-details.md#18-a-part-that-cannot-be-used)). The front
+as a notification and does not add the part
+([the wizard's guide](../wizard/README-details.md#uploading-each-part-when-it-is-added)). The front
 server keeps no copy of a part; the browser's storage is the record of a user's parts
 ([the wizard](../wizard/README.md)). Cloudflare allows a request 100 MB; Railway's limit on a
 request body is not stated in its documents, and one real upload of a 7.5 MB part settles
@@ -496,41 +496,46 @@ that was running across a restart of the front server is stored when it ends.
 
 ## Two hours, deleting, and the backstop
 
-A sliced file can be previewed, downloaded, sent, and sent again after a print, for two
-hours after its slice ended. This may change: an item awaits the owner's choice
-([item 1.1 of the wizard's guide](../wizard/README-details.md#11-sending-the-same-plate-again-after-a-long-print)).
-That the two hours start when the slice ended is not yet confirmed by the owner
-([item 1.4 of the wizard's guide](../wizard/README-details.md#14-when-the-two-hours-start)).
-The front server enforces this:
+A sliced file can be previewed, downloaded, sent, and sent again after a print, until two
+hours after its slice ended or two hours after its last print ended, whichever is later.
+Its last print ended when the latest delivery job that used it ended (from phase 5;
+before phase 5 nothing is printed, so the two hours after the slice ended are the whole
+rule). A sliced file is **due** once both of those two hours have passed. The front server
+enforces this:
 
-- it refuses a sliced file older than two hours, with an error report (*proposed*: saying
-  it has expired), and deletes it;
-- it deletes each sliced file when it turns two hours old, in (*proposed*) a regular
-  sweep, so that a file nobody asks for again is gone on time too;
-- from phase 5, a sliced file that a delivery job still needs is kept until the daemon has
-  fetched it, and (*proposed*) deleted then if it is older than two hours.
+- it refuses a sliced file that is due, with an error report (*proposed*: saying it has
+  expired), and deletes it;
+- it deletes each sliced file when it falls due, in (*proposed*) a regular sweep, so that
+  a file nobody asks for again is gone on time too;
+- from phase 5, a sliced file that a running delivery job uses is never due, since that
+  delivery job has not ended; when it ends, the file is kept two hours more.
 
 R2's own rule for deleting old files cannot do this alone: it counts in whole days, and
 Cloudflare says a file is typically removed within 24 hours after it falls due. So a
-one-day R2 deletion rule on the sliced files is set as well, to catch any file the front
-server failed to delete, and such a file can rest at R2 for up to about two days
-([the architecture](../docs/architecture.md)).
+three-day R2 deletion rule on the sliced files is set as well, to catch any file the front
+server failed to delete. The rule counts from when a file was stored, so it is set at three
+days to outlast the longest print and the two hours after it; a print that runs longer
+than that loses its sliced file to the rule, and the user slices the plate again to send
+it again. Such a file can rest at R2 for up to about four days after it was stored ([the architecture](../docs/architecture.md)).
 
 ### Tests
 
-- With a fake clock, a sliced file one second under two hours old is served, and one at
-  two hours is refused with its error report and deleted.
-- The sweep deletes a file that turned two hours old and leaves a younger one.
-- A sliced file older than two hours that a delivery job still needs is kept and served
-  to the daemon, then deleted (phase 5).
+- With a fake clock, a sliced file one second under two hours after its slice ended is
+  served, and one at two hours, never printed, is refused with its error report and
+  deleted.
+- The sweep deletes a file that fell due and leaves one that has not.
+- A sliced file whose delivery job ended five hours after the slice is served one hour
+  after that delivery job ended, and refused and deleted at two hours after it (phase 5).
+- A sliced file used by a running delivery job is kept and served to the daemon past two
+  hours after its slice (phase 5).
 
 ## The configuration
 
 A group's **configuration** is one JSON document in the state bucket, read whole and
-written whole; it holds the group's filaments and the units of uploaded files, and no
-secret. Three changes to what it holds are recommended, not yet confirmed by the owner: no
-colour for each filament, the printer's Orca profile, and each profile's own name and
-purpose ([its contract](../contracts/configuration.md#recommended-needing-the-owners-yes)).
+written whole; it holds the group's filaments (each with a colour, which the wizard shows
+where the user chooses a filament and never uses in the layer preview, and with its
+profiles, each under the group's own name and purpose), the printer's Orca profile (from
+which the plate's size and height come) and the units of uploaded files, and no secret.
 Its shape, with an annotated example, is in
 [the configuration's contract](../contracts/configuration.md). A group's document is kept
 until edited: an edit replaces it, and nothing else deletes it.
@@ -663,9 +668,10 @@ has the time Railway allows a stopping container. How long that is, whether Rail
 the new container before stopping the old, and whether it deploys the front server alone
 when only its folders changed are not yet known; until tried, the design assumes a plain
 stop and start ([the architecture](../docs/architecture.md)). The page retries every request it makes, so
-a request that falls in the gap is repeated and the user sees a pause, not an error. This
-may change: an item awaits the owner's choice
-([item 1.9 of the wizard's guide](../wizard/README-details.md#19-retrying-then-an-error-after-20-seconds)).
+a request that falls in the gap is repeated: a user sees nothing if the gap is under 20
+seconds, a message that the server is being slow, with a countdown to the next attempt,
+if it is longer, and an error only after 300 seconds
+([the wizard's guide](../wizard/README-details.md#retrying-every-request)).
 
 ### Tests
 
@@ -705,13 +711,17 @@ front server:
   ([printer delivery](../delivery/README.md)).
 - **supplies the sliced file from that store.** The relay takes the sliced file from the
   state bucket when the daemon fetches it, and keeps no copy of its own; the front server
-  keeps a sliced file that a delivery job still needs until the daemon has fetched it
-  ([printer delivery](../delivery/README.md)).
+  keeps a sliced file until two hours after its last print ended, if that is later than
+  two hours after its slice ended
+  ([Two hours, deleting, and the backstop](#two-hours-deleting-and-the-backstop)).
 - **tells it who is asking:** the signed-in user and the current group, checked against
   the cookie. When a signed-in user types a code that a daemon is offering, the relay
   writes the paired-printer record for the user's current group; a send is accepted when
   the current group has a paired-printer record, and its delivery job goes to the daemon
-  that record names ([printer delivery](../delivery/README.md)). *Proposed:* a send
+  that record names ([printer delivery](../delivery/README.md)). When the group's daemon
+  goes offline, the relay writes the time to the paired-printer record, once, so the
+  printer's status can say how long the printer has been silent across a restart of the
+  front server. *Proposed:* a send
   repeated with the same sliced file by the same user while its delivery job is live
   answers with that delivery job, where the code as built answers
   `delivery.job_in_flight`.
@@ -730,6 +740,8 @@ Limits on the rate of requests are counted for the signed-in user or the daemon
 - A send from a current group with no paired-printer record is refused; one with a record
   reaches that record's daemon.
 - A sliced file a delivery job needs is served to the daemon after two hours.
+- A daemon going offline writes the time to its paired-printer record once; a restarted
+  front server reports the same time for it.
 
 ## Error reports
 
@@ -750,7 +762,7 @@ here then. The table's rows and each one's "Retryable" are *proposed*.
 | Not from the wizard's page | A changing route without the wizard's header, or from another origin | No |
 | Configuration changed | The configuration was written by someone else since it was read; reload | No |
 | Configuration unreadable | The group's document is not JSON or not of a known format number | No |
-| Sliced file expired | Older than two hours | No |
+| Sliced file expired | Past two hours after its slice ended and two hours after its last print ended | No |
 | Sliced file unknown | No sliced file of that slice job under the user's key | No |
 | Slice service did not answer | The private network or the slice service is down | Yes |
 | State bucket did not answer | Reading or writing the state bucket failed | Yes |
@@ -804,7 +816,7 @@ rest of restarts and deploys rests on it. Then:
 - the front server in a container of its own on Railway, at
   `https://penguinslicer.popcornpenguins.com/`, calling the slice container over the
   private network;
-- the state bucket and the log bucket at R2, with the one-day backstop rule;
+- the state bucket and the log bucket at R2, with the three-day backstop rule;
 - Onshape sign-in, with the stand-in for Onshape in the tests, counting every call;
 - (*proposed*) the checks on requests from other sites;
 - the second cookie key and the procedure for replacing one;

@@ -56,7 +56,7 @@ code.
 | **PenguinSlicer** | The repository and the product in it. |
 | **user** | The person using PenguinSlicer to print. |
 | **administrator** | Whoever edits the configuration and pairs the printer. Every user of a group is one: nothing distinguishes one user of a group from another. |
-| **configuration** | The settings shared by everyone in one group: the filaments with each filament's own profiles, and whether parts uploaded from files are read in inches or millimetres. It is one document for each group, kept by the front server, and holds no secret ([the architecture](../architecture.md#the-configuration)). Three changes to what it holds are recommended, not yet confirmed by the owner ([its contract](../../contracts/configuration.md#recommended-needing-the-owners-yes)). |
+| **configuration** | The settings shared by everyone in one group: the filaments, each with a colour (shown where the user chooses a filament, never in the layer preview) and its own profiles under the group's own names and purposes; the printer's Orca profile, from which the plate's size and height come; and whether parts uploaded from files are read in inches or millimetres. It is one document for each group, kept by the front server, and holds no secret ([the architecture](../architecture.md#the-configuration), [its contract](../../contracts/configuration.md)). |
 | **component** | One of the five parts of PenguinSlicer, each developed as its own project: the slice service, printer delivery, the wizard, the front server, the Onshape source. |
 | **guide** | A component's `README.md`, written for a person. Beside it, `README-details.md` holds everything someone changing the component needs. |
 | **Orca** | Orca Slicer, the open-source slicer that turns models into printer instructions. It runs on the server with no window. Version 2.4.2 is the one in use. |
@@ -265,10 +265,6 @@ As of Thu 2026-11-26:
   "Please react to these" (M1 to M29), plus whether the Layout view's pointer line should
   be larger than 11 px. The build records of each version are in
   `docs/orchestration/mockup-v6/` to `mockup-v8/`.
-- **Fifteen items where the mockup and the hosted design differ await the owner:** three
-  need the owner's choice and twelve only the owner's yes. Each is set out, with both
-  sides and a recommendation, in
-  [the wizard's detailed guide](../../wizard/README-details.md#where-the-mockup-and-the-design-differ).
 - **The hosted architecture** is designed and approved by the owner (Thu 2026-11-26):
   [the architecture](../architecture.md). Almost none of it is built; each guide says what
   it asks of that component: under "To be built" for the slice service and printer
@@ -347,8 +343,7 @@ stands in for each bucket.
     row of the table "The slice container restarts".
   - `contracts/`: the part set for parts from files, the routes of the contract between
     the wizard and the front server, the fields of the configuration.
-- **Settled by [the architecture](../architecture.md#where-each-piece-of-state-lives), apart
-  from the items awaiting the owner ([Where things stand](#where-things-stand)):** how parts
+- **Settled by [the architecture](../architecture.md#where-each-piece-of-state-lives):** how parts
   reach the slice service, where the sliced file is kept, how a page that has lost its
   state comes back to its work, and how the browser reaches the slice service (through
   the front server, at one address, as [the shape](../architecture.md#the-shape) says).
@@ -479,8 +474,7 @@ H2S. Daemon telemetry is part of this phase and is not designed.
   signs everyone in, so it is for tests on one machine only, with the relay and the daemon
   on the same computer; a relay the daemon reaches from another machine is the hosted front server of this phase. An agent prepares the print started by the daemon as a written walk and
   tries it against the simulated printer first.
-- **Settled by the architecture, apart from the items awaiting the owner
-  ([Where things stand](#where-things-stand)):** pairing with a code used once and how often a
+- **Settled by the architecture:** pairing with a code used once and how often a
   daemon talks to the relay ([Printers](../architecture.md#printers)), what a restart of
   the front server does to a print
   ([What a restart does](../architecture.md#what-a-restart-does)), and how the relay's

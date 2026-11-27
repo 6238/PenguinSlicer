@@ -88,8 +88,8 @@ that holds what must outlast a restart of the front server; on one machine a fol
 stands in for it. The **user key** is the signed-in user's Onshape id. A **paired-printer
 record** is one small document per group in the state bucket holding the id of the
 group's daemon, the printer's display name, who paired it and when, which of the relay's
-secret keys the daemon's token was last issued under, and, until the daemon has its
-token, a hash of the pairing code. A **daemon id** is a random id a daemon makes for
+secret keys the daemon's token was last issued under, the time the daemon last went
+offline, and, until the daemon has its token, a hash of the pairing code. A **daemon id** is a random id a daemon makes for
 itself when its `pair` command is run, and keeps; it names the daemon in its token, in
 the paired-printer record and in the relay's memory. A **send** is the request by which a
 user's page asks the relay to print a sliced file; it creates a delivery job. A **sync**
@@ -348,11 +348,12 @@ written by the previous version is read by the new one.
 The state bucket's copy of a sliced file is the one everything uses; on Send the relay
 hands it to the daemon ([the front server](../front/README.md) owns where it is stored).
 The relay takes the sliced file from the store when the daemon fetches it, and keeps no
-copy of its own. A sliced file that a delivery job still needs is kept until the daemon
-has fetched it. The relay's limit on the age of a sliced file it will send rises from
-forty minutes to two hours. This may change: an item awaits the owner's choice
-([item 1.1 of the wizard's guide](../wizard/README-details.md#11-sending-the-same-plate-again-after-a-long-print)).
-The daemon fetches again a sliced file whose fetch was cut
+copy of its own. A sliced file is kept until two hours after its slice ended or two hours
+after its last print ended, whichever is later; its last print ended when the latest
+delivery job that used it ended ([the front server](../front/README-details.md#two-hours-deleting-and-the-backstop)).
+The relay's limit on the age of a sliced file it will send becomes that rule: a sliced
+file may be sent while it is kept, so Send works again for the same sliced plate after a
+print of any length. The daemon fetches again a sliced file whose fetch was cut
 off.
 
 *Replaces in the code as built:* `find_sliced_file` answers a `SlicedFile` with a `path`
@@ -363,19 +364,23 @@ or a `stream`; a stream is copied once into the relay's spool directory
 fetch is authorised once the file comes from the store, nor whether it is counted for the
 daemon or still for the address; keeping the token in the path and the count per address
 is *proposed*. The spool directory and its sweep go. The age
-limit is `SLICE_MAX_AGE_SECONDS` in `routes.py`, 40 minutes, which becomes two hours. A
+limit is `SLICE_MAX_AGE_SECONDS` in `routes.py`, 40 minutes, which gives way to the
+front server's rule for how long a sliced file is kept. A
 fetch cut off mid-way already raises in `RelayClient.download` ("the download failed
 after N bytes"), leaves no partial file, and is tried again from the start by `_download`
 in `run_loop.py`, up to three attempts (`DOWNLOAD_ATTEMPTS`) with backoff.
 
-*Error report:* *proposed*: a send of a sliced file sliced more than two hours before is
-`delivery.sliced_file_too_old`, with its figure changed; a fetch that fails three times is
+*Error report:* *proposed*: a send of a sliced file no longer kept is
+`delivery.sliced_file_too_old`, with its rule changed; a fetch that fails three times is
 `delivery.download_failed`, as built.
 
-*Tests:* a send at 1 h 59 min is accepted and one at 2 h 1 min refused; the daemon's
-fetch reads the store and the relay writes no file of its own; a fetch cut off mid-way
-through the front server is fetched again and the delivery job goes on; a sliced file a
-delivery job still needs is still there when the daemon fetches it, past two hours.
+*Tests:* a send of a never-printed sliced file at 1 h 59 min after its slice is accepted
+and one at 2 h 1 min refused; a send of a sliced file one hour after the end of a
+five-hour print of it is accepted, and one at 2 h 1 min after that print ended refused;
+the daemon's fetch reads the store and the relay writes no file of its own; a fetch cut
+off mid-way through the front server is fetched again and the delivery job goes on; a
+sliced file a running delivery job uses is still there when the daemon fetches it, past
+two hours after its slice.
 
 #### Replacing the relay's secret key
 
@@ -486,23 +491,34 @@ The wizard's approved mockup lists what it needs of printer delivery under
 
 The mockup's printer details also show, for a failed print, when it stopped and at which
 layer (its decision 44). Provided in part: a final report keeps the last `layer` the
-printer reported, but carries no time at which it stopped. The design approved by the
-owner does not decide any of this section; the answer below is *proposed*. A delivery
-job's record is kept for a day after it ends, as
+printer reported, but carries no time at which it stopped. A delivery job's record is
+kept for a day after it ends, as
 [The records of delivery jobs](#the-records-of-delivery-jobs) says, so the last print can
 be found for that day; whether the wizard shows the last-print note for the mockup's 12
-hours of it is written with the wizard's steps. So a delivery job's record carries the sender's display name, the plate's one-line description, the time the
-delivery job ended and, for a failure, the layer at which it stopped; and a page that has
-lost its state can ask for its user's live delivery job and that user's last print.
+hours of it is written with the wizard's steps. So a delivery job's record carries the
+sender's display name, the plate's one-line description, the time the delivery job ended
+and, for a failure, the layer at which it stopped, and the printer's status returns them;
+and a page that has lost its state can ask for its user's live delivery job and that
+user's last print. These are requirements; the routes and field names that carry them
+are *proposed* with phase 5's design spec.
 
 *Tests:* the status of a busy printer names the sender and the description; a final
 record carries its end time, and a failed one its layer; a user asking for their live
 delivery job gets their own and never another user's; that user's last print is found for
 a day after it finished, and not after (fake clock).
 
-How long an offline daemon has been silent is not kept across a restart of the front
-server. This may change: an item awaits the owner's choice
-([item 2.4 of the wizard's guide](../wizard/README-details.md#24-not-heard-from-for-7-minutes)).
+**How long a printer has been silent.** The mockup's printer details say "Not heard from
+for 7 minutes." When a daemon goes offline (no sync within 2 minutes), the relay writes
+the time to the group's paired-printer record, one write at that moment and not one a
+minute, and the printer's status returns it, so the wizard can say how long a printer has
+been silent even after a restart of the front server. The relay's memory alone would
+lose it at a restart. *Replaces in the code as built:* nothing; it adds to the
+relay as built, which keeps the time it last heard from a daemon (`daemon_seen_at` in
+`relay.py`) in its memory only.
+
+*Tests:* a daemon that goes offline writes its offline time once, and stays at one write
+however long it stays off (fake clock); after a restart of the front server the printer's
+status returns the same time; the daemon's next sync puts the printer back online.
 
 #### Already built, kept as they are
 
