@@ -329,7 +329,7 @@ rule's figure:
 | 5 mm apart, supports off | Two brackets 5.01 mm apart | 4.99 mm apart |
 | 12 mm apart, supports on | Two brackets 12.01 mm apart, `enable_support` `"1"` | 11.99 mm apart |
 | A turned instance | A bracket at `angle` 37, 5.01 mm from another at the closest point of their outlines | The same at 4.99 mm |
-| A rotation | The bracket laid on its hull face by `rotation`, 5.01 mm from a spacer | The same at 4.99 mm |
+| A rotation | The bracket laid on its hull face by `rotation` and at `angle` 15, 5.01 mm from a spacer | The same at 4.99 mm |
 
 **The files.** The set is built: thirteen plates, `margin-pass.json`, `margin-fail.json`,
 `height-pass.json`, `height-fail.json`, `height-laid-down-pass.json` (`post-341.stl` with
@@ -342,7 +342,12 @@ profile. Its `plate_id` and `submission_id` are fixed UUIDs, different on every 
 posts' parts are named `Post-340` and `Post-341`; `spacer.stl` is a box of 40 by 30 by 10 mm.
 The height plates are 0 mm (`post-340.stl`, exactly the printable height, passing) and 1 mm
 (`post-341.stl`, failing) from their figure, as the table says; every other plate is 0.01 mm
-from its figure. The slice service's
+from its figure. The rotation plates' `rotation` is the one of
+[examples/plate-configuration-phase-2.json](examples/plate-configuration-phase-2.json)
+followed by 30 degrees about the vertical, which lays the same hull face on the plate; it is
+not its own inverse on the bracket's footprint, so a check that turns by the transposed
+matrix, or applies the `angle` before the rotation, gets another answer on one of the two
+plates. The slice service's
 [details](../slice/README-details.md#shared-plates-for-the-placement-checks) say how the set
 is written and tested.
 

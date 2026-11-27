@@ -303,7 +303,11 @@ the rule and one a hundredth outside it. For the height, a post exactly as tall 
 printer prints passes, a post one millimetre taller fails, and the same taller post laid on
 its side passes. The positions on these plates are worked out by a small program with
 geometry of its own, not with the slice service's, so the slice service's check is held to
-an independent answer as well as to the wizard's. Until the new way of naming parts arrives
+an independent answer as well as to the wizard's. The slanted-face plates lay the part with a
+turn whose reverse would lay it differently, and turn it about the vertical afterwards, so
+that a check which turns the part the wrong way round, or turns it about the vertical before
+laying it down, gets a different answer on one of them: those are the usual mistakes in such
+geometry, and a plate that cannot tell them apart would let them through. Until the new way of naming parts arrives
 later in phase 2, the slice service's tests put each plate into the form it reads today, and
 an instance laid on a slanted face is tested by turning a copy of its part beforehand; from
 then on each plate goes through the slice service's front door like any other plate.

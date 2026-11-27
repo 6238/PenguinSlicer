@@ -1078,7 +1078,7 @@ The set's folder, file form, plates, parts and agreement are fixed in
 | 5 mm apart, supports off | `spacing-pass.json` (5.01 mm) | `spacing-fail.json` (4.99 mm) |
 | 12 mm apart, supports on | `spacing-supports-pass.json` (12.01 mm) | `spacing-supports-fail.json` (11.99 mm) |
 | A turned instance | `angle-pass.json` (a bracket at `angle` 37, 5.01 mm from one at 0) | `angle-fail.json` (4.99 mm) |
-| A rotation | `rotation-pass.json` (the bracket laid by `rotation` on its hull face across the L's open corner, 5.01 mm from a spacer) | `rotation-fail.json` (4.99 mm) |
+| A rotation | `rotation-pass.json` (the bracket laid by `rotation` on its hull face across the L's open corner, at `angle` 15, 5.01 mm from a spacer) | `rotation-fail.json` (4.99 mm) |
 
 Every plate is a whole phase 2 plate configuration over the default set (no `printer`,
 `filament` or `process`), with `plate_id` and `submission_id` made by `uuid.uuid5` from the
@@ -1095,7 +1095,13 @@ geometry of its own from the contract's Coordinates and rotation matrix (its own
 polygon distance and a bisection along x, positions kept to 6 decimals, so each distance is
 within 1e-6 mm of the figure plus or minus 0.01 mm), never with `plate.py`, so the placement
 check is tested against an independent computation. It also asserts that every distance a
-plate does not try is more than 1 mm clear of its rule. After a change to a rule or a figure:
+plate does not try is more than 1 mm clear of its rule. The rotation plates' `rotation` is
+`LAID_BRACKET_TURNED`: the contract example's `LAID_BRACKET` followed by 30 degrees about the
+vertical, at `angle` 15. `LAID_BRACKET` alone is a quarter turn about a horizontal axis, and
+on the bracket it and its inverse give the same footprint, so plates made with it would pass
+a check that turns by the transposed matrix; under `LAID_BRACKET_TURNED` the turned
+bracket's bounding box is 50.59 x 15.19 mm, and under its inverse 41.48 x 33.20 mm. After a
+change to a rule or a figure:
 
 ```
 uv run --project slice python slice/scripts/make_placement_parts.py
@@ -1106,8 +1112,10 @@ and change both components' tests in the same commit
 
 `tests/test_placement_plates.py` holds the set to the script's output byte for byte (the
 plates and the posts), each plate's `expected` to the contract's table, each file to the
-contract's form (the phase 2 fields only, each part's `sha256` naming a file of
-`contracts/examples/parts/`, a `rotation` of length 1), and runs every plate through
+contract's form (the phase 2 fields only, with the types the contract fixes: each part's
+`sha256` naming a file of `contracts/examples/parts/`, a `rotation` of 4 numbers and length 1
+or one of the six orientations, `angle` an integer from 0 to 359, `x` and `y` finite numbers),
+and runs every plate through
 `service.read_plate_configuration`, comparing the error report's `code`, `instance` and
 `other_instance` with `expected`. Until items 1 to 4 of [Phase 2](#phase-2-one-machine)
 exist, it turns each phase 2 plate configuration into the form as built: a part named by
@@ -1117,7 +1125,10 @@ the rotation's matrix, which the one transform of the contract places exactly wh
 rotation would. It also measures, from the footprints the code makes, that each plate's
 deciding distance is its figure plus or minus 0.01 mm. The footprints keep their points to
 0.001 mm (`mesh._footprint`), so the slice service's own distances are within about
-0.0007 mm of the script's; the 0.01 mm step covers that. With the check's tolerance
+0.0007 mm of the script's; the 0.01 mm step covers that. It runs the two rotation plates
+again with the rotation's inverse (the conjugate quaternion), and again with the angle
+applied before the rotation, and requires a different answer on at least one of them each
+time. With the check's tolerance
 `plate.EPS_MM` made 0.02 mm, the five failing plates of the spacings and the margin fail
 their test; made -0.02 mm, the six passing ones do.
 

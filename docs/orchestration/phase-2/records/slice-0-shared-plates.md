@@ -53,7 +53,10 @@ What was built is described in
     the contract's rotation matrix in the test and placing it `+z`, which the contract's
     one transform places exactly where the rotation does. Reason: the wizard's builder gets a
     checked answer for those plates from the start. When item 4 exists, its builder runs them
-    through its own `rotation` (written into the details file's item 17).
+    through its own `rotation` (written into the details file's item 17). As first written
+    the plates used `LAID_BRACKET` itself, a quarter turn about a horizontal axis, under which
+    the bracket's footprint is the same as under the inverse turn, so they passed a check
+    with the transposed matrix; the review found it, and decision 14 replaces that rotation.
 11. **The tolerance of the "a hundredth from its figure" test.** The built footprints keep
     their points to 0.001 mm (`mesh._footprint`), so the distance the code measures differs
     from the script's by up to 0.00043 mm on the rotation plates. Chosen: that test allows
@@ -65,13 +68,43 @@ What was built is described in
 13. **The `plate.py` docstring.** It pointed a user interface at
     `tests/fixtures/plate_cases.json` and said "student". Changed to point the wizard at the
     shared set and to say "user". `plate_cases.json` stays, as `tests/test_plate.py`'s own
-    cases.
+    cases. `tests/test_plate.py`'s own docstring, which still called those cases the ones a
+    user interface's twin is tested against, was brought into line after the review.
+14. **The rotation plates' turn.** The contract asked only for "the bracket laid on its hull
+    face by `rotation`". Chosen: `LAID_BRACKET_TURNED`, the contract example's rotation
+    followed by 30 degrees about the vertical (`[0.683012702, -0.669818101, 0.226591507,
+    0.183012702]`), at `angle` 15. Reason: a plate must tell the contract's turn from its two
+    usual mistakes. Under this rotation the turned bracket's box is 50.59 x 15.19 mm, under
+    its inverse 41.48 x 33.20 mm; the nonzero angle makes "angle after the rotation"
+    (`Rz(angle) M`) differ from "angle first" (`M Rz(angle)`). The test
+    `test_the_rotation_plates_tell_the_contracts_turn_from_a_wrong_one` runs both mistakes and
+    requires another answer on one of the two plates; with `w = -w` in the test's matrix, or
+    in the script's, the suite now fails. The contract's example plate keeps `LAID_BRACKET`.
+    To overrule: change the two constants in the script and regenerate; the test says
+    whether the new turn still tells the mistakes apart.
+15. **Declined from the review: margin plates on the other three edges** (minor finding 1).
+    The margin plates try only the left edge, so a check without the upper bound in x or
+    either bound in y passes the set. Not changed: one failing plate can catch the loss of
+    only one of the four bounds, so the fix is three more plates, which changes the contract's
+    table of one passing and one failing plate per rule and its list of thirteen files, read
+    by the wizard's builder now; this batch was asked to stay small. The slice service's own
+    cases (`tests/fixtures/plate_cases.json`, with plates crossing the left and the top
+    margin) catch a check without its upper bound, as the review found; the wizard's own
+    tests must cover the other edges until the set does. To overrule: add `margin-right-fail.json`,
+    `margin-bottom-fail.json` and `margin-top-fail.json` to the contract and the script.
+16. **Declined from the review: a height plate closer than 1 mm** (minor finding 2). The
+    contract's table fixes the two posts at 340 and 341 mm, so a height tolerance under 1 mm
+    is not caught by the set; it stays under Targets missed. To overrule: change the
+    contract's posts (for example to 340.01 mm) and regenerate.
 
 ## Targets missed
 
 1. The contract asks for every plate 0.01 mm from its rule's figure; the height plates are
    0 mm (`post-340.stl`, exactly 340 mm tall) and 1 mm (`post-341.stl`) from the 340 mm
    figure, because the contract's own table fixes those two posts. The contract now says so.
+   So the set does not catch a height check with a tolerance anywhere below 1 mm.
+3. The margin plates try only the left edge of the printable area (decision 15): the set
+   does not catch a check that loses the right, front or back bound.
 2. The slice service's check agrees with the script's exact distances only to about
    0.0007 mm (its footprints are rounded to 0.001 mm), not to the 1e-6 mm tolerance it
    decides each rule with; on the set that is 0.00043 mm at most, inside the 0.01 mm step.

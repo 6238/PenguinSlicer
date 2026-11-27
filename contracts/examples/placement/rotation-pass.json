@@ -1,5 +1,5 @@
 {
-  "description": "A bracket laid by a rotation on the face of its convex hull across the L's open corner, 5.01 mm from a spacer, supports off",
+  "description": "A bracket laid by a rotation on the face of its convex hull across the L's open corner and turned 15 degrees, 5.01 mm from a spacer, supports off",
   "plate_configuration": {
     "plate_id": "afdbaffc-3a60-5f2e-a220-f73f4d4271c4",
     "submission_id": "15872fe6-c59b-50b9-a726-6d4501476203",
@@ -19,12 +19,12 @@
       {
         "ref": "bracket",
         "rotation": [
-          0.707106781,
-          -0.588348405,
-          0.39223227,
-          0.0
+          0.683012702,
+          -0.669818101,
+          0.226591507,
+          0.183012702
         ],
-        "angle": 0,
+        "angle": 15,
         "x": 100.0,
         "y": 160.0
       },
@@ -32,7 +32,7 @@
         "ref": "spacer",
         "orientation": "+z",
         "angle": 0,
-        "x": 149.107432,
+        "x": 150.66347,
         "y": 160.0
       }
     ],

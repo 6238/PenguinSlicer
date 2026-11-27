@@ -81,6 +81,16 @@ def quaternion_matrix(rotation):
             (2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)))
 
 
+def quaternion_product(a, b):
+    """The quaternion of the turn b followed by the turn a (its matrix is M(a) M(b))."""
+    aw, ax, ay, az = a
+    bw, bx, by, bz = b
+    return [aw * bw - ax * bx - ay * by - az * bz,
+            aw * bx + ax * bw + ay * bz - az * by,
+            aw * by - ax * bz + ay * bw + az * bx,
+            aw * bz + ax * by - ay * bx + az * bw]
+
+
 def turned_stl(path, rotation):
     """The part's STL with every vertex turned by the rotation's matrix (`v' = M v`)."""
     data = path.read_bytes()
@@ -159,11 +169,24 @@ class TestTheSet:
         for part in configuration["parts"].values():
             assert list(part) == contract_fields("### A part in phase 2")
             assert part["units"] == "mm" and part["sha256"] in files
+        for part in configuration["parts"].values():
+            assert isinstance(part["name"], str) and part["name"]
         for instance in configuration["instances"]:
             assert set(instance) <= set(contract_fields("### An instance in phase 2"))
+            assert {"ref", "angle", "x", "y"} <= set(instance)
+            assert instance["ref"] in configuration["parts"]
             assert ("orientation" in instance) != ("rotation" in instance)
             if "rotation" in instance:
-                assert abs(math.hypot(*instance["rotation"]) - 1) <= 1e-6
+                rotation = instance["rotation"]
+                assert isinstance(rotation, list) and len(rotation) == 4
+                assert all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in rotation)
+                assert abs(math.hypot(*rotation) - 1) <= 1e-6
+            else:
+                assert instance["orientation"] in {"+z", "-z", "+x", "-x", "+y", "-y"}
+            assert type(instance["angle"]) is int and 0 <= instance["angle"] <= 359
+            for key in ("x", "y"):
+                assert isinstance(instance[key], (int, float)) and not isinstance(instance[key], bool)
+                assert math.isfinite(instance[key])
 
     def test_every_plate_has_its_own_ids(self):
         ids = [load(name)["plate_configuration"][k] for name in PLATES for k in ("plate_id", "submission_id")]
@@ -220,6 +243,35 @@ class TestThePlacementCheck:
         assert standing["parts"] == laid["parts"]
         assert [i["orientation"] for i in standing["instances"]] == ["+z"]
         assert [i["orientation"] for i in laid["instances"]] != ["+z"]
+
+    def test_the_rotation_plates_turn_with_an_angle_after_the_rotation(self):
+        """The rotation plates try an angle applied after a rotation (Rz(angle) M)."""
+        for verdict in ("pass", "fail"):
+            (laid,) = [i for i in load(f"rotation-{verdict}.json")["plate_configuration"]["instances"]
+                       if "rotation" in i]
+            assert laid["angle"] != 0
+
+    @pytest.mark.parametrize("wrong", ["inverse", "angle-first"])
+    def test_the_rotation_plates_tell_the_contracts_turn_from_a_wrong_one(self, tmp_path, wrong):
+        """A check that turns by the inverse of the rotation (the transposed matrix, or the
+        quaternion's sign the wrong way round), or that turns by the angle before the rotation
+        (M Rz(angle)), gets a different answer on at least one rotation plate."""
+        answers = []
+        for verdict in ("pass", "fail"):
+            data = load(f"rotation-{verdict}.json")
+            configuration = json.loads(json.dumps(data["plate_configuration"]))
+            for instance in configuration["instances"]:
+                if "rotation" in instance:
+                    w, x, y, z = instance["rotation"]
+                    if wrong == "inverse":
+                        instance["rotation"] = [w, -x, -y, -z]
+                    else:
+                        half = math.radians(instance.pop("angle")) / 2
+                        instance["rotation"] = quaternion_product([w, x, y, z],
+                                                                  [math.cos(half), 0.0, 0.0, math.sin(half)])
+                        instance["angle"] = 0
+            answers.append(answer(configuration, tmp_path) == data["expected"])
+        assert not all(answers)
 
     def test_the_pairs_differ_only_in_the_figure(self):
         """Each failing plate is its passing plate with one instance moved, and the supports

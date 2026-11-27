@@ -1142,9 +1142,9 @@ just failing, kept with the contracts and run by both components' tests
 ([Shared plates for the two placement checks](../slice/README.md#shared-plates-for-the-two-placement-checks)).
 Their folder, the form of each plate's file with its `expected` answer, the plates each rule
 needs and the agreement asked of the two checks (exactly the expected answer on every plate,
-each 0.01 mm from its rule's figure) are fixed in
+each 0.01 mm from its rule's figure except the two height plates, 0 and 1 mm from it) are fixed in
 [Shared plates for the placement checks](../contracts/plate-configuration.md#shared-plates-for-the-placement-checks);
-the slice service's builder writes the set first, before anything else of its phase 2. A
+the slice service's builder wrote the set first, before anything else of its phase 2. A
 plate the wizard shows green and the slice service refuses is a defect in one of them.
 
 Tests: on the fixed set of real exported parts kept in the repository, the expected faces,

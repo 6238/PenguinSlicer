@@ -49,6 +49,27 @@ _HALF = math.sqrt(0.5)
 LAID_BRACKET = [round(_HALF, 9), round(-_HALF * 3 / math.sqrt(13), 9), round(_HALF * 2 / math.sqrt(13), 9), 0.0]
 
 
+def quaternion_product(a, b):
+    """The quaternion of the turn b followed by the turn a (its matrix is M(a) M(b))."""
+    aw, ax, ay, az = a
+    bw, bx, by, bz = b
+    return [aw * bw - ax * bx - ay * by - az * bz,
+            aw * bx + ax * bw + ay * bz - az * by,
+            aw * by - ax * bz + ay * bw + az * bx,
+            aw * bz + ax * by - ay * bx + az * bw]
+
+
+# The rotation plates' turn: LAID_BRACKET followed by 30 degrees about the vertical, so the same
+# hull face lies on the plate. LAID_BRACKET alone is a quarter turn about a horizontal axis,
+# and on the bracket (z only 0 and 12) it and its inverse give the same
+# footprint; this one does not (50.59 x 15.19 mm against 41.48 x 33.20 mm), so a check that
+# turns by the transposed matrix gets another answer. The plates also turn it by
+# ROTATION_ANGLE after the rotation, so a check that applies the angle first does too.
+LAID_BRACKET_TURNED = [round(v, 9) for v in quaternion_product(
+    [math.cos(math.radians(15)), 0.0, 0.0, math.sin(math.radians(15))], LAID_BRACKET)]
+ROTATION_ANGLE = 15
+
+
 # ---- the posts -----------------------------------------------------------------------
 
 def _normal(a, b, c):
@@ -275,9 +296,9 @@ def make_plates():
         ("angle", SPACING_MM, False, {"orientation": "+z"}, 37, "bracket", 0,
          "A bracket turned 37 degrees, {gap:.2f} mm from an unturned bracket at the closest point of their "
          "outlines, supports off"),
-        ("rotation", SPACING_MM, False, {"rotation": LAID_BRACKET}, 0, "spacer", 0,
-         "A bracket laid by a rotation on the face of its convex hull across the L's open corner, {gap:.2f} mm "
-         "from a spacer, supports off"),
+        ("rotation", SPACING_MM, False, {"rotation": LAID_BRACKET_TURNED}, ROTATION_ANGLE, "spacer", 0,
+         "A bracket laid by a rotation on the face of its convex hull across the L's open corner and turned "
+         f"{ROTATION_ANGLE} degrees, {{gap:.2f}} mm from a spacer, supports off"),
     )
     for rule, figure, supports, turn, angle, other, other_angle, description in pairs:
         parts = dict(bracket)
