@@ -1,0 +1,61 @@
+{
+  "based_on": "a41f6c2e9d0b7385",
+  "configuration": {
+    "format": 1,
+    "note": "Written by hand for 6238 (Popcorn Penguins), Fri 2026-11-27.",
+    "printer": "Bambu Lab H2S 0.6 nozzle",
+    "upload_units": "in",
+    "filaments": [
+      {
+        "name": "Black PETG",
+        "colour": "#202020",
+        "profiles": [
+          {
+            "name": "Structural",
+            "purpose": "strong brackets and plates",
+            "printer": "Bambu Lab H2S 0.6 nozzle",
+            "filament": "Generic PETG @BBL H2S",
+            "process": "0.24mm Balanced Quality @BBL H2S 0.6 nozzle",
+            "overrides": {"wall_loops": "4", "sparse_infill_density": "40%", "sparse_infill_pattern": "gyroid"}
+          },
+          {
+            "name": "Draft",
+            "purpose": "fit checks and test prints",
+            "printer": "Bambu Lab H2S 0.6 nozzle",
+            "filament": "Generic PETG @BBL H2S",
+            "process": "0.30mm Standard @BBL H2S 0.6 nozzle"
+          }
+        ]
+      },
+      {
+        "name": "Orange PETG",
+        "colour": "#e8742a",
+        "note": "Same material as Black PETG; the colour tells them apart in the menu.",
+        "profiles": [
+          {
+            "name": "Structural",
+            "purpose": "strong brackets and plates",
+            "printer": "Bambu Lab H2S 0.6 nozzle",
+            "filament": "Generic PETG @BBL H2S",
+            "process": "0.24mm Balanced Quality @BBL H2S 0.6 nozzle",
+            "overrides": {"wall_loops": "4", "sparse_infill_density": "40%", "sparse_infill_pattern": "gyroid"}
+          }
+        ]
+      },
+      {
+        "name": "PETG-CF",
+        "colour": "#5a5a5a",
+        "profiles": [
+          {
+            "name": "Stiff bracket",
+            "purpose": "stiff brackets and arms",
+            "printer": "Bambu Lab H2S 0.6 nozzle",
+            "filament": "Generic PETG-CF @BBL H2S",
+            "process": "0.24mm Balanced Quality @BBL H2S 0.6 nozzle",
+            "overrides": {"wall_loops": "4", "sparse_infill_density": "35%"}
+          }
+        ]
+      }
+    ]
+  }
+}

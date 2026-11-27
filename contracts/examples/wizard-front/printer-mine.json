@@ -1,0 +1,40 @@
+{
+  "live": {
+    "id": "j5b20e7c4",
+    "slice": "5e2b8c19",
+    "progress": {
+      "job": "j5b20e7c4",
+      "state": "running",
+      "stage": "printing",
+      "stage_label": "Printing",
+      "fraction": 0.442,
+      "elapsed_s": 1503.0,
+      "expected_s": 3483.0,
+      "sequence": 57,
+      "printer_stage": "printing",
+      "printer_stage_label": "Printing",
+      "percent": 38,
+      "layer": 76,
+      "total_layers": 200,
+      "remaining_min": 33
+    }
+  },
+  "last_print": {
+    "id": "j19a3f6b0",
+    "slice": "8d41e7a0",
+    "progress": {
+      "job": "j19a3f6b0",
+      "state": "done",
+      "stage": "printing",
+      "stage_label": "Printing",
+      "fraction": 1.0,
+      "elapsed_s": 2240.6,
+      "sequence": 112,
+      "percent": 100,
+      "layer": 200,
+      "total_layers": 200,
+      "sliced_file": {"slice": "8d41e7a0", "expires_at": "2026-11-27T21:25:00Z", "expires_in_s": 4500}
+    },
+    "ended_at": "2026-11-27T19:25:00Z"
+  }
+}
