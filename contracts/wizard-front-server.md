@@ -394,7 +394,7 @@ Onshape.
 | Status | When | Body |
 |---|---|---|
 | `302` | The value is the one sent out and Onshape answered both calls (who the user is, and their companies and classrooms) | Sets the cookie; to `return` |
-| `200` | The same, in the small window (`window=1`) | A small page that tells its opener, by a message to the front server's own address only, `{"penguinslicer": "signed_in"}`, and closes itself |
+| `200` | The same, in the small window (`window=1`) | A small page that tells its opener, by a message to the front server's own address only, `{"penguinslicer": "signed_in"}` ([examples/wizard-front/signin-window-signed-in.json](examples/wizard-front/signin-window-signed-in.json)), and closes itself |
 | `401` | The user refused Onshape's request | The **failed sign-in page**, with `front.sign_in_refused` |
 | `401` | The value is not the one sent out, or Onshape refused the code | The failed sign-in page, with `front.sign_in_failed` |
 | `503` | Onshape did not answer | The failed sign-in page, with `front.onshape_unreachable` |
@@ -452,7 +452,8 @@ are written so that either answer fits ([Left open by the guides](#left-open-by-
 
 **Answers.** `200` `{}`, with a `Set-Cookie` that removes the cookie. The page then goes to
 `/signed-out`. It costs no call to Onshape, and the front server has nothing else to forget
-([Signing out](../front/README.md#signing-out)).
+([Signing out](../front/README.md#signing-out)). See
+[examples/wizard-front/signout.json](examples/wizard-front/signout.json).
 
 **Signed in:** not needed; signing out without a cookie answers the same. **Group:** none.
 **Mark:** yes. **Repeat:** safe; a second sign-out answers the same. **Phase:** 3.
@@ -496,6 +497,8 @@ groups the others. The front server answers from the cookie, without calling Ons
 
 In phase 2 the answer is the development identity's made-up user and group.
 
+See [examples/wizard-front/me.json](examples/wizard-front/me.json).
+
 **Signed in:** yes. **Group:** none. **Repeat:** safe. **Phase:** 2.
 
 ## The configuration
@@ -533,7 +536,8 @@ nothing in the wizard using it, to prove the conditional write early.
 {"based_on": "<revision from the read>", "configuration": { "format": 1, "...": "..." }}
 ```
 
-`based_on` is the `revision` the edit started from, `null` for a group that had none.
+`based_on` is the `revision` the edit started from, `null` for a group that had none. See
+[examples/wizard-front/configuration-write-request.json](examples/wizard-front/configuration-write-request.json).
 
 **Answers.**
 
@@ -542,6 +546,8 @@ nothing in the wizard using it, to prove the conditional write early.
 | `200` | Written | `{"revision": "<new>", "source": "group", "name": "<the group's name>"}` |
 | `409` | The saved document is no longer `based_on`: someone else changed it | `front.configuration_changed`. Nothing is written and nothing is merged |
 | `422` | The document is invalid by [the configuration's rules](configuration.md#when-a-document-is-invalid) | `front.configuration_invalid`, whose sentence names the first rule broken |
+
+The `200` answer: [examples/wizard-front/configuration-written.json](examples/wizard-front/configuration-written.json).
 
 **Signed in:** yes. **Group:** yes. **Mark:** yes. **Repeat:** a write repeated because its
 answer was lost finds `based_on` stale, since its own first attempt changed the document. The
@@ -617,6 +623,8 @@ The part's record, the slice service's answer passed unchanged:
 }
 ```
 
+See [examples/wizard-front/part-record.json](examples/wizard-front/part-record.json).
+
 | Field | Meaning |
 |---|---|
 | `sha256` | The SHA-256 hash of the bytes, by which the plate configuration names the part. The page compares it with the hash it made itself, and uploads again once if they differ |
@@ -671,7 +679,8 @@ The slice job, in the answer to a submission:
 {"slice": {"id": "3f9a1c2b", "plate_id": "…", "submission_id": "…", "progress": { "job": "3f9a1c2b", "state": "queued", "ahead": 2, "...": "..." }}}
 ```
 
-`progress` is the slice job's first [progress report](progress-report.md).
+`progress` is the slice job's first [progress report](progress-report.md). See
+[examples/wizard-front/slice-accepted.json](examples/wizard-front/slice-accepted.json).
 
 **Signed in:** yes. **Group:** yes. **Mark:** yes. **Repeat:** recognised by the slice
 service by the user key and `submission_id`: a repeat of a submission it accepted is answered
@@ -699,6 +708,8 @@ the slice job's latest progress report as the front server reckons it:
 ```json
 {"progress": { "job": "3f9a1c2b", "state": "done", "sequence": 41, "...": "...", "sliced_file": { "...": "..." }}}
 ```
+
+See [examples/wizard-front/slice-done.json](examples/wizard-front/slice-done.json).
 
 | Answer | Status | `progress` | When | The page ([Coming back](../wizard/README.md#coming-back-to-running-work)) |
 |---|---|---|---|---|
@@ -752,6 +763,8 @@ event: progress
 id: 41
 data: {"job": "3f9a1c2b", "state": "done", "...": "...", "sliced_file": {"...": "..."}}
 ```
+
+See [examples/wizard-front/slice-events.txt](examples/wizard-front/slice-events.txt).
 
 - The first event is `version`, the front server's version, since a page reading a stream may
   not see its headers.
@@ -815,7 +828,8 @@ in [`GET /api/printer/mine`](#the-users-live-delivery-job-and-last-print)
 **For:** the Preview step's print time, filament and warnings, and the moment of expiry, for a
 page that has the slice job's id but not its `done` report.
 
-**Answers.** `200` `{"sliced_file": <the sliced file's details>}`. `409`
+**Answers.** `200` `{"sliced_file": <the sliced file's details>}`
+([examples/wizard-front/slice-summary.json](examples/wizard-front/slice-summary.json)). `409`
 `front.sliced_file_not_ready` while the slice job has not finished, or its sliced file is not
 yet stored. `410` `front.sliced_file_expired` once it has expired, or has gone from the state
 bucket by any other means. `404` `front.slice_unknown` for a slice job not known, or another
@@ -873,6 +887,8 @@ Both kinds share these rules:
 ```json
 {"page": "c1e0…", "what": "part_not_drawable", "step": "parts", "browser": "Chrome", "browser_version": "131.0", "software_3d": true, "part_sha256": "9f2c…", "detail": "RangeError at mesh.js:212"}
 ```
+
+See [examples/wizard-front/report-failure-request.json](examples/wizard-front/report-failure-request.json).
 
 | Field | Required | Meaning |
 |---|---|---|
@@ -963,7 +979,8 @@ either.
 code the daemon shows ([Pairing a printer](../wizard/README.md#pairing-a-printer)).
 
 **Request.** `{"code": "b6mq dn77"}`. Capitals or small letters, with or without the hyphen;
-spaces around it are dropped. The code is never logged and never kept beyond its hash.
+spaces around it are dropped. The code is never logged and never kept beyond its hash. See
+[examples/wizard-front/printer-pairing-request.json](examples/wizard-front/printer-pairing-request.json).
 
 **Answers.**
 
@@ -998,7 +1015,8 @@ link meanwhile in any case.
 **Request.** `{"slice": "<slice job id>", "description": "8 instances of Gusset Plate"}`.
 `description` is optional and is used only if the page writes the one-line description, which
 is open; the front server may write it itself from the plate configuration it kept, and then
-ignores this field.
+ignores this field. See
+[examples/wizard-front/printer-send-request.json](examples/wizard-front/printer-send-request.json).
 
 The front server checks that the slice job's sliced file is the signed-in user's, by user key,
 and not expired; then the relay accepts or refuses. A send stores the sliced file afresh, which
@@ -1103,7 +1121,8 @@ group, and opens on the Send step when its plate's slice job has one
 
 `live` is the user's delivery job that has not ended, or `null`. `last_print` is the user's
 latest ended one, kept a day after it ended, or `null`; its final report carries `sliced_file`
-with the moment of expiry. The page matches either to its plate by `slice`.
+with the moment of expiry. The page matches either to its plate by `slice`. See
+[examples/wizard-front/printer-mine.json](examples/wizard-front/printer-mine.json).
 
 **Repeat:** safe.
 

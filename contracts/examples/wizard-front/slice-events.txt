@@ -1,0 +1,13 @@
+event: version
+data: {"version": "20261127T221405Z-ab12cd3"}
+
+event: progress
+id: 17
+data: {"job": "3f9a1c2b", "state": "running", "stage": "generating_infill", "stage_label": "Generating infill", "fraction": 0.42, "elapsed_s": 31.5, "expected_s": 75, "sequence": 17}
+
+: keep-alive
+
+event: progress
+id: 41
+data: {"job": "3f9a1c2b", "state": "done", "stage": "reading_result", "stage_label": "Reading the sliced file", "fraction": 1.0, "elapsed_s": 52.8, "expected_s": 75, "sequence": 41, "sliced_file": {"slice": "3f9a1c2b", "file": "Bracket_plus1-20261009-1432.gcode.3mf", "size_bytes": 1843207, "summary": {"file": "Bracket_plus1-20261009-1432.gcode.3mf", "instances": 3, "print_time_s": 2145.0, "filament_m": 5.37, "filament_g": 16.28, "layer_count": 200, "warnings": [], "part_warnings": []}, "slice_ended_at": "2026-11-27T22:31:47Z", "expires_at": "2026-11-28T00:31:47Z", "expires_in_s": 7194}}
+

@@ -1,0 +1,17 @@
+{
+  "slice": {
+    "id": "3f9a1c2b",
+    "plate_id": "3f0c8f2e-6a1b-4d5e-9c27-8b14d0e6a5f1",
+    "submission_id": "b71e2a94-0d3c-4f8a-a6e5-2c9d17f04b38",
+    "progress": {
+      "job": "3f9a1c2b",
+      "state": "queued",
+      "ahead": 2,
+      "stage": "queued",
+      "stage_label": "Waiting for the slicer",
+      "elapsed_s": 0,
+      "expected_s": 75,
+      "sequence": 1
+    }
+  }
+}
