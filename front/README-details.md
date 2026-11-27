@@ -46,8 +46,7 @@ Railway; phase 4, inside Onshape; phase 5, the real printer.
 ## Where the front server sits
 
 One address, `https://penguinslicer.popcornpenguins.com/`, serves the wizard's pages, the
-address a daemon is given for the relay, and the redirect address of the Onshape OAuth
-app ([the architecture](../docs/architecture.md)). The browser and the daemons talk only
+address a daemon is given for the relay, and the redirect address of the Onshape app ([the architecture](../docs/architecture.md)). The browser and the daemons talk only
 to the front server, and the front server calls the slice service over Railway's private
 network, so the slice service's HTTP interface is not reachable from the internet and the
 browser never makes a cross-origin request ([the architecture](../docs/architecture.md),
@@ -500,6 +499,8 @@ that was running across a restart of the front server is stored when it ends.
 A sliced file can be previewed, downloaded, sent, and sent again after a print, for two
 hours after its slice ended. This may change: an item awaits the owner's choice
 ([item 1.1 of the wizard's guide](../wizard/README-details.md#11-sending-the-same-plate-again-after-a-long-print)).
+That the two hours start when the slice ended is not yet confirmed by the owner
+([item 1.4 of the wizard's guide](../wizard/README-details.md#14-when-the-two-hours-start)).
 The front server enforces this:
 
 - it refuses a sliced file older than two hours, with an error report (*proposed*: saying

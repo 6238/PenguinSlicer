@@ -4,8 +4,7 @@ This is the detailed guide, for someone changing printer delivery; a shorter gui
 [README.md](README.md). Everything outside the section [To be built](#to-be-built) is true
 of the code as built.
 
-Printer delivery takes a sliced file (`.gcode.3mf`) and gets it printed on a shop's Bambu
-Lab printer, reporting how the print goes. It has two halves:
+Printer delivery takes a sliced file (`.gcode.3mf`) and gets it printed on a Bambu Lab printer, reporting how the print goes. It has two halves:
 
 - **The relay** runs on the server. It holds each pairing code's delivery jobs and the printer's
   last status in memory, pairs with a daemon, and answers the caller.
@@ -500,6 +499,10 @@ lost its state can ask for its user's live delivery job and that user's last pri
 record carries its end time, and a failed one its layer; a user asking for their live
 delivery job gets their own and never another user's; that user's last print is found for
 a day after it finished, and not after (fake clock).
+
+How long an offline daemon has been silent is not kept across a restart of the front
+server. This may change: an item awaits the owner's choice
+([item 2.4 of the wizard's guide](../wizard/README-details.md#24-not-heard-from-for-7-minutes)).
 
 #### Already built, kept as they are
 

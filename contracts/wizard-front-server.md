@@ -34,7 +34,10 @@ the owner does not fix them.
   ([the front server](../front/README-details.md#error-reports)).
 - **Every request is safe to repeat.** The page retries every request it makes, so a
   request that falls in the gap of a deploy is repeated and the user sees a pause, not an
-  error ([the wizard](../wizard/README-details.md#retrying-every-request)). (*Proposed*,
+  error ([the wizard](../wizard/README-details.md#retrying-every-request)). This may
+  change: an item awaits the owner's choice
+  ([item 1.9](../wizard/README-details.md#19-retrying-then-an-error-after-20-seconds),
+  how long the page retries before it shows an error). (*Proposed*,
   since the design says only that the page retries:) a request sent twice because its
   first answer was lost must leave the same result as one sent once: uploading the same
   part again answers the same; a repeated submission must not leave the page following a
@@ -45,9 +48,6 @@ the owner does not fix them.
   sliced file by the same user while its delivery job is live answers with that delivery
   job ([the front server](../front/README-details.md#hosting-the-relay-from-phase-5),
   [printer delivery](../delivery/README-details.md#sending-and-unpairing)).
-  This may change: an item awaits the owner's choice
-  ([item 1.9](../wizard/README-details.md#19-retrying-then-an-error-after-20-seconds),
-  how long the page retries before it shows an error).
 - **Every answer carries the front server's version** (*proposed*: in a header), error
   reports and the first event of a progress stream included
   ([the front server](../front/README-details.md#the-version-on-every-answer)). A page that

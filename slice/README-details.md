@@ -331,7 +331,7 @@ Orcas run at once. [D43, D51, D52, D56, D301, D304]
 6,000 MB leaves 2 GB of the slice container's 8 GB for the slice service process, its
 checks on uploaded parts and the operating system. The margin matters because Railway
 stops a container that passes its 8 GB, which would take the waiting slice jobs with it,
-where the ceiling ends only the one slice. The figure is the project owner's to change; a
+where the ceiling ends only the one slice. The figure is the owner's to change; a
 high ceiling costs money only while a heavy plate is slicing, since Railway bills the
 memory a container holds at each moment. By the figures of "Sizing the host" under
 [Plate limits](#plate-limits), Orca can pass the ceiling by the rise between two of the

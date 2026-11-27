@@ -213,6 +213,8 @@ fetch by a browser or a daemon is small against the 100 MB Cloudflare allows.
 A sliced file is kept for two hours after its slice ended, which the front server
 enforces. This may change: an item awaits the owner's choice
 ([item 1.1](../wizard/README-details.md#11-sending-the-same-plate-again-after-a-long-print)).
+That the two hours start when the slice ended is not yet confirmed by the owner
+([item 1.4](../wizard/README-details.md#14-when-the-two-hours-start)).
 R2's own rule for deleting old files counts in whole days and removes a file
 typically within 24 hours after it falls due, so it cannot enforce two hours; a one-day
 rule on the sliced files is set as well, to catch any file the front server failed to

@@ -614,7 +614,12 @@ with a link to the item.
 | What a refresh keeps; finding a slice job after one; when the two hours start; who pairs the printer and where; how the page outside Onshape finds its configuration; where a returning page opens after its print ended | The spec | Not yet confirmed |
 | A colour for each filament; a part that cannot be used | The mockup (four fixed colours; a notification, and the part is not added) | Not yet confirmed |
 | Whether the printer is in the configuration | The paired-printer record links the group to its daemon; the configuration names the printer's Orca profile | Not yet confirmed |
-| What a delivery job's record carries; a returning page finding its delivery job and last print; a profile's own name and purpose; the plate's size on the Layout step | Added to the living documents as the mockup requires | Not yet confirmed |
+| A profile's own name and purpose; the plate's size on the Layout step | Added to the living documents as the mockup requires | Not yet confirmed |
+| The "plate too large" error | The steps leave it out | Not yet confirmed |
+
+What a delivery job's record carries, and how a returning page finds its delivery job and
+last print, are not among the fifteen: the living documents carry them as proposals,
+settled in phase 5's design spec.
 
 ## Possible disagreements in the spec
 

@@ -347,7 +347,8 @@ stands in for each bucket.
     row of the table "The slice container restarts".
   - `contracts/`: the part set for parts from files, the routes of the contract between
     the wizard and the front server, the fields of the configuration.
-- **Already settled by [the architecture](../architecture.md#where-each-piece-of-state-lives):** how parts
+- **Settled by [the architecture](../architecture.md#where-each-piece-of-state-lives), apart
+  from the items awaiting the owner ([Where things stand](#where-things-stand)):** how parts
   reach the slice service, where the sliced file is kept, how a page that has lost its
   state comes back to its work, and how the browser reaches the slice service (through
   the front server, at one address, as [the shape](../architecture.md#the-shape) says).
@@ -409,8 +410,8 @@ design needs of its object store
     its own; the route that gives the front server its log lines, and its new log lines.
   - The rules of
     [Old and new versions together](../architecture.md#old-and-new-versions-together)
-    that phase 2 does not build: a format number on each record in the state bucket, and
-    an installed daemon kept working.
+    that phase 2 does not build: a format number on each record in the state bucket.
+    (Its rule for an installed daemon applies from phase 5.)
   - The command that reads the log bucket, the check that runs after each deploy, and the
     hosting itself, which is new.
 - **First, what Railway does at a deploy,** since the standing requirement on deploys
@@ -478,7 +479,8 @@ H2S. Daemon telemetry is part of this phase and is not designed.
   signs everyone in, so it is for tests on one machine only, with the relay and the daemon
   on the same computer; a relay the daemon reaches from another machine is the hosted front server of this phase. An agent prepares the print started by the daemon as a written walk and
   tries it against the simulated printer first.
-- **Already settled by the architecture:** pairing with a code used once and how often a
+- **Settled by the architecture, apart from the items awaiting the owner
+  ([Where things stand](#where-things-stand)):** pairing with a code used once and how often a
   daemon talks to the relay ([Printers](../architecture.md#printers)), what a restart of
   the front server does to a print
   ([What a restart does](../architecture.md#what-a-restart-does)), and how the relay's

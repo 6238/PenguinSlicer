@@ -131,7 +131,7 @@ one printer) is paired with one daemon. Everything below is phase 5; the message
 pairing exchange and what daemon telemetry holds are left to phase 5's own design spec.
 
 - **Pairing with a code a user types once.** The daemon makes a code and a **daemon id**
-  (a random id it keeps), and offers both every 30 s; a user types the code, the relay
+  (a random id it keeps), and offers both every 30 s; a user of the group types the code (which user, and from where, is not yet confirmed by the owner: [1.6](../wizard/README-details.md#16-who-pairs-the-printer-and-where)), the relay
   writes a **paired-printer record** (one per group, in the state bucket, the store that
   outlasts a restart), and the daemon's next offer gets its token. The code is good for
   15 minutes and used once. This replaces the lasting code the caller presents.
