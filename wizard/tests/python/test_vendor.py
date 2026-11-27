@@ -1,0 +1,36 @@
+"""Every file in wizard/vendor/ is listed in wizard/vendor/README.md with its SHA-256, under a
+licence MIT code may include, and nothing listed is missing."""
+import hashlib
+import re
+from pathlib import Path
+
+VENDOR = Path(__file__).resolve().parents[2] / "vendor"
+ROW = re.compile(r"^\| `([^`]+)` \| ([^|]+) \| ([^|]+) \| `([0-9a-f]{64})` \|$")
+ALLOWED = {"MIT", "BSD-2-Clause", "BSD-3-Clause", "Apache-2.0"}
+
+
+def listed():
+    rows = [ROW.match(line) for line in (VENDOR / "README.md").read_text().splitlines()]
+    return {m.group(1): (m.group(2).strip(), m.group(3).strip(), m.group(4)) for m in rows if m}
+
+
+def test_every_vendored_file_is_listed_and_every_listed_file_is_there():
+    present = sorted(str(p.relative_to(VENDOR)) for p in VENDOR.rglob("*") if p.is_file() and p.name != "README.md")
+    assert present == sorted(listed())
+
+
+def test_each_vendored_file_has_its_listed_hash():
+    for path, (_, _, sha256) in listed().items():
+        assert hashlib.sha256((VENDOR / path).read_bytes()).hexdigest() == sha256, path
+
+
+def test_each_vendored_file_is_under_a_licence_mit_code_may_include():
+    for path, (_, licence, _) in listed().items():
+        assert licence in ALLOWED, f"{path}: {licence}"
+
+
+def test_three_js_is_the_listed_release():
+    head = (VENDOR / "three" / "build" / "three.module.min.js").read_text()[:200]
+    versions = {version for version, _, _ in listed().values() if version.startswith("three.js")}
+    assert versions == {"three.js 0.170.0"}
+    assert 'const t="170"' in head
