@@ -31,7 +31,7 @@ machine a folder stands in for each, behind the same interface.
 
 | Store | What the front server keeps there | For how long |
 |---|---|---|
-| The **state bucket** | Each group's configuration; the sliced files; from phase 5, the records printer delivery keeps (below) | A sliced file, two hours after its slice ended (longer while a delivery job needs it, from phase 5; this may change: an item awaits the owner's choice, [1.1 of the wizard's guide](../wizard/README-details.md#11-sending-the-same-plate-again-after-a-long-print)); a configuration, until edited |
+| The **state bucket** | Each group's configuration; the sliced files; from phase 5, the records printer delivery keeps (below) | A sliced file, until two hours after its slice ended or two hours after its last print ended (from phase 5), whichever is later; a configuration, until edited |
 | The **log bucket** | Log lines of the front server, the slice service and, from phase 5, the relay, and daemon telemetry | Ninety days |
 
 More: [The bucket interface](README-details.md#the-bucket-interface).
@@ -92,8 +92,9 @@ More: [Onshape sign-in](README-details.md#onshape-sign-in), [The cookie](README-
    open or not, then stores the sliced file in the state bucket; the slice container
    deletes its own copy.
 5. **The user previews and downloads** the state bucket's copy, through the front server,
-   for two hours after the slice ended; past that the front server refuses and deletes it,
-   and a one-day rule at R2 catches any it missed (such a file rests up to about two days).
+   until two hours after the slice ended or after its last print ended, whichever is later;
+   past that the front server refuses and deletes it, and a one-day rule at R2 catches any
+   it missed (such a file rests up to about two days after it falls due).
 
 More: [Parts and slice jobs](README-details.md#parts-and-slice-jobs-passed-to-the-slice-service), [Two hours](README-details.md#two-hours-deleting-and-the-backstop).
 
@@ -104,7 +105,7 @@ Its records are each group's paired-printer record, which names its daemon (the 
 beside a printer), and one record for each **delivery job**, one sliced file on its way to
 a printer. The front server does three things for the relay: it tells it who is asking
 (the user and the current group); it keeps its records in the state bucket; and it gives
-it the sliced file, kept past its two hours while a delivery job needs it.
+it the sliced file, kept until two hours after its last print ended if that is later.
 
 A daemon reports with a **sync**, a request carrying the printer's status. The relay holds
 back its answer to an idle daemon's sync for up to 55 seconds, so that a send reaches the
@@ -131,14 +132,13 @@ More: [Which routes need a signed-in user](README-details.md#which-routes-need-a
 
 ## The configuration
 
-A group's **configuration** (its filaments and the units of uploaded files, no secret) is
-one JSON document in the state bucket, read and written whole, in the shape of
-[its contract](../contracts/configuration.md). A group with no document gets a built-in
-default, so a new group can slice at once. An edit is written only if the document has not
-changed since it was read, so of two users editing at once the second is told to reload.
-Every edit writes a log line with the user's name and what changed. Three changes are
-recommended, not yet confirmed by the owner: no colour for each filament, the printer's
-Orca profile, each profile's own name and purpose ([its contract](../contracts/configuration.md#recommended-needing-the-owners-yes)).
+A group's **configuration** (its filaments, each with a colour shown where a user chooses
+it and with its profiles under the group's own names; the printer's Orca profile, which
+gives the plate's size; the units of uploaded files; no secret) is one JSON document in
+the state bucket, read and written whole ([its contract](../contracts/configuration.md)).
+A group with no document gets a built-in default, so a new group can slice at once. An
+edit is written only if the document has not changed since it was read, so of two users
+editing at once the second is told to reload. Every edit is logged with who and what.
 
 More: [The configuration](README-details.md#the-configuration).
 
@@ -160,8 +160,8 @@ The project is deployed continuously. Starting, the front server asks the slice 
 its slice jobs, follows the unfinished ones and stores each finished one's sliced file not
 yet stored. Asked to stop, it finishes uploads and downloads in progress, closes its
 progress streams and answers held syncs, so pages and daemons reconnect to its replacement;
-the page retries, so a user sees a pause (this may change: an item awaits the owner's
-choice, [1.9](../wizard/README-details.md#19-retrying-then-an-error-after-20-seconds)).
+the page retries, so a user sees nothing for 20 seconds, then a message that the server
+is slow with a countdown, and an error only after 300 seconds.
 Every answer carries its version; a page that sees a newer one reloads when nothing is in flight.
 
 More: [Stopping](README-details.md#stopping), [The version on every answer](README-details.md#the-version-on-every-answer).

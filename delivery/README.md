@@ -131,7 +131,7 @@ one printer) is paired with one daemon. Everything below is phase 5; the message
 pairing exchange and what daemon telemetry holds are left to phase 5's own design spec.
 
 - **Pairing with a code a user types once.** The daemon makes a code and a **daemon id**
-  (a random id it keeps), and offers both every 30 s; a user of the group types the code (which user, and from where, is not yet confirmed by the owner: [1.6](../wizard/README-details.md#16-who-pairs-the-printer-and-where)), the relay
+  (a random id it keeps), and offers both every 30 s; any signed-in user of the group types the code, from any computer, the relay
   writes a **paired-printer record** (one per group, in the state bucket, the store that
   outlasts a restart), and the daemon's next offer gets its token. The code is good for
   15 minutes and used once. This replaces the lasting code the caller presents.
@@ -147,8 +147,8 @@ pairing exchange and what daemon telemetry holds are left to phase 5's own desig
   40 seconds, replacing 20 s.
 - **Records of delivery jobs in a store the caller supplies**, kept a day after the job
   ends, holding whether the start was allowed: a front server restart loses no job.
-- **The sliced file taken from that store**, with no copy of the relay's own; the oldest
-  file sent rises from 40 minutes to two hours (this may change: an item awaits the owner's choice, [1.1](../wizard/README-details.md#11-sending-the-same-plate-again-after-a-long-print)).
+- **The sliced file taken from that store**, no copy of the relay's own, sent until two
+  hours after its slice or its last print ended, whichever is later (as built, 40 min).
 - **Two secret keys and a new token**, so the relay's secret key can be replaced without
   pairing again: a daemon that syncs within a week of the replacement is given a new
   token, and one switched off for that whole week must be paired again.
@@ -160,10 +160,10 @@ pairing exchange and what daemon telemetry holds are left to phase 5's own desig
   Onshape id); the line ending a delivery job gives how long the file took to reach the
   printer, how long the print ran, and how it ended. Daemon telemetry carries the
   daemon's errors.
-- **What the wizard's mockup needs**: who sent a delivery job, a one-line description of
-  the plate, when it ended and, for a failure, the layer it stopped at; and a way for a
-  page that lost its state to find its user's live delivery job and last print. How the
-  relay gives these is to be settled in phase 5's design spec.
+- **What the wizard needs**: who sent a delivery job, a one-line description of the
+  plate, when it ended and, for a failure, its layer; a page's way to find its user's live
+  delivery job and last print; and the time a daemon went offline, written once to the
+  paired-printer record, so it survives a restart.
 
 Deeper: [To be built](README-details.md#to-be-built).
 

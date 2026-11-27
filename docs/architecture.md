@@ -18,13 +18,6 @@ full explanation:
 | The slice service | [slice/README.md](../slice/README.md) |
 | Printer delivery: the relay and the daemon | [delivery/README.md](../delivery/README.md) |
 
-Fifteen items where the wizard's approved mockup and this design differ await the owner:
-three need the owner's choice and twelve only the owner's yes. Each is set out in
-[the wizard's detailed guide](../wizard/README-details.md#where-the-mockup-and-the-design-differ).
-Where this document touches one, it states the design as it stands for the three, saying
-it may change, and the recommendation, marked not yet confirmed by the owner, for the
-twelve.
-
 Most of this design is not built yet. Each guide says what of its component is built,
 and [the plan](plans/penguin-slicer-plan.md) says which phase builds the rest. The design
 was approved by the owner on Thu 2026-11-26, Pacific time, as
@@ -43,7 +36,8 @@ each decision made there now lives.
   container** runs one slice service process and is reachable only from the front server.
 - **The browser holds the user's parts and layout,** in its own storage. The slice
   container keeps a copy of each part for two hours after its last use, and the state
-  bucket keeps each sliced file for two hours after its slice.
+  bucket keeps each sliced file until two hours after its slice ended or two hours after
+  its last print ended, whichever is later.
 - **What must last is in two object stores.** The state bucket holds each group's
   configuration and paired-printer record (which daemon is the group's), the sliced
   files, and a record of each delivery job. The log bucket holds log lines.
@@ -82,7 +76,7 @@ server** and **wizard** are the plan's too, repeated here with what the hosted d
 | **slice container** | The container on Railway that runs one slice service process and nothing else. |
 | **state bucket** | The object store that holds everything that must outlast a restart of the front server: each group's configuration and paired-printer record, the sliced files, and a record of each delivery job. |
 | **log bucket** | The object store that holds log lines and daemon telemetry as files. |
-| **paired-printer record** | One small document per group in the state bucket: the id of the group's daemon, the printer's display name, who paired it and when, which of the relay's secret keys the daemon's token was last issued under, and, until the daemon has its token, a hash of the pairing code. |
+| **paired-printer record** | One small document per group in the state bucket: the id of the group's daemon, the printer's display name, who paired it and when, which of the relay's secret keys the daemon's token was last issued under, the time the daemon last went offline, and, until the daemon has its token, a hash of the pairing code. |
 | **daemon id** | A random id a daemon makes for itself when its `pair` command is run, and keeps. It names the daemon in its token, in the paired-printer record and in the relay's memory. |
 | **progress stream** | The connection, of server-sent events, on which a page follows a slice job or a delivery job. |
 | **part store** | The slice service's folder of uploaded parts, each kept for two hours after it was last used. It is a cache: the browser's storage is the record of a user's parts. |
@@ -210,15 +204,14 @@ never stores or uploads a sliced file, so a printer only ever receives a file th
 service made. A sliced file is 8.8 to 14.1 MB on the plates measured so far, so each
 fetch by a browser or a daemon is small against the 100 MB Cloudflare allows.
 
-A sliced file is kept for two hours after its slice ended, which the front server
-enforces. This may change: an item awaits the owner's choice
-([item 1.1](../wizard/README-details.md#11-sending-the-same-plate-again-after-a-long-print)).
-That the two hours start when the slice ended is not yet confirmed by the owner
-([item 1.4](../wizard/README-details.md#14-when-the-two-hours-start)).
-R2's own rule for deleting old files counts in whole days and removes a file
+A sliced file is kept until two hours after its slice ended or two hours after its last
+print ended, whichever is later, which the front server enforces. Its last print ended
+when the latest delivery job that used it ended, so Send is enabled again for the same
+sliced plate after a print of any length. R2's own rule for deleting old files counts in
+whole days and removes a file
 typically within 24 hours after it falls due, so it cannot enforce two hours; a one-day
 rule on the sliced files is set as well, to catch any file the front server failed to
-delete, and such a file can rest at R2 for up to about two days. How the front server
+delete, and such a file can rest at R2 for up to about two days after it falls due. How the front server
 follows slice jobs, and the rules for keeping and
 deleting sliced files, are in [the front server's guide](../front/README.md).
 
@@ -229,23 +222,20 @@ through a refresh, a dropped connection or a closed laptop lid. A page that has 
 state reads its plate and the id of the plate's slice job from the browser's storage and
 asks the front server about that slice job; what it does with each answer is in
 [the wizard's guide](../wizard/README.md). A user has one unfinished slice job at a
-time. Work does not follow a user to another computer or browser. That a refresh keeps
-the work and that it stays in one browser are not yet confirmed by the owner (items
-[1.2](../wizard/README-details.md#12-what-a-refresh-keeps) and
-[1.3](../wizard/README-details.md#13-finding-a-slice-job-after-a-refresh)).
+time. A refresh keeps the work, since it is in the browser's storage, and work does not
+follow a user to another computer or browser.
 
 ### The configuration
 
 A group's configuration is one JSON document in the state bucket, read whole and written
-whole, holding the group's filaments with the profiles to slice with and the units of
-uploaded files, and no secret. An edit is written on the condition that the document has
+whole, holding the group's filaments (each with a colour, which the wizard shows where the
+user chooses a filament and never uses in the layer preview, and with its profiles, each
+under the group's own name and purpose), the printer's Orca profile (from which the
+plate's size and height come) and the units of uploaded files, and no secret. An edit is written on the condition that the document has
 not changed since it was read, so two users cannot silently overwrite each other. A
 group with no document gets a built-in default configuration. Reading and writing it are
 in [the front server's guide](../front/README.md); what it must hold is in
-[its contract](../contracts/configuration.md), whose fields are not written yet. Three
-changes to what it holds are recommended, not yet confirmed by the owner: no colour for
-each filament, the printer's Orca profile, and each profile's own name and purpose
-([its contract](../contracts/configuration.md#recommended-needing-the-owners-yes)).
+[its contract](../contracts/configuration.md), whose fields are not written yet.
 
 ## Sign-in
 
@@ -267,8 +257,8 @@ against requests from other sites, is in
 ## Printers
 
 A group is linked to the daemon beside its printer by pairing: any signed-in user of the
-group types the pairing code the daemon shows into PenguinSlicer, once (not yet confirmed
-by the owner: [item 1.6](../wizard/README-details.md#16-who-pairs-the-printer-and-where)), and the relay writes the group's
+group types the pairing code the daemon shows into PenguinSlicer, once, from any computer,
+and the relay writes the group's
 paired-printer record to the state bucket and gives the daemon its token, after which the
 code is dead and a daemon switched off for any length of time reconnects with no pairing
 again. The daemon opens no port, so everything passes through the sync, and while the
@@ -276,6 +266,9 @@ printer is idle the relay holds its answer for up to 55 seconds (the held wait),
 idle daemon costs about one request a minute and a send still reaches it at once. During
 a print the daemon syncs every 10 seconds; the printer-status icon shows Offline after 2
 minutes without a sync, and a running delivery job's report is stale after 40 seconds.
+When a daemon goes offline the relay notes the time in the paired-printer record, one
+write at that moment, so the wizard can say how long a printer has been silent even after
+a restart of the front server.
 
 Pairing, sending and unpairing, the syncs and every limit are in
 [printer delivery's guide](../delivery/README.md), and in full in its
@@ -366,9 +359,9 @@ file is described under
 | Uploaded parts | The part store, in the slice container | Two hours after last use | Gone; the page uploads them again, unasked |
 | Slice jobs | The slice service process's memory | Until two hours after the slice ends | Gone; the page submits a waiting or running plate again, unasked, and a finished one is known by its sliced file |
 | A sliced file not yet collected | The slice container's disk | The moments until the front server has stored it | Gone; that slice runs again |
-| Sliced files | The state bucket | Two hours after the slice ended, or until the daemon has fetched one a delivery job needs | Kept |
+| Sliced files | The state bucket | Until two hours after the slice ended or two hours after its last print ended, whichever is later | Kept |
 | Configuration | The state bucket, one document per group | Until edited | Kept |
-| Paired-printer record | The state bucket, one per group | Until unpaired | Kept |
+| Paired-printer record, with the time its daemon last went offline | The state bucket, one per group | Until unpaired; the time is written once each time the daemon goes offline | Kept |
 | Delivery jobs | The state bucket, one record each | Until a day after the delivery job ends | Kept |
 | Printer status and the progress of a print | The relay's memory | Until the next sync replaces them | Gone; the daemon's next sync brings them back, within seconds |
 | Pairing codes that daemons are offering | The relay's memory | Fifteen minutes at most, while the daemon keeps offering | Gone; back within half a minute, as each daemon offers again |
@@ -431,9 +424,11 @@ A crash gets the treatment above. A deploy is planned, so it can do better.
   container stops is submitted again by its page.
 - **Every client retries.** The daemon waits and tries again when the relay does not
   answer. The page does the same for every request it makes, so a request that falls in
-  the gap is repeated and the user sees a pause, not an error. This may change: an item
-  awaits the owner's choice
-  ([item 1.9](../wizard/README-details.md#19-retrying-then-an-error-after-20-seconds)).
+  the gap is ridden out by retrying. A user sees nothing if the gap is under 20 seconds,
+  a message that the server is being slow and the browser is retrying, with a countdown
+  to the next attempt, if it is longer, and an error only after 300 seconds; nothing of
+  the user's work is dropped
+  ([the wizard's guide](../wizard/README-details.md#retrying-every-request)).
 
 ### Old and new versions together
 
@@ -470,8 +465,9 @@ from, as well as for the whole relay, so one stranger cannot use up the offers o
 everyone.
 
 **Users' models.** Outside the browser, a part exists only in the slice container, for
-two hours after its last use. A sliced file is in the state bucket at Cloudflare R2 for two
-hours after its slice, or up to about two days if the front server fails to delete it
+two hours after its last use. A sliced file is in the state bucket at Cloudflare R2 until two
+hours after its slice ended or two hours after its last print ended, whichever is later,
+or up to about two days after that if the front server fails to delete it
 (see [The sliced file](#the-sliced-file)). The bucket is private: the front server's
 credential reads it, and otherwise only the owner. A user reaches only their own parts, slice jobs and
 sliced files: the front server sets the user key from the cookie and the browser cannot
@@ -595,5 +591,5 @@ Each of these is believed and not yet checked.
   month with a few slices a day. About $40 a month is the figure for 5,000 slices and
   1,000 daemons, which also needs the asynchronous server listed in
   [the plan](plans/penguin-slicer-plan.md#known-future-work). The
-  buckets hold two hours of sliced files and some small records, and cost cents. The
+  buckets hold a few hours of sliced files and some small records, and cost cents. The
   first month's bill settles it.

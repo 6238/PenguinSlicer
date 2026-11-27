@@ -1,7 +1,8 @@
 # PenguinSlicer
 
-PenguinSlicer takes parts, lays them out on a printer's plate, slices them with Orca on a
-server and sends the sliced file to the printer.
+PenguinSlicer is 3D printing from Onshape: it takes parts, lays them out on a printer's
+plate, slices them with Orca on a server and sends the sliced file to the printer. Its
+first users are FRC teams, and it is not limited to them.
 
 Where the work stands and what comes next is in [the plan](docs/plans/penguin-slicer-plan.md).
 How the components fit together when hosted is in [the architecture](docs/architecture.md).

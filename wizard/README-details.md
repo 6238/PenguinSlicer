@@ -2,10 +2,9 @@
 
 Nothing of the wizard is built. This document is its design, written for whoever builds
 it, and it is begun, not complete. What is here: everything
-[the architecture](../docs/architecture.md) asks of the code in the browser; where the
-wizard's approved mockup and the approved design disagree, with a recommended resolution
-for each; what the mockup shows that needs something from the server; and the screens the
-design needs that the mockup does not show. What is still to be written: the steps a user
+[the architecture](../docs/architecture.md) asks of the code in the browser; where this
+guide departs from the wizard's approved mockup; and the screens the design needs that
+the mockup does not show. What is still to be written: the steps a user
 sees (every screen, message and decision of the Parts, Settings, Layout, Preview and Send
 steps and of the printer-status icon), from
 [the mockup's decisions](../docs/mockups/print-wizard/DECISIONS.md); see
@@ -51,8 +50,7 @@ approved by the owner does not fix them, and the phase's design spec settles the
 - [Storage inside Onshape's panel, and storage in a tab](#storage-inside-onshapes-panel-and-storage-in-a-tab)
 - [Browsers supported](#browsers-supported)
 - [By phase](#by-phase)
-- [Where the mockup and the design differ](#where-the-mockup-and-the-design-differ)
-- [What the mockup shows that needs something from the server](#what-the-mockup-shows-that-needs-something-from-the-server)
+- [Where this guide departs from the mockup's decisions](#where-this-guide-departs-from-the-mockups-decisions)
 - [Screens the design needs that the mockup does not show](#screens-the-design-needs-that-the-mockup-does-not-show)
 - [Still to be written](#still-to-be-written)
 
@@ -100,7 +98,12 @@ The page keeps there:
 | The id of the plate's slice job, and the time the page submitted it | The same |
 | The current group | The user changes it |
 
-[D336] No restart of the front server or the slice container touches any of it.
+[D336] No restart of the front server or the slice container touches any of it. So a
+refresh, a closed and reopened panel or a reload brings back the parts, the layout and
+the chosen settings, with every change made on the Settings step or in advanced mode; a
+reload that dropped them would lose work at every deploy, since the page reloads itself
+after each one. What lives only in the page's memory, such as which of advanced mode's
+sections are open, starts afresh.
 [D203: these lifetimes are the first row of the architecture's
 [table of all the state](../docs/architecture.md#all-the-state-in-one-table).]
 
@@ -134,10 +137,13 @@ page that hash, which the page keeps beside the part.
 The slice service runs its checks on the part as it arrives, so a part that cannot be
 sliced is refused on the Parts step, before the user has laid anything out
 ([the slice service](../slice/README.md)). [D74] The page shows the refusal as a
-notification and does not add the part, as the mockup does (not yet confirmed by the
-owner: [item 1.8](#18-a-part-that-cannot-be-used), where the design's own row for the
-refused part is set out beside it).
+notification naming the part and does not add the part, as it does for a part Onshape
+cannot export and for a file that cannot be read, so the list holds only usable parts.
 (*Proposed*:) a part larger than 7.5 MB is refused by the slice service before it is read.
+
+A part whose upload gets no answer is not refused: the page retries it
+([Retrying every request](#retrying-every-request)), and its row stays in the list, since
+the part is in the browser's storage from the moment it is added.
 
 ## Submitting a plate configuration
 
@@ -200,10 +206,19 @@ restart rule below and does not say which wins: a page opened more than two hour
 it submitted treats an unknown slice job as expired even when a restart of the slice container, not
 age, made it unknown.
 
-From phase 5, a returning page whose plate has a delivery job opens on the Send step.
-[D107] The mockup opens the Send step only while that delivery job is running; that is
-[item 1.10](#110-where-a-returning-page-opens-after-its-print-ended), and the
-recommendation is the design's.
+From phase 5, a returning page whose plate has a delivery job, running or ended, opens on
+the Send step, for as long as its plate is still in the browser's storage. [D107] For a
+print that finished it shows the last-print note there ("Your print finished at
+11:25 am."); for one that failed, the failure on the card; and Send is enabled again for
+the same sliced plate while its sliced file is kept ([The sliced file](#the-sliced-file)).
+A page that reloads itself after a deploy is a returning page, so this keeps a user on
+the step they were on. The page finds its user's delivery job and last print by asking
+the front server ([Printers, from phase 5](#printers-from-phase-5)), since the browser's
+storage holds no delivery job's id. (*Proposed*:) this comes before the table's last row: a page whose
+plate has a delivery job does not treat its slice job as expired by the time it kept,
+since a print keeps the sliced file two hours past the print's end; it drops the plate
+only once the front server reports the sliced file expired. Once the plate is gone from
+the browser's storage, the page opens on the Parts step.
 
 A slice container that restarts while a slice waits or runs loses that slice job: an open
 page uploads its parts again from the browser's storage and submits the same plate,
@@ -212,12 +227,13 @@ its submission; later, the page treats the plate as expired (above)
 ([the architecture](../docs/architecture.md#what-a-restart-does)). [D217]
 
 Work does not follow a user to another computer or browser: there the wizard opens empty.
-[D108] The same holds between Onshape's panel and a tab
+[D108] The parts and the layout live only in one browser's storage, so another browser
+could not show or change the plate's layout, and the front server needs no lookup of a
+slice job by user. The same holds between Onshape's panel and a tab
 ([Storage inside Onshape's panel, and storage in a tab](#storage-inside-onshapes-panel-and-storage-in-a-tab)).
 
 Which step a page with stored parts and no slice job opens on (a refresh on the Settings
-or the Layout step) is written with the steps; see
-[item 1.2](#12-what-a-refresh-keeps).
+or the Layout step) is written with the steps.
 
 ## Following progress, and reconnecting
 
@@ -263,6 +279,9 @@ The mockup shows the timeout and no out-of-memory message
 ([screen 3.12](#screens-the-design-needs-that-the-mockup-does-not-show)). How each error
 reads is written with the steps.
 
+There is no "plate too large" error: no limit caps a plate's volume. A plate too big to
+slice ends in `slice.out_of_memory`.
+
 ## Retrying every request
 
 **The page retries every request it makes,** so a request that falls in the gap of a
@@ -279,12 +298,26 @@ service did not answer ([the contract](../contracts/wizard-front-server.md#submi
 (*Proposed*:) every request is safe to repeat; the contract requires it
 ([the contract](../contracts/wizard-front-server.md#every-request-and-every-answer)).
 
-How long the page keeps retrying before it shows an error is
-[item 1.9](#19-retrying-then-an-error-after-20-seconds), which needs the owner's choice. The
-mockup's decision 17, for a part being added: "Taking longer than usual; still trying…"
-after 4 seconds, and after 20 seconds of failed retries a notification that the part was
-not added. While the server cannot be reached, Cancel slice is disabled, with one line
-saying the slice may still be running (decision 31).
+**How long the page retries, and what it shows.**
+
+- The page retries a request that fails or gets no answer, quietly at first.
+- After 20 seconds of failed retries it shows a message saying the server is being slow
+  and the browser is retrying, with a countdown to the next attempt (as Gmail's
+  "retrying in 28s" does). So the waits between attempts grow, to leave something to
+  count down. (*Proposed*:) the waits double from one second up to thirty seconds, and the
+  message reads "The server is being slow. Your browser is retrying in 28 s."
+- It keeps retrying for up to 300 seconds in all.
+- After 300 seconds it stops, tells the user the server could not be reached, and offers
+  to try again. (*Proposed*:) the message reads "The server could not be reached.", and
+  the action is named Try again. Nothing of the user's work is dropped: the parts, the
+  layout and the chosen settings stay in the browser's storage, and a part whose upload
+  stopped keeps its row, with Try again.
+
+(*Proposed*:) these times cover every request a user waits on: adding a part, submitting a
+plate, fetching a sliced file (the preview or the download), sending, cancelling. A
+progress stream is not one: its reconnecting is never shown. While the server cannot be
+reached, Cancel slice is disabled, with one line saying the slice may still be running
+(the mockup's decision 31).
 
 ## Reloading on a newer version of the front server
 
@@ -342,9 +375,34 @@ What the header looks like with a choice of groups, and with "sign in again" bes
 
 ## The configuration
 
-A group's **configuration** holds its filaments, each with its own profiles, and the units
-of uploaded files ([its contract](../contracts/configuration.md)). The front server reads
-it when a user signs in and again when the wizard asks. An edit writes the whole document
+A group's **configuration** holds its filaments, each with a colour and its own profiles,
+the printer's Orca profile, and the units of uploaded files
+([its contract](../contracts/configuration.md)). The page always uses the current
+group's configuration, read through the front server, never one opened from a link: a
+link would bypass the check of the current group against the sign-in cookie. The front
+server reads it when a user signs in and again when the wizard asks.
+
+What the wizard takes from it:
+
+- **The plate's size and height.** The Layout step's line "Shop H2S: plate 340 × 320 mm,
+  up to 340 mm tall, 12 mm apart", Arrange and the placement check (3 mm inside the edge,
+  within the height) use the plate's size and height from the printer's Orca profile (its
+  `printable_area` and `printable_height`), the same profile the slice service slices
+  for, which the plate configuration names as its `printer`. The printer's display name
+  comes from the paired-printer record. A group with no configuration document gets the
+  built-in default, the H2S profile. The spacing, 12 mm with supports on and 5 mm off, is
+  the plate configuration's ([its limits](../contracts/plate-configuration.md#limits)).
+- **Profiles by the group's own names.** The Settings step offers each filament's
+  profiles by the names the configuration gives them ("Structural, Pulley, Camera
+  mount") and shows each profile's purpose as its option's tooltip.
+- **A colour for each filament,** shown where the user chooses a filament, so that two
+  filaments of one material (a red PLA and a green PLA) can be told apart. The layer
+  preview never uses it: it draws every plate in four fixed colours, one for each set of
+  line types, whatever the filament (walls blue `#2b5c9e`, infill orange `#e0912f`, top
+  and bottom surfaces green `#2f9e7a`, supports and brim violet-grey `#9a8fb8`), chosen
+  to stay apart in every common kind of colour blindness.
+
+ An edit writes the whole document
 on the condition that it has not changed since it was read, so two users editing at once
 cannot silently overwrite each other; the second is told to reload
 ([the front server](../front/README.md)). [D115] The configuration's edit screens are a
@@ -357,26 +415,36 @@ feature of their own, in no phase yet, with a design spec of their own
 The state bucket's copy of a sliced file is the one everything uses: the browser fetches
 it through the front server to draw the Preview step and to offer the download, and on Send
 the relay hands it to the daemon ([the front server](../front/README.md)). [D85] A sliced
-file can be previewed, downloaded, sent, and sent again after a print, for two hours after
-its slice ended; past that the front server refuses it with an error report saying it has
-expired ([the front server](../front/README.md)). [D91] When the two hours start, and
-whether a long print extends them, are
-[item 1.4](#14-when-the-two-hours-start) and
-[item 1.1](#11-sending-the-same-plate-again-after-a-long-print). A sliced file is 8.8 to
-14.1 MB on the plates measured so far.
+file can be previewed, downloaded, sent, and sent again after a print, until two hours
+after its slice ended or two hours after its last print ended, whichever is later; past
+that the front server refuses it with an error report saying it has expired
+([the front server](../front/README.md)). [D91] Its last print ended when the latest
+delivery job that used it ended. So after a print of any length, whether it finished or
+failed, Send is enabled again for the same sliced plate, and a user whose long print
+failed at the last layer can send it again at once. The two hours count from when the
+slice ended, which the front server knows from the time stored with the sliced file, not
+from when the user left the page. A sliced file is 8.8 to 14.1 MB on the plates measured
+so far.
 
 ## Printers, from phase 5
 
 The Send step and the printer-status icon show what [printer delivery](../delivery/README.md)
 reports through the front server. What the design fixes:
 
-- **Pairing.** A signed-in user types the pairing code the daemon shows into PenguinSlicer.
-  When no daemon is offering the typed code, the user is told at once that no daemon is
+- **Pairing.** Someone runs the daemon's `pair` command on the daemon's computer; then
+  any signed-in user of the group types the code it shows into PenguinSlicer, from any
+  computer. With no printer paired, the Send step offers the field for the code, and its
+  message says that any user of the group can pair the printer, since nothing
+  distinguishes one user of a group from another. When no daemon is offering the typed code, the user is told at once that no daemon is
   showing that code and to try again in a moment; every wrong code gets that one answer
   ([printer delivery](../delivery/README-details.md#pairing)). [D151]
 - **Offline.** While the daemon is silent (no sync within 2 minutes) the printer-status
   icon shows Offline and Send is disabled; the daemon's first sync puts both back
-  ([printer delivery](../delivery/README.md)). [D163]
+  ([printer delivery](../delivery/README.md)). [D163] An offline printer's details say
+  how long it has been silent ("Not heard from for 7 minutes."), and so does the Send
+  step. The relay notes the time in the paired-printer record when a daemon goes offline,
+  one write at that moment, and the printer's status returns it, so the duration is true
+  even after a restart of the front server.
 - **A printing printer.** The relay refuses a send to a printer that is printing, whether
   PenguinSlicer sent the print or someone started it at the printer's own screen
   ([printer delivery](../delivery/README-details.md#how-often-a-daemon-talks-to-the-relay)). [D174]
@@ -391,9 +459,23 @@ reports through the front server. What the design fixes:
 - **Names.** Users of one group see each other's names and a one-line description of a
   plate that is printing, on the printer-status icon
   ([the architecture](../docs/architecture.md#security)). [D251]
-
-What the mockup shows beyond these needs fields printer delivery does not yet send; see
-[What the mockup shows that needs something from the server](#what-the-mockup-shows-that-needs-something-from-the-server).
+- **Who sent a print, what it is, and how the last one ended.** The printer details and
+  the busy printer's card say who sent the print ("Sent by Alex Chen") and what it is
+  ("8 instances of Gusset Plate"); the printer details say "Last print finished 11:25 am
+  (Alex Chen)" and, for a failure, when it stopped and at which layer. So a delivery
+  job's record carries the sender's display name, a one-line description of the plate,
+  the time the delivery job ended and, for a failure, its layer, and the printer's status
+  returns them, from the relay through the front server
+  ([printer delivery](../delivery/README-details.md#from-the-wizards-mockup)). Who writes the one-line
+  description (the page with its send, or the front server from the plate configuration)
+  is settled when the contract's routes are written.
+- **The user's own delivery job and last print.** A returning page reopens the Send step
+  with live progress, reports a failed print and shows the last-print note
+  ([What a returning page does](#what-a-returning-page-does)). The browser's storage holds
+  a slice job's id and no delivery job's, so the page asks the front server for the
+  signed-in user's live delivery job and that user's last print, which the relay keeps
+  ([the contract](../contracts/wizard-front-server.md#printers-from-phase-5); its routes
+  are not written yet).
 
 ## Storage inside Onshape's panel, and storage in a tab
 
@@ -427,356 +509,35 @@ header, checked from then on, in phase 3, as
 | 4, inside Onshape | The wizard in Onshape's panel, with parts read from Onshape; its storage kept apart from a tab's |
 | 5, the real printer | The Send step and the printer-status icon: pairing, sending, cancelling, "stop following", unpairing, and the returning page on the Send step |
 
-## Where the mockup and the design differ
+## Where this guide departs from the mockup's decisions
 
-[The comparison of the mockup with the design](../docs/orchestration/hosted-architecture/mockup-against-design.md)
-found eleven places where a decision of the mockup and a statement of the design cannot
-both be true. The numbers 1.1 to 1.11 here, and 2.1 to 2.6 and 3.1 to 3.12 below, are
-those of the comparison's sections; "decision 40" and "M18" are a numbered decision and a
-question of the mockup's decisions. Each entry gives what the mockup's decision says, what
-the design says, what a user would see under each, the recommendation with its reason,
-and its status.
+Whoever writes the steps from [the mockup's decisions](../docs/mockups/print-wizard/DECISIONS.md)
+follows this guide where the two differ, in these places:
 
-A status is one of two:
-
-- **Needs the owner's choice:** each answer costs something the owner must weigh (stored
-  bytes and a change to two components' rules, a design rule against a user's need for an
-  answer, a new write to a stored record), so the recommendation is one reasonable answer
-  among others. Items 1.1 and 1.9, and item 2.4 below.
-- **Needs the owner's yes:** the recommendation follows from the design's own rules or the
-  owner's earlier instructions, and the owner has only to confirm it. Every other item.
-
-### 1.1 Sending the same plate again after a long print
-
-- **The mockup, decision 40:** a failed print says so; a finished one leaves the
-  last-print note. "Either way Send is enabled again for the same sliced plate."
-- **The design:** a sliced file can be previewed, downloaded, sent and sent again after a
-  print "for two hours after its slice ended"; the front server refuses an older one and
-  deletes it.
-- **What a user sees under the mockup:** after any print, Send is enabled for the same
-  plate.
-- **What a user sees under the design, with a wizard that follows it:** after a print that
-  ended within two hours of the slice, Send is enabled for the same plate. After a print
-  longer than that (an H2S print of a full plate often is), Send is disabled with the
-  message that the sliced file has expired and an offer to slice the plate again; the
-  parts and layout are still in the browser's storage, so it costs the user one slice and
-  its wait. (A wizard that followed the mockup's words under the design's rule would show
-  an enabled Send for a file already deleted, and the send would fail; neither side asks
-  for that.)
-- **Recommended:** a sliced file lives until two hours after its slice or two hours after
-  its last print ended, whichever is later. The mockup's promise then holds for two hours
-  after every print (after that, [screen 3.3](#screens-the-design-needs-that-the-mockup-does-not-show)
-  applies), and a user whose long print failed at the last layer can send it again at
-  once. It costs one sliced file (8.8 to 14.1 MB on the plates measured) kept in the state
-  bucket for two hours more per print. It changes the front server's two-hour rule and
-  printer delivery's limit on the age of a sliced file it will send.
-- **Status:** needs the owner's choice: the recommendation, or the design's two hours with
-  the expired message and one more slice.
-
-### 1.2 What a refresh keeps
-
-- **The mockup, decisions 45, 46, 47 and 13:** a refresh, a closed and reopened panel or
-  two hours away "throw away the page's state; what the server holds stays"; the page
-  reopens on the Preview step for a running or finished slice and on the Send step for a
-  running print, with the parts and layout restored from the server; "otherwise it starts
-  at the Parts step"; advanced mode's "changes last for this page load".
-- **The design:** the parts, layout, chosen settings, current group and slice job are in
-  the browser's storage until the page finds the plate's sliced file expired.
-- **What a user sees under the mockup:** a refresh on the Settings or Layout step, before
-  any slice, opens an empty Parts step and the changes are gone. Under the design, the
-  same refresh brings back the parts, the layout and the changes.
-- **Recommended:** the design. Parts, layout and settings are restored from the browser's
-  storage. The page reloads itself after every deploy of the front server, and a deploy
-  must interrupt no user; a reload that dropped the layout would lose work at every
-  deploy. Which step such a page opens on is written with the steps.
-- **Status:** needs the owner's yes.
-
-### 1.3 Finding a slice job after a refresh
-
-- **The mockup, its requirements "On the slice service":** "a page that has lost its
-  state finds this user's running or finished slice job and its plate configuration, to
-  resume on the Preview step".
-- **The design:** the page reads the slice job's id from the browser's storage and asks
-  about that slice job; work does not follow a user to another computer or browser.
-- **What a user sees under the mockup:** their slice found again in any browser they sign
-  in from. Under the design, a second browser, or the panel after working in a tab, opens
-  an empty wizard.
-- **Recommended:** the design. The browser kept the slice job's id; work does not follow
-  to another browser. The parts and the layout live only in that browser's storage, so
-  another browser that found the slice job could show the preview and send the plate, but
-  could not show or change its layout; and the front server needs no lookup of a slice
-  job by user.
-- **Status:** needs the owner's yes.
-
-### 1.4 When the two hours start
-
-- **The mockup, M18 and decision 48:** "A finished slice that was not sent is dropped
-  after two hours away." M18 is a question the owner has not answered: "Is dropping it
-  right, and if so, how long should the server keep it?"
-- **The design:** a sliced file lasts "two hours after its slice ended"; a returning page
-  treats a slice job it submitted more than two hours ago as expired.
-- **What a user sees under the mockup:** two hours from leaving the page. Under the
-  design, a user who looked at the preview for an hour and then left has one hour left.
-- **Recommended:** the design. The two hours start when the slice ended. The front server
-  can enforce that from the time stored with the sliced file; it cannot know when a user
-  left a page. Two hours stands, as the design has it, unless the owner answers M18
-  otherwise.
-- **Status:** needs the owner's yes, together with an answer to M18.
-
-### 1.5 A colour for each filament
-
-- **The mockup, decision 33 and the requirement on the configuration:** four fixed
-  colours (the owner's instruction in version 8) for the layer preview, one for each set of line types (walls blue `#2b5c9e`,
-  infill orange `#e0912f`, top and bottom surfaces green `#2f9e7a`, supports and brim
-  violet-grey `#9a8fb8`), whatever the filament; "no colour for each filament".
-- **The design:** for each filament the configuration gives "the colour for the layer
-  preview".
-- **What a user sees under the mockup:** the same four colours on every plate. Under the
-  design, a preview in the filament's colour, or a colour set in the configuration that
-  nothing shows.
-- **Recommended:** the mockup. Four fixed colours; the configuration holds no colour. The
-  four were chosen to stay apart in every common kind of colour blindness, which a
-  filament's colour would not keep, and the layer preview colours line types, not
-  filaments.
-- **Status:** needs the owner's yes.
-
-### 1.6 Who pairs the printer, and where
-
-- **The mockup, Terms and decisions 42 and 58:** an administrator, "whoever edits the
-  configuration and pairs the printer", pairs it; with no printer paired the Send step
-  says "An administrator pairs the printer once, from the computer beside it."
-- **The design:** every user of a group may edit its configuration, and nothing
-  distinguishes one user of a group from another. Someone runs the daemon's `pair` command
-  on the daemon's computer; then any signed-in user of the group types the code it shows
-  into PenguinSlicer, from any computer.
-- **What a user sees under the mockup:** a message telling them someone else, at the
-  printer's computer, must pair it. Under the design, a field where they type the code.
-- **Recommended:** the design. Any user of the group types the code into PenguinSlicer;
-  the wizard's message changes to say so. The design has no roles, so a message that
-  tells a user they cannot pair the printer is wrong.
-- **Status:** needs the owner's yes.
-
-### 1.7 Whether the printer is in the configuration
-
-Three positions, of which the recommendation is the third.
-
-- **The mockup, its Terms table, "configuration":** the configuration holds "the printer,
-  the filaments, each filament's profiles, and the units of uploaded files". *What it
-  gives the Layout step:* the plate's size and height, from the printer the configuration
-  names. But two documents then name the group's printer, the configuration and the
-  paired-printer record, and nothing keeps them alike.
-- **The design's words:** the configuration holds the filaments and the units of uploaded
-  files; the link from a group to its daemon is the paired-printer record, written only by
-  pairing, which holds the printer's display name and no model, plate size or height; one
-  printer per group for now. *What it gives the Layout step:* nothing. No stored value
-  names the plate's size or height (see [2.1](#21-the-plates-size-and-height)), so the
-  Layout step could only use fixed figures, those of the plate configuration's default
-  set, the one H2S profile, and the slice service is never told which printer to slice
-  for.
-- **Recommended, combining the two:** the paired-printer record links the group to its
-  daemon, as the design has it; the configuration names the printer's Orca profile, from
-  which the plate's size and height come (the profile's `printable_area` and
-  `printable_height`). *What it gives the Layout step:* the plate's size and height for
-  Arrange, the placement check and the "plate 340 × 320 mm, up to 340 mm tall" line, read
-  from the same profile the slice service slices for. Pairing stays the only thing that
-  links a group to a daemon. Until the configuration's edit screens exist, the profile is
-  set by the owner in a document written by hand, and a group with no document
-  gets the built-in default, the H2S profile. Nothing checks that the named profile
-  matches the paired printer; a group that names the wrong one sees the wrong plate.
-- **What a user sees:** under all three, the same Layout step on an H2S, the only printer
-  today. They differ for a group with another printer: the mockup and the recommendation
-  show its plate; the design's words show the H2S plate.
-- **Status:** needs the owner's yes.
-
-### 1.8 A part that cannot be used
-
-- **The mockup, decisions 16, 17 and 19:** a part Onshape cannot export, a part that does
-  not arrive and a file that cannot be read are each a notification, and the part is not
-  added; "the list never holds a broken row".
-- **The design:** a part that cannot be sliced is refused on the Parts step, "on its own
-  row".
-- **What a user sees under the mockup:** a notification naming the part, and a list that
-  holds only usable parts. A notification goes when the user leaves the step (the
-  mockup's decision 7), so the reason a part was refused is gone once the user moves on.
-  Under the design, a row for the refused part with its error, which keeps the reason
-  until the user removes the row.
-- **Recommended:** the mockup. A notification, and the part is not added. Every kind of
-  unusable part is then shown one way, and the design's real requirement, that a part is
-  checked when it is added and before anything is laid out, holds either way.
-- **Status:** needs the owner's yes.
-
-### 1.9 Retrying, then an error after 20 seconds
-
-- **The mockup, decision 17:** while the server cannot be reached the page retries
-  quietly, shows "Taking longer than usual; still trying…" after 4 seconds, and after 20
-  seconds of failed retries a notification says the part was not added.
-- **The design:** the page retries every request, so that a request falling in the gap of
-  a deploy is repeated and "the user sees a pause, not an error"; a deploy at any moment
-  interrupts no user. The design does not bound how long a restart takes.
-- **Scope.** The mockup's decision covers only a part being added. The design's rule
-  covers every request. So the entry must say what the 20 seconds mean for the others.
-  (*Proposed*:) the 20 seconds cover every request a user waits on: adding a part,
-  submitting a plate, fetching a sliced file (the preview or the download), sending,
-  cancelling. A progress stream is not one: its reconnecting is never shown as an error.
-  After 20 seconds of failed retries a submission shows on the slicing card that the
-  slicer could not be reached, with Slice again; a fetch shows the same in place of the
-  preview, with Try again; a send says that nothing was sent and enables Send again; a
-  cancel says the slice or the send may still be running.
-- **What a user sees under the mockup:** a deploy whose gap is longer than 20 seconds
-  shows an error and drops the part. Under the design, a pause of whatever length the gap
-  is, and no word when the server is really down.
-- **A third course the design makes possible:** the part is already in the browser's
-  storage when its upload starts, so after 20 seconds its row could stay, saying it is
-  still trying, and offer Try again, in place of dropping the part. That breaks the
-  mockup's "the list never holds a broken row" (decision 17), and the user need not
-  click the part in Onshape again.
-- **Recommended:** keep the mockup's 20 seconds. A restart that takes longer is a defect
-  to fix once Railway's restart time is measured. A user who added a part needs an answer,
-  and a page that retried silently for ever would hide a real outage.
-- **Status:** needs the owner's choice: the 20 seconds, retrying without limit, or the row
-  that stays with Try again.
-
-### 1.10 Where a returning page opens after its print ended
-
-- **The mockup, decisions 46 to 48:** a returning page reopens on the Send step "when this
-  user's delivery job is running"; "otherwise it starts at the Parts step". A print that
-  finished is the last-print note ("Your print finished at 11:25 am.") "on whichever step
-  opens"; a print that failed is "reported in a notification on the Parts step, which adds
-  that the parts were not kept".
-- **The design:** from phase 5, "a page whose plate has a delivery job opens on the Send
-  step". A delivery job's record is kept a day after it ends, so a plate whose print ended
-  still has one.
-- **What a user sees under the mockup:** after a print that ended, the Parts step. In the
-  mockup that Parts step is empty, because the mockup throws the page's state away on a
-  refresh. With [item 1.2](#12-what-a-refresh-keeps)'s recommendation the browser's
-  storage still holds the parts, so it would be a Parts step with the plate's parts on it.
-  The page also reloads itself at every deploy (see
-  [Reloading](#reloading-on-a-newer-version-of-the-front-server)), and a reloaded page is
-  a returning page: a user standing on the Send step after a print ended would be moved to
-  the Parts step by a deploy. And a user whose long print failed at the last layer, whom
-  [item 1.1](#11-sending-the-same-plate-again-after-a-long-print) lets send it again at
-  once, would lose the Send step on any refresh or deploy and have to go back through the
-  steps to reach it.
-- **What a user sees under the design:** the Send step for as long as the plate is still
-  in the browser's storage, with the last-print note for a print that finished, or the
-  failure on the card for one that failed (decision 40), and Send enabled again for the
-  same sliced plate while its sliced file lives.
-- **Recommended:** the design. A page opens on the Send step for as long as its plate is
-  still stored and has a delivery job, running or ended, showing the last-print note there
-  when the print has ended; it opens on the Parts step once the plate is gone. The
-  mockup's "otherwise the Parts step" followed from the mockup throwing the page's state
-  away on a refresh, which item 1.2 does not keep; and a page that reloads itself after a
-  deploy must not move a user off the step they were on.
-- **Status:** needs the owner's yes.
-
-### 1.11 How the page outside Onshape finds its configuration
-
-- **The mockup, "What is fake", item 25:** the page outside Onshape imitates opening the
-  configuration from a saved link.
-- **The design:** every user signs in with Onshape, outside the panel too; the
-  configuration is the current group's, chosen in the header and checked against the
-  sign-in cookie.
-- **What a user sees under the mockup:** a link to keep and open. Under the design, a
-  sign-in, then their group's configuration.
-- **Recommended:** the design. The configuration comes from the signed-in user's group,
-  never from a link. A link would bypass the check of the current group against the
-  cookie.
-- **Status:** needs the owner's yes.
-
-## What the mockup shows that needs something from the server
-
-Six things the mockup shows that no stored value or route of the design gives the page.
-Each is needed before the step that shows it is built.
-
-### 2.1 The plate's size and height
-
-The Layout step shows "Shop H2S: plate 340 × 320 mm, up to 340 mm tall, 12 mm apart"
-(decision 55) and uses the plate's size for Arrange and the placement check (decision 27:
-3 mm inside the edge, 340 mm tall). **The page needs** the printer's name, the plate's size
-and its height limit; the slice service needs the printer profile to slice for. **From:**
-the configuration, read through the front server, naming the printer's Orca profile, from
-which the plate's size and height come
-([item 1.7](#17-whether-the-printer-is-in-the-configuration)). **Status:** follows item
-1.7; needs the owner's yes. The spacing, 12 mm with supports on and 5 mm off, is already the plate
-configuration's ([its limits](../contracts/plate-configuration.md#limits)).
-
-### 2.2 Who sent a print, what it is, and how the last one ended
-
-The printer details and the busy printer's card say who sent the print ("Sent by Alex
-Chen") and what it is ("8 instances of Gusset Plate"); the printer details say "Last print
-finished 11:25 am (Alex Chen)" and, for a failure, when it stopped and at which layer
-(the mockup's requirements on printer delivery 1, 2 and 4, and decision 44). **The page
-needs** the sender's display name, a one-line description of the plate, the time the
-delivery job ended and, for a failure, its layer, with the printer's status. **From**
-(*proposed*; not decided by the owner): the relay, through the front server: a delivery
-job's record carries them and the printer's status returns them
-([printer delivery](../delivery/README-details.md#from-the-wizards-mockup)).
-Who writes the one-line description (the page with its send, or the front server from the
-plate configuration) is settled when the contract's routes are written.
-
-### 2.3 Finding the user's own delivery job and last print
-
-A returning page reopens the Send step with live progress, reports a failed print and
-shows the last-print note (requirement 3, decisions 46 and 48). The browser's storage
-holds a slice job's id, no delivery job's. **The page needs** a way to ask for the signed-in
-user's live delivery job and that user's last print. **From** (*proposed*; not decided by
-the owner): the relay, through the front server
-([printer delivery](../delivery/README-details.md#from-the-wizards-mockup)); the contract
-lists it as a requirement (its routes are not written yet)
-([the contract](../contracts/wizard-front-server.md#printers-from-phase-5)).
-
-### 2.4 Not heard from for 7 minutes
-
-An offline printer's details say "Not heard from for 7 minutes." (decision 44), and the
-Send step says how long since the printer was last heard from (decision 42). Printer status
-lives in the relay's memory, so after a restart of the front server the time a daemon was
-last heard from is gone while that daemon is still off. **The page needs** the time the
-daemon was last heard from, across restarts. The answers:
-
-- **Recommended:** the relay notes the time in the paired-printer record when a daemon
-  goes offline, and the printer's status returns it. The user sees "Not heard from for 7
-  minutes." with the true duration across any restart. It costs one write to the state
-  bucket each time a daemon goes offline.
-- **Without it, counting from the restart:** the relay keeps the time in its memory only.
-  After a restart of the front server, a daemon still off shows a duration counted from
-  the restart, shorter than the truth.
-- **Without it, no duration:** after a restart, an offline printer shows "Offline" and no
-  duration until the daemon is heard from again.
-
-**Status:** needs the owner's choice.
-
-### 2.5 A profile's name and purpose
-
-The Settings step offers each filament's profiles by the group's own names ("Structural,
-Pulley, Camera mount") and shows a profile's purpose as its option's tooltip (decision 10).
-The design's configuration names profiles by Orca's names only. **The page needs** for each
-profile the group's own name and its purpose. **Recommended:** the configuration holds
-them, read through the front server
-([the configuration's contract](../contracts/configuration.md)). Without them the Settings
-step offers Orca's own profile names, such as "0.24mm Balanced Quality @BBL H2S 0.6
-nozzle", with no tooltip. **Status:** needs the owner's yes.
-
-### 2.6 The "plate too large" error
-
-The mockup arms a "plate too large" error against a 600 cm³ cap on a plate's volume, which
-it invented ("What is fake", item 9). The design's limits on one slice are the memory
-ceiling and the time limit, and it has no cap on a plate's volume. **Nothing provides it.**
-**Recommended:** the steps, when written, leave this message out; the nearest real error
-is `slice.out_of_memory`
-([screen 3.12](#screens-the-design-needs-that-the-mockup-does-not-show)). A user then
-never sees "plate too large"; a plate too big to slice ends in the out-of-memory error.
-**Status:** needs the owner's yes (or a request for such a limit).
+| The mockup's decision | What the mockup says | What this guide says |
+|---|---|---|
+| Terms, "configuration" | The configuration holds the printer | The paired-printer record links the group to its printer; the configuration names the printer's Orca profile ([The configuration](#the-configuration)) |
+| Terms, "administrator"; 42 | An administrator pairs the printer, from the computer beside it | Any signed-in user of the group types the pairing code, from any computer ([Printers](#printers-from-phase-5)) |
+| 13 | Advanced mode's changes last for this page load | The changes are in the browser's storage and outlast a refresh ([What the page keeps](#what-the-page-keeps-in-the-browsers-storage)) |
+| 17 | After 20 seconds of failed retries, a notification that the part was not added, to be clicked in Onshape again | After 20 seconds, a message that the server is being slow, with a countdown; retrying for up to 300 seconds, then an error with Try again; the part keeps its row ([Retrying](#retrying-every-request)) |
+| 33; the requirement on the configuration | No colour for each filament | The configuration holds a colour for each filament, shown where the user chooses one and never in the layer preview ([The configuration](#the-configuration)) |
+| 45, 46; the requirement on the slice service | A refresh throws the page's state away; the server finds the user's slice job and restores the parts and layout | The browser's storage keeps the work and the slice job's id; work does not follow to another browser ([What a returning page does](#what-a-returning-page-does)) |
+| 47, 48 | Otherwise the Parts step; a failed print is a notification on the Parts step, the parts not kept | A page whose stored plate has a delivery job, running or ended, opens on the Send step ([What a returning page does](#what-a-returning-page-does)) |
+| 48; M18 | A finished unsent slice is gone after two hours away | A sliced file is kept until two hours after its slice ended or its last print ended, whichever is later ([The sliced file](#the-sliced-file)) |
+| What is fake, 9 | A "plate too large" error against a cap on a plate's volume | No such error; a plate too big to slice ends in `slice.out_of_memory` ([Errors](#errors-the-wizard-explains)) |
+| What is fake, 25 | The page outside Onshape opens the configuration from a saved link | The configuration is the signed-in user's current group's ([The configuration](#the-configuration)) |
 
 ## Screens the design needs that the mockup does not show
 
 Twelve screens or states the design requires that no step of the mockup shows. Each is
-designed when the steps are written.
+designed when the steps are written. The numbers are those of
+[the comparison of the mockup with the design](../docs/orchestration/hosted-architecture/mockup-against-design.md).
 
 | | The screen or state | What the design says | Where it would appear |
 |---|---|---|---|
 | 3.1 | Signing in, signed out, a sign-in that has ended | Every user signs in with Onshape; every route refuses a request without a signed-in user; the cookie lasts thirty days, and after an emergency replacement of its key every user signs in again | Before any step, in the panel and outside it |
 | 3.2 | Choosing the current group, and "sign in again" | The header names the current group and the user changes it there; "sign in again" beside it reads the groups afresh for two calls to Onshape | The header |
-| 3.3 | A sliced file that expires while the page is open | The front server refuses a sliced file older than two hours whether or not the page is open, including after "Sending cancelled … Your sliced plate is still here." (decision 37) | The Preview step and the Send step: the preview, Download and Send |
+| 3.3 | A sliced file that expires while the page is open | The front server refuses a sliced file once it is past two hours after its slice ended and two hours after its last print ended, whether or not the page is open, including after "Sending cancelled … Your sliced plate is still here." (decision 37) | The Preview step and the Send step: the preview, Download and Send |
 | 3.4 | A slice that waits, and no room to wait | A waiting slice shows how many slices are ahead of it; with no room (one running and two waiting, to start with) the user is told the slice service is busy and to try again shortly | The Preview step's slicing card |
 | 3.5 | Typing a pairing code, a wrong code, unpairing | Any signed-in user types the code; a code is good for fifteen minutes; every wrong code gets one answer, at once, and wrong attempts are limited for each user; unpairing removes the paired-printer record | The Send step with no printer paired, and the printer details |
 | 3.6 | A stale delivery job, and "stop following" | A running delivery job's report is stale after 40 seconds without a sync; the user may then stop following a print that was started | The Send step and the printer details |
@@ -791,11 +552,13 @@ designed when the steps are written.
 
 - **The steps,** from [the mockup's decisions](../docs/mockups/print-wizard/DECISIONS.md):
   every screen, message and decision of the Parts, Settings, Layout, Preview and Send
-  steps and of the printer-status icon, with the twelve screens above and the resolutions
-  of [Where the mockup and the design differ](#where-the-mockup-and-the-design-differ) as
-  the owner settles them.
+  steps and of the printer-status icon, with the twelve screens above, and this guide in
+  place of the mockup wherever
+  [Where this guide departs from the mockup's decisions](#where-this-guide-departs-from-the-mockups-decisions)
+  says so.
 - **The mockup's open questions,** "Please react to these" (M1, M2, M3, M6, M7, M11, M16,
-  M17, M18, M21, M22, M23, M25, M26, M29; item 1.4 also depends on M18): each is either answered by the owner
+  M17, M21, M22, M23, M25, M26, M29; M18 is answered by
+  [The sliced file](#the-sliced-file)): each is either answered by the owner
   or carried into this guide as an open choice with its backing.
 - **The mockup is thrown away** once this guide is complete and the owner has agreed it
   ([the plan](../docs/plans/penguin-slicer-plan.md#phase-1-the-wizards-guide)).

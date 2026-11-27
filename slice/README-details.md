@@ -162,8 +162,8 @@ refusal. [D295]
 **The part store.** A route, `POST /parts` (*proposed*), takes one part (a binary STL as the request
 body; *proposed*) and checks it on arrival, so a part that cannot be sliced is refused on the wizard's
 Parts step, before the user has laid anything out; the wizard shows it as a notification
-and does not add the part (not yet confirmed by the owner:
-[item 1.8 of the wizard's guide](../wizard/README-details.md#18-a-part-that-cannot-be-used)). The checks are those of
+and does not add the part
+([the wizard's guide](../wizard/README-details.md#uploading-each-part-when-it-is-added)). The checks are those of
 [Checks on every part](#checks-on-every-part); the fit test (`slice.part_too_large`) runs
 on arrival against the largest printer of the catalog (*proposed*) and again, as built, against the
 plate configuration's printer when a plate configuration names the part. A part that passes

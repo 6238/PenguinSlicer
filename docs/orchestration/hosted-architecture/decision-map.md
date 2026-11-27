@@ -596,30 +596,31 @@ phrased it.
 | D368 | Added, as a proposal: a send repeated with the same sliced file by the same user while its delivery job is live answers with that delivery job, since the page retries every request. | none | `delivery/README.md` | `front/README.md`, `contracts/wizard-front-server.md` |
 | D369 | Added: a slice service that is stopping refuses a new slice job with an answer that is tried again without telling the user, never `slice.busy`. | none | `slice/README.md` | `contracts/wizard-front-server.md`, `wizard/README.md` |
 
-### Awaiting the owner
+### Decided by the owner on Fri 2026-11-27
 
-Where the wizard's approved mockup (version 8) and the spec differ. Each is set out in
-full, with both sides and a recommendation, in
-[the wizard's detailed guide](../../../wizard/README-details.md). For the three items
-awaiting the owner's choice, the living documents state the approved design as it stands
-and add "This may change: an item awaits the owner's choice", with a link to the item. For
-every other item, they state the recommendation, marked "not yet confirmed by the owner",
-with a link to the item.
+Where the wizard's approved mockup (version 8) and the spec differed. The owner decided
+each on Fri 2026-11-27 (Pacific time); the numbers are those of
+[the comparison of the mockup with the design](mockup-against-design.md).
 
-| Item | Recommendation | Status |
-|---|---|---|
-| Sending the same plate again after a long print | A sliced file lives until two hours after its slice or two hours after its last print ended, whichever is later | Awaiting the owner's choice |
-| How long the page retries before telling the user | Keep the mockup's 20 seconds; a longer restart is a defect to fix once measured | Awaiting the owner's choice |
-| "Not heard from for 7 minutes" | The relay notes the time in the paired-printer record when a daemon goes offline | Awaiting the owner's choice |
-| What a refresh keeps; finding a slice job after one; when the two hours start; who pairs the printer and where; how the page outside Onshape finds its configuration; where a returning page opens after its print ended | The spec | Not yet confirmed |
-| A colour for each filament; a part that cannot be used | The mockup (four fixed colours; a notification, and the part is not added) | Not yet confirmed |
-| Whether the printer is in the configuration | The paired-printer record links the group to its daemon; the configuration names the printer's Orca profile | Not yet confirmed |
-| A profile's own name and purpose; the plate's size on the Layout step | Added to the living documents as the mockup requires | Not yet confirmed |
-| The "plate too large" error | The steps leave it out | Not yet confirmed |
-
-What a delivery job's record carries, and how a returning page finds its delivery job and
-last print, are not among the fifteen: the living documents carry them as proposals,
-settled in phase 5's design spec.
+| Decision | Home |
+|---|---|
+| 1.1: a sliced file is kept until two hours after its slice ended or two hours after its last print ended (the end of the latest delivery job that used it), whichever is later; Send is enabled again after a print of any length; the one-day rule at R2 stays as the backstop | [The front server's details](../../../front/README-details.md#two-hours-deleting-and-the-backstop) |
+| 1.9: the page retries quietly; after 20 seconds of failed retries it says the server is being slow, with a countdown to the next attempt; it retries for up to 300 seconds, then says the server could not be reached and offers to try again; no work is dropped | [The wizard's details](../../../wizard/README-details.md#retrying-every-request) |
+| 2.4: the relay writes the time a daemon goes offline to the paired-printer record, once, so how long a printer has been silent survives a restart of the front server | [Printer delivery's details](../../../delivery/README-details.md#from-the-wizards-mockup) |
+| 1.5: the layer preview uses four fixed colours whatever the filament; the configuration still holds a colour for each filament, shown where the user chooses a filament | [The configuration's contract](../../../contracts/configuration.md) |
+| 1.2: a refresh keeps the parts, layout and settings, from the browser's storage | [The wizard's details](../../../wizard/README-details.md#what-the-page-keeps-in-the-browsers-storage) |
+| 1.3: work does not follow a user to another browser; the page finds its slice job by the id it kept | [The wizard's details](../../../wizard/README-details.md#what-a-returning-page-does) |
+| 1.4: the two hours count from when the slice ended | [The wizard's details](../../../wizard/README-details.md#the-sliced-file) |
+| 1.6: any signed-in user of the group types the pairing code, from any computer | [The wizard's details](../../../wizard/README-details.md#printers-from-phase-5) |
+| 1.7: the paired-printer record links the group to its daemon; the configuration names the printer's Orca profile | [The configuration's contract](../../../contracts/configuration.md) |
+| 1.8: a part that cannot be used is a notification, and is not added | [The wizard's details](../../../wizard/README-details.md#uploading-each-part-when-it-is-added) |
+| 1.10: a returning page whose stored plate has a delivery job, running or ended, opens on the Send step | [The wizard's details](../../../wizard/README-details.md#what-a-returning-page-does) |
+| 1.11: the configuration is the signed-in user's current group's, never one from a link | [The wizard's details](../../../wizard/README-details.md#the-configuration) |
+| 2.1: the plate's size and height come from the printer's Orca profile in the configuration | [The wizard's details](../../../wizard/README-details.md#the-configuration) |
+| 2.2: a delivery job's record carries the sender's display name, a one-line description of the plate, its end time and, for a failure, its layer (route names still *proposed*) | [Printer delivery's details](../../../delivery/README-details.md#from-the-wizards-mockup) |
+| 2.3: a page can find its user's live delivery job and last print (route names still *proposed*) | [The contract](../../../contracts/wizard-front-server.md#printers-from-phase-5) |
+| 2.5: the configuration holds each profile's own name and purpose | [The configuration's contract](../../../contracts/configuration.md) |
+| 2.6: there is no "plate too large" error | [The wizard's details](../../../wizard/README-details.md#errors-the-wizard-explains) |
 
 ## Possible disagreements in the spec
 
