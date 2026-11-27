@@ -656,8 +656,8 @@ sending again.
 **The front server, in phase 5, restarts.** Before the start gate, the daemon's next
 sync is accepted and receives the delivery job from its record in the state bucket, and
 the daemon fetches the sliced file through the front server as before. After the start,
-the print goes on; the printer-status icon and the Send step are blank until the
-daemon's next sync brings the status and progress back, within ten seconds plus the
+the print goes on; the printer-status icon shows a grey dot and "…", and the Send step
+shows no progress, until the daemon's next sync brings the status and progress back, within ten seconds plus the
 daemon's short random wait. If the restart fell between the gate's yes and the daemon's
 word that the command went, the record still says the start was allowed, and it is never
 allowed again. Whether the limits of 3 minutes, 15 minutes and 24 hours on a delivery

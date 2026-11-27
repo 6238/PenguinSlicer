@@ -653,6 +653,7 @@ backstop replace D7, D91, D92, D93, D94 and D247; 1.9 replaces D234; 1.5 replace
 | Item 26: the plan holds only what a reader with nothing else needs, and no figure, default or mechanism another document owns unless its own point needs it | [The plan](../../plans/penguin-slicer-plan.md) |
 | Item 27: the Layout step's risk is laying on a face, orienting and arranging on real exported parts; direct manipulation at 320 px is shown by the mockup | [The plan](../../plans/penguin-slicer-plan.md#phase-1-the-wizards-guide) |
 | Item 28: the README opens with PenguinSlicer as 3D printing from Onshape, with FRC teams as its first users | [README.md](../../../README.md) |
+| The four guides (the slice service's, printer delivery's, the front server's and the wizard's) were rewritten as documents for the person who decides; each ends with what is undecided or unmeasured, and every such item is gathered in one table, with when it must be answered | [The cross-check of the four guides](../guides/cross-check.md#every-undecided-or-unmeasured-item) |
 
 ## Possible disagreements in the spec
 

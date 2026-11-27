@@ -190,7 +190,11 @@ case.
 happened in a sentence a user understands, where (the part, the instance, the height or
 step, when known), what to do next and which single action fixes it when one does, and the
 underlying detail (Orca's own words, the printer's status), kept for the server log and
-never thrown away. Each code is listed in its component's details file and has a test
+never thrown away. Each component writes the sentences of its own failures, and the wizard
+shows them as they are. Whether a user may also read a quotation of Orca's own sentence on
+two failures of a slice is undecided
+([Orca's own sentence under Details](../../wizard/README.md#orcas-own-sentence-under-details)).
+Each code is listed in its component's details file and has a test
 that produces it on purpose. People read errors, so an error says more than a screen
 does: what went wrong and whatever is specific to this error and helps to understand or
 fix it (which part, what about it, where to look), with no generic troubleshooting and
@@ -217,7 +221,7 @@ unknown state. From phase 2, a slice job is the exception: it goes on when its p
 away, bounded by the slice service's time limit, so that a user who refreshes, loses the
 network or closes a laptop lid finds it done. As built, the slice service still cancels a
 slice job nobody follows after a short wait
-([the slice service's guide](../../slice/README.md)).
+([the slice service's guide](../../slice/README.md#go-on-without-the-page)).
 
 **Deploys.** The project is deployed continuously, so a deploy at any moment interrupts no
 user: connections drop briefly and come back by themselves, work that was cut off starts
@@ -274,6 +278,13 @@ As of Fri 2026-11-27:
   guide says what it asks of that component and which phase builds it.
 - **The wizard, the front server and the Onshape integration** have no code.
 
+**What is undecided.** Each of the four guides ends with what is undecided or unmeasured
+in its component, each item with what is known, the options and a recommendation. A table
+of all of them, with the guide that owns each and when it must be answered, is in
+[the cross-check of the four guides](../orchestration/guides/cross-check.md#every-undecided-or-unmeasured-item):
+92 items, of which 24 must be answered before phase 2 can be built, 5 are trials that open
+phase 2, and 63 can wait for a later phase.
+
 ## The phases
 
 The order is the owner's. Phase 2 is built from the components' guides, their details
@@ -316,8 +327,10 @@ and no Onshape: the front server signs in a made-up development identity, and a 
 stands in for each bucket.
 
 The phase is built from the guides of the wizard, the front server and the slice service,
-their details files and the contracts. The contracts' routes and fields are written
-before building starts.
+their details files and the contracts. Before building starts, the 24 undecided items
+that the [cross-check's table](../orchestration/guides/cross-check.md#every-undecided-or-unmeasured-item)
+marks as needed before phase 2 are answered, and the contracts' routes and fields are
+written.
 
 - **Done when** a user on one machine opens the wizard in a browser, adds parts from STL
   files, lays them out, slices them through the slice service on that machine, inspects
@@ -326,7 +339,11 @@ before building starts.
   - The wizard, built for the first time, as [its guide](../../wizard/README.md) lists:
     opened directly, with parts from files; the browser's storage, uploading, submitting
     by hash, the returning page, progress streams, retrying, reloading on a newer version,
-    the current group, the preview and the download.
+    the current group, the preview and the download. The wizard's guide proposes that the
+    download be the one button of a Send step that exists from phase 2, so that the five
+    steps keep their names when the printer arrives
+    ([its choice 12](../../wizard/README.md#choices-made-in-designing-these-screens)); the
+    phases here stand until the owner decides it.
   - The front server, built for the first time, as [its guide](../../front/README.md)
     lists: serving the pages; the development identity and the cookie, with one cookie
     key; the user key and the check of the current group; passing parts and slice jobs;
@@ -356,24 +373,31 @@ before building starts.
   - Settings: the slice service accepts every setting Orca allows that is a parameter
     with a value, and the wizard's advanced mode offers them all; it refuses the settings
     that run a program, name a file on the server or carry custom G-code
-    ([the slice service's guide](../../slice/README.md)).
+    ([the slice service's guide](../../slice/README.md#accept-settings)). Where advanced
+    mode gets its list of settings is undecided and is answered before phase 2
+    ([its item](../../slice/README.md#where-the-wizard-gets-the-list-of-settings-and-the-profile-catalogs-names)).
   - Profiles: the configuration names each filament's profiles, each under the group's
     own name and purpose, and the wizard offers those
     ([the configuration's contract](../../contracts/configuration.md)).
   - Units: a part's units travel beside it as a label, the browser never changes a part's
     bytes, and only the slice service applies the scale
-    ([the slice service's guide](../../slice/README.md),
+    ([the slice service's guide](../../slice/README.md#units),
     [the plate configuration's contract](../../contracts/plate-configuration.md)).
   - The preview: Orca makes the sliced file, and the user inspects it layer by layer at a
     stated frame rate, in a stated browser, on a stated machine, with the appearance the
-    mockup requires ([the wizard's guide](../../wizard/README.md)). How it is drawn is
-    found while building.
-- **Tried first,** since either could change the design: the preview's speed on a machine
-  without a graphics card, on the heaviest real plates (about a million lines of G-code);
-  and laying out real exported parts, which may have tens of thousands of corners, on a
-  face, oriented and arranged.
+    mockup requires
+    ([the wizard's guide](../../wizard/README.md#the-layer-preview-as-a-requirement)). How
+    it is drawn is found while building.
+- **Tried first,** since each could change the design, five trials open the phase
+  ([the wizard's guide](../../wizard/README.md#what-is-undecided-or-unmeasured)): the
+  preview's speed on a machine without a graphics card, on the heaviest real plates
+  (about a million lines of G-code); laying out real exported parts, which may have tens
+  of thousands of corners, on a face, oriented and arranged; the layer preview's frame
+  rate, browser and machine, with whether its look may be simpler while the view moves;
+  the wizard's proposed targets for speed and memory, timed on real parts; and whether the
+  browser's storage holds a full plate.
 - **Risks:** this is the first time components run joined, and a mismatch between them
-  shows first here; feasibility: the two trials above; resources: the wizard is the
+  shows first here; feasibility: the first two trials above; resources: the wizard is the
   largest piece of building left.
 
 ### Phase 3: the same, hosted
@@ -398,7 +422,7 @@ because it has the three things the design needs of its object store
     stop; the checks that matter only when hosted, on requests from other sites and the
     refusal to start with the development identity on Railway.
   - The wizard, as [its guide](../../wizard/README.md) lists: Onshape sign-in and "sign in
-    again"; the header on every changing request.
+    again"; the mark only the wizard's own page can add, on every changing request.
   - The slice service, as [its guide](../../slice/README.md) lists for this phase: its
     limits as settings; the memory ceiling set for the slice container; the measurements
     below; the comment line on its progress stream; Orca as a Unix user of its own; the
@@ -414,13 +438,13 @@ because it has the three things the design needs of its object store
   how long a stopping container is given.
 - **Then the measurements that set the limits:** plates of rising weight sliced on the
   slice container, each measured for memory and time, which set the memory ceiling, the
-  time limit and the estimates ([the slice service's guide](../../slice/README.md)). Every
+  time limit and the estimates ([the slice service's guide](../../slice/README.md#unmeasured)). Every
   measurement so far is from aarch64 Linux and from plates far lighter than the proposed
   ceiling.
 - **Onshape's allowance of calls.** The owner intends to make the Onshape app public;
   until then its calls count against a yearly allowance, and development and testing
   with users must fit inside it with room to spare. The figures and the count are in
-  [the front server's guide](../../front/README.md).
+  [the front server's guide](../../front/README.md#onshapes-yearly-allowance-of-calls).
 - **Risks:** feasibility: everything listed in the architecture under
   [To confirm before building on it](../architecture.md#to-confirm-before-building-on-it)
   is believed and not checked, Railway's behaviour at a deploy and Orca's on Railway's
@@ -447,7 +471,7 @@ phase's design spec.
   selecting and exporting parts in Onshape, with a test bed of recorded and replayed
   Onshape sessions, never run against real Onshape, which may be ported.
 - **Calls to Onshape.** Reading parts costs several calls for each part against the
-  yearly allowance ([the front server's guide](../../front/README.md)). The phase's design
+  yearly allowance ([the front server's guide](../../front/README.md#onshapes-yearly-allowance-of-calls)). The phase's design
   spec counts them for each part before anything is built.
 - **Units from Onshape:** the units of the Assembly or Part Studio; failing that, the
   part's own units or Onshape's default units, whichever Onshape's API gives.
@@ -471,8 +495,9 @@ H2S. Daemon telemetry is part of this phase and is not designed.
   daemon telemetry does what its own design says.
 - **Components:** printer delivery (the relay in the front server, the daemon on the
   daemon's computer, the simulated printer's invented sequences replaced by recordings),
-  the wizard (the Send step and the printer-status icon), and the front server (the
-  relay's caller, and the store for the relay's records).
+  the wizard (the Send step and the printer-status icon; under the wizard's proposed
+  choice 12 the Send step already exists with Download, and this phase adds sending to
+  it), and the front server (the relay's caller, and the store for the relay's records).
 - **First, printer delivery's tests on a fake clock.** The first piece of this phase's work
   on printer delivery rewrites its tests that wait on the wall clock to use a fake clock
   and fakes that put network events in an exact order, and the new work of the phase is
@@ -509,7 +534,9 @@ H2S. Daemon telemetry is part of this phase and is not designed.
   description of the plate, when it ended and, for a failure, its layer; the sliced file
   each delivery job used; a page's way to find its user's live delivery job and last
   print; and the time of a daemon's last sync before it went offline, written once to the
-  paired-printer record. Each is not provided, or only in part
+  paired-printer record (whether it is cleared when the daemon syncs again is undecided:
+  [printer delivery's item](../../delivery/README.md#clearing-the-recorded-time-of-silence)).
+  Each is not provided, or only in part
   ([printer delivery's details](../../delivery/README-details.md#from-the-wizards-mockup)
   list them as to be built).
 - **Risks:** feasibility: everything printer delivery knows about the H2S beyond one
@@ -546,7 +573,7 @@ Not part of the phases, and in no order.
 | **Permissions inside a group** | Every user of a group may edit its configuration, pair its printer and send a print from anywhere. Limits are added if a group needs them. |
 | **More than one printer for a group** | The design links one group to one daemon. |
 | **Making the Onshape app public** | It lifts the yearly allowance of calls to Onshape. |
-| **An asynchronous server for the held wait** | The front server spends one thread on each idle daemon, which limits how many daemons it serves; one route moves to a small asynchronous server when the number of daemons calls for it ([the front server's guide](../../front/README.md)). |
+| **An asynchronous server for the held wait** | The front server spends one thread on each idle daemon, which limits how many daemons it serves; one route moves to a small asynchronous server when the number of daemons calls for it ([the front server's guide](../../front/README.md#how-many-users-at-once-and-what-happens-when-the-threads-run-out)). |
 | **More than one slice container** | The design has one. |
 | **A daemon that installs itself to start at boot** | Starting the daemon is the job of whoever runs its computer. A later version may make it a single file that installs itself. |
 | **Printer adapters for other brands, the preview image on the printer's screen, file names that say which part and when** | Each is new design, described in the [first hardware test notes](https://github.com/chondl/PenguinCAM-notes/blob/main/handoffs/2026-10-09-printer-relay-first-hardware-test.md). |

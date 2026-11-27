@@ -13,6 +13,10 @@ outside its own folder.
 | Error report | Every component | Its caller | [error-report.md](error-report.md) |
 | Progress report | Every component | Its caller | [progress-report.md](progress-report.md) |
 
+The two contracts whose routes or fields are not written yet state requirements, each with a link to the
+guide that owns it; where a requirement rests on an item still undecided, they say so and
+link to the item.
+
 Each record kept in the state bucket carries the number of its format, so a record written
 by an older front server is read by a newer one
 ([the architecture](../docs/architecture.md#old-and-new-versions-together)).
