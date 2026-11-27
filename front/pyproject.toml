@@ -1,0 +1,44 @@
+[project]
+name = "penguin-front"
+version = "0.1.0"
+description = "The front server: everything behind PenguinSlicer's one address."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "flask>=3.0",
+    "httpx>=0.27",
+    "waitress>=3.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-randomly>=3.15",
+    "pytest-xdist>=3.5",
+    "pytest-timeout>=2.3",
+    "coverage[toml]>=7.4",
+]
+
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/penguin_front"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]
+addopts = ["-p", "no:cacheprovider", "--strict-markers"]
+# The hard limit for one test, from outside it: a test that hangs fails where it stands
+# instead of holding the run. The slowest fast test takes well under a second.
+timeout = 30
+timeout_method = "thread"
+
+[tool.coverage.run]
+branch = true
+source = ["penguin_front"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
