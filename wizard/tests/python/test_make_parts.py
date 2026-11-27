@@ -95,6 +95,33 @@ def test_the_hub_has_a_12_mm_bore(hub):
     assert max(radii) == pytest.approx(20.0, abs=1e-3)
 
 
+# The cross-section is sampled every 62.85 / 250 mm of its length (a 40 x 20 mm ring with a
+# 12 mm bore and 3 mm fillets), so a flat face or wall ends within one step of a fillet's start.
+STEP = (2 * 8.0 + 2 * 14.0 + 2 * math.pi * 3.0) / 250
+
+
+def test_the_hubs_four_edges_are_rounded_with_3_mm_fillets(hub):
+    # The flat faces end where the fillets begin: 3 mm in from the bore and from the outside.
+    for z in (0.0, 20.0):
+        radii = [math.hypot(p[0], p[1]) for t in hub if all(q[2] == z for q in t[1]) for p in t[1]]
+        assert 9.0 - 1e-4 < min(radii) < 9.0 + STEP, z
+        assert 17.0 - STEP < max(radii) < 17.0 + 1e-4, z
+    # The straight walls likewise: 3 mm in from the base and from the top.
+    for radius in (6.0, 20.0):
+        heights = [p[2] for _, tri in hub for p in tri if abs(math.hypot(p[0], p[1]) - radius) < 1e-4]
+        assert 3.0 - 1e-4 < min(heights) < 3.0 + STEP, radius
+        assert 17.0 - STEP < max(heights) < 17.0 + 1e-4, radius
+
+
+def test_the_hub_is_300_facets_around_by_250_along(hub):
+    points = {p for _, tri in hub for p in tri}
+    # One ring of the section (its first point, the innermost on the base) and one meridian (angle 0).
+    first = min(math.hypot(p[0], p[1]) for p in points if p[2] == 0.0)
+    ring = {p for p in points if p[2] == 0.0 and abs(math.hypot(p[0], p[1]) - first) < 1e-4}
+    meridian = {p for p in points if p[1] == 0.0 and p[0] > 0}
+    assert (len(ring), len(meridian)) == (300, 250)
+
+
 def test_the_spacer_has_216_triangles(spacer):
     assert len(spacer) == 216
 
