@@ -2,8 +2,9 @@
 
 Printer delivery takes a sliced file and gets it printed on a Bambu Lab printer, and says
 at every moment how that is going. Only one printer is known to it today: **the H2S**,
-the Bambu Lab H2S of FRC Team 6238, the first printer
-([Which printers are supported](#which-printers-are-supported) is undecided). This guide is for the person who decides whether
+the Bambu Lab H2S of FRC Team 6238, the first printer. Whether any other model is
+supported is undecided ([Which printers are supported](#which-printers-are-supported)).
+This guide is for the person who decides whether
 printer delivery is being built correctly: what it must do, how it does the hard parts,
 its limits, its security, and what is still open. What a builder needs (every setting,
 route, error code and required test) is in [README-details.md](README-details.md); this
@@ -119,7 +120,8 @@ An **administrator** is whoever sets a group's printer up and pairs it; any user
 group may be one. Setting up asks things of that person at the printer and at the
 daemon's computer, and each is a requirement a reader may object to. All of it is as
 built. None of it has been tried on Windows, and none of it has been confirmed at the
-real printer with this code
+real printer with this code; that waits for **the session at the H2S**, one planned
+session of recording and measuring at the real printer
 ([What only the session at the H2S can settle](#what-only-the-session-at-the-h2s-can-settle)).
 
 **At the printer.** The printer must be in its LAN-only mode with its Developer Mode
@@ -193,8 +195,9 @@ person or two people on the telephone.
 3. **The daemon's next offer is answered with its token.** The relay checks the offered
    code against the hash in the record, gives the daemon **the daemon's token**, removes
    the hash, and the code is dead. The token names the daemon and its group, is signed
-   with **the relay's secret key**, and is what the daemon presents on every request from
-   then on.
+   with **the relay's secret key** (one of the front server's secrets, described under
+   [Security](#security)), and is what the daemon presents on every request from then
+   on.
 
 A code is good for fifteen minutes. A daemon still unpaired then makes a new one and
 shows it, so a code left on a screen overnight opens nothing. A wrong code gets the same
@@ -262,8 +265,9 @@ the daemon is started again it reconnects and works, with no pairing again.
   for how many minutes.
 - **A print that was running when the computer went off goes on at the printer**, which
   needs no daemon to print. The daemon keeps a **start note** on its own disk, a record
-  of the print it is about to start or has started, so when it is started again it follows that print and does not start it a second
-  time ([How a start is decided](#how-a-start-is-decided-so-that-a-print-is-never-started-twice)).
+  of the print it is about to start or has started, so when it is started again it
+  follows that print and does not start it a second time
+  ([How a start is decided](#how-a-start-is-decided-so-that-a-print-is-never-started-twice)).
   Built.
 - **Starting the daemon is not PenguinSlicer's job.** At boot or after it stops, whoever
   runs that computer starts it, by hand as built. A daemon that installs itself to start
@@ -522,7 +526,7 @@ a print that begins hours later when nobody expects it. Everything that could ca
 is ordinary: a daemon that restarts just after sending the start command, a relay that
 restarts, a link that drops with the answer in flight, a printer that is slow to show the
 print, a user who presses Send again. The design is one set of rules for the moment of
-starting. All of it is built.
+starting. All of it is built, except the one sentence below that says "in phase 5".
 
 **The start gate.** Before it sends the start command, the daemon asks the relay whether
 it may. The relay's answer, the **start gate** (below, the gate), is yes at most once
@@ -613,8 +617,7 @@ fails in one case that only the real H2S can rule in or out.
    first is pending.
 
 If the H2S shows a print within seconds and drops the previous end at once, neither can
-happen at these settings. **The session at the H2S**, one planned session of recording
-and measuring at the real printer, measures exactly this
+happen at these settings. The session at the H2S measures exactly this
 ([What only the session at the H2S can settle](#what-only-the-session-at-the-h2s-can-settle)).
 Only if it shows the H2S slow, or keeping an old end under a new name, would a rule that
 needs no timing be considered: ending such a delivery job as "outcome unknown" and
@@ -713,8 +716,8 @@ A sliced file that its caller hands it as a stream it copies once to its own dis
 handed over as a file on disk stays the caller's. Only its secret key outlasts a
 restart. It must run as a single process. That was acceptable for a relay that restarts
 rarely; it is not acceptable for a front server that is deployed continuously, because a
-daemon told that the relay no longer knows its delivery job treats the job as finished
-and drops it, and because the start gate's "yes, once" must not be forgotten.
+daemon told that the relay no longer knows its delivery job treats that delivery job as
+finished and drops it, and because the start gate's "yes, once" must not be forgotten.
 
 ### In phase 5: records in a store the front server supplies
 
@@ -739,7 +742,7 @@ and can be tested with a store that is a plain folder or a fake.
 - the number of its format, so that a record written by the previous version of the front
   server is read by the next.
 
-Four of these serve [the wizard's guide](../wizard/README.md), which requires them, and
+Four of these serve the wizard, whose [guide](../wizard/README.md) requires them, and
 the relay as built gives each only in part:
 
 - **Who sent it.** The wizard says "Sent by Alex Chen", with "(you)" for the user's own,
@@ -768,7 +771,8 @@ and are back within seconds of a restart from the daemon's next sync.
 
 **The paired-printer record**, one for each group, holds the id of the group's daemon,
 the printer's display name, who paired it and when, which of the relay's secret keys the
-daemon's token was last issued under, the time of the daemon's last sync, written once
+daemon's token was last issued under (there are two, the current one and the previous
+one: [Replacing the relay's secret key](#replacing-the-relays-secret-key)), the time of the daemon's last sync, written once
 when the daemon goes offline, and, from the moment a user types the pairing code until
 the daemon collects its token, a hash of that code. It is kept until the group unpairs.
 
@@ -789,8 +793,10 @@ relay's memory is empty. The rule has four parts.
    minutes, when the front server restarted) is shown as silent "for at least" the time
    since the front server started.
 
-Part 2 costs a second write for each outage, and a clearing write that fails would leave
-an old time behind; what the relay does then is undecided
+Parts 1, 3 and 4 are the design. Part 2 is this guide's proposal: it follows from part 1
+and is written in no source. It costs a second write for each outage, and a clearing
+write that fails would leave an old time behind. Whether to clear, and what
+the relay does when the clearing fails, are undecided
 ([Clearing the recorded time of silence](#clearing-the-recorded-time-of-silence)).
 
 **Pairing codes on offer** stay in the relay's memory only. A restart loses them, and
@@ -857,11 +863,11 @@ checked against the real printer.
 | 3 minutes to be collected (built) | How long a send waits for a daemon before failing | A proposal |
 | 15 minutes from collection to the start gate (built) | How long a delivery job may hold the printer's one place without starting; also when an unanswered cancel takes effect | A proposal |
 | 10 minutes waiting for a free printer, and 10 for an unreachable start gate (built) | How long a delivery job waits, cancellable, before ending unstarted | A proposal |
-| A picture is fresh for 15 seconds, and the printer is asked for a complete status document every 10 (built) | How old the printer's report may be when a start is decided | A guess until the printer is timed |
+| A picture is fresh for 15 seconds, and the printer is asked for a complete status document every 10 (built) | How old the printer's last status document may be when a start is decided | A guess until the printer is timed |
 | "Start not shown yet" after 60 seconds (built) | When the user is told the printer is slow to show the print | A guess until the printer is timed |
 | 5 minutes of watched time without the print (built) | When a start command is taken not to have worked, and when the printer is free for another | A guess until the printer is timed; must stay well above the printer's real time to show a print |
 | 2 minutes before an end can count for a print never seen going (built) | Protection against the previous print's end under the new name | A guess until the printer is timed |
-| 2 minutes of reports with the print not under way (built) | When a print that disappeared ends the delivery job | A proposal |
+| 2 minutes of status documents with the print not under way (built) | When a print that disappeared ends the delivery job | A proposal |
 | 60 seconds of a silent printer (built) | When a printing delivery job's progress report is marked stale for the printer's sake | A guess: whether a paused H2S keeps sending is not known |
 | 24 hours of unbroken staleness (built) | The longest a delivery job nobody can hear is kept alive | A proposal: longer than any print |
 | Three attempts each at the fetch and the upload (built) | How much a flaky link is tolerated before the delivery job fails | A proposal |
@@ -988,8 +994,8 @@ or two daemons, cannot use up each other's allowance. Wrong pairing codes are co
 each signed-in user. The offer of a pairing code, which has neither a user nor a daemon
 behind it, is limited to sixty a minute for the whole relay (which, at one offer from
 each unpaired daemon every thirty seconds, is 60 ÷ 2 = 30 unpaired daemons offering at
-once: this guide's arithmetic, not a figure of the design) and also counted for the address Cloudflare reports it came
-from, so that one stranger cannot use up everyone's offers.
+once: this guide's arithmetic, not a figure of the design) and also counted for the
+address Cloudflare reports it came from, so that one stranger cannot use up everyone's offers.
 
 As built there is no user and no daemon id to count for, so requests are counted for each
 pairing code: 120 status requests and 10 sends, cancels or stop-followings a minute from
@@ -997,7 +1003,7 @@ pages; 120 syncs and 60 other requests a minute from the daemon. The trade of a 
 code is limited to 60 a minute for the whole relay, and fetches of a sliced file to 30 a
 minute for each address. A page over its limit gets an error report saying to wait; a
 daemon is told how long to wait. The figures for phase 5 are not decided
-([What is undecided or unmeasured](#what-is-undecided-or-unmeasured)).
+([The rate limits of phase 5](#the-rate-limits-of-phase-5)).
 
 ## The log, and daemon telemetry
 
@@ -1022,13 +1028,13 @@ the printer, how long the print ran, and how it ended.
 cannot see, and the daemon runs on hardware nobody controls: a misconfigured network, a
 computer that goes to sleep or is overloaded, a daemon timing out because its computer is
 slow. Daemon telemetry is a protocol by which the daemon sends messages about its own
-state to the relay from the moment it starts, where they are kept in the log bucket for
-ninety days, so that a broken setup can be diagnosed from the server. What is designed so
+state to the relay from the moment it starts. The relay keeps them in the log bucket
+for ninety days, so that a broken setup can be diagnosed from the server. What is designed so
 far is only this: that it exists, that it is part of phase 5, that a daemon's errors
 arrive with its ordinary requests, that the messages are kept with the log, and that the
 protocol must be simple enough to carry over when the daemon is rewritten as a single
 executable in Rust or Go. Everything else is not designed
-([What is undecided or unmeasured](#what-is-undecided-or-unmeasured)).
+([Daemon telemetry](#daemon-telemetry)).
 
 ## How it is tested
 
@@ -1048,21 +1054,16 @@ pages, cut-off and misshapen answers, outages from seconds to hours, and a resta
 either half between any two exchanges. Every error report has a test that produces it on
 purpose, and every refusal, limit and deadline in this guide has a test that reaches it.
 
-**Random sequences.** Three tests generate random sequences of those faults, 260
-sequences in about 5 seconds, together with a printer that is slow to show a print,
-shows a left-over end, goes quiet, or has a print started at its screen while it is off
-the network. After every step they check the rules of
+**Random sequences.** Further tests generate random sequences of those faults, together
+with a printer that is slow to show a print, shows a left-over end, goes quiet, or has a
+print started at its screen while it is off the network. After every step they check
+the rules of
 [How a start is decided](#how-a-start-is-decided-so-that-a-print-is-never-started-twice)
 against the simulated truth: one start command for each file; none while a print is going
 or an earlier start is unsettled; no "done" for a print never shown; no sentence claiming
-a start that did not happen; no hold longer than its limit; nothing after an end. They
-run before every commit and in every review, not in the fast suite. Nine faults found in
-review are also kept as hand-written sequences in the fast suite, two of which the random
-sequences no longer reach.
-
-**No test can hang.** Every test has a hard limit of 30 seconds from outside; every fake
-wait is bounded in simulated time and in number of calls; every fake clock fails after a
-million steps. A start that waits for ever fails in under a second.
+a start that did not happen; no hold longer than its limit; nothing after an end. Nine
+known faults each have a hand-written sequence in the fast suite. No test can hang:
+every test and every fake wait has a hard limit.
 
 ### The simulated printer
 
@@ -1076,10 +1077,9 @@ error that appears and clears; filament running out; the cover opened; a printer
 shows the print 90 seconds late; the previous print's end under the new file's name.
 
 **What it can prove.** That the real daemon, with the real printer library, works over
-real connections, which fakes inside the process cannot show. It has found two faults
-that way: a deadlock in the daemon's handling of the library's log, and that an upload
-lost the end of the file when the printer spoke the newer version of TLS, which is fixed
-and covered for both versions.
+real connections, which fakes inside the process cannot show. Only this suite can show a
+deadlock in the daemon's handling of the library's log, or an upload that loses its end
+under the newer version of TLS; both are covered.
 
 **What it cannot prove.** Anything about the real printer. Every sequence it plays is
 invented. It shows that the daemon does the right thing if the H2S behaves as imagined,
@@ -1089,7 +1089,7 @@ and nothing about whether it does.
 
 The suite against the simulated printer and the run of both halves together on real
 threads do not meet the standing rule. They wait on real events, but each wait has a
-ceiling in real seconds, and the together run speeds up a real clock and polls. Such
+ceiling in real seconds, and that run speeds up a real clock and polls. Such
 tests are slower than they need be and can fail on a loaded machine for no fault of the
 code.
 
@@ -1100,7 +1100,7 @@ restarts of the front server, the key replacement) is then built on those fakes,
 "a send arrives during a held wait" or "the front server restarts between the gate's yes
 and the daemon's report" is a sequence a test writes down, not a race it hopes to win.
 
-### What only the session at the real printer can settle
+### What only the session at the H2S can settle
 
 What is known about the real H2S is one recorded status document, taken at 0 percent of a
 print, and two observations from the one time the earlier code met the printer: that the
@@ -1110,15 +1110,16 @@ judged by the size the printer lists afterwards. Everything else is invented fro
 and from Bambu's published tables: every sequence of status documents, the meaning of
 every error code, and every timing.
 
-One session at the H2S, with the daemon's record command saving every status document,
+The session at the H2S, with the daemon's record command saving every status document,
 settles it. It has two parts: recording prints started at the printer's own screen, and a
 print started by the daemon, which needs a relay the daemon can reach from another
 machine, and so the hosted front server of phase 5. It must answer:
 
 - **The first status documents after a start command**, one by one: how long the H2S
   takes to show a print, for a small file and a large one, and whether the previous
-  print's end stays under the new name. This decides the two limits above and whether the
-  timed rule can stay.
+  print's end stays under the new name. This decides the
+  [two limits that wait for the real printer](#two-limits-that-wait-for-the-real-printer)
+  and whether the timed rule can stay.
 - **Whether the H2S sends whole status documents or only changes**, how often an idle or
   paused printer sends anything, and whether it tolerates being asked for a complete one
   every 10 seconds.
@@ -1134,6 +1135,10 @@ machine, and so the hosted front server of phase 5. It must answer:
   to removing a file it does not have.
 - **A network cable pulled** between the upload and the start, and the printer switched
   off mid-print and on again.
+- **The printer's required mode**: whether the H2S in fact refuses a start from the
+  daemon unless it is in LAN-only mode with Developer Mode on, as the daemon as built
+  tells the administrator, and what the printer no longer does in that mode
+  ([The printer's required mode](#the-printers-required-mode)).
 - **The daemon on Windows**, the likely system of the daemon's computer, where it has
   never run: installing, pairing, running, finding the printer through the firewall.
 
@@ -1145,7 +1150,8 @@ prove something about the real one.
 **Built and tested, on the main branch.** The relay and the daemon; pairing in its older
 form with a lasting code; delivery jobs with progress reports through the delivery and
 the whole print; cancelling up to the start gate; the start gate, the hold, the start
-note and the rule for whose end an end is; stop following; restarts of the daemon, with
+note and the rule that an end counts only if it is the end of this print; stop
+following; restarts of the daemon, with
 or without the relay; every error report; the plain-text log lines; the simulated printer
 and its scenarios; the upstream check and the command that takes a new version of the
 printer library.
@@ -1159,10 +1165,11 @@ seconds; one secret key; limits counted for each pairing code.
 
 - Rewriting the tests that wait on the wall clock (first).
 - The relay inside the front server, with a store supplied by its caller.
-- Pairing with a code typed once, the daemon id, the paired-printer record, unpairing.
+- Pairing with a code typed once, the daemon id, the paired-printer record, unpairing,
+  and whatever is decided for pairing again.
 - The held wait and the three rhythms; the random wait after a restart.
-- The delivery job's record, with the start gate's answer in it; the time a daemon was
-  last heard.
+- The delivery job's record, with the start gate's answer in it; the rule for how long a
+  printer has been silent.
 - The sliced file read from the store.
 - Two secret keys and the replacement procedure.
 - Limits counted for each user and each daemon.
@@ -1171,7 +1178,7 @@ seconds; one secret key; limits counted for each pairing code.
 - The sender, the plate's description, the end time and the failed layer; a page finding
   its user's delivery job.
 - Daemon telemetry, after its own design.
-- The session at the real printer, and recordings in place of invented scenarios.
+- The session at the H2S, and recordings in place of invented scenarios.
 
 **Never done.** Run against the real printer by this code. Run on Windows. Reached by a
 daemon on another machine.
@@ -1186,74 +1193,311 @@ changing them is a change of its own with its tests.
 
 ## What is undecided or unmeasured
 
-**The two timed limits on a start.** Described in full under
-[Two limits that wait for the real printer](#two-limits-that-wait-for-the-real-printer).
-Known: the rule is safe if the H2S shows a print within seconds. Proposal: keep the timed
-rule and measure. The alternative costs a manual step after every uncertain start.
+Each item says what it is, what is known, the options and what each costs, and a
+recommendation. The first group is undecided in the design; the second waits for a
+measurement.
 
-**Every timing that concerns the printer.** The 15 seconds of freshness, the minute before
-"start not shown yet", the five minutes of settling, the two minutes for a left-over end
-and the minute of printer silence are guesses. The session sets them. If they are too
-short, good prints are reported as not started; too long, and the printer is unavailable
-for longer after anything uncertain.
+### Undecided in the design
 
-**The rate limits of phase 5.** The design says for whom requests are counted and gives
+#### Clearing the recorded time of silence
+
+The rule for how long a printer has been silent
+([In phase 5: records in a store the front server supplies](#in-phase-5-records-in-a-store-the-front-server-supplies))
+records the time of a daemon's last sync when the daemon goes offline, and clears it
+when the daemon syncs again. The design fixes the first write ("one write at that
+moment and not one a minute"); the clearing follows from it but is written in no source,
+and two things about it are open.
+
+- **Its cost.** Clearing is a second write to the state bucket for each outage. An
+  outage is a daemon silent for two minutes, so a daemon on a computer that sleeps every
+  night costs two writes a day. The other way to keep an old time from being shown is to
+  write nothing on the daemon's return and have the relay trust a recorded time only if
+  it wrote that time since it started; after a restart every silent printer would then
+  read "for at least" the time since the restart, and the exact "Not heard from for 3
+  weeks" would be lost at every deploy, which defeats the purpose of recording it.
+- **A clearing write that fails.** If the state bucket refuses the write, the record
+  keeps the time of an outage that is over. It is shown wrongly only if the front server
+  then restarts and that daemon never syncs again: the wizard would say "Not heard from
+  for 3 weeks" of a daemon heard a minute before the restart. The options are to try the
+  clearing again on the daemon's following syncs until it succeeds, or to accept the
+  rare wrong sentence.
+
+Recommendation: clear on the daemon's return, as the guide states, and try a failed
+clearing again on following syncs. The writes are few and tiny, and the sentence a user
+reads is then right in every case but a restart inside the seconds of a failing write.
+
+#### Unpairing while a delivery job has not ended
+
+The design says unpairing removes the paired-printer record and that any user of the
+group may do it. The wizard's guide says the wizard does not offer unpairing while a
+print that PenguinSlicer is following is going on. No source says whether the relay
+itself refuses, nor what happens to a delivery job whose group unpairs.
+
+- **The relay refuses to unpair while a delivery job of that group has not ended.** A
+  user who gets past the wizard (a second page, an old page) is told that the printer is
+  printing and to unpair when the print has ended. The cost: a group whose daemon's
+  computer died during a print cannot unpair until it has used
+  [Stop following](#stop-following), or until 24 hours have passed.
+- **The relay allows it and ends the delivery job** as failed, saying that the printer
+  was unpaired and the print may still be running. The print goes on at the printer
+  with nobody following it, and the daemon, refused at its next sync, cannot report its
+  end.
+- **The relay allows it only before the start gate**, cancelling the delivery job, and
+  refuses after.
+
+Recommendation: the first. It matches what the wizard shows, keeps every started print
+followed to an end, and Stop following already exists for the print nobody can hear.
+
+#### Pairing again: three cases
+
+No source decides any of these. Each is described as it would be met by a user.
+
+1. **A group that has a paired-printer record types a second code.** A daemon is
+   offering the code, perhaps a new computer beside the same printer, perhaps a second
+   printer. Replacing the record silently unpairs the first daemon, which then says on
+   its screen that it has been unpaired; if a print was being followed, the case above
+   arises. Refusing tells the user that the group already has a printer and to unpair it
+   first; it costs two steps for a group moving its daemon to a new computer, and makes
+   the change deliberate. Recommendation: refuse, with that sentence.
+2. **The pair command is run again on a paired daemon.** As built it keeps the lasting
+   code and discards the token. In phase 5 the code is dead once used, so running pair
+   again must make a new code, and the daemon would give up a token that still works for
+   a pairing nobody may complete, taking a working printer offline. The options: pair
+   says that the daemon is already paired and changes nothing unless told to start
+   afresh; or pair always starts afresh, and the old record names a daemon that no
+   longer answers until the new code is typed (which then meets case 1). Whether a fresh
+   start keeps the daemon id is part of the choice: keeping it lets the relay see the
+   same computer pairing again. Recommendation: pair says it is already paired and
+   stops; starting afresh is asked for in words, keeps the daemon id, and the user
+   unpairs in PenguinSlicer first.
+3. **A record whose daemon never collects its token.** A user types the code and the
+   daemon's computer is switched off, or loses its network, before its next offer. The
+   record names a daemon nobody hears: the group shows a printer that is offline, Send
+   is disabled, and the hash of the code stays in the record. The pairing code expires
+   on the daemon after fifteen minutes, so a daemon that returns later offers a new code
+   and can never collect the token. The options: leave the record until a user unpairs
+   it (the user sees "Offline" with no reason and must know to unpair and pair again);
+   or remove a record whose token was not collected within the code's fifteen minutes,
+   so that the group reads "No printer" again and the pairing form returns.
+   Recommendation: remove it after the fifteen minutes, and have the wizard say until
+   then that the printer's computer has not finished pairing. The time is this guide's
+   proposal.
+
+#### Printed files left on the printer
+
+As built the daemon removes a file from the printer when its upload failed or its print
+was not started. A file that was printed is never removed, so sliced files, 8.8 to
+14.1 MB each on the plates measured, gather on the printer's storage, against the plan's
+standing requirement that nothing accumulates on disk. Not known: how much storage the
+H2S has, what it does to an upload when that is full, and whether the H2S lets a file be
+removed while or just after it prints.
+
+- **Leave them.** Nothing to build. One day an upload fails, and the user is told the
+  upload failed with no hint that the printer is full; someone clears files at the
+  printer's screen.
+- **The daemon removes its own file when the print ends**, well or badly. It recognises
+  its files by the delivery job's id in the name and touches no other. The cost is one
+  more exchange with the printer and its failure cases; a print whose end the daemon
+  never saw leaves its file. A person can no longer print the same file again from the
+  printer's screen.
+- **The daemon removes its older files before each upload**, keeping the last one or
+  few. Reprinting at the screen still works for the latest; the storage stays bounded.
+
+Recommendation: remove the file when the print ends, and before each upload remove any
+of the daemon's own files left by a print whose end was not seen; decide after the
+session at the H2S has shown what a removal does there. Whatever is chosen, a failed
+upload to a full printer should say that the printer's storage may be full.
+
+#### Daemon versions
+
+An installed daemon may be much older than the relay, and the design's only rule is that
+the relay may add to what it sends a daemon and never remove or change what an installed
+daemon relies on. No source says how an installed daemon is brought to a new version,
+whether the relay can tell which version a daemon runs, or what the relay does about a
+daemon too old to be safe. Known: as built the daemon sends its name and version with
+every request and the relay does not read them; installing a new version is the
+administrator installing again from a terminal
+([What the administrator does, once](#what-the-administrator-does-once)); the daemon is
+to be rewritten later as a single executable, which changes how it is installed.
+
+- **Nothing more.** Every fix to the daemon reaches a printer only when its
+  administrator happens to install again, and the owner cannot see who has not.
+- **The relay records each daemon's version** in its log and in the printer's status,
+  and the wizard's printer details tell the group when its daemon is older than the
+  current one, with how to install the new one. One field and one sentence; no daemon
+  is refused.
+- **The relay also refuses a daemon below a stated version**, with a line on the
+  daemon's screen saying to install the new one. This is the only way to withdraw a
+  daemon with a dangerous fault, and it takes a group's printer offline until someone
+  acts.
+- **The daemon updates itself.** No person involved; it means a program on a stranger's
+  computer that fetches and runs new code, which is a security design of its own.
+
+Recommendation: record and show the version in phase 5, keep the refusal as a rule that
+is built but set to refuse nothing, and leave self-updating to the design of the single
+executable.
+
+#### Which printers are supported
+
+This guide says "a Bambu Lab printer"; everything known is one H2S. The printer library
+is written for Bambu's printers in general, the daemon's table of status values is written from
+Bambu's published tables and one recorded status document of the H2S, and the plate's
+size and the profiles come from the configuration and not from printer delivery. So
+another Bambu model may work, and nothing shows that it does. The options: say that
+only the H2S is supported and have the pair command warn when it meets another model
+(the daemon learns the model from the printer when pairing); or pair with any Bambu
+printer and treat what goes wrong as findings. A user of an unsupported printer would
+see sends refused because its state is not understood, or prints reported wrongly.
+Recommendation: support the H2S only until the session at the H2S is done, and have the
+pair command say so, without refusing, for any other model.
+
+#### The rate limits of phase 5
+
+The design says for whom requests are counted and gives
 one figure, sixty offers of a pairing code a minute for the whole relay. It gives none
 for a user, for a daemon, or for wrong pairing codes. The proposal is to carry over the
 built figures: 120 status requests and 10 sends a minute for each user, 120 syncs and 60
 other requests a minute for each daemon. A daemon taking a delivery job syncs sixty times
 a minute, so 120 leaves a factor of two; a page that polls the printer's status once a
-second would use half its allowance. For wrong pairing codes nothing is proposed: with
-forty random bits and a code that lasts fifteen minutes, even a generous limit such as
-ten a minute for each user leaves guessing hopeless, and a strict one costs a user who
-mistypes.
+second would use half its allowance, which matters if progress streams turn out not to
+pass through Cloudflare and Railway
+([Progress streams through Cloudflare and Railway](#progress-streams-through-cloudflare-and-railway)).
+For wrong pairing codes the proposal, this guide's, is ten a minute for each user: with
+forty random bits and a code that lasts fifteen minutes, that is 150 guesses at a code,
+which leaves guessing hopeless, and a stricter limit costs a user who mistypes. The
+wizard's guide already promises the sentence "Too many wrong codes. Wait a few minutes,
+then try again."
 
-**A send repeated while its delivery job is live.** As built a second send, even of the
+#### A send repeated while its delivery job is live
+
+As built a second send, even of the
 same sliced file by the same user, is refused with "a print is already being sent". A
 double press of Send, or a page that retries a send whose answer was lost, would show the
 user an error for a send that worked. The proposal is that such a repeat is answered with
 the delivery job already under way. The cost is one more rule in the relay; the risk it
 must not create is a second delivery job, which the one-at-a-time rule already prevents.
 
-**How the daemon's fetch of the sliced file is authorised in phase 5.** As built the
+#### How the daemon's fetch of the sliced file is authorised in phase 5
+
+As built the
 daemon fetches the file from an unguessable address that is its whole authority, with no
 token, and fetches are counted for each network address. The design says the relay reads
 the file from the store when the daemon fetches it, and does not say whether the fetch
 should require the daemon's token. Requiring it is stricter and costs a change to an
 exchange installed daemons already use; keeping the unguessable address is simpler, and
-whoever learned such an address would get one group's sliced file and nothing else.
+whoever learned such an address would get one group's sliced file and nothing else. The
+proposal is to keep the unguessable address and the count for each network address.
 
-**What of a delivery job is written to its record, and how often.** The design fixes that
+#### What of a delivery job is written to its record, and its deadlines across a restart
+
+The design fixes that
 the start gate's answer is written before it is given, that the record is kept a day, and
 what the wizard needs from it. It does not list every field or say whether each stage
 before the print is a write. Each write is a request to R2; writing only the changes that
 matter after a restart (accepted, collected, cancel asked, start allowed, ended) is the
-proposal, at about five writes for each delivery job, with live progress left in memory.
-This is for phase 5's design spec.
+proposal, at four or five writes for each delivery job (this guide's count of the changes
+just listed; a delivery job never cancelled makes four), with live progress left in
+memory.
 
-**Daemon telemetry.** Not designed: what a message holds (the plan's list of what is hard
+The design also does not say what a restart of the front server does to the three limits
+that run on a delivery job: 3 minutes to be collected, 15 minutes from collection to the
+start gate (which is also when an unanswered cancel takes effect), and 24 hours of
+unbroken staleness. The project deploys continuously, so a restart in the middle of any
+of them is ordinary. If the record holds when the delivery job was sent and when it was
+collected, the first two run on across a restart at no further cost, since both moments
+are already writes. If it does not, each restart starts them again, and a delivery job
+nobody collects could outlive several deploys, with Send disabled for the group
+meanwhile. The 24 hours count staleness, which changes with every sync; to run on across
+a restart they would need a write when a delivery job turns stale and when it turns
+fresh. Recommendation: the 3 and the 15 minutes run on, from the two times in the
+record; the 24 hours start again at a restart, which can only lengthen a limit whose
+purpose is that no delivery job lives for ever. This is for phase 5's design spec.
+
+#### Daemon telemetry
+
+Not designed: what a message holds (the plan's list of what is hard
 to foresee: the network, the computer's capacity, sleep, overload, slowness); what proves
 a message comes from a paired daemon, and what an unpaired daemon that cannot pair may
 send, which is when telemetry is most needed and when there is no token; what a message
 must never hold; its size and rate limits; and how the owner reads it. It gets its own
 design in phase 5.
 
-**The messages of the pairing exchange.** The steps are designed; the exact messages, and
+#### The messages of the pairing exchange
+
+The steps are designed; the exact messages, and
 what the daemon shows on its screen at each, are left to phase 5's design spec.
 
-**Whether Cloudflare challenges a daemon.** Cloudflare's protection against automated
+### Waiting for a measurement
+
+#### The two timed limits on a start
+
+Described in full under
+[Two limits that wait for the real printer](#two-limits-that-wait-for-the-real-printer).
+Known: the rule is safe if the H2S shows a print within seconds. Proposal: keep the timed
+rule and measure. The alternative costs a manual step after every uncertain start.
+
+#### The printer's required mode
+
+The daemon as built tells the administrator that the printer must be in LAN-only mode
+with Developer Mode on, because the firmware refuses a print started by software other
+than Bambu's in any other mode. That sentence is the code's; it was not confirmed at the
+H2S with this code, and no source of this guide says what the printer no longer does in
+that mode. A group may be giving up something it uses (Bambu's own services are the
+likely case) for PenguinSlicer, and should be told before pairing. To settle: read
+Bambu's documentation for the H2S's firmware and state here exactly what LAN-only mode
+and Developer Mode switch off; and try at the session at the H2S whether a start is
+refused in each other mode. If the cost is high, the alternative is a daemon that prints
+through Bambu's own services, which is a different design. Recommendation: keep the
+requirement, state its cost in this guide and in the page on how to pair a printer once
+it is known, and treat the requirement as unconfirmed until the session at the H2S.
+
+#### Progress streams through Cloudflare and Railway
+
+Neither Cloudflare nor Railway promises to pass a progress stream on without holding its
+events back ([the architecture](../docs/architecture.md#to-confirm-before-building-on-it)
+lists it). The
+relay as built sends a comment line on a quiet stream every 15 seconds to keep the
+connection open, which does not show that events arrive promptly. If either holds them
+back, the page asks for the latest progress report every second or two, which the relay
+already answers. A user would see the same progress, a second or two later. The cost is
+in the allowance for status requests: a page asking every second uses 60 of the proposed
+120 a minute for each user, and two pages of one user use all of it. Recommendation:
+measure on the hosted front server in phase 5; if asking is needed, count those requests
+apart from the status requests.
+
+#### Every timing that concerns the printer
+
+The 15 seconds of freshness, the minute before
+"start not shown yet", the five minutes of settling, the two minutes for a left-over end
+and the minute of printer silence are guesses. The session at the H2S sets them. If they
+are too short, good prints are reported as not started; too long, and the printer is
+unavailable for longer after anything uncertain.
+
+#### Whether Cloudflare challenges a daemon
+
+Cloudflare's protection against automated
 clients may, in principle, answer a daemon with a challenge page meant for a browser. The
 daemon already recognises such a page and says so in its log; whether it ever happens was
 not checked. If it does, the daemon's requests need an exception at Cloudflare.
+Recommendation: check it with a daemon on another machine as soon as the hosted front
+server of phase 5 runs the relay, before the session at the H2S.
 
-**Whether recording and running can be connected to the printer at once.** Not known. If
-they cannot, the session records the daemon-started print some other way, or the daemon
-gains a way to record while it runs.
+#### Whether recording and running can be connected to the printer at once
 
-**Windows.** Nothing has run there. The risks are the installation, the folder the daemon
+Not known. If
+they cannot, the session at the H2S records the daemon-started print some other way, or
+the daemon gains a way to record while it runs.
+
+#### Windows
+
+Nothing has run there. The risks are the installation, the folder the daemon
 keeps its files in, file names the printer or Windows will not accept, and finding the
-printer through the Windows firewall, for which a typed address is the fallback.
+printer through the Windows firewall, for which a typed address is the fallback. The
+session at the H2S tries the daemon on Windows.
 
-**Capacity.** What the front server's memory is with fifty held syncs, and how long the
+#### Capacity
+
+What the front server's memory is with fifty held syncs, and how long the
 fetch and the upload of a 14 MB sliced file take on a real link and a real H2S, were
-never measured.
+never measured. The first is measured on the hosted front server of phase 5 before the
+figure of fifty daemons is relied on; the second at the session at the H2S.

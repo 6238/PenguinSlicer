@@ -46,7 +46,7 @@ split has two more uses: Orca's short, steep rise in memory and a deploy of the 
 container cannot cut off the printers' connections, which the front server holds, and a
 change to the wizard goes out without touching a slice that is running. Railway, the
 host, bills for the memory actually held, so two containers cost what one would. What
-the split costs is work for the front server: it must pass every part and plate through,
+the split costs is work for the front server: it must pass every part and plate configuration through,
 fetch every sliced file, and fetch the slice service's log lines, since the slice
 container can write nowhere.
 
@@ -91,7 +91,7 @@ flowchart TB
     wz["wizard, in the browser"] --> cf["Cloudflare proxy"]
     dm["daemon, beside a printer"] --> cf
     cf --> fr["front server"]
-    fr <--> on["Onshape"]
+    fr <--> os["Onshape"]
     fr -->|"private network"| sl["slice container"]
     fr --> sb[("state bucket")]
     fr --> lb[("log bucket")]
@@ -106,7 +106,7 @@ remember across a restart is in one of two places it does not itself contain.
   chosen settings are in the browser's storage, which is the wizard's business.
 - **In two object stores at Cloudflare R2.** An object store keeps files under names and
   nothing more. The **state bucket** holds what must outlast a restart of the front
-  server: each group's configuration, the sliced files with their summaries, and from
+  server: each group's configuration, the sliced files, each with a short summary of what it will print, and from
   phase 5 the relay's records. The **log bucket** holds log lines as files. On one
   machine, in phase 2, a folder stands in for each bucket, and the front server reaches
   bucket and folder through the same four operations: read a file, write a file, write
@@ -261,7 +261,8 @@ free or education account (Onshape's figure). The intention is to make the app p
 which lifts the allowance. Until then, all development and all testing with users must
 fit inside it with room to spare. So the rule is: **nothing calls Onshape that can be
 done without it.** The cookie's thirty days, the absence of any periodic check, the
-development identity and the stand-in used in tests all come from this rule.
+development identity (a made-up user for work on one machine, described in the next
+section) and the stand-in used in tests all come from this rule.
 
 | Use | Calls to Onshape |
 |---|---|
@@ -294,7 +295,7 @@ On one machine there is no registered Onshape app to send a browser to, and work
 must spend no calls. So the front server has a setting that makes it sign in a fixed,
 made-up user in a fixed, made-up group, the **development identity**, the moment a
 browser arrives, without contacting Onshape. Everything else then runs as it does
-hosted: the cookie, the current group's check, the marking of parts and slices with
+hosted: the cookie, the current group's check, the marking of parts and slice jobs with
 whose they are.
 
 This setting would be a way past the sign-in if it were ever on in the hosted service.
@@ -337,7 +338,8 @@ sequenceDiagram
     participant B as state bucket
     P->>F: a part, when the user adds it
     F->>S: the part, marked with whose it is
-    S-->>P: accepted, or why not
+    S-->>F: accepted, or why not
+    F-->>P: the same answer, passed on
     P->>F: the plate configuration, on the Preview step
     F->>S: the plate configuration, marked with whose it is
     S-->>F: progress, until the slice ends
@@ -347,20 +349,22 @@ sequenceDiagram
     F->>S: stored, delete your copy
     F-->>P: finished
     P->>F: fetch the sliced file
-    B-->>P: the sliced file, through the front server
+    F->>B: read the sliced file
+    B-->>F: the sliced file
+    F-->>P: the sliced file
 ```
 
 ### Whose it is
 
 With every request it makes to the slice service, the front server says whose part or
-slice this is. It says so with the **user key**: the signed-in user's Onshape id, taken
+slice job this is. It says so with the **user key**: the signed-in user's Onshape id, taken
 from the cookie and from nowhere else. Nothing the browser sends can name a user key;
 if a request tries to, the attempt is ignored. The slice service only compares user
 keys and never interprets them. The result is that a user reaches only their own parts,
-slices and sliced files, even among users of the same group.
+slice jobs and sliced files, even among users of the same group.
 
-A request for a slice or a sliced file that belongs to someone else is answered exactly
-as if it did not exist, so nobody can find out whether another user's slice is there,
+A request for a slice job or a sliced file that belongs to someone else is answered
+exactly as if it did not exist, so nobody can find out whether another user's is there,
 and the attempt is logged as a refusal.
 
 ### A part
@@ -384,10 +388,10 @@ not added. This is the reason for uploading at once: a bad part is caught before
 user has laid anything out.
 
 The front server keeps no copy. If the slice service has dropped a part by the time a
-plate names it, the page uploads it again from the browser's storage; the front
+plate configuration names it, the page uploads it again from the browser's storage; the front
 server's part in that is only to pass the slice service's list of missing parts back.
 
-### A plate
+### A plate configuration
 
 On the Preview step the page sends a **plate configuration**: the layout, the settings
 and each part's hash and units, with no files in it. The front server passes it to the
@@ -675,7 +679,7 @@ the relay's memory.
 |---|---|---|
 | Signed in | The cookie | Still signed in; the cookie key is a setting, not memory |
 | Added parts, laid out a plate, chose settings | The browser's storage | Untouched |
-| Submitted a slice that is still running | The slice container | It keeps running; the front server finds it again when it starts |
+| Submitted a slice job that is still running | The slice container | It keeps running; the front server finds it again when it starts |
 | Finished a slice | The state bucket | Untouched |
 | Edited the configuration | The state bucket | Untouched |
 | Paired a printer; sent a print (phase 5) | The state bucket | Untouched; the print goes on, and the printer's status is blank until the daemon's next request, within about ten seconds |
@@ -765,14 +769,14 @@ size, and who is using it.
 - **What changed:** each edit of a configuration, with the user's name and what
   changed.
 - **Everything that goes wrong:** every error a user is shown, with its kind, the user,
-  the group and the slice or print it belongs to; every unexpected failure inside the
+  the group and the slice job or delivery job it belongs to; every unexpected failure inside the
   front server, with the trace of where it happened, including one no user saw because
   the request was retried.
 - **Every refusal:** a failed sign-in; a request for something that belongs to another
   user; a current group the cookie does not list; a changing request without the
   wizard's mark or from another address.
 - **What happened to each sliced file:** stored, served, expired, deleted.
-- **How full it is:** once a minute, the memory it holds, the slices running and
+- **How full it is:** once a minute, the memory it holds, the slice jobs running and
   waiting, the connections it holds open and the threads in use.
 - **Housekeeping:** each start, with the version that started, and each use of the
   previous cookie key.
@@ -803,65 +807,79 @@ server writes what it has gathered.
 
 ## The limits that matter
 
-Each figure, what it protects, where it comes from and how it will be checked.
-"The design's choice" means a figure this design sets, which nobody else imposes and
-which has not been measured. Time-based figures are checked in tests with a clock the test moves, so
-no test waits.
+Each figure, what it protects and where it comes from. "The design's choice" means a
+figure this design sets, which nobody else imposes and which has not been measured. A
+figure that is a length of time is checked by a test with a clock the test moves, so no
+test waits; the last column is filled only where the check is something else. The
+limits of the relay (how long it holds an idle daemon's request, how many pairing
+codes may be offered a minute) are in
+[printer delivery's guide](../delivery/README.md#how-well-it-must-do-it), and how long
+the page keeps retrying is in
+[the wizard's guide](../wizard/README.md#when-the-server-is-slow-or-cannot-be-reached).
 
-| Limit | Figure | What it protects | Where it comes from | How it is checked |
+| Limit | Figure | What it protects | Where it comes from | Checked otherwise than by a moved clock |
 |---|---|---|---|---|
-| Threads serving requests | 100 | The front server's memory, and a known ceiling on what it does at once | The design's choice | The once-a-minute log line reports threads in use |
-| Idle daemons served | About fifty | Room left for users' requests and progress streams | Follows from 100 threads, one for each idle daemon | The same log line; revisited when daemons approach it |
-| An idle daemon's open request | Up to 55 seconds | Staying inside Cloudflare's 125 seconds without data | The design's choice | The relay's tests |
-| One part | At most 7.5 MB | The slice service's checks and memory | The plate configuration's contract | A test at the limit; one real upload through Railway, whose own limit is unstated |
-| Any one request through Cloudflare | 100 MB | Nothing of ours | Cloudflare's limit | Not needed: the largest thing sent is a sliced file |
-| A sliced file | 8.8 to 14.1 MB | Tells how much passes through for each preview, download and print | Measured on the plates sliced so far | The log line that ends each slice records the size |
-| A silent progress stream | An empty line at least every 15 seconds | The stream outliving Cloudflare's 125 seconds and Railway's five minutes without data | Their limits | A test with a moved clock |
-| Any one request | Closed by Railway after 15 minutes | Nothing of ours; the page reconnects | Railway's limit | Tried on the hosted service |
-| The cookie | Thirty days from sign-in | Onshape's allowance: fewer sign-ins | The design's choice | A test with a moved clock |
-| The cookie's size | About 4 KB | Browsers drop a larger one | Browsers' limit | A test with many groups; unconfirmed that it fits |
-| A sign-in | 2 calls to Onshape | The allowance of 2,500 a year | Onshape's interface and Onshape's allowance | A test counts the calls to the stand-in; the log counts the real ones |
-| A previous key kept | One week | Users away briefly are not signed out by a replacement | The design's choice | A test with a moved clock |
-| A sliced file kept | Two hours after its slice ended, or after its last print ended if later | Sending again after a print; users' models not kept longer than needed | The design's choice | Tests one second either side of the limit |
-| R2's backstop on sliced files | Three days from last stored; gone within about four | A file the front server failed to delete | The design's choice; the extra day is Cloudflare's | Set at R2; seen on the hosted service |
-| Log lines in the log bucket | Ninety days | Looking into a problem reported weeks later | The design's choice | Set at R2 |
-| Log lines in Railway's view | Seven days | Nothing of ours | Railway's limit | None needed |
-| Gathering the log | About once a minute | At most a minute of lines lost in a crash | The design's choice | A test with a moved clock |
-| A pairing offer without a token | Sixty a minute for the whole relay | One stranger using up everyone's offers | Printer delivery, as built | The relay's tests |
-| The page's patience | Silent for 20 seconds, gives up after 300 | A deploy passing unnoticed | The design's choice; the wizard's to implement | The wizard's tests |
+| Threads serving requests | 100 | The front server's memory, and a known ceiling on what it does at once | The design's choice | The once-a-minute log line |
+| Idle daemons served | About fifty | Room left for users' requests | 100 threads, one for each idle daemon | The same log line |
+| Users served at once | None set | A user's request finding a free thread | Undecided | |
+| One part | At most 7.5 MB | The slice service's checks and memory | The plate configuration's contract | A test at the limit; one real upload |
+| A sliced file | No ceiling of its own; 8.8 to 14.1 MB so far | A fetch staying inside the 100 MB Cloudflare allows one request | Measured on the plates sliced so far | The log line that ends each slice |
+| A progress stream with nothing to report | An empty line at least every 15 seconds | The stream staying open | Cloudflare's and Railway's limits | |
+| Any one request | Closed by Railway after 15 minutes | Nothing of ours | Railway's limit | Tried on the hosted service |
+| The cookie | Thirty days from sign-in | Onshape's allowance | The design's choice | |
+| The cookie's size | About 4 KB | The user being able to sign in | Browsers' limit | A test with many groups |
+| A sign-in | 2 calls to Onshape | The allowance of 2,500 a year | Onshape's interface | Calls counted in a test and in the log |
+| Sign-ins by one user, or in one day | None set | The same allowance | Undecided | |
+| The previous cookie key kept | One week | Users away briefly | The design's choice | |
+| A sliced file kept | Two hours after its slice ended, or after its last print ended if later | Sending again after a print | The design's choice | |
+| R2's backstop on sliced files | Three days from last stored | A file the front server failed to delete | The design's choice | Set at R2 |
+| Log lines in the log bucket | Ninety days | A problem reported weeks later | The design's choice | Set at R2 |
+| Gathering the log | About once a minute | Lines lost in a crash | The design's choice | |
 
-Three things about this table deserve a sentence more.
+A sentence more on each row that needs one.
 
 **Threads are the front server's scarce resource.** Each of these holds one thread for
 as long as it lasts: a page's open progress stream; an idle daemon's open request; the
 front server's own following of an unfinished slice job; an upload or a download in
 progress. The slice service starts with one slice running and two allowed to wait, so
 following slice jobs takes at most three. The figure of about fifty daemons assumes the
-other fifty threads are enough for the users. When the number of daemons calls for it,
-the daemons' open requests can move to a small server of a different kind that holds
+other threads are enough for the users. When the number of daemons calls for it, the
+daemons' open requests can move to a small server of a different kind that holds
 thousands of idle connections cheaply; that is known future work, not part of any
 phase.
+
+**Users served at once has no figure.** No source says how many pages following a slice
+job or a print the front server must serve at once, nor what a user sees when no thread
+is free; from phase 5 a page following a print holds a thread for the whole print. This
+is undecided: see
+[How many users at once, and what happens when the threads run out](#how-many-users-at-once-and-what-happens-when-the-threads-run-out).
+
+**Sign-ins have no limit,** which leaves the allowance open to one person; see
+[Sign-ins and the allowance](#sign-ins-and-the-allowance).
+
+**A sliced file has no ceiling.** The measured range tells how much passes through for
+each preview, download and print; see
+[No ceiling on a sliced file](#no-ceiling-on-a-sliced-file).
+
+**The cookie's size** is unconfirmed to fit; see
+[Whether the cookie fits](#whether-the-cookie-fits).
+
+**The backstop** means a file the front server failed to delete is gone within about
+four days, as [Why R2's own rule cannot do this alone](#why-r2s-own-rule-cannot-do-this-alone)
+explains.
+
+**No target for time is set for the front server:** not for how long it may take to
+answer, nor for the time between a slice ending and the page being told it is finished,
+nor for a fetch of a sliced file by a browser or a daemon. Measuring these on
+the first slices on the hosted service, in phase 3, is what a target would be set from.
 
 **How often the sweep runs is not fixed.** It bounds how long past its two hours a
 sliced file nobody asks for can exist. A file somebody does ask for is refused exactly
 on time whatever the sweep's interval.
 
 **Limits on how fast one user or one daemon may send requests** are counted for the
-signed-in user or the daemon, and their figures are not settled.
-
-## What it costs to run
-
-By Railway's published rates the two containers together cost about $7 a month while
-few people slice. Railway bills the memory a container actually holds, at $10 for a
-gigabyte held for a month, and the two containers hold about half a gigabyte between
-slices. The bill grows only while a heavy plate is slicing. About $40 a month is the figure for 5,000
-slices and 1,000 daemons, which would also need the different kind of server for the
-daemons' open requests mentioned above.
-
-The buckets hold a few hours of sliced files and some small records and cost cents.
-Onshape costs no money, only the
-allowance of calls. None of these figures has met a real bill; the first month settles
-them.
+signed-in user or the daemon. Their figures are proposed for phase 5 and absent for
+phase 2; see [Rate limits and the sweep's interval](#rate-limits-and-the-sweeps-interval).
 
 ## Security
 
@@ -871,6 +889,14 @@ with a cookie it can read, a daemon with a token the relay signed, and, for the 
 request of offering a pairing code, an unpaired daemon, which is rate-limited. Everyone
 else gets the sign-in or a refusal.
 
+The sign-in is open: anyone with an Onshape account, which is free to make, can sign in
+and slice, and there is no list of permitted users or groups. What bounds such a person
+is what bounds every user: one unfinished slice job at a time, at most 25 parts in the
+part store for one user key (the most a plate can use), every slice bounded in memory
+and time, and, from phase 5, wrong pairing codes limited for each signed-in user.
+Whether the sign-in should stay open is undecided: see
+[Who may sign in](#who-may-sign-in).
+
 **What it trusts.** Onshape's word on who a user is and which groups they are in. Its
 own secrets. The contents of the state bucket, because only it and the owner can write
 there. The slice service's results, with the reservation below.
@@ -879,19 +905,25 @@ there. The slice service's results, with the reservation below.
 and is in date; the current group until the cookie confirms it; any claim about whose a
 thing is, which it ignores in favour of the cookie; any changing request without the
 wizard's mark. Uploaded parts are hostile too, but the front server does not open them;
-it passes them to the slice container, which exists to contain them.
+it passes them to the slice container, which exists to contain them. The slice
+container can itself call the front server over the private network, and meets the same
+sign-in there as anyone else.
 
 **What a flaw in the front server would expose.** Everything. It holds all four
 secrets, so someone who took control of it could forge a sign-in as any user, forge a
 daemon's token, read and write every sliced file and configuration, plant a record that
 starts a print, and call Onshape with the tokens of whichever users' requests pass
-through it. This is the reason it is kept small, opens no uploaded file, runs no Orca,
+through it. What those tokens open at Onshape depends on the permissions the app asks
+for: in phase 3 a user's name, companies and classrooms; from phase 4 it is not settled
+(see [The permissions the Onshape app asks for](#the-permissions-the-onshape-app-asks-for)).
+This is the reason it is kept small, opens no uploaded file, runs no Orca,
 and is the one place where care is concentrated.
 
 **What is accepted as a risk, and why.**
 
-- A user removed from an Onshape company keeps access for up to thirty days, until the
-  app is public. The alternative spends the allowance of calls.
+- A removed user's thirty days of access
+  ([The cookie](#the-cookie-and-why-there-are-no-sessions)), because the alternative
+  spends the allowance of calls.
 - Inside a group there are no permissions: any user may edit the configuration, pair
   the printer and send a print from anywhere, and a sent print starts with nobody at
   the printer. This suits the small groups PenguinSlicer is meant for; permissions are
@@ -901,9 +933,14 @@ and is the one place where care is concentrated.
 - A flaw in the slice service itself, as opposed to Orca, could hand the front server
   any file as a sliced file, which it would store and a printer would run. The front
   server does not inspect a sliced file.
-- A sliced file the front server failed to delete rests at R2, private, for up to about
-  four days.
+- A sliced file the front server failed to delete, resting at R2 until the backstop
+  removes it ([Why R2's own rule cannot do this alone](#why-r2s-own-rule-cannot-do-this-alone)).
 - A leaked key costs every user a sign-in, or every group a pairing.
+- Users' names and parts' names stay in the log bucket ninety days. Removing one user's
+  lines on request is not designed.
+- The configurations and the paired-printer records in the state bucket have no second
+  copy. If the bucket is damaged, or a hand-written document is overwritten, nothing
+  restores them; a second copy is not designed.
 
 The security of printers as a whole (the pairing code, what the state bucket can and
 cannot be used for) is in [the architecture](../docs/architecture.md#security).
@@ -930,8 +967,9 @@ the front server's own.
 | The slice service did not answer | Nothing at first, then that the server is being slow | Nothing: the page retries |
 | The state bucket did not answer | The same | Nothing: the page retries |
 
-**Cancelling.** A user's cancel of a slice is passed to the slice service, which stops
-Orca itself; submitting a new plate cancels the earlier one in the same way. From phase
+**Cancelling.** A user's cancel of a slice job is passed to the slice service, which
+stops Orca itself; submitting a new plate configuration cancels the earlier slice job
+in the same way. From phase
 5 a cancel of a print is passed to the relay. The front server has no long work of its
 own to cancel.
 
@@ -980,7 +1018,9 @@ Rules a manager can hold the builder to:
 What only the real thing can prove: how Railway behaves at a deploy; that Cloudflare
 and Railway pass progress on as it is sent; that a 7.5 MB upload passes Railway; what
 Onshape really answers, above all for an account with no company; that Chrome keeps the
-cookie for a page embedded in Onshape; and the front server's memory under load. After
+cookie for a page embedded in Onshape
+([The cookie inside Onshape's panel](#the-cookie-inside-onshapes-panel)); and the front
+server's memory under load. After
 each deploy, a short scripted check runs against the hosted service.
 
 ## What is built in which phase
@@ -994,7 +1034,10 @@ bucket. Built here:
 - serving the wizard's pages;
 - the development identity and the cookie, with one cookie key;
 - the user key, and the check of the current group against the cookie;
-- passing parts and plates to the slice service, answering a page that comes back, and
+- telling the page the user's name and the names of their groups, for the header;
+- limits on how fast one user may upload parts and submit plate configurations, whose
+  figures nobody has proposed yet;
+- passing parts and plate configurations to the slice service, answering a page that comes back, and
   the progress streams;
 - following every slice job, storing the sliced file and its summary, collecting at
   start;
@@ -1003,13 +1046,13 @@ bucket. Built here:
 - the log, gathered once a minute into the folder that stands for the log bucket;
 - the version on every answer.
 
-**Phase 3: hosted.** First, before anything else of this phase, what Railway does at a
-deploy is tried, because the rest of restarts and deploys rests on it. Then:
+**Phase 3: hosted.** First, before anything else of this phase,
+[what Railway does at a deploy](#what-railway-does-at-a-deploy) is tried. Then:
 
 - the front server in its own container at the public address, calling the slice
   container over the private network;
 - the two buckets at R2, with the three-day backstop and the ninety days for the log;
-- signing in with Onshape, with every call counted;
+- signing in with Onshape, with every call counted, and "sign in again";
 - the defences against requests from other sites;
 - the second cookie key, and the written procedure for replacing each secret;
 - the format number on every record in the state bucket;
@@ -1028,27 +1071,275 @@ phase before anything is built.
 **Phase 5: the real printer.** The relay joins the front server's process. The front
 server gives it who is asking, the place for its records and the sliced file; applies
 the second half of the sliced file's rule (two hours after the last print, and storing
-afresh at each send); holds the relay's secret; lets the daemons' requests in; answers
-their open requests when stopping; and gathers the relay's log lines and what the
-daemons report about themselves.
+afresh at each send); holds the relay's secret key; lets the daemons' requests in;
+applies the limits on how fast one user or one daemon may send the relay requests;
+answers the daemons' open requests when stopping; and gathers the relay's log lines and
+what the daemons report about themselves.
 
 In no phase: the configuration's edit screens, permissions inside a group, more than
-one printer for a group, and the different kind of server for many daemons.
+one printer for a group, the different kind of server for many daemons, and, until the
+Onshape app is public, reading a signed-in user's groups again once a day with the
+renewing of tokens that it needs.
 
 ## What is undecided or unmeasured
 
+Each item says what it is, what is known, the choices with what each costs and what a
+user would see, and what is recommended. Every figure in a recommendation is a
+proposal. The first part holds what no source decides about the design; the parts after
+it hold what is unmeasured or unconfirmed about the host and about Onshape, and smaller
+open points.
+
+### Gaps in the design that need a decision
+
+#### Who may sign in
+
+**What it is.** Anyone with an Onshape account can sign in to the hosted service, and
+an account is free to make. A person whose account belongs to no company or classroom
+becomes a group of one, is given the built-in default configuration, and can upload
+parts, slice, keep sliced files for their two hours and, from phase 5, pair a printer
+of their own. No source limits this, and no source says it is intended.
+
+**What is known.** A stranger reaches nothing of anyone else's: not another user's
+parts or sliced files, and not another group's configuration or printer. What a
+stranger can take is capacity and allowance.
+
+- Capacity. The slice service starts with one slice running and two allowed to wait,
+  and a user has one unfinished slice job at a time. So three accounts slicing heavy
+  plates one after another hold every place, and the users PenguinSlicer is meant for
+  are told the slicer is busy. Each slice is bounded by the slice service's memory
+  ceiling and time limit, and Railway bills the memory held, so strangers' slices are
+  paid for by the owner.
+- Allowance. Each sign-in spends two calls to Onshape
+  ([Sign-ins and the allowance](#sign-ins-and-the-allowance)).
+- Not checked: whether Onshape lets any account approve an app that is not yet public
+  in its App Store. If it does not, the sign-in is closed to strangers by Onshape until
+  the app is public, and this decision can wait until then.
+
+**The choices.**
+
+| Choice | What a user sees | What it costs |
+|---|---|---|
+| Leave the sign-in open | Nothing new. If strangers slice heavily, known users are told the slicer is busy | Nothing to build. The queue and the bill are open to anyone |
+| A list of permitted groups that the owner keeps, where an empty list means anyone | A user none of whose groups is listed is told, after signing in, that PenguinSlicer is not open to their Onshape account yet | One list, one check, one error report and their tests. The owner adds each new group by hand, and a user in no company is added by themselves. A refused sign-in still spends its two calls, because a user's groups are known only after Onshape has been asked |
+| Leave it open, and build the list only when the log shows strangers | As the first choice, until then | Nothing now. The service is exposed between the first abuse and the fix |
+
+**Recommended:** the list, with an empty list meaning anyone, built in phase 3 with the
+sign-in, and kept where the owner can change it without a deploy (as a hand-written
+configuration is placed in the state bucket). The reason: until the Onshape app is
+public and Orca's cost on Railway has been measured, the service slices one plate at a
+time and every sign-in draws on the allowance, while the first users are a few known
+groups. The list costs little, and opening the service later is emptying it. The list
+does not protect the allowance; only the next item does.
+
+#### Sign-ins and the allowance
+
+**What it is.** Each sign-in spends 2 of the 2,500 calls a year, and nothing limits how
+often anyone signs in.
+
+**What is known.**
+
+- Expected use is small: twenty users signing in once in thirty days spend about 80
+  calls in two months.
+- 1,250 sign-ins spend the whole allowance. One person can repeat a sign-in in three
+  ways: by "sign in again" in the header; by clearing the cookie or opening a private
+  window; and without meaning to, when the browser withholds the cookie and the sign-in
+  repeats by itself
+  ([The cookie inside Onshape's panel](#the-cookie-inside-onshapes-panel)). A person
+  refused by a list of permitted groups spends two calls each time as well.
+- "Sign in again" is not in this guide's list of requests that must carry the wizard's
+  mark ([Requests from other sites](#requests-from-other-sites)). If it stays out,
+  another site's page could make a signed-in user's browser repeat it.
+- When the allowance is spent, nobody without a cookie can sign in, and a user whose
+  cookie ends cannot come back, until Onshape's year turns; when that is has not been
+  checked. Users who hold a cookie go on working until phase 4, since nothing else
+  calls Onshape; from phase 4 reading parts from Onshape stops too.
+- Every call is logged and the command that reads the log totals the year, but the
+  owner reads the log on demand. Nothing tells the owner that the count is climbing.
+- Making the Onshape app public lifts the allowance, and this item goes with it.
+
+**The choices.**
+
+| Choice | What a user sees | What it costs |
+|---|---|---|
+| No limit; watch the year's total in the log | Nothing, until the day nobody can sign in | Nothing to build. One person can spend the allowance within an hour, and it is found afterwards |
+| Limit "sign in again" for each user (proposed: three a day) and require the wizard's mark for it | A user over the limit is told to try again tomorrow | A count for each user in the front server's memory, which a restart forgets. It does nothing about sign-ins from a browser with no cookie, where the user is known only after Onshape has been called |
+| That, and a ceiling on all sign-ins in one day (proposed: fifty for the whole service, which is 100 calls, and ten from one address) | At the ceiling, a person trying to sign in is told that PenguinSlicer cannot sign anyone in until tomorrow. Users who hold a cookie are not affected | Counts in memory, which a restart forgets. A hostile person can reach the ceiling on purpose and keep new users out for that day. Spending the whole allowance then takes at least 25 days at the ceiling, which the log shows |
+
+A count of the year's calls kept in the state bucket, with sign-ins refused once it
+reaches a reserve, is the one variant that a restart does not reset. It costs a record
+written at every sign-in.
+
+**Recommended:** the third choice, built in phase 3 with the sign-in. The reason: the
+cookie's thirty days, the development identity and the stand-in in tests all exist to
+protect the allowance, and without a limit one person undoes all three in an hour. A
+few counts in memory turn that hour into weeks that the log shows.
+
+#### How many users at once, and what happens when the threads run out
+
+**What it is.** The front server serves requests with 100 threads. No source says how
+many users, or pages following a slice job or a print, it must serve at once, and none
+says what happens when every thread is held.
+
+**What is known.**
+
+- What holds a thread is listed under
+  [The limits that matter](#the-limits-that-matter): a page's progress stream, an idle
+  daemon's open request, the front server's own following of a slice job, an upload or
+  a download.
+- Following slice jobs is bounded by the slice service: with one slice running and two
+  waiting there are at most three unfinished slice jobs, though each may be followed
+  from several tabs.
+- Following prints is not bounded. The contract has a page follow a delivery job on a
+  progress stream, and a print lasts hours, so from phase 5 each page open on a print
+  holds a thread for those hours.
+- From phase 5 the printer-status icon is in the header of every open page. Whether it
+  is kept current over an open connection or by short repeated requests is not stated.
+  Printer delivery's proposed limit of 120 status requests a minute for each user
+  suggests short requests.
+- With about fifty idle daemons and three slice jobs followed, 47 threads are left: 47
+  pages following at once, fewer while parts and sliced files are passing through.
+- Nothing limits how many streams one user holds. One user with fifty tabs open holds
+  fifty threads.
+- When no thread is free, the likely behaviour is that a request waits for one. The
+  page then shows nothing for 20 seconds, then that the server is being slow, then
+  after 300 seconds an error; a daemon retries. So a front server out of threads looks
+  to every user, and to anyone signing in, like a server that is down.
+- The front server's memory with every thread busy was never measured.
+- The use intended at first, a few groups with a printer each, is far below any of
+  this. The item matters as use grows, and because the design states "about fifty
+  daemons" on an assumption nobody has checked.
+
+**The choices.**
+
+| Choice | What a user sees | What it costs |
+|---|---|---|
+| Keep progress streams for slice jobs and prints; state a target; limit the streams one user may hold (proposed: four) | Nothing in ordinary use. A fifth tab is refused its stream. When threads run out, every user sees the slow-server message | A count for each user. The ceiling stays near 47 pages following at once with fifty daemons, and long prints fill it |
+| Follow a print and the printer's status by a short request (proposed: every ten seconds, which is how often a printing daemon reports), and keep progress streams for slice jobs only, limited for each user as above | Print progress as fresh as it would be on a stream, since it changes only every ten seconds | A change to the contract, which follows a delivery job on a stream. Each open page makes six short requests a minute and holds no thread between them. What holds threads is then bounded by three slice jobs and the daemons |
+| Move now to the different kind of server that holds thousands of connections | Nothing | The known future work brought forward: the front server, or the part of it that holds connections, written and tested another way |
+
+**Recommended:** the second choice, with a stated target (proposed: fifty idle daemons
+and fifty open pages at once), checked by a test that holds that many open against the
+stand-ins and by the once-a-minute log line on the hosted service; and, when no thread
+is free, that a request waits its turn, which the page's retrying already covers. The
+reason: a print lasts hours and changes every ten seconds, so a thread held for it buys
+nothing. With prints off the threads, "about fifty daemons" stops resting on an
+assumption.
+
+#### The cookie inside Onshape's panel
+
+**What it is.** In Onshape's panel, from phase 4, the page is embedded in Onshape's
+site, and the sign-in works only if Chrome sends the cookie to an embedded page. Chrome
+can withhold it, and nothing is designed for that case.
+
+**What is known.**
+
+- PenguinCAM's panel works this way in production today, with a cookie of the same
+  kind. The ordinary case is therefore expected to work.
+- Believed and not tried: Chrome withholds such a cookie when a user has chosen to
+  block cookies from other sites, and in a private window. Chrome's default for
+  ordinary windows could change.
+- The browser's storage, where the user's parts and layout are kept, depends on the
+  same permission from Chrome.
+- What the user sees when the cookie is withheld: the front server sends the browser to
+  Onshape, Onshape sends it back, the cookie is set and never returned, and the next
+  request starts the sign-in again. It repeats without end, and each round spends two
+  calls to Onshape.
+- Not stated in any source: whether Onshape's approval page can appear inside the panel
+  the first time a user signs in, or must open in a window of its own.
+- Outside Onshape, in phase 3, the page is not embedded and none of this applies.
+
+**The choices.**
+
+| Choice | What a user sees | What it costs |
+|---|---|---|
+| Break the repeat and say so: the front server notices a sign-in that came back from Onshape without its cookie following, and stops | A plain page saying that the browser is blocking PenguinSlicer inside Onshape, with a link that opens PenguinSlicer in a tab of its own. There the user works without what the panel knows of their Onshape selection | A marker carried through the sign-in, one page, their tests. It stops the repeat from spending the allowance. It does not make the panel work |
+| A cookie that Chrome keeps separately for PenguinSlicer inside Onshape and sends even when it blocks other sites' cookies (Chrome calls these partitioned cookies) | The panel works for these users. A user signs in once in the panel and once outside it, since the two cookies are separate | Believed to work, not tried. Two more calls for each such user each thirty days. The sign-in must finish inside the panel for the cookie to land there, which rests on the unanswered question about Onshape's approval page |
+| No cookie in the panel: the page holds the sign-in itself and sends it with each request | The panel works whatever Chrome does. The user may sign in each time the panel opens | A second sign-in design for the panel, which gives up the rule that the page cannot read the sign-in, and may spend two calls at each opening |
+
+**Recommended:** build the first choice in phase 3 with the sign-in, and make a trial of
+the second the first step of phase 4, in real Chrome: an ordinary window, a private
+window, and with other sites' cookies blocked, before anything else of phase 4 is built
+on the panel. The reason: this is a risk to whether phase 4 can work for every user,
+the trial is cheap, and the first choice is worth having in any case because it closes
+one way of spending the allowance.
+
+#### No ceiling on a sliced file
+
+**What it is.** Nothing in the design bounds the size of a sliced file.
+
+**What is known.** Sliced files are 8.8 to 14.1 MB on the plates sliced so far, and a
+full plate at a fine layer height is not among them. Each sliced file passes through
+the front server into the state bucket and out again for each preview, download and
+print. Cloudflare allows 100 MB for one request; whether that applies to a file coming
+down as it does to one going up has not been checked. The log line that ends each slice
+records the size.
+
+**The choices.** Set no ceiling and measure: a user sees nothing, and a sliced file too
+large to fetch would show as a preview that never loads. Or have the front server
+refuse, when it collects it, a sliced file over a ceiling (proposed: 100 MB): the user
+is told the sliced file is too large and to slice fewer parts or coarser layers, at the
+cost of one check and one error report.
+
+**Recommended:** measure first. The plates of rising weight that are sliced on the
+slice container in phase 3 give the sizes; add the ceiling only if one comes within a
+factor of two of 100 MB. A ceiling set before that would refuse plates for no known
+cause.
+
+#### A plate configuration submitted twice
+
+**What it is.** The page retries a request whose answer it did not receive, and
+submitting a plate configuration cancels the same user's earlier unfinished slice job.
+So a repeated submission can cancel the slice job its own first attempt made. The
+requirement is that the page never ends up following a cancelled slice job; no source
+gives the means.
+
+**The choices.** The page gives each submission a value of its own making, and a repeat
+carrying the same value is answered with the first attempt's slice job: exact, at the
+cost of remembering the value beside the slice job, which touches the slice service's
+interface. Or a submission identical to the user's unfinished slice job is answered
+with that slice job: no value to carry, but the slice service must compare plate
+configurations. Or nothing: the repeat cancels the first and the page follows the
+second, which loses a few seconds of slicing and goes wrong only if the two answers
+arrive out of order.
+
+**Recommended:** the value of the page's own making, designed with the contract's
+requests before phase 2 is built, because it is exact and is the same idea as the
+repeated send.
+
 ### About the host
 
-**What Railway does at a deploy.** Three things are unknown: whether it deploys the
+#### What Railway does at a deploy
+
+Three things are unknown: whether it deploys the
 front server alone when only the front server's and the wizard's folders changed;
 whether it starts the new container before stopping the old; and how long it gives a
 stopping container. The design assumes the worst, a plain stop and then a start, and is
 built to lose nothing in that case; the user then sees a pause of however long the
-start takes, silent if under 20 seconds. If Railway overlaps old and new, the pause
-shrinks towards nothing. If it gives a stopping container very little time, downloads
-in progress are cut and retried by the page. It is tried first in phase 3.
+start takes, which the page's retrying covers. If Railway overlaps old and new, the
+pause shrinks towards nothing. If it gives a stopping container very little time,
+downloads in progress are cut and retried by the page. It is tried first in phase 3,
+because the rest of [Restarts and deploys](#restarts-and-deploys) rests on it.
 
-**Whether progress arrives as it is sent.** Neither Cloudflare nor Railway promises to
+#### A deploy that fails, and learning that the service is down
+
+Nothing is designed for a new front server that fails to start or fails the check that
+runs after each deploy, nor for how the owner learns that the service is down at any
+other time: the log is read on demand. Whether Railway keeps the old container running
+when the new one fails to start is part of what is unknown about its deploys. Meanwhile
+users see the page's retrying and, after 300 seconds, its error; their work stays in
+the browser, and a print already at the printer goes on.
+
+The choices: nothing, so that the owner hears of it from a user; or the check that runs
+after each deploy tells the owner when it fails, and the owner puts the previous
+version back through Railway by hand; or, beyond that, something outside Railway asks
+the service every few minutes whether it answers and tells the owner when it does not.
+
+Recommended: the second in phase 3, since the check is to be built anyway and lacks
+only someone to tell; the third once users rely on the service.
+
+#### Whether progress arrives as it is sent
+
+Neither Cloudflare nor Railway promises to
 pass a progress stream on without holding it back to send in batches. If either holds
 it, progress would arrive in lumps or not until the end. The fallback is designed: the
 page asks for the latest progress report every second or two, using the same request a
@@ -1056,46 +1347,78 @@ returning page uses. The user would see progress up to two seconds late; the fro
 server would answer a short request every second or two for each watching page instead
 of holding one connection open. One slice on the hosted service settles it.
 
-**Railway's limit on one request.** Its documents state none. A part may be 7.5 MB. One
+#### Railway's limit on one request
+
+Its documents state none. A part may be 7.5 MB. One
 real upload settles it. No fallback is designed if the limit proves lower; sending a
 part in pieces would be new design in the wizard, the front server and the slice
 service.
 
-**The front server's memory.** Never measured, at rest or with fifty daemons' requests
-held open. It decides the front server's share of the bill and whether 100 threads is a
-safe figure. The once-a-minute log line is there to answer it once the service runs.
+#### The front server's memory
 
-**The cost.** The figures under [What it costs to run](#what-it-costs-to-run) are from
-published rates. The first month's bill settles them.
+Never measured, at rest or with fifty daemons' requests held open. It decides the front
+server's share of the bill and whether 100 threads is a safe figure. The once-a-minute
+log line is there to answer it once the service runs.
 
-**A daemon through Cloudflare.** Whether Cloudflare's protection against automated
+#### The cost
+
+By Railway's published rates the two containers together cost about $7 a month with a
+few slices a day, and the buckets cost cents. The figure is the architecture's
+([To confirm before building on it](../docs/architecture.md#to-confirm-before-building-on-it));
+the first month's bill settles it.
+
+#### A daemon through Cloudflare
+
+Whether Cloudflare's protection against automated
 clients ever challenges a daemon's requests is unchecked. It concerns the front server
 because the daemon's address is the front server's.
 
 ### About Onshape
 
-**Which allowance the owner's account has.** 2,500 a year is Onshape's figure for a
+#### The permissions the Onshape app asks for
+
+No source lists them. In phase 3 the app needs only to read who the user is and their
+companies and classrooms, which is what the wizard tells a user it reads. In phase 4,
+reading a user's parts needs permission to read their Onshape documents, and how
+narrowly Onshape lets an app ask for that has not been checked. It matters because the
+tokens are in the cookie: someone who took the cookie key, or control of the front
+server, could then read whatever the permission covers, for every signed-in user.
+
+Recommended: ask in phase 3 only for the user's identity, companies and classrooms; add
+permission to read documents in phase 4 and not before, which means each user approves
+the app once more then; never ask for permission to write. It is settled with phase 4's
+design.
+
+#### Which allowance the owner's account has
+
+2,500 a year is Onshape's figure for a
 free or education account. Which kind the account is has not been confirmed. The design
 spends so little that only a much smaller figure would matter.
 
-**Whether a second Onshape app shares the allowance.** Development against real Onshape
+#### Whether a second Onshape app shares the allowance
+
+Development against real Onshape
 would use a second app of the same account, registered for development. Whether its calls and the
 hosted app's draw on one allowance, as two apps of one account, is unknown. If they do,
 development against real Onshape is counted with the users' sign-ins, which is one more
 reason the development identity and the stand-in exist.
 
-**Whether renewing a token counts as a call.** It matters from phase 4, when reading
+#### Whether renewing a token counts as a call
+
+It matters from phase 4, when reading
 parts needs a fresh token for a user whose hour has passed. If it counts, each working
 session in phase 4 costs at least one call beyond the calls for parts, and phase 4's
 count must include it.
 
-**What Onshape answers for an account with no company or classroom.** The design says
-such a user is a group of one, named by their own Onshape id. What Onshape actually
-returns for them is unchecked. The
-sign-in must reach a group of one from whatever it is. The first such account tried
-settles it.
+#### What Onshape answers for an account with no company or classroom
 
-**Replacing the Onshape app's secret.** Onshape's help says a new secret can be made
+The design says such a user is a group of one, named by their own Onshape id. What
+Onshape actually returns for them is unchecked. The sign-in must reach a group of one
+from whatever it is. The first such account tried settles it.
+
+#### Replacing the Onshape app's secret
+
+Onshape's help says a new secret can be made
 for an app. Whether the old one stops working at that moment is unchecked. If it does,
 sign-ins fail from then until the front server has restarted with the new one; signed-in
 users are not affected. Whether, from phase 4, tokens issued under the old secret can
@@ -1104,56 +1427,96 @@ parts would have to sign in again.
 
 ### About the design itself
 
-**Whether the cookie fits.** A browser cookie holds about 4 KB. This one must carry the
-identity, every group's id and name, and two tokens, all encrypted, which adds size. It
-was never measured. A user in many groups is the case that could fail, and a cookie
-that is too large is silently dropped by the browser, so that user could never sign in.
-No alternative is designed. One fact leaves room: nothing needs the tokens before phase
-4, unless the app is public by then. Any design that keeps part of this on
-the server instead would give up "no sessions" for that part. The measurement comes
-first, in phase 3, with a real account.
+#### Whether the cookie fits
 
-**Two requests renewing the tokens at once.** Onshape's renewal token is spent when
+A browser cookie holds about 4 KB. This one must carry the identity, every group's id
+and name, and two tokens, all encrypted, which adds size. It was never measured. A user
+in many groups is the case that could fail, and a cookie that is too large is silently
+dropped by the browser, so that user could never sign in. No alternative is designed.
+One fact leaves room: nothing needs the tokens before phase 4, unless the app is public
+by then, so until then the cookie could be set without the tokens, which removes most
+of its size. Any design that keeps part of this on the server instead would give up "no
+sessions" for that part. The measurement comes first, in phase 3, with a real account.
+
+#### Two requests renewing the tokens at once
+
+Onshape's renewal token is spent when
 used. If two of a user's requests both find the hour passed and both renew, one may
 write back a token the other has already spent, and the user's next call to Onshape
 fails until they sign in again. It must be prevented, and how is not designed. It
 cannot happen before something needs a token, which is phase 4, or the day the app
 becomes public.
 
-**Things this design fixes that the approved design left open.** Each is stated above
-as the design, and each can be changed without disturbing the rest.
+#### Choices the owner has not yet confirmed
 
-- The cookie's thirty days run from the sign-in and are not extended by use. The other
-  choice, thirty days from last use, means fewer sign-ins for regular users and lets a
-  removed user keep access without end while the groups are never read again.
-- A slice is reported finished only once its sliced file is stored. The user waits the
-  moment it takes to move 8.8 to 14.1 MB between two services before the preview opens.
-- A slice or sliced file of another user is answered as unknown, not as forbidden.
-- A damaged configuration is reported, never replaced by the default. The group cannot
-  slice until the owner repairs the document.
-- A repeated send is answered with the delivery job the first one made. Printer
-  delivery as built refuses it instead, and changing that is part of phase 5.
+Each is stated above as the design, and each can be changed without disturbing the
+rest. For each: what a user sees, and what the other choice would cost.
+
+- The cookie's thirty days run from the sign-in and are not extended by use, so a user
+  signs in once in thirty days however often they come. The other choice, thirty days
+  from last use, means fewer sign-ins for regular users and lets a removed user keep
+  access without end while the groups are never read again.
+- A slice job is reported finished only once its sliced file is stored, so the user
+  waits the moment it takes to move the sliced file between two services before the
+  preview opens. Reporting sooner would send the page to fetch a file that is not there
+  yet.
+- A damaged configuration is reported, never replaced by the default, so the group
+  cannot slice until the owner repairs the document. Replacing it with the default
+  would let the group slice with settings that are not theirs and hide the mistake.
 - The log is built in phase 2, into a folder, and the defences against other sites in
-  phase 3, since on one machine there is no other site and no real cookie to protect.
-- The front server's following of slice jobs is counted among its 100 threads; the
-  approved design's "about fifty daemons" did not count it.
+  phase 3. A user sees neither. Building the defences in phase 2 would test them on one
+  machine, where there is no other site and no real cookie to protect.
+- Following slice jobs is counted among the 100 threads, so the room for daemons is
+  about fifty, less up to three. A user sees nothing of it. Counting them apart would
+  mean a second set of threads to size and to watch.
+- A group's configuration is the built-in default or a document the owner places by
+  hand for that group, as the plan and the configuration's contract say. If the fixed
+  set should instead be a few named configurations shipped with the front server, from
+  which a group is given one, something must also record which one each group has.
 
-**The configuration's write, with nothing using it.** The conditional write is built in
-phase 2 though no screen calls it until the edit screens exist. Building it then proves
-the bucket's conditional write early, on a folder and then on R2, and costs little.
-Leaving it out until the edit screens are designed would cost nothing a user can see.
+#### Signing out
 
-**What the fixed set of configurations is.** This guide takes it to be the built-in
-default, plus any document the owner places by hand for a particular group. If it
-should instead be a few named configurations shipped with the front server, from which
-a group is given one, that is a different and slightly larger design: something must
-then record which one each group has.
-
-**Signing out.** Nothing is designed for it. A user stops being signed in when the
+Nothing is designed for it. A user stops being signed in when the
 cookie ends, or when they clear it in the browser. On a shared computer the next person
 at that browser is the previous user for up to thirty days. Whether the header needs a
 "sign out" beside "sign in again" is open; it would cost no call to Onshape, only the
-removal of the cookie.
+removal of the cookie, and the user's next visit would cost the two calls of a sign-in.
 
-**Rate limits and the sweep's interval.** Both are named above without figures. The
-builder proposes them with phase 2's and phase 5's designs.
+Recommended: add it in phase 3 with "sign in again", since it is one small request and
+without it a shared computer cannot be handed from one user to the next.
+
+#### Smaller points this guide proposes or leaves to a phase's design
+
+Each is stated where it applies and marked there. None has a source, so each needs a
+yes or a correction.
+
+- The front server marks every answer except the wizard's own page files as not to be
+  kept by any proxy or browser
+  ([Why it is the one thing the internet reaches](#why-it-is-the-one-thing-the-internet-reaches)).
+  Without it, a proxy could hand one user's sliced file to another.
+- A user of Safari is shown a plain page saying that PenguinSlicer needs Chrome
+  ([Onshape is the only sign-in](#onshape-is-the-only-sign-in-and-there-are-no-accounts)).
+  Without it, such a user sees whatever fails first.
+- A part and a sliced file pass through the front server in pieces and are never held
+  whole in its memory ([A part](#a-part),
+  [The front server follows every slice job itself](#the-front-server-follows-every-slice-job-itself)).
+  Holding them whole is simpler to build and makes the front server's memory grow with
+  the number of files passing through at once.
+- Which component makes a slice service that is stopping for a deploy look, to the
+  page, like a service that did not answer: the slice service itself, or the front
+  server turning its refusal into that answer
+  ([A plate configuration](#a-plate-configuration)). A user sees the same either way.
+  It is settled with phase 2's design.
+
+#### Rate limits and the sweep's interval
+
+For phase 5, printer delivery's guide proposes carrying over the figures built today:
+120 status requests and 10 sends a minute for each user, and 120 syncs and 60 other
+requests a minute for each daemon (a sync is the request by which a daemon reports to
+the relay); see
+[printer delivery's guide](../delivery/README.md#the-rate-limits-of-phase-5). For
+wrong pairing codes it proposes ten a minute for each user. For phase 2's requests, a user's uploads of
+parts and submissions of plate configurations, nothing is proposed anywhere; the user
+key's limits (one unfinished slice job, 25 parts in the part store) bound what such
+requests can hold but not how fast they come. The sweep's interval has no figure
+either. The builder proposes the missing figures with phase 2's and phase 5's designs.

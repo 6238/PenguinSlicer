@@ -6,9 +6,10 @@ is still open. It uses the terms of [the plan](../docs/plans/penguin-slicer-plan
 [README-details.md](README-details.md) holds what a builder needs: the names in the code,
 every error code, every measurement in full and the required tests.
 
-Part of what this guide describes exists and part is still to be built. Every section
-below opens with a line that says which, by the phase of the plan that builds the rest:
-phase 2 runs everything on one machine, phase 3 hosts it on Railway. Phase 4 (inside
+Part of what this guide describes exists and part is still to be built. Each section
+about what the slice service does opens with a line that says which, by the phase of the
+plan that builds the rest, and elsewhere the sentence itself says it: phase 2 runs
+everything on one machine, phase 3 hosts it on Railway. Phase 4 (inside
 Onshape) and phase 5 (the real printer) change nothing in the slice service.
 
 ## What it is for
@@ -17,8 +18,8 @@ A user of PenguinSlicer lays parts out on a picture of the printer's plate and a
 them to be sliced. **Slicing** is turning the solid shapes into the printer's instructions,
 layer by layer: where the nozzle moves, how much plastic it pushes, at what temperature
 and speed. PenguinSlicer does not write a slicer of its own. It runs **Orca** (Orca
-Slicer, an open-source slicer; version 2.4.2 is the one in use) on a server, with no
-window. The slice service is the component that does this: it takes a description of one
+Slicer, an open-source slicer; version 2.4.2 is the one in use, called the pinned Orca
+below) on a server, with no window. The slice service is the component that does this: it takes a description of one
 plate, checks it, runs Orca on it, watches Orca while it runs, and hands back the file the
 printer runs, or a plain statement of why there is none.
 
@@ -66,11 +67,12 @@ reads files that strangers upload, and a program that large, reading hostile inp
 be assumed to have flaws; a flaw in Orca, or in the slice service around it, then reaches
 no sign-in secret and no stored file of anyone's.
 
-Its one caller is the **front server**, the component that the browser talks to and that
-signs users in. The **wizard**, the code in the browser, never reaches the slice service
-directly; "the page" in this guide is the wizard, open in one browser tab. With every request the front server passes a **user key**: the signed-in user's
-Onshape id, which says whose part or slice job this is. The slice service compares user
-keys and never interprets them.
+Only one thing sends it requests, the **front server**, the component that the browser
+talks to and that signs users in. The **wizard**, the code in the browser, never reaches
+the slice service directly; "the page" in this guide is the wizard, open in one browser
+tab. From phase 2 the front server passes a **user key** with every request: the
+signed-in user's Onshape id, which says whose part or slice job this is. The slice service
+compares user keys and never interprets them. Today no request carries one.
 
 ```mermaid
 flowchart TB
@@ -133,7 +135,8 @@ part's least width with the plate's short side, its longest extent with the plat
 diagonal, and its height, so a part it refuses truly fits nowhere. A long part that fits
 only along the diagonal passes, and the placement check decides later. Today the test uses
 the printer the plate names. From phase 2 a part arrives before any plate names a printer,
-so on arrival the test uses the largest printer in the profile catalog (proposed), and it
+so on arrival the test uses the largest printer in the profile catalog (the slice
+service's own list of Orca's profiles, described below; this use of it is proposed), and it
 runs again against the plate's own printer when a plate names the part.
 
 Why the last three only warn: the pinned Orca slices an open box, an inside-out box, two
@@ -722,7 +725,7 @@ to read all eight real parts and up to 5.8 seconds to accept the largest plate.
 | Different parts on a plate | 25 | The upload and the disk: 25 parts of 7.5 MB each is 187.5 MB. Not a measured limit | Tests |
 | One part | 150,000 triangles; 7,500,084 bytes | The time to read and check one part, and one upload. Reading all eight real parts (7 MB together) took 0.17 to 0.19 seconds | Tests at the limit and one over |
 | A plate configuration without its files | 1 MB, proposed, from phase 2 | The description alone | Tests |
-| Margin, spacing, least size | 3 mm; 5 mm and 12 mm; 0.1 mm | See [Check a plate before it is sliced](#check-a-plate-before-it-is-sliced). The spacings are measured, with room to spare | The real Orca slices the tightest pairs exactly the spacing apart |
+| Margin, spacing, least size | 3 mm; 5 mm and 12 mm; 0.1 mm | See [Check a plate before it is sliced](#check-a-plate-before-it-is-sliced). The spacings are measured, with room to spare | The upstream check slices the tightest pairs exactly the spacing apart |
 | A part in the part store | Two hours after last use; 25 for one user | Disk, and how long a stranger's model rests on the server | Tests that move a clock |
 | A slice job remembered | Two hours after it ends, from phase 2 (one hour today) | Memory of the slice service process | Tests that move a clock |
 | A quiet progress stream | Something sent at least every 15 seconds | Railway's 5 minutes and Cloudflare's 125 seconds without data, both theirs | A test |
@@ -852,8 +855,8 @@ that tell a user to ask someone for help still use the old words for people; cha
 is known future work.
 
 **What a restart does.** A slice service process that restarts has forgotten every slice
-job, and from phase 2 it empties the part store as it starts. At start it also removes the
-scratch folder of any earlier process that is no longer running; a folder's name records
+job, and from phase 2 it empties the part store as it starts. At start it also removes every
+slice job's folder left by an earlier process that is no longer running; a folder's name records
 which process made it and when that process started, so a living process's folder is never
 taken for a dead one's. What the user sees, case by case, is the table "The slice
 container restarts" in [the architecture](../docs/architecture.md#what-a-restart-does). The
@@ -883,7 +886,8 @@ not be reached, with an offer to try again):
 | They submit while the slice service is stopping | Nothing for 20 seconds, then the message that the server is being slow, until the running slice has ended, the front server has stored its sliced file and the replacement has started. That is at most the time limit of 240 seconds plus the replacement's start, which was never measured. If it passes 300 seconds, they are told the server could not be reached and must press to try again. Their plate is kept either way |
 | The running slice outlasts the time Railway allows a stopping container | Railway kills the slice service process and Orca dies with it. The user whose slice was running sees its progress start again from nothing, as after any restart. The users who were retrying get through as soon as the replacement has started |
 
-So a deploy can show a user a slow server for up to four minutes. Whether that is
+So a deploy can show a user a slow server for up to four minutes and the time the
+replacement takes to start. Whether that is
 acceptable is undecided; see
 [What a user sees while the slice service stops](#what-a-user-sees-while-the-slice-service-stops).
 How long Railway allows a stopping container is not known, nor whether it starts the
@@ -935,8 +939,8 @@ assumption loud.
 - **One command moves it.** It downloads the new release and verifies it against the
   publisher's checksums, installs it beside the current one so that a failed download
   changes nothing, regenerates the profile catalog and the default set from the new Orca's
-  own profiles, and runs the **upstream check**: the suite of tests that run the real Orca
-  and pin every behaviour of Orca the slice service relies on. Each of those tests states
+  own profiles, and runs the upstream check, whose tests pin every behaviour of Orca the
+  slice service relies on. Each of those tests states
   what it protects, so a failure names the assumption that broke.
 - **Going back is the same command** with the old version.
 - **Everything that knows Orca's quirks is in one part of the code,** with its stand-in
@@ -960,8 +964,8 @@ to reach a goal, whether for an error, for progress or for a minor feature. Ever
 paid for again at each new version, and for Orca the price is high: a patched Orca can no
 longer be the published release and must be built from source, which is why each patch to
 Orca is the owner's decision and why the upgrade command stops when a patch exists. There
-is no patch today. The one place a patch would buy something is named in
-[What is undecided or unmeasured](#what-is-undecided-or-unmeasured).
+is no patch today. The one place a patch would buy something is
+[A part whose first layer is empty](#a-part-whose-first-layer-is-empty).
 
 ## How it is tested
 
@@ -1087,14 +1091,25 @@ Orca can rise between two readings and the operating system. If the true figure 
 larger, the ceiling comes down.
 
 **Disk.** Never measured: what the part store takes, and so what its overall limit should
-be; and what finished slice jobs hold. The known bounds are 188.5 MB of parts for one user
-at the limit, and 269 to 448 MB for the folder of one slice job on the largest plate.
+be; and what finished slice jobs hold. The known bounds are 187.5 MB of parts for one user
+at the limit, and 269 to 448 MB for one slice job's folder on the largest plate.
 Until it is measured the part store's limit has no default, and a figure must be chosen
 from the slice container's disk before phase 3.
 
 **How long a stopping container is given.** Finishing the running slice at a deploy only
 helps if Railway allows the time. If it allows less than a slice needs, a deploy during a
-slice costs that user the slice's time over again, as a crash does.
+slice costs that user the slice's time over again, as a crash does. Nor is it known
+whether Railway starts the replacement before the old container has stopped; if it does,
+two slice service processes share one address for a time, which this design does not
+allow for.
+
+**How long the replacement takes to start,** and so how long past the running slice's end
+a user who submits during a stop goes on retrying. If the time limit rises above 240
+seconds after phase 3's measurements, the wait can pass the 300 seconds for which the page
+retries, and that user is then told the server could not be reached.
+
+**Railway's limit on the body of a request.** Its documents state none. A part of 7.5 MB
+should pass; one real upload settles it.
 
 **How often two users slice at once.** This decides whether one running and two waiting is
 right. The once-a-minute log line and the wait recorded on each slice job's last line are
@@ -1105,56 +1120,161 @@ only if a second Orca at once is ever considered.
 
 ### Undecided
 
-**The hosted memory ceiling: one large slice or two smaller ones.** 6,000 MB is proposed
-and is the owner's to change. What is known: the heaviest plate ever measured peaked at
-2,569 MB, and the heaviest plate of real robot parts at 2,307 MB. The options:
+#### Where the wizard gets the list of settings and the profile catalog's names
 
-| Option | What a user gets | What it costs |
+*What it is.* The slice service accepts every setting that is a parameter with a value and
+none that is programmatic, and all of the accepted ones are available in the wizard's
+advanced mode. To draw the advanced mode the wizard needs, for the chosen process profile,
+every accepted setting with its kind (a choice, a number, a text), its permitted values
+and the profile's own value. Separately, whoever writes or checks a configuration needs
+the profile catalog's names, because the configuration names the profiles offered for each
+filament by Orca's names. No document says where either comes from.
+
+*What is known.* The slice service is the only component that holds Orca's profiles for
+the pinned version: 4 printer, 136 filament and 16 process profiles, each with every value
+written out. So the profile's own value of every setting is already there. The kind and
+the permitted values of a setting are not: the catalog holds values only, and whether the
+Orca release can be made to give its table of settings has not been tried (see
+[How the list of accepted settings is made](#how-the-list-of-accepted-settings-is-made)).
+The HTTP interface as built answers about slice jobs and nothing else. Today's four
+settings and their short lists are fixed in the slice service.
+
+*The options.*
+
+| Option | What it costs | What a user would see |
 |---|---|---|
-| One Orca at 6,000 MB (proposed) | Any plate up to more than twice the heaviest ever measured can slice | Every user waits behind whoever is slicing. Money only while a heavy plate is slicing, since Railway bills the memory held at each moment |
-| Two Orcas at about 3,000 MB each | Two users slice at once. Every plate measured so far still fits | Plates over about 3,000 MB are refused as too large. By the same sum as above, two Orcas at 3,000 MB plus a 502 MB rise each, plus 400 MB, is 7,404 MB of the 8 GB, a thinner margin. The two share the processors, so each is slower |
+| The slice service supplies the list and the catalog's names; the front server asks for them and passes them to the wizard (recommended) | A new part of the HTTP interface, a contract for the shape of the list, and a wizard that draws each setting from its kind and not from a design made by hand for that setting | An advanced mode that always offers exactly what the slice service accepts. After a new Orca version, new settings appear and removed ones vanish with no change to the wizard |
+| The front server or the wizard carries a copy, generated when it is built from the slice service's list | Breaks the rule that a component depends only on contracts. The two containers are deployed separately, so for a time the copy and the slice service can be of different Orca versions | Now and then a setting that is offered and then refused, or one that is accepted and never offered |
+| A list written by hand in the wizard | Kept by hand at every Orca version, for every setting Orca has. The same disagreement as above, lasting until someone notices | The same, for longer. In return each setting can be given its own words and order |
 
-Nothing measured so far needs more than 3,000 MB, and nothing is known yet about how
-often two users slice at once. The measurements on the host and the first weeks of the log
-supply both.
+*Recommendation.* The slice service, which alone knows Orca's settings for the pinned
+version, supplies the list, and the front server passes it to the wizard. The list then
+changes with the Orca version and never has to be kept in two places. The same answer
+serves the configuration: the catalog's names come from the slice service by the same
+route, so a configuration can be checked against the catalog that will slice it.
 
-**How the list of accepted settings is made.** The rule is fixed: every parameter with a
-value, nothing programmatic. How the slice service knows which is which is not. Two ways:
+#### What a user sees while the slice service stops
 
-- *A list of what is accepted,* generated from the pinned Orca's own table of settings by
-  the upgrade command, each with its kind and its permitted values, with the programmatic
-  ones struck out by name. A setting a new Orca adds is refused until someone has looked
-  at it. This is the proposal: an unknown setting fails closed, and the upstream check can
-  fail when the table changes.
+*What it is.* The rule is that a deploy at any moment interrupts no user. As designed for
+phase 2, a slice service asked to stop finishes its running slice and meanwhile turns new
+submissions away with an answer that is tried again. The table under
+[When things go wrong](#when-things-go-wrong) shows what follows: the user whose slice is
+running sees nothing, and every other user who submits sees nothing for 20 seconds and
+then the message that the server is being slow, for as long as the running slice takes.
+
+*What is known.* The time limit is 240 seconds, so that is the longest the running slice
+can hold the others. The page shows its message after 20 seconds of failed tries and gives
+up after 300. The slowest real plate measured took 34.3 seconds, so most deploys would
+hold a user far less than the worst case. How long the replacement takes to start, how
+long Railway allows a stopping container, and how often two users slice at once are all
+unmeasured. If phase 3's measurements raise the time limit, the worst case can pass 300
+seconds, and the user is then told the server could not be reached.
+
+*The options.*
+
+| Option | What it costs | What a user would see |
+|---|---|---|
+| Leave it as designed | Nothing more to build. The worst case depends on the time limit staying well under 300 seconds | A deploy during someone's long slice shows everyone else a slow server for up to four minutes and the time the replacement takes to start. Nothing is lost |
+| The front server keeps a submission made during the stop and hands it to the new slice container when that is up (recommended) | The front server must hold plate configurations for a while and report a state of its own for them; a submission it holds is lost if the front server itself restarts, and the page then submits again as it does today. The new slice container starts with an empty part store, so the parts are uploaded again when the plate is handed over | A slice that is waiting, with words that say the slicer is restarting, and then its ordinary progress. Never a slow server, however long the running slice takes |
+| Stop at once, cancelling the running slice too, as today | Nothing to build. The user whose slice was running loses the time it had run, up to 240 seconds | The running slice's progress starts again from nothing. Everyone else sees a pause of the replacement's start only |
+
+*Recommendation.* The front server keeps the submission and hands it over. A user then
+sees what is true, a slice that is waiting, and not a message about a slow server when
+nothing is wrong; and the design no longer depends on the time limit staying under the
+300 seconds for which the page retries. This is new design in the front server, not only
+here, and until it is built the first option is what phase 2 gives.
+
+#### How the list of accepted settings is made
+
+The rule is fixed: every parameter with a value, nothing programmatic. How the slice
+service knows which is which is not. Two ways:
+
+- *A list of what is accepted,* generated by the upgrade command from the pinned Orca's
+  table of settings, if the release can be made to give one, which has not been tried.
+  Each setting has its kind and its permitted values, and the programmatic ones are struck
+  out by name. A setting a new Orca adds is refused until someone has looked at it. This
+  is the proposal: an unknown setting fails closed, the upstream check can fail when the
+  table changes, and the same list is what the wizard's advanced mode would be drawn from.
 - *A list of what is refused,* with everything else passed to Orca. Less work, but a
   programmatic setting added by a new Orca version would be accepted without anyone
-  deciding so.
+  deciding so, and there is nothing to draw the advanced mode from.
 
-Also to settle with it: whether settings may replace values of the filament and printer
-profiles as well as the process profile (today only the process profile's), and the
-longest text a text setting may hold.
+Why programmatic settings are refused is given in no source. This guide's own reading,
+not a decided reason, is security: a parameter can only choose among things Orca already
+does, while a setting that runs a program, names a file or carries G-code lets a user
+direct the server or a shared printer.
 
-**Who notices a configuration that names a profile the catalog has lost.** A group's
-configuration names profiles by Orca's names. After an Orca upgrade a name can leave the
-catalog, and today the first sign would be a user told to "choose a filament and print
-settings from the list" on a list that offered the missing one. While the configurations
-are a fixed set kept with the code, the proposal is a test that checks every one of them
-against the catalog, so the upgrade fails and no user ever sees it. When configurations
-become editable, the front server will need the catalog's names to check an edit, and
-where it reads them from is to be decided then.
+Two things are to be settled with the list.
 
-**A part whose first layer is empty.** The user gets "The slicer could not slice this
+*Which profiles a setting may replace values of.* The sources pull apart. The rule says
+"every setting Orca allows that is a parameter with a value", with no limit to one
+profile. The plan's advanced mode shows every setting of the process profile, and today
+only the process profile's values can be replaced.
+
+| Reading | What a user gets | What it costs |
+|---|---|---|
+| The process profile only (recommended for phase 2) | Everything about how the part is printed: layers, walls, infill, supports, speeds | A user cannot change a filament's temperature or flow; a different value needs another filament profile in the configuration |
+| All three profiles | Also the filament's values and the printer's | The printer profile holds the plate's size and height, which the placement check trusts, so the check would have to judge against the replaced values. It also holds the start and end G-code, which stay refused as custom G-code. A wrong printer value can harm a shared printer where a wrong process value spoils one print |
+
+The recommendation is the process profile only, because it is what the plan's advanced
+mode shows and it leaves the placement check's trust in the printer profile intact; the
+filament's values can be added when a user needs one.
+
+*The longest text a text setting may hold.* The limit bounds what one setting can add to
+the profile written for Orca and to a line of the log. All the settings of a plate together
+are already bounded by the limit on a plate configuration without its files (1 MB,
+proposed), so a limit for each text adds only a refusal that names the setting. No source
+has a figure. This guide's recommendation: the figure is set when the check of each value
+is built, from the longest text value in the profile catalog.
+
+#### Who notices a configuration that names a profile the catalog has lost
+
+A group's configuration names profiles by Orca's names. After an Orca upgrade a name can
+leave the catalog, and today the first sign would be a user told to "choose a filament and
+print settings from the list" on a list that offered the missing one. Until the edit
+screens exist there is a fixed set of configurations, and the proposal is a test that
+checks every one of them against the catalog, so the upgrade fails and no user ever sees
+it. A configuration the owner places in the state bucket by hand is not covered. Which
+component holds the test is open, since the configurations are the front server's and the
+catalog is the slice service's, and a component depends only on contracts. If the slice
+service supplies the catalog's names, as recommended under
+[Where the wizard gets the list of settings and the profile catalog's names](#where-the-wizard-gets-the-list-of-settings-and-the-profile-catalogs-names),
+the front server can make the check itself, when it starts and when a configuration is
+edited.
+
+#### A part whose first layer is empty
+
+The user gets "The slicer could not slice this
 plate." and no reason, because the pinned Orca collects that error and loses it. The
 options: leave it (no cost, a poor message for a rare part); detect such parts in the
 slice service's own checks before slicing (a workaround, to be designed, and it must not
 refuse parts that print); or patch Orca to write the reason (a small patch for an error,
 which the rule allows, at the price of building Orca from source at every version from
-then on). No patch is proposed.
+then on). No patch is proposed. This guide's recommendation is to leave it until a real
+part shows the need, which is also the cheapest to reverse.
 
-**Parts that pass through themselves** are not detected. Orca sliced the cases tried, so
-nothing is refused wrongly; what a user might get is a print that is not what they meant,
-with no warning. Detecting it is real work on large parts and is not proposed until a real
-part shows the need.
+#### Parts that pass through themselves
+
+They are not detected. Orca sliced the cases tried, so nothing is refused wrongly; what a
+user might get is a print that is not what they meant, with no warning. Detecting it is
+real work on large parts and is not proposed until a real part shows the need.
+
+### Proposed, and the owner's to change
+
+**The hosted memory ceiling, proposed at 6,000 MB: what the other choice would be.** What
+is known: the heaviest plate ever measured peaked at 2,569 MB, and the heaviest plate of
+real robot parts at 2,307 MB. The options:
+
+| Option | What a user gets | What it costs |
+|---|---|---|
+| One Orca at 6,000 MB (proposed) | Any plate up to more than twice the heaviest ever measured can slice | Every user waits behind whoever is slicing. It costs more money only while a heavy plate is slicing, since Railway bills the memory held at each moment |
+| Two Orcas at about 3,000 MB each | Two users slice at once. Every plate measured so far still fits | Plates over about 3,000 MB are stopped as too large. The margin under the 8 GB is thinner; by this guide's own sum, not a measurement: 2 × 3,000 MB, plus 2 × 502 MB for the rise of each between two readings, plus 400 MB for the slice service, is 7,404 MB. The two share the processors, so each is slower |
+
+Nothing measured so far needs more than 3,000 MB, and nothing is known yet about how
+often two users slice at once. The measurements on the host and the first weeks of the log
+supply both.
+
+### Known future work
 
 **Taking Orca 2.5.x.** It needs the catalog's generator to read the new packed profile
 file, or Orca's own export of it. The size of that work is unknown until the format is
