@@ -15,6 +15,8 @@ in one browser tab or in Onshape's panel. The phases are those of
 [the plan](../docs/plans/penguin-slicer-plan.md): phase 2, one machine; phase 3, hosted on
 Railway; phase 4, inside Onshape; phase 5, the real printer.
 
+**Read after:** [the architecture](../docs/architecture.md#terms), whose terms it uses.
+
 Each requirement below links to the guide that owns its full explanation. Some depend on
 an item that needs the owner's choice or the owner's yes; those say so and link
 [the wizard's list of them](../wizard/README-details.md#where-the-mockup-and-the-design-differ).
@@ -43,9 +45,9 @@ the owner does not fix them.
   sliced file by the same user while its delivery job is live answers with that delivery
   job ([the front server](../front/README-details.md#hosting-the-relay-from-phase-5),
   [printer delivery](../delivery/README-details.md#sending-and-unpairing)).
-  How long the page retries before it shows an error depends on
-  [item 1.9](../wizard/README-details.md#19-retrying-then-an-error-after-20-seconds),
-  which needs the owner's choice.
+  This may change: an item awaits the owner's choice
+  ([item 1.9](../wizard/README-details.md#19-retrying-then-an-error-after-20-seconds),
+  how long the page retries before it shows an error).
 - **Every answer carries the front server's version** (*proposed*: in a header), error
   reports and the first event of a progress stream included
   ([the front server](../front/README-details.md#the-version-on-every-answer)). A page that
@@ -80,30 +82,18 @@ the owner does not fix them.
 ## The header and origin check
 
 Every route that changes something on the strength of the cookie also requires a header
-that only the wizard's own page can set, and checks the request's origin (*proposed*: that
-it is the front server's own address). (*Proposed*:) these are uploading a part,
-submitting a plate configuration, cancelling a slice job, writing the configuration, and
-from phase 5 pairing, sending, stopping following, cancelling a delivery job and
-unpairing. A request that fails either check is refused with an error report. No route
-allows cross-origin requests
-([the front server](../front/README-details.md#requests-from-other-sites)).
+that only the wizard's own page can set, and checks the request's origin; a request that
+fails either check is refused with an error report, and no route allows cross-origin
+requests. The list of those routes is in
+[the front server's guide](../front/README-details.md#requests-from-other-sites).
 
 ## The current group
 
 The page keeps the current group in the browser's storage and sends it with each request.
-The front server accepts it only if the cookie lists that group among the user's. Every
-request that acts for a group carries the current group and makes this check:
-
-- reading and writing the configuration;
-- uploading a part, submitting a plate configuration, asking about, following or
-  cancelling a slice job, and fetching a sliced file;
-- from phase 5, pairing, sending, following a delivery job and the printer's status,
-  stopping following, cancelling a delivery job, and unpairing.
-
-A request that needs no group carries none: the wizard's pages, the sign-in routes, and
-the request for the user and their groups. A request that needs a group and names none,
-or names one the cookie does not list, is refused with an error report
-([the front server](../front/README-details.md#groups-and-the-current-group)).
+The front server accepts it only if the cookie lists that group among the user's: every
+request that acts for a group carries it, and one that names none, or names one the
+cookie does not list, is refused with an error report. Which requests act for a group is
+in [the front server's guide](../front/README-details.md#groups-and-the-current-group).
 
 ## Uploading one part
 
@@ -115,9 +105,8 @@ or names one the cookie does not list, is refused with an error report
   the answer gives that hash, with the part's measurements and warnings
   ([the slice service](../slice/README-details.md#to-be-built)).
 - **A part that cannot be used** is answered with an error report the page shows on the
-  Parts step. Whether as a row or as a notification, with the part not added, is
-  [item 1.8](../wizard/README-details.md#18-a-part-that-cannot-be-used), which needs the
-  owner's yes.
+  Parts step as a notification, and the part is not added (not yet confirmed by the
+  owner: [item 1.8](../wizard/README-details.md#18-a-part-that-cannot-be-used)).
 
 ## Submitting a plate configuration
 
@@ -210,11 +199,10 @@ also looks for its sliced file in the state bucket
   print for two hours after its slice ended; an older one is answered with an error report
   saying it has expired, and deleted
   ([the front server](../front/README-details.md#two-hours-deleting-and-the-backstop)).
-  When the two hours start, and whether a print extends them, depend on
-  [item 1.4](../wizard/README-details.md#14-when-the-two-hours-start) (which needs the
-  owner's yes) and
-  [item 1.1](../wizard/README-details.md#11-sending-the-same-plate-again-after-a-long-print)
-  (which needs the owner's choice).
+  The two hours start when the slice ended (not yet confirmed by the owner:
+  [item 1.4](../wizard/README-details.md#14-when-the-two-hours-start)). How long a sliced
+  file lives may change: an item awaits the owner's choice
+  ([item 1.1](../wizard/README-details.md#11-sending-the-same-plate-again-after-a-long-print)).
 
 ## The configuration
 
@@ -226,12 +214,11 @@ also looks for its sliced file in the state bucket
   two users editing at once cannot silently overwrite each other. So (*proposed*) the
   answer to a read carries a marker of the document's version, and a write names the
   marker it was based on.
-- **Its shape** is [the configuration's contract](configuration.md). What the Layout step
-  needs from it (the plate's size and height, from the printer's Orca profile) and what
-  the Settings step needs (each profile's name and purpose) depend on
-  [item 1.7](../wizard/README-details.md#17-whether-the-printer-is-in-the-configuration)
-  and [need 2.5](../wizard/README-details.md#25-a-profiles-name-and-purpose), which need
-  the owner's yes.
+- **Its shape** is [the configuration's contract](configuration.md). The Layout step
+  reads from it the plate's size and height, from the printer's Orca profile it names,
+  and the Settings step each profile's own name and purpose (not yet confirmed by the
+  owner: [item 1.7](../wizard/README-details.md#17-whether-the-printer-is-in-the-configuration)
+  and [item 2.5](../wizard/README-details.md#25-a-profiles-name-and-purpose)).
 
 ## Printers, from phase 5
 
@@ -245,9 +232,10 @@ All of these pass through the front server to the relay of
   (*Proposed*:) it also carries who sent the print going on, a one-line description of
   its plate, and how the last print ended (its sender, its end time and, for a failure,
   its layer) ([printer delivery](../delivery/README-details.md#from-the-wizards-mockup)).
-  How long an offline daemon has been silent ("Not heard from for 7 minutes") depends on
-  [need 2.4](../wizard/README-details.md#24-not-heard-from-for-7-minutes), which needs the
-  owner's choice.
+  As designed, the status does not say how long an offline daemon has been silent
+  ("Not heard from for 7 minutes") once the front server has restarted, since the relay
+  holds printer status in its memory. This may change: an item awaits the owner's choice
+  ([item 2.4](../wizard/README-details.md#24-not-heard-from-for-7-minutes)).
 - **Sending.** A send is accepted when the current group has a paired-printer record, and
   its delivery job goes to the daemon that record names; a send to a printer that is
   printing is refused, whoever started the print
@@ -258,15 +246,16 @@ All of these pass through the front server to the relay of
 - **The user's live delivery job and last print** (*proposed*). A page that has lost its
   state asks for the signed-in user's live delivery job and that user's last print, since
   the browser's storage holds no delivery job's id
-  ([printer delivery](../delivery/README-details.md#from-the-wizards-mockup)). The design
-  opens the Send step when the plate has a delivery job; whether only while it is running
-  is [item 1.10](../wizard/README-details.md#110-where-a-returning-page-opens-after-its-print-ended),
-  which recommends the design.
+  ([printer delivery](../delivery/README-details.md#from-the-wizards-mockup)). The page
+  opens on the Send step while its plate is stored and has a delivery job, running or
+  ended (not yet confirmed by the owner:
+  [item 1.10](../wizard/README-details.md#110-where-a-returning-page-opens-after-its-print-ended)).
 - **Typing a pairing code.** When a daemon is offering the typed code, the relay writes the
   paired-printer record for the user's current group. When none is, the answer, at once,
   is that no daemon is showing that code and to try again in a moment; every wrong code
   gets that one answer, whatever was wrong with it, and wrong attempts are limited for each
-  user ([printer delivery](../delivery/README-details.md#pairing)). Who may type it is
-  [item 1.6](../wizard/README-details.md#16-who-pairs-the-printer-and-where).
+  user ([printer delivery](../delivery/README-details.md#pairing)). Any signed-in user of
+  the group may type it, from any computer (not yet confirmed by the owner:
+  [item 1.6](../wizard/README-details.md#16-who-pairs-the-printer-and-where)).
 - **Unpairing** removes the current group's paired-printer record
   ([printer delivery](../delivery/README-details.md#sending-and-unpairing)).

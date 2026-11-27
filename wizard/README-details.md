@@ -133,9 +133,10 @@ page that hash, which the page keeps beside the part.
 
 The slice service runs its checks on the part as it arrives, so a part that cannot be
 sliced is refused on the Parts step, before the user has laid anything out
-([the slice service](../slice/README.md)). [D74] The design says the refusal is shown on
-the part's own row; the mockup shows a notification and does not add the part. That is
-[item 1.8](#18-a-part-that-cannot-be-used); the recommendation is the mockup's.
+([the slice service](../slice/README.md)). [D74] The page shows the refusal as a
+notification and does not add the part, as the mockup does (not yet confirmed by the
+owner: [item 1.8](#18-a-part-that-cannot-be-used), where the design's own row for the
+refused part is set out beside it).
 (*Proposed*:) a part larger than 7.5 MB is refused by the slice service before it is read.
 
 ## Submitting a plate configuration
@@ -316,7 +317,7 @@ development identity, with no call to Onshape.
 
 **"Sign in again".** The wizard's header has a "sign in again" action beside the current
 group's name. It reads the user's groups afresh, for two calls to Onshape. Until the
-Onshape OAuth app is public, a signed-in user's groups are read only at sign-in, so a user
+Onshape app is public, a signed-in user's groups are read only at sign-in, so a user
 added to an Onshape company after signing in does not see the new group until they use
 this action. [D134, D340] The front server owns the route
 ([the front server](../front/README.md#signing-in)); (*proposed*) the page's stored work
@@ -346,9 +347,10 @@ of uploaded files ([its contract](../contracts/configuration.md)). The front ser
 it when a user signs in and again when the wizard asks. An edit writes the whole document
 on the condition that it has not changed since it was read, so two users editing at once
 cannot silently overwrite each other; the second is told to reload
-([the front server](../front/README.md)). [D115] The configuration's edit screens are
-phase 4's to design; (*proposed*) until they exist the wizard only reads the
-configuration.
+([the front server](../front/README.md)). [D115] The configuration's edit screens are a
+feature of their own, in no phase yet, with a design spec of their own
+([the plan, Known future work](../docs/plans/penguin-slicer-plan.md#known-future-work));
+(*proposed*) until they exist the wizard only reads the configuration.
 
 ## The sliced file
 
@@ -371,13 +373,13 @@ reports through the front server. What the design fixes:
 - **Pairing.** A signed-in user types the pairing code the daemon shows into PenguinSlicer.
   When no daemon is offering the typed code, the user is told at once that no daemon is
   showing that code and to try again in a moment; every wrong code gets that one answer
-  ([printer delivery](../delivery/README.md)). [D151]
+  ([printer delivery](../delivery/README-details.md#pairing)). [D151]
 - **Offline.** While the daemon is silent (no sync within 2 minutes) the printer-status
   icon shows Offline and Send is disabled; the daemon's first sync puts both back
   ([printer delivery](../delivery/README.md)). [D163]
 - **A printing printer.** The relay refuses a send to a printer that is printing, whether
   PenguinSlicer sent the print or someone started it at the printer's own screen
-  ([printer delivery](../delivery/README.md)). [D174]
+  ([printer delivery](../delivery/README-details.md#how-often-a-daemon-talks-to-the-relay)). [D174]
 - **Stale and "stop following".** A running delivery job's report is stale when the
   daemon's last sync was more than 40 seconds ago. A stale delivery job whose print was
   started may be given up by the user ("stop following"), which lets the relay accept the
@@ -412,15 +414,16 @@ the narrowest width it must work at, and lays out wider when it has more room
 
 ## By phase
 
-(*Proposed*:) the design's own list by phase does not place retrying or the header on
-every changing request; this table puts retrying in phase 2 and the header, checked from
-then on, in phase 3, as [the front server's guide](../front/README-details.md#by-phase)
-does for the check.
+The design's own list by phase does not place retrying, reloading or the header on every
+changing request. [The plan](../docs/plans/penguin-slicer-plan.md#the-phases) puts
+retrying and reloading in phase 2, since the restarts tested there need them, and the
+header, checked from then on, in phase 3, as
+[the front server's guide](../front/README-details.md#by-phase) does for the check.
 
 | Phase | What of the wizard is built |
 |---|---|
-| 2, one machine | The wizard opened directly in a browser, with parts from files and the development identity: the browser's storage; uploading each part; submitting by hash and uploading missing parts again; one unfinished slice job; the returning page; progress streams and reconnecting; retrying; the current group in the header; reading the configuration; the preview and the download |
-| 3, hosted on Railway | Onshape sign-in and "sign in again"; the header on every changing request, checked from here on; reloading on a newer version of the front server |
+| 2, one machine | The wizard opened directly in a browser, with parts from files and the development identity: the browser's storage; uploading each part; submitting by hash and uploading missing parts again; one unfinished slice job; the returning page; progress streams and reconnecting; retrying; reloading on a newer version of the front server; the current group in the header; reading the configuration; the preview and the download |
+| 3, hosted on Railway | Onshape sign-in and "sign in again"; the header on every changing request, checked from here on |
 | 4, inside Onshape | The wizard in Onshape's panel, with parts read from Onshape; its storage kept apart from a tab's |
 | 5, the real printer | The Send step and the printer-status icon: pairing, sending, cancelling, "stop following", unpairing, and the returning page on the Send step |
 
@@ -439,7 +442,7 @@ A status is one of two:
 - **Needs the owner's choice:** each answer costs something the owner must weigh (stored
   bytes and a change to two components' rules, a design rule against a user's need for an
   answer, a new write to a stored record), so the recommendation is one reasonable answer
-  among others. Items 1.1 and 1.9, and need 2.4 below.
+  among others. Items 1.1 and 1.9, and item 2.4 below.
 - **Needs the owner's yes:** the recommendation follows from the design's own rules or the
   owner's earlier instructions, and the owner has only to confirm it. Every other item.
 
@@ -577,7 +580,7 @@ Three positions, of which the recommendation is the third.
   Arrange, the placement check and the "plate 340 × 320 mm, up to 340 mm tall" line, read
   from the same profile the slice service slices for. Pairing stays the only thing that
   links a group to a daemon. Until the configuration's edit screens exist, the profile is
-  set by the project's owner in a document written by hand, and a group with no document
+  set by the owner in a document written by hand, and a group with no document
   gets the built-in default, the H2S profile. Nothing checks that the named profile
   matches the paired printer; a group that names the wrong one sees the wrong plate.
 - **What a user sees:** under all three, the same Layout step on an H2S, the only printer
@@ -779,7 +782,7 @@ designed when the steps are written.
 | 3.6 | A stale delivery job, and "stop following" | A running delivery job's report is stale after 40 seconds without a sync; the user may then stop following a print that was started | The Send step and the printer details |
 | 3.7 | The page reloading itself on a newer version | A page that sees a newer front server version reloads at the next moment when nothing is in flight; what the browser's storage does not hold (advanced mode's open sections, decision 13) starts afresh | The whole panel, at any step |
 | 3.8 | A slice cancelled by a later one in another tab | The page shows the plate on the Preview step and offers to slice it, and does not submit by itself | The Preview step |
-| 3.9 | What a restart shows | A slice container restart sends a slice's progress back to its start; a front server restart leaves the printer-status icon and the Send step blank until the daemon's next sync, within ten seconds of the front server answering again | The Preview step's slicing card; the printer-status icon and the Send step |
+| 3.9 | What a restart shows | A slice container restart sends a slice's progress back to its start; a front server restart leaves the printer-status icon and the Send step blank until the daemon's next sync, within ten seconds, plus the daemon's short random wait, of the front server answering again | The Preview step's slicing card; the printer-status icon and the Send step |
 | 3.10 | A printer busy with a print nobody sent from PenguinSlicer | The daemon syncs every 10 seconds whoever started the print, and the relay refuses a send to a printing printer, so a print with no sender and no description is busy too | The Send step's busy card and the printer details |
 | 3.11 | Limits on parts | A part is uploaded in one request of at most 7.5 MB; a plate uses at most 25 different parts (and at most 150 instances, decision 22) | The Parts step |
 | 3.12 | Running out of memory | The memory ceiling (6,000 MB proposed, hosted) ends a slice with `slice.out_of_memory`, an error the wizard explains | The Preview step's slicing failures |

@@ -148,7 +148,7 @@ pairing exchange and what daemon telemetry holds are left to phase 5's own desig
 - **Records of delivery jobs in a store the caller supplies**, kept a day after the job
   ends, holding whether the start was allowed: a front server restart loses no job.
 - **The sliced file taken from that store**, with no copy of the relay's own; the oldest
-  file sent rises from 40 minutes to two hours.
+  file sent rises from 40 minutes to two hours (this may change: an item awaits the owner's choice, [1.1](../wizard/README-details.md#11-sending-the-same-plate-again-after-a-long-print)).
 - **Two secret keys and a new token**, so the relay's secret key can be replaced without
   pairing again: a daemon that syncs within a week of the replacement is given a new
   token, and one switched off for that whole week must be paired again.

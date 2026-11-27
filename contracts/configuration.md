@@ -14,8 +14,9 @@ who belongs to none). The [front server](../front/README.md) keeps it and the
 - **One JSON document for each group,** kept in the state bucket, the object store where
   the front server keeps what must outlast its restart. It is read whole and written whole.
 - **The group's filaments.** For each filament, the profiles to slice with, named by Orca's
-  own names, with any settings that replace a profile's own, and, as the approved design
-  has it, the colour for the layer preview (recommended for removal, below). Each
+  own names, with any settings that replace a profile's own, and no colour for the layer
+  preview (not yet confirmed by the owner:
+  [item 1.5](../wizard/README-details.md#15-a-colour-for-each-filament), below). Each
   filament has its own profiles, not one list for all.
 - **The units of uploaded files:** whether a part uploaded from a file (an STL carries no
   units) is read in inches or in millimetres.
@@ -34,8 +35,9 @@ who belongs to none). The [front server](../front/README.md) keeps it and the
   the number of its format, so a document written for an older front server is read by a
   newer one ([the contracts](README.md)).
 - **An annotated example,** included when the fields are written. The configuration's edit
-  screens are a feature of their own, phase 4's to design. Until they exist, a group uses
-  the default, or a document the project's owner writes by hand and puts into the state
+  screens are a feature of their own, in no phase yet, with a design spec of their own
+  ([the plan, Known future work](../docs/plans/penguin-slicer-plan.md#known-future-work)).
+  Until they exist, a group uses the default, or a document the owner writes by hand and puts into the state
   bucket through Cloudflare's console, following that example
   ([the plan](../docs/plans/penguin-slicer-plan.md)). So (*proposed*) the example must say
   what every field means and which may be left out.
@@ -56,10 +58,10 @@ Each is explained, with both sides, in
   the printer's Orca profile, from which the plate's size and height come, for the Layout
   step and for the plate configuration's `printer`
   ([item 1.7](../wizard/README-details.md#17-whether-the-printer-is-in-the-configuration),
-  [need 2.1](../wizard/README-details.md#21-the-plates-size-and-height)).
+  [item 2.1](../wizard/README-details.md#21-the-plates-size-and-height)).
 - **The group's own name and purpose for each profile.** The mockup's Settings step offers
   profiles by names such as "Structural" and shows a profile's purpose as its option's
   tooltip (its decision 10). Orca's own profile names are not names a group would choose,
   and say nothing of a profile's purpose. Recommended: each profile carries
   the group's own name and its purpose beside the Orca profile it uses
-  ([need 2.5](../wizard/README-details.md#25-a-profiles-name-and-purpose)).
+  ([item 2.5](../wizard/README-details.md#25-a-profiles-name-and-purpose)).

@@ -17,8 +17,8 @@ The **caller** is the application that runs the relay and asks it to deliver sli
 (in PenguinSlicer, the front server, from phase 5 of
 [the plan](../docs/plans/penguin-slicer-plan.md)): it signs its users in, knows the pairing code of the printer they may use, and holds the
 sliced file. Printer delivery knows nothing of slicing, of how the caller signs anyone in,
-or of where the caller keeps the configuration (the settings an administrator keeps for
-everyone who uses PenguinSlicer, the pairing code among them).
+or of where the caller keeps the pairing code it presents (as built; phase 5 replaces
+this, see [To be built](#to-be-built)).
 
 This began as a port of the printer relay and daemon from PenguinCAM's
 `feature/onshape-test-bed` branch (commit `da39282`); the hardening since is described in
@@ -339,7 +339,7 @@ relay started") means no daemon heard since the printer was paired.
 *Tests:* the front server restarted while a delivery job waits for its daemon: the
 daemon's next sync is accepted and receives the job from its record; restarted during a
 print: the print goes on and the printer-status icon and Send step come back within ten
-seconds of the front server answering again; restarted between the gate's yes and the
+seconds, plus the daemon's short random wait, of the front server answering again; restarted between the gate's yes and the
 daemon's word: the record still says the start was allowed, and the start is never
 allowed again; a record is read back for a day after its delivery job ends; a record
 written by the previous version is read by the new one.
@@ -351,7 +351,9 @@ hands it to the daemon ([the front server](../front/README.md) owns where it is 
 The relay takes the sliced file from the store when the daemon fetches it, and keeps no
 copy of its own. A sliced file that a delivery job still needs is kept until the daemon
 has fetched it. The relay's limit on the age of a sliced file it will send rises from
-forty minutes to two hours. The daemon fetches again a sliced file whose fetch was cut
+forty minutes to two hours. This may change: an item awaits the owner's choice
+([item 1.1 of the wizard's guide](../wizard/README-details.md#11-sending-the-same-plate-again-after-a-long-print)).
+The daemon fetches again a sliced file whose fetch was cut
 off.
 
 *Replaces in the code as built:* `find_sliced_file` answers a `SlicedFile` with a `path`
@@ -486,15 +488,18 @@ The wizard's approved mockup lists what it needs of printer delivery under
 The mockup's printer details also show, for a failed print, when it stopped and at which
 layer (its decision 44). Provided in part: a final report keeps the last `layer` the
 printer reported, but carries no time at which it stopped. The design approved by the
-owner does not decide any of this section; the answer below and the mockup's 12 hours are
-*proposed*. So a delivery job's record carries the sender's display name, the plate's one-line description, the time the
+owner does not decide any of this section; the answer below is *proposed*. A delivery
+job's record is kept for a day after it ends, as
+[The records of delivery jobs](#the-records-of-delivery-jobs) says, so the last print can
+be found for that day; whether the wizard shows the last-print note for the mockup's 12
+hours of it is written with the wizard's steps. So a delivery job's record carries the sender's display name, the plate's one-line description, the time the
 delivery job ended and, for a failure, the layer at which it stopped; and a page that has
 lost its state can ask for its user's live delivery job and that user's last print.
 
 *Tests:* the status of a busy printer names the sender and the description; a final
 record carries its end time, and a failed one its layer; a user asking for their live
 delivery job gets their own and never another user's; that user's last print is found for
-12 hours after it finished.
+a day after it finished, and not after (fake clock).
 
 #### Already built, kept as they are
 
@@ -512,9 +517,8 @@ daemon relies on ([the architecture](../docs/architecture.md)).
 
 Whether Cloudflare's protection against automated clients ever challenges a daemon's
 requests is not checked (the daemon already names a challenge when it meets one,
-`ChallengeDetected` in `relay_client.py`). Whether the daemon fetches a sliced file again
-when the connection drops mid-way is listed in [the architecture](../docs/architecture.md)
-as not read from its code; the code as built does, up to three attempts (see
+`ChallengeDetected` in `relay_client.py`). The daemon as built fetches a sliced file again
+when the connection drops mid-way, up to three attempts (see
 [The sliced file](#the-sliced-file)).
 
 ## Layout

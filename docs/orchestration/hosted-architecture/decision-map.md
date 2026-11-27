@@ -600,8 +600,11 @@ phrased it.
 
 Where the wizard's approved mockup (version 8) and the spec differ. Each is set out in
 full, with both sides and a recommendation, in
-[the wizard's detailed guide](../../../wizard/README-details.md). Until the owner answers,
-the living documents state the recommendation and mark it as not yet confirmed.
+[the wizard's detailed guide](../../../wizard/README-details.md). For the three items
+awaiting the owner's choice, the living documents state the approved design as it stands
+and add "This may change: an item awaits the owner's choice", with a link to the item. For
+every other item, they state the recommendation, marked "not yet confirmed by the owner",
+with a link to the item.
 
 | Item | Recommendation | Status |
 |---|---|---|

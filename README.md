@@ -1,7 +1,7 @@
 # PenguinSlicer
 
-3D printing for FRC shops: take parts, lay them out on a plate, slice them with Orca Slicer
-on a server, and send the result to the shop's printer.
+PenguinSlicer takes parts, lays them out on a printer's plate, slices them with Orca on a
+server and sends the sliced file to the printer.
 
 Where the work stands and what comes next is in [the plan](docs/plans/penguin-slicer-plan.md).
 How the components fit together when hosted is in [the architecture](docs/architecture.md).

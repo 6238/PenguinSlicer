@@ -40,7 +40,7 @@ Railway; phase 4, inside Onshape; phase 5, the real printer.
 - [Threads](#threads)
 - [Hosting the relay, from phase 5](#hosting-the-relay-from-phase-5)
 - [Error reports](#error-reports)
-- [Tests](#tests)
+- [The fast suite](#the-fast-suite)
 - [By phase](#by-phase)
 
 ## Where the front server sits
@@ -61,7 +61,7 @@ sliced file, and fetch the slice service's log lines from a route of the slice s
 What must last is in two object stores at Cloudflare R2: the **state bucket** (each
 group's configuration and paired-printer record, the sliced files, a record of each
 delivery job) and the **log bucket** (log lines and daemon telemetry, as files). The front
-server holds the one credential that writes to the buckets; beyond it, only the project's
+server holds the one credential that writes to the buckets; beyond it, only the
 owner can write, through Cloudflare's own console
 ([the architecture](../docs/architecture.md)).
 
@@ -84,7 +84,7 @@ phase 4, tokens issued under the old secret can still be renewed, were not check
 ## Onshape sign-in
 
 Every user signs in with Onshape's OAuth, the same way in Onshape's panel and outside it,
-through one Onshape OAuth app. Onshape tells the front server who the user is and which
+through one Onshape app. Onshape tells the front server who the user is and which
 companies and classrooms they belong to; those are the user's groups, or the user alone
 when there are none. No other sign-in is offered, so PenguinSlicer keeps no accounts and
 no passwords and never has to decide whether two sign-ins are the same person.
@@ -179,7 +179,7 @@ from the wizard (see [Requests from other sites](#requests-from-other-sites)).
 
 **Onshape's tokens.** Onshape's access token lasts an hour. It is renewed with its
 refresh token only when a call to Onshape needs one, and the renewed tokens are written
-back to the cookie. Before phase 4 nothing needs one, unless the OAuth app is public by
+back to the cookie. Before phase 4 nothing needs one, unless the Onshape app is public by
 then, when reading the groups again does (see
 [Groups and the current group](#groups-and-the-current-group)). Two requests renewing the
 tokens at once must not leave a spent refresh token in the cookie.
@@ -251,7 +251,7 @@ the wizard can offer a current group. It needs a signed-in user and no current g
 makes no call to Onshape.
 
 **Reading the groups again.** How often a signed-in user's groups are read again from
-Onshape is a setting. Until the OAuth app is public it is "never": the groups in the
+Onshape is a setting. Until the Onshape app is public it is "never": the groups in the
 cookie stand until the cookie ends. Once the app is public the setting becomes one day.
 So a user removed from an Onshape company keeps its configuration and its printer for up
 to thirty days while the setting is "never", and loses both within a day once it is one
@@ -274,9 +274,9 @@ the tokens and writes them back to the cookie.
 
 ## Calls to Onshape
 
-Until an OAuth app is public in Onshape's App Store, its calls count against a yearly
+Until an Onshape app is public in Onshape's App Store, its calls count against a yearly
 allowance of the account that owns it: 2,500 a year on a free or education account. The
-project's owner intends to make the app public; until then, development and testing with
+owner intends to make the app public; until then, development and testing with
 users must fit inside that allowance with room to spare
 ([the plan](../docs/plans/penguin-slicer-plan.md)). **The rule is that nothing calls
 Onshape that can be done without it.**
@@ -297,8 +297,8 @@ allowance ([the architecture](../docs/architecture.md)).
 **Every call is counted.** The front server writes a log line for each call it makes to
 Onshape, and the command that reads the log bucket reports the year's total.
 
-**Not known** ([the architecture](../docs/architecture.md)): what allowance the project
-owner's account has; whether a second OAuth app of the same account, registered for
+**Not known** ([the architecture](../docs/architecture.md)): what allowance the
+owner's account has; whether a second Onshape app of the same account, registered for
 development, would draw on the same allowance as the hosted one; and whether renewing a token counts as a
 call, which matters from phase 4.
 
@@ -393,7 +393,9 @@ request of at most 7.5 MB, the plate configuration's limit for one part
 with the user key. The slice service checks it as it arrives and keeps it in its **part
 store** (its folder of uploaded parts, each kept for two hours after it was last used)
 under the user key and the SHA-256 hash of its bytes; a part that cannot be sliced is
-refused there, and its error report reaches the page on the part's own row. The front
+refused there, and its error report reaches the page, which shows it on the Parts step
+as a notification and does not add the part (not yet confirmed by the owner:
+[item 1.8 of the wizard's guide](../wizard/README-details.md#18-a-part-that-cannot-be-used)). The front
 server keeps no copy of a part; the browser's storage is the record of a user's parts
 ([the wizard](../wizard/README.md)). Cloudflare allows a request 100 MB; Railway's limit on a
 request body is not stated in its documents, and one real upload of a 7.5 MB part settles
@@ -496,7 +498,9 @@ that was running across a restart of the front server is stored when it ends.
 ## Two hours, deleting, and the backstop
 
 A sliced file can be previewed, downloaded, sent, and sent again after a print, for two
-hours after its slice ended. The front server enforces this:
+hours after its slice ended. This may change: an item awaits the owner's choice
+([item 1.1 of the wizard's guide](../wizard/README-details.md#11-sending-the-same-plate-again-after-a-long-print)).
+The front server enforces this:
 
 - it refuses a sliced file older than two hours, with an error report (*proposed*: saying
   it has expired), and deletes it;
@@ -523,7 +527,10 @@ server failed to delete, and such a file can rest at R2 for up to about two days
 
 A group's **configuration** is one JSON document in the state bucket, read whole and
 written whole; it holds the group's filaments and the units of uploaded files, and no
-secret. Its shape, with an annotated example, is in
+secret. Three changes to what it holds are recommended, not yet confirmed by the owner: no
+colour for each filament, the printer's Orca profile, and each profile's own name and
+purpose ([its contract](../contracts/configuration.md#recommended-needing-the-owners-yes)).
+Its shape, with an annotated example, is in
 [the configuration's contract](../contracts/configuration.md). A group's document is kept
 until edited: an edit replaces it, and nothing else deletes it.
 
@@ -541,9 +548,11 @@ until edited: an edit replaces it, and nothing else deletes it.
   the front server knows) is answered with an error report, and (*proposed*) its contents
   are never written over by the default.
 
-Until the configuration's edit screens exist, a group uses the default or a document the
-project's owner puts into the state bucket through Cloudflare's console, following the
-annotated example ([the plan](../docs/plans/penguin-slicer-plan.md)). So the front server
+The configuration's edit screens are a feature of their own, in no phase yet, with a
+design spec of their own
+([the plan, Known future work](../docs/plans/penguin-slicer-plan.md#known-future-work)).
+Until they exist, a group uses the default or a document the owner puts into the state
+bucket through Cloudflare's console, following the annotated example. So the front server
 must expect a document written by hand.
 
 ### Tests
@@ -653,7 +662,9 @@ has the time Railway allows a stopping container. How long that is, whether Rail
 the new container before stopping the old, and whether it deploys the front server alone
 when only its folders changed are not yet known; until tried, the design assumes a plain
 stop and start ([the architecture](../docs/architecture.md)). The page retries every request it makes, so
-a request that falls in the gap is repeated and the user sees a pause, not an error.
+a request that falls in the gap is repeated and the user sees a pause, not an error. This
+may change: an item awaits the owner's choice
+([item 1.9 of the wizard's guide](../wizard/README-details.md#19-retrying-then-an-error-after-20-seconds)).
 
 ### Tests
 
@@ -743,7 +754,7 @@ here then. The table's rows and each one's "Retryable" are *proposed*.
 | Slice service did not answer | The private network or the slice service is down | Yes |
 | State bucket did not answer | Reading or writing the state bucket failed | Yes |
 
-## Tests
+## The fast suite
 
 The front server will be its own `uv` project, in `front/`, whose commands run with
 `make -C front ...`, as every component's do.
@@ -782,7 +793,9 @@ each bucket, behind the same interface. Built here:
 - the two-hour rule and deleting;
 - reading and writing the configuration, with the default and the conditional write;
 - (*proposed*) the log lines, gathered once a minute into the folder that stands in for
-  the log bucket.
+  the log bucket;
+- (*proposed*) the version on every answer, which the wizard's reloading, built in this
+  phase, needs.
 
 **Phase 3, hosted.** The first thing tried is what Railway does at a deploy, since the
 rest of restarts and deploys rests on it. Then:
@@ -793,8 +806,9 @@ rest of restarts and deploys rests on it. Then:
 - the state bucket and the log bucket at R2, with the one-day backstop rule;
 - Onshape sign-in, with the stand-in for Onshape in the tests, counting every call;
 - (*proposed*) the checks on requests from other sites;
-- two cookie keys and the procedure for replacing one;
-- the version on every answer, and the other rules for old and new versions together;
+- the second cookie key and the procedure for replacing one;
+- the other rules for old and new versions together (a format number on each record in
+  the state bucket);
 - (*proposed*) finishing work in flight when asked to stop;
 - (*proposed*) the refusal to start with the development identity on Railway.
 

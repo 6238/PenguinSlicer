@@ -30,8 +30,9 @@ those the user belongs to, whose configuration and printer the user is using now
 the id of the plate's slice job with the time it was submitted. That a refresh keeps all
 of this is the design's; the mockup keeps none of it (item 1.2 below).
 
-A sliced file is kept for two hours after its slice ended (items 1.1 and 1.4 below may
-move either end). The stored work stays until the page, on opening, finds the plate's
+A sliced file is kept for two hours after its slice ended. This may change: an item awaits
+the owner's choice ([1.1](README-details.md#11-sending-the-same-plate-again-after-a-long-print)).
+The stored work stays until the page, on opening, finds the plate's
 sliced file expired; the current group stays until the user changes it. No restart of a
 server touches them. The page never stores or uploads a sliced file, so a printer only
 ever receives a file the slice service made.
@@ -60,7 +61,7 @@ job:
 |---|---|
 | Waiting or running | Shows its progress on the Preview step |
 | Finished, sliced file kept | Opens on the Preview step with the result |
-| Unknown, submitted less than two hours ago: the slice container restarted | Uploads the parts and submits again, unasked |
+| Unknown, submitted less than two hours ago: the slice service restarted | Uploads the parts and submits again, unasked |
 | Ended in an error | Shows the error on the Preview step |
 | Cancelled by a later slice of the same user | Shows the plate and offers to slice it; does not submit by itself |
 | Unknown, submitted more than two hours ago: its sliced file has expired | Opens on the Parts step with one line saying the sliced file has expired, and drops the stored parts |
@@ -110,7 +111,9 @@ More: [Following progress](README-details.md#following-progress-and-reconnecting
 
 The mockup's decisions (version 8, approved Thu 2026-11-26) and the approved design
 disagree in eleven places, and the mockup shows six things the design gives no means for.
-The numbers are those of the comparison the items come from. Each is set out in the
+The numbers are those of
+[the comparison of the mockup with the design](../docs/orchestration/hosted-architecture/mockup-against-design.md),
+which the items come from. Each is set out in the
 details with both sides, what a user would see under each, and the recommendation with
 its reason, and is decided there, not from this page.
 
@@ -161,8 +164,8 @@ More: [Where they differ](README-details.md#where-the-mockup-and-the-design-diff
 
 | Phase | What of the wizard |
 |---|---|
-| 2, one machine | Opened directly, with parts from files: the browser's storage, uploading, submitting by hash, the returning page, progress streams, retrying, the current group, the preview and the download |
-| 3, hosted on Railway | Onshape sign-in and "sign in again"; the header that proves a request came from the wizard's page; reloading on a newer version |
+| 2, one machine | Opened directly, with parts from files: the browser's storage, uploading, submitting by hash, the returning page, progress streams, retrying, reloading on a newer version, the current group, the preview and the download |
+| 3, hosted on Railway | Onshape sign-in and "sign in again"; the header that proves a request came from the wizard's page |
 | 4, inside Onshape | The wizard in Onshape's panel, with parts read from Onshape |
 | 5, the real printer | The Send step and the printer-status icon: pairing, sending, cancelling, giving up a print whose daemon has gone silent ("stop following"), unpairing, and the returning page on the Send step |
 

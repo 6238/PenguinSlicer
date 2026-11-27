@@ -13,5 +13,9 @@ outside its own folder.
 | Error report | Every component | Its caller | [error-report.md](error-report.md) |
 | Progress report | Every component | Its caller | [progress-report.md](progress-report.md) |
 
+Each record kept in the state bucket carries the number of its format, so a record written
+by an older front server is read by a newer one
+([the architecture](../docs/architecture.md#old-and-new-versions-together)).
+
 Example files for each contract are in `examples/`. A change to a contract changes its
 definition, its examples and the tests of every component that uses it, in one commit.

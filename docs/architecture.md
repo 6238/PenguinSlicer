@@ -18,6 +18,13 @@ full explanation:
 | The slice service | [slice/README.md](../slice/README.md) |
 | Printer delivery: the relay and the daemon | [delivery/README.md](../delivery/README.md) |
 
+Fifteen items where the wizard's approved mockup and this design differ await the owner:
+three need the owner's choice and twelve only the owner's yes. Each is set out in
+[the wizard's detailed guide](../wizard/README-details.md#where-the-mockup-and-the-design-differ).
+Where this document touches one, it states the design as it stands for the three, saying
+it may change, and the recommendation, marked not yet confirmed by the owner, for the
+twelve.
+
 Most of this design is not built yet. Each guide says what of its component is built,
 and [the plan](plans/penguin-slicer-plan.md) says which phase builds the rest. The design
 was approved by the owner on Thu 2026-11-26, Pacific time, as
@@ -204,7 +211,9 @@ service made. A sliced file is 8.8 to 14.1 MB on the plates measured so far, so 
 fetch by a browser or a daemon is small against the 100 MB Cloudflare allows.
 
 A sliced file is kept for two hours after its slice ended, which the front server
-enforces. R2's own rule for deleting old files counts in whole days and removes a file
+enforces. This may change: an item awaits the owner's choice
+([item 1.1](../wizard/README-details.md#11-sending-the-same-plate-again-after-a-long-print)).
+R2's own rule for deleting old files counts in whole days and removes a file
 typically within 24 hours after it falls due, so it cannot enforce two hours; a one-day
 rule on the sliced files is set as well, to catch any file the front server failed to
 delete, and such a file can rest at R2 for up to about two days. How the front server
@@ -218,7 +227,10 @@ through a refresh, a dropped connection or a closed laptop lid. A page that has 
 state reads its plate and the id of the plate's slice job from the browser's storage and
 asks the front server about that slice job; what it does with each answer is in
 [the wizard's guide](../wizard/README.md). A user has one unfinished slice job at a
-time. Work does not follow a user to another computer or browser.
+time. Work does not follow a user to another computer or browser. That a refresh keeps
+the work and that it stays in one browser are not yet confirmed by the owner (items
+[1.2](../wizard/README-details.md#12-what-a-refresh-keeps) and
+[1.3](../wizard/README-details.md#13-finding-a-slice-job-after-a-refresh)).
 
 ### The configuration
 
@@ -228,48 +240,40 @@ uploaded files, and no secret. An edit is written on the condition that the docu
 not changed since it was read, so two users cannot silently overwrite each other. A
 group with no document gets a built-in default configuration. Reading and writing it are
 in [the front server's guide](../front/README.md); what it must hold is in
-[its contract](../contracts/configuration.md), whose fields are not written yet.
+[its contract](../contracts/configuration.md), whose fields are not written yet. Three
+changes to what it holds are recommended, not yet confirmed by the owner: no colour for
+each filament, the printer's Orca profile, and each profile's own name and purpose
+([its contract](../contracts/configuration.md#recommended-needing-the-owners-yes)).
 
 ## Sign-in
 
 Every user signs in with Onshape's OAuth, the same way in Onshape's panel and outside
-Onshape. No other sign-in is offered, so PenguinSlicer keeps no accounts and no
-passwords. A sign-in sets one encrypted cookie in the browser, lasting thirty days, which
-holds the user's identity, groups and Onshape tokens; nothing about a session is kept on
-the front server, so a restart signs nobody out. A user's groups are the Onshape
-companies and classrooms they belong to, or the user alone when there are none. A user
-with several groups uses one at a time, the current group, and the front server accepts
-a current group only if the cookie lists it. Until the Onshape app is public, groups are
-read only at sign-in, so a user removed from an Onshape company keeps its configuration
-and printer for up to thirty days; that is accepted.
+Onshape, and PenguinSlicer keeps no accounts and no passwords. A sign-in sets one
+encrypted cookie in the browser, lasting thirty days, which holds the user's identity,
+groups and Onshape tokens; nothing about a session is kept on the front server, so a
+restart signs nobody out, and the front server accepts a current group only if the cookie
+lists it (until the Onshape app is public, a user removed from an Onshape company keeps
+its configuration and printer for up to thirty days, which is accepted). Calls to Onshape
+count against a yearly allowance until the app is public, so work on one machine (where
+the development identity stands in for Onshape) and the tests make none, the hosted
+service makes two at each sign-in, and each is logged and counted.
 
-Until the Onshape app is public, its calls count against a yearly allowance of the
-account that owns it. Onshape's published figure is 2,500 calls a year on a free or
-education account; which allowance the owner's account has is still to be confirmed. So
-nothing calls Onshape that can be done without it: work on one
-machine and the tests make no calls, and the hosted service makes two at each sign-in.
-On one machine a development identity stands in for Onshape. Safari is not supported.
-
-The whole of this, with the routes that need no sign-in, the protection against requests
-from other sites and the count of calls, is in
-[the front server's guide](../front/README.md).
+The whole of this, with the allowance, the routes that need no sign-in and the protection
+against requests from other sites, is in
+[the front server's guide](../front/README.md#signing-in). Safari is not supported.
 
 ## Printers
 
-A group is linked to the daemon beside its printer by pairing: the daemon's `pair`
-command makes a pairing code and shows it, a signed-in user types it into PenguinSlicer,
-and the relay writes the group's paired-printer record to the state bucket and gives the
-daemon its token. The code is used once. A daemon that was switched off for any length of
-time reconnects when it is started again, with no pairing again; starting it is the job
-of whoever runs that computer.
-
-The daemon opens no port, so everything passes through the sync, a request the daemon
-posts to the relay. While the printer is idle the relay holds its answer for up to 55
-seconds (the held wait) and answers at once when a delivery job arrives, so an idle
-daemon costs about one request a minute and a send still reaches it immediately. During
-a print the daemon syncs every 10 seconds, and a change of the printer's state is sent at
-once. The printer-status icon shows Offline when a daemon's last sync is more than 2
-minutes old, and a running delivery job's report is stale after 40 seconds.
+A group is linked to the daemon beside its printer by pairing: any signed-in user of the
+group types the pairing code the daemon shows into PenguinSlicer, once (not yet confirmed
+by the owner: [item 1.6](../wizard/README-details.md#16-who-pairs-the-printer-and-where)), and the relay writes the group's
+paired-printer record to the state bucket and gives the daemon its token, after which the
+code is dead and a daemon switched off for any length of time reconnects with no pairing
+again. The daemon opens no port, so everything passes through the sync, and while the
+printer is idle the relay holds its answer for up to 55 seconds (the held wait), so an
+idle daemon costs about one request a minute and a send still reaches it at once. During
+a print the daemon syncs every 10 seconds; the printer-status icon shows Offline after 2
+minutes without a sync, and a running delivery job's report is stale after 40 seconds.
 
 Pairing, sending and unpairing, the syncs and every limit are in
 [printer delivery's guide](../delivery/README.md), and in full in its
@@ -425,7 +429,9 @@ A crash gets the treatment above. A deploy is planned, so it can do better.
   container stops is submitted again by its page.
 - **Every client retries.** The daemon waits and tries again when the relay does not
   answer. The page does the same for every request it makes, so a request that falls in
-  the gap is repeated and the user sees a pause, not an error.
+  the gap is repeated and the user sees a pause, not an error. This may change: an item
+  awaits the owner's choice
+  ([item 1.9](../wizard/README-details.md#19-retrying-then-an-error-after-20-seconds)).
 
 ### Old and new versions together
 
@@ -562,9 +568,7 @@ Each of these is believed and not yet checked.
   pass; one real upload settles it.
 - **Railway's 8 GB for one container on its Hobby plan, and x86_64 machines.** Both are
   inferred from Railway's pages and staff posts, not stated outright.
-- **Onshape's allowance.** Onshape's published figure is 2,500 calls a year on a free or
-  education account; which allowance the owner's account has is still to be confirmed. Also
-  unchecked: whether the
+- **Onshape's allowance.** Which allowance the owner's account has; whether the
   development Onshape app and the hosted one draw on the same allowance, as two apps of
   one account; and whether renewing a token counts as a call, which matters from phase 4.
 - **Progress streams through Cloudflare and Railway.** Neither promises to pass
@@ -582,8 +586,6 @@ Each of these is believed and not yet checked.
   at once must not leave a spent refresh token in the cookie.
 - **An Onshape account with no company or classroom.** What Onshape answers for one was
   not checked.
-- **The daemon after a cut-off fetch.** Whether the daemon fetches a sliced file again
-  when the connection drops mid-way was not read from its code.
 - **Memory and disk.** What the front server uses with fifty held syncs, what the part
   store takes on disk, and what the slice service itself needs beside Orca (the 2 GB
   left above the memory ceiling) were never measured.
