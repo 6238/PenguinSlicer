@@ -63,8 +63,7 @@ each of these as the design, without saying who decided or when.
     larger, with its own sentence; the front server refuses to store a larger one.
 20. The list of settings for the wizard's advanced mode, with Orca's own labels, groups and
     explanations, and the profile catalog's names, come from the slice service; the front
-    server passes them to the wizard. The front server checks each group's configuration
-    against the catalog's names when it starts and when a configuration is edited.
+    server passes them to the wizard. Who notices a configuration that names a profile the catalog has lost is left open, to be settled the first time Orca is upgraded.
 21. Following slice jobs is counted among the front server's 100 threads. Progress streams
     are kept for slice jobs and for prints; the guide states a target for users at once and
     limits the streams one user may hold.
