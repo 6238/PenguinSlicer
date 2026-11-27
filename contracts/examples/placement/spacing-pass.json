@@ -1,0 +1,36 @@
+{
+  "description": "Two brackets 5.01 mm apart with supports off",
+  "plate_configuration": {
+    "plate_id": "91dcf783-e2b2-527b-a99b-784f432ce6ad",
+    "submission_id": "f5cf366d-ce4f-5925-9b29-3aa648398d20",
+    "parts": {
+      "bracket": {
+        "name": "Bracket",
+        "sha256": "f41155dd67adfc26a035de3b56c4997cae15252645388c8f583a1c74ec85f893",
+        "units": "mm"
+      }
+    },
+    "instances": [
+      {
+        "ref": "bracket",
+        "orientation": "+z",
+        "angle": 0,
+        "x": 100.0,
+        "y": 160.0
+      },
+      {
+        "ref": "bracket",
+        "orientation": "+z",
+        "angle": 0,
+        "x": 145.01,
+        "y": 160.0
+      }
+    ],
+    "overrides": {
+      "enable_support": "0"
+    }
+  },
+  "expected": {
+    "accepted": true
+  }
+}

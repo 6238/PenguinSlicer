@@ -1,0 +1,38 @@
+{
+  "description": "Two brackets 11.99 mm apart with supports on",
+  "plate_configuration": {
+    "plate_id": "85c0d808-9121-5ad4-bce7-a49ac0f4a7fa",
+    "submission_id": "d040ef03-3a67-5be2-bc53-b473b6e6a0ee",
+    "parts": {
+      "bracket": {
+        "name": "Bracket",
+        "sha256": "f41155dd67adfc26a035de3b56c4997cae15252645388c8f583a1c74ec85f893",
+        "units": "mm"
+      }
+    },
+    "instances": [
+      {
+        "ref": "bracket",
+        "orientation": "+z",
+        "angle": 0,
+        "x": 100.0,
+        "y": 160.0
+      },
+      {
+        "ref": "bracket",
+        "orientation": "+z",
+        "angle": 0,
+        "x": 151.99,
+        "y": 160.0
+      }
+    ],
+    "overrides": {
+      "enable_support": "1"
+    }
+  },
+  "expected": {
+    "code": "slice.placement_too_close",
+    "instance": "Bracket #1",
+    "other_instance": "Bracket #2"
+  }
+}
