@@ -64,6 +64,23 @@ def test_nothing_outside_the_three_folders_is_served(server, path):
     assert status == 404
 
 
+@pytest.mark.parametrize("path", ["/parts/hex-spacer.stl%00", "/%00", "/vendor/%00/README.md"])
+def test_a_path_with_a_null_byte_is_404(server, path):
+    assert get(server, path)[0] == 404
+
+
+def test_a_symbolic_link_out_of_a_served_folder_is_not_followed(tmp_path, monkeypatch):
+    served = tmp_path / "served"
+    served.mkdir()
+    (served / "inside.txt").write_text("in")
+    (tmp_path / "secret.txt").write_text("out")
+    (served / "out").symlink_to(tmp_path)
+    monkeypatch.setattr(serve, "ROOTS", [("/", served)])
+    handler = serve.TrialsHandler.__new__(serve.TrialsHandler)
+    assert handler.translate_path("/inside.txt") == str((served / "inside.txt").resolve())
+    assert handler.translate_path("/out/secret.txt") is serve.NOWHERE
+
+
 def test_a_missing_file_is_404(server):
     assert get(server, "/no-such-file.html")[0] == 404
 

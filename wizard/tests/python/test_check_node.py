@@ -1,4 +1,5 @@
 """The check that Node is 24 or later, which `make install` and `make test` run first."""
+import subprocess
 import sys
 
 import pytest
@@ -38,6 +39,16 @@ def test_main_reports_an_old_node(tmp_path, capsys):
     fake.chmod(0o755)
     assert check_node.main(["check_node.py", str(fake)]) == 1
     assert "Node 20.1.0 is older than 24" in capsys.readouterr().err
+
+
+def test_main_reports_a_node_that_does_not_answer(monkeypatch, capsys):
+    def hang(command, **kwargs):
+        raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+    monkeypatch.setattr(check_node.subprocess, "run", hang)
+    assert check_node.main(["check_node.py", "/opt/node/bin/node"]) == 1
+    assert capsys.readouterr().err.strip() == (
+        "Node at '/opt/node/bin/node' did not say its version within 30 seconds: "
+        "the wizard's tests need Node 24 or later.")
 
 
 def test_main_reports_a_missing_node_by_name(capsys):

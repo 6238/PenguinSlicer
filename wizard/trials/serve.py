@@ -39,6 +39,7 @@ class TrialsHandler(SimpleHTTPRequestHandler):
         for prefix, folder in ROOTS:
             if path == prefix.rstrip("/") or path.startswith(prefix):
                 target = (folder / path[len(prefix):]).resolve()
+                # A symbolic link inside a served folder may lead out of it: never follow it out.
                 if target != folder.resolve() and not target.is_relative_to(folder.resolve()):
                     return NOWHERE
                 return str(target)

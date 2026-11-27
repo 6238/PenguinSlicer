@@ -10,6 +10,7 @@ import subprocess
 import sys
 
 MIN_MAJOR = 24
+TIMEOUT_S = 30
 NEED = f"the wizard's tests need Node {MIN_MAJOR} or later."
 
 
@@ -28,9 +29,12 @@ def check(version_text):
 def main(argv):
     node = argv[1] if len(argv) > 1 else "node"
     try:
-        result = subprocess.run([node, "--version"], capture_output=True, text=True, timeout=30)
+        result = subprocess.run([node, "--version"], capture_output=True, text=True, timeout=TIMEOUT_S)
     except (FileNotFoundError, PermissionError):
         print(f"Node was not found as {node!r}: {NEED}", file=sys.stderr)
+        return 1
+    except subprocess.TimeoutExpired:
+        print(f"Node at {node!r} did not say its version within {TIMEOUT_S} seconds: {NEED}", file=sys.stderr)
         return 1
     message = check(result.stdout)
     if message:
