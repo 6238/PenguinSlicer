@@ -8,6 +8,13 @@ NODE ?= node
 PY = $(CURDIR)/.venv/bin/python
 # A bound on each test, so that a test that hangs fails instead of holding the suite.
 NODE_TEST_TIMEOUT_MS ?= 60000
+# Playwright's browsers go where PLAYWRIGHT_BROWSERS_PATH says, unless that folder cannot be
+# written (a machine whose /opt/ms-playwright is read-only and holds another revision); then
+# into Playwright's own default, ~/.cache/ms-playwright, shared by every checkout.
+BROWSERS := $(shell d="$${PLAYWRIGHT_BROWSERS_PATH:-$$HOME/.cache/ms-playwright}"; \
+	if [ -w "$$d" ] || { [ ! -e "$$d" ] && mkdir -p "$$d" 2>/dev/null; }; then echo "$$d"; \
+	else echo "$$HOME/.cache/ms-playwright"; fi)
+export PLAYWRIGHT_BROWSERS_PATH := $(BROWSERS)
 # trials-serve: the address the owner's Chrome opens (HOST=0.0.0.0 to reach it from outside
 # the machine it runs on).
 HOST ?= 127.0.0.1
