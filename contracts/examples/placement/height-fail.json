@@ -1,0 +1,30 @@
+{
+  "description": "A 10 by 10 by 341 mm post standing up, 1 mm taller than the printable height, supports off",
+  "plate_configuration": {
+    "plate_id": "87c5726e-d66f-5f11-bdc6-49897cc52ce8",
+    "submission_id": "08327e82-91e8-512b-b7f5-a799d4fd6d69",
+    "parts": {
+      "post": {
+        "name": "Post-341",
+        "sha256": "c1f25129d561dcdaa8a2c3ec28712a32196d69ede714cba179a3281ddcac18c1",
+        "units": "mm"
+      }
+    },
+    "instances": [
+      {
+        "ref": "post",
+        "orientation": "+z",
+        "angle": 0,
+        "x": 170.0,
+        "y": 160.0
+      }
+    ],
+    "overrides": {
+      "enable_support": "0"
+    }
+  },
+  "expected": {
+    "code": "slice.placement_too_tall",
+    "instance": "Post-341 #1"
+  }
+}

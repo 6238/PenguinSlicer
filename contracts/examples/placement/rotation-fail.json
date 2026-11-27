@@ -1,0 +1,48 @@
+{
+  "description": "A bracket laid by a rotation on the face of its convex hull across the L's open corner and turned 15 degrees, 4.99 mm from a spacer, supports off",
+  "plate_configuration": {
+    "plate_id": "593b9db3-6379-5c00-8642-3f41b3f93804",
+    "submission_id": "787394c4-88ba-547c-a32d-1c6041f21229",
+    "parts": {
+      "bracket": {
+        "name": "Bracket",
+        "sha256": "f41155dd67adfc26a035de3b56c4997cae15252645388c8f583a1c74ec85f893",
+        "units": "mm"
+      },
+      "spacer": {
+        "name": "Spacer",
+        "sha256": "fb78e3c785af625f95c6c8d63c60354f5bcea552bc5bdf670a0f006ab8608f0d",
+        "units": "mm"
+      }
+    },
+    "instances": [
+      {
+        "ref": "bracket",
+        "rotation": [
+          0.683012702,
+          -0.669818101,
+          0.226591507,
+          0.183012702
+        ],
+        "angle": 15,
+        "x": 100.0,
+        "y": 160.0
+      },
+      {
+        "ref": "spacer",
+        "orientation": "+z",
+        "angle": 0,
+        "x": 150.64347,
+        "y": 160.0
+      }
+    ],
+    "overrides": {
+      "enable_support": "0"
+    }
+  },
+  "expected": {
+    "code": "slice.placement_too_close",
+    "instance": "Bracket #1",
+    "other_instance": "Spacer #1"
+  }
+}
