@@ -414,6 +414,14 @@ in the wizard; the rest of it waits for phase 5.
   - each trial's part for the owner: the renders and the Mac's frame rate for the preview,
     and a look at each real part's chosen orientation, neither of which the builder waits
     for.
+- **How the building runs.** The builders get as far as they can without stopping to ask.
+  Where a trial misses its target, where the built screens cannot be made to match the
+  mockup, or where no document decides something, a builder takes the guide's
+  recommendation or, failing one, the simplest thing that fits the guides, goes on, and
+  writes it down. The phase ends with a short guide for the owner, kept in the repository:
+  what to look at and in what order, what is known to fall short of a target, and every
+  decision a builder made that the owner may want to overrule. The owner reviews what is
+  built from that guide.
 - **Settled by [the architecture](../architecture.md#where-each-piece-of-state-lives):** how
   parts reach the slice service, where the sliced file is kept, how a page that has lost
   its state comes back to its work, and how the browser reaches the slice service
