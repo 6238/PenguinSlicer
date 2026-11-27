@@ -1,0 +1,55 @@
+{
+  "format": 1,
+  "printer": "Bambu Lab H2S 0.6 nozzle",
+  "upload_units": "in",
+  "filaments": [
+    {
+      "name": "PETG",
+      "colour": "#3a7bd5",
+      "profiles": [
+        {
+          "name": "Standard",
+          "purpose": "everyday parts",
+          "printer": "Bambu Lab H2S 0.6 nozzle",
+          "filament": "Generic PETG @BBL H2S",
+          "process": "0.24mm Balanced Quality @BBL H2S 0.6 nozzle"
+        },
+        {
+          "name": "Structural",
+          "purpose": "strong brackets and plates",
+          "printer": "Bambu Lab H2S 0.6 nozzle",
+          "filament": "Generic PETG @BBL H2S",
+          "process": "0.24mm Balanced Quality @BBL H2S 0.6 nozzle",
+          "overrides": {"wall_loops": "4", "sparse_infill_density": "40%"}
+        },
+        {
+          "name": "Draft",
+          "purpose": "fit checks and test prints",
+          "printer": "Bambu Lab H2S 0.6 nozzle",
+          "filament": "Generic PETG @BBL H2S",
+          "process": "0.30mm Standard @BBL H2S 0.6 nozzle"
+        },
+        {
+          "name": "Fine",
+          "purpose": "small or detailed parts",
+          "printer": "Bambu Lab H2S 0.6 nozzle",
+          "filament": "Generic PETG @BBL H2S",
+          "process": "0.18mm Balanced Quality @BBL H2S 0.6 nozzle"
+        }
+      ]
+    },
+    {
+      "name": "PLA",
+      "colour": "#e0e0e0",
+      "profiles": [
+        {
+          "name": "Standard",
+          "purpose": "everyday parts",
+          "printer": "Bambu Lab H2S 0.6 nozzle",
+          "filament": "Generic PLA @BBL H2S",
+          "process": "0.24mm Balanced Quality @BBL H2S 0.6 nozzle"
+        }
+      ]
+    }
+  ]
+}

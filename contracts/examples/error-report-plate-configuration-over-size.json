@@ -1,0 +1,8 @@
+{
+  "code": "slice.bad_plate_configuration",
+  "message": "This plate configuration could not be read: it is larger than 1,048,576 bytes.",
+  "where": {"stage": "checking"},
+  "remedy": "Lay out the plate again and send a new slice.",
+  "retryable": false,
+  "detail": "plate configuration Content-Length 1,048,577 bytes, cap 1,048,576"
+}

@@ -144,17 +144,22 @@ only along the diagonal passes, and the placement check decides later. Today the
 the printer the plate names. From phase 2 a part arrives before any plate names a printer,
 so on arrival the test uses the largest printer in the profile catalog (the slice
 service's own list of Orca's profiles, described below), and it runs again against the
-plate's own printer when a plate names the part. Using the largest printer on arrival is
-a proposal
-([Proposed, and the owner's to change](#proposed-and-the-owners-to-change)).
+plate's own printer when a plate names the part. A part too large for every printer is
+thus refused on the Parts step, and one too large only for the plate's own printer when
+the plate is submitted.
 
 Why the last three only warn: the pinned Orca slices an open box, an inside-out box, two
 shells, two boxes that pass through each other and a 2 by 1 by 0.5 mm block, and the
 **upstream check** (the suite of tests that run the real Orca) proves it. Refusing them
 would refuse good prints.
 
-One thing is not looked for: a part whose surface passes through itself. Orca sliced the
-cases tried.
+Two things are known limits of the checks, and stay as they are. A part whose surface
+passes through itself is not looked for: Orca sliced the cases tried, so nothing is
+refused wrongly, and such a part may print as something the user did not mean, with no
+warning. And a part whose very first layer is empty (a needle thinner than the nozzle
+prints, for example) is not caught on arrival: its slice fails with only the general
+sentence, "The slicer could not slice this plate.", because the pinned Orca writes that
+reason nowhere the slice service can read.
 
 ### Units
 
@@ -172,10 +177,10 @@ server passes the part and its label on untouched. The slice service uses the un
 its checks when the part arrives, so "too small", "too large" and "every side under 5 mm"
 are judged on the part's true size, and it applies the scale when it prepares the plate
 for Orca. The plate configuration's contract gains the units of each part. The slice
-service never guesses units. What it does with a part that arrives without a units label,
-or with one that is neither inches nor millimetres, and with a plate configuration that
-names a part without one, is a proposal: it refuses each
-([Proposed, and the owner's to change](#proposed-and-the-owners-to-change)).
+service never guesses units. It refuses a part that arrives without a units label, or
+with one that is neither inches nor millimetres, and it refuses a plate configuration
+that names a part without one. Taking a missing label as millimetres would slice a part
+in inches 25.4 times too small without a word.
 
 The reason for one place: if the browser rewrote the file, the bytes the slice service
 checked would not be the bytes the user chose, and the hash of its bytes, by which a part
@@ -186,13 +191,12 @@ part again.
 The same file under different units is a different part. A part 2 inches long and a part
 2 mm long are different objects with different check results, so the part store keeps
 them apart: a part is kept under its user key, its hash and its units together, so the
-same file under inches and under millimetres is two parts and counts twice toward the
-limit of 25 described below.
+same file under inches and under millimetres is two parts.
 
 The warning for a part with every side under 5 mm stays. With the label in place it points
-at a label that is probably wrong. Whether it is raised for a part labelled in inches is
-a proposal: it is not
-([Proposed, and the owner's to change](#proposed-and-the-owners-to-change)).
+at a label that is probably wrong. It is not raised for a part labelled in inches: the
+warning exists to catch a file in inches read as millimetres, and a part labelled in
+inches cannot be that.
 
 ### Keep each part once: the part store
 
@@ -211,13 +215,15 @@ Everything about the part store follows from that:
 
 - **A part stays for two hours after it was last used.** Its upload counts as a use, and
   so does each slice that names it.
-- **At most 25 parts for one user key,** which is the most a plate can use. When a
-  twenty-sixth arrives, that user's least recently used part is removed. The figure
-  predates several plates for one user, and whether it stands is undecided
-  ([The limit of 25 parts for one user, now that a user may have several plates](#the-limit-of-25-parts-for-one-user-now-that-a-user-may-have-several-plates)).
 - **A limit on the disk the part store may take in all.** Past it, the least recently used
   parts of any user are removed. The figure is not set, because the disk was never
   measured (see [Unmeasured](#unmeasured)).
+- **No count of parts for one user.** A user may have several plates at once, one in each
+  browser tab, and a count for each user would make one plate's uploads push the other
+  plate's parts out. The limit on disk is what bounds the part store. One user with many
+  plates can therefore push other users' parts out of it, and those users' pages upload
+  them again without their being told; the front server limits how fast one user may
+  upload parts, which bounds how much one user can push out.
 - **It is emptied when the slice service starts.**
 - **A missing part is not an error the user sees.** When a plate configuration names parts
   the part store no longer holds, the slice service answers once, listing every missing
@@ -240,9 +246,9 @@ in a fixed order and stop at the first failure:
 1. **Its form.** Every field is one the contract lists and has a sound value. A field that
    is not listed refuses the plate, so a misspelled setting is never silently ignored.
 2. **Its size.** At most 150 instances, using at most 25 different parts. From phase 2,
-   when a plate configuration carries no files, the description itself has a limit too;
-   1 MB is proposed
-   ([Proposed, and the owner's to change](#proposed-and-the-owners-to-change)).
+   when a plate configuration carries no files, the description itself is at most 1 MB,
+   which bounds what one submission can make the slice service read, with all of a
+   plate's settings in it.
 3. **Its profiles and settings,** described in the next two sections.
 4. **Its parts.** Each part an instance names must exist and pass the checks on a part.
    Today that is where the checks on a part run; from phase 2 they have already run when
@@ -266,7 +272,7 @@ the sentence says supports need the room. The spacing was measured on eight real
 the default set of profiles (described below), and another part or setting may need more. So Orca may still refuse
 a plate that passed, and then the report names the pair from Orca's own log, says supports
 are the likely cause when they are on, and offers spreading the instances out, turning
-supports off, or a second plate. A wizard that arranges the plate itself must leave 12 mm
+supports off, or a new plate. A wizard that arranges the plate itself must leave 12 mm
 when supports are on.
 
 Two things are deliberately not checked before slicing: the memory a plate will need, and
@@ -428,10 +434,13 @@ slicer is busy and to try again in a minute, and the page does not try again by 
 
 **Memory decides how many run at once.** The slice service never runs more Orcas than fit
 in its memory with each at the **memory ceiling**, the most memory one Orca is allowed.
-Hosted, with the proposed ceiling of 6,000 MB in a container of 8 GB, that is one. Two at once would
-need a ceiling of about 3,000 MB each, and so smaller plates. Processors do not argue for
-a second Orca either: Orca uses several by itself, so a second would share them, not use
-idle ones.
+Hosted, with the ceiling of 6,000 MB that the hosted service starts from, in a container
+of 8 GB, that is one. Two at once would need a ceiling of about 3,000 MB each, and so
+smaller plates: every plate measured so far would still fit, and a plate over about
+3,000 MB would be stopped as too large. Processors do not argue for a second Orca either:
+Orca uses several by itself, so a second would share them, not use idle ones. Whether one
+Orca stays the right number is read from the measurements on the host and from the log
+in use ([Unmeasured](#unmeasured)).
 
 **Everyone shares the places.** Nothing limits the slice jobs of one user. A user with
 the wizard open in several tabs, each with its own plate, may have a slice of each
@@ -442,12 +451,12 @@ and capacity is added if it proves too little.
 **A plate's later slice replaces its earlier one.** The page makes an id for each plate,
 and every plate configuration it submits for that plate carries it. When a plate
 configuration arrives while an earlier slice job of the same plate, from the same user
-key, is still waiting or running, the slice service ends the earlier one. This is what
+key, is still waiting or running, the slice service ends the earlier one early. This is what
 the wizard's Preview step needs when a plate changes: the slice of the plate as it was is
 no longer wanted. The earlier slice job gives up its place before the new one is counted,
 so a user who slices a changed plate while every place is taken is not refused on account
-of their own earlier slice. A slice job is never ended on account of another plate's.
-How a slice job is ended, and what its page is told, is under
+of their own earlier slice. A slice job is never ended early on account of another
+plate's. How a slice job is ended early, and what its page is told, is under
 [End a slice job early](#end-a-slice-job-early).
 
 **A slice job that waits says so.** Its progress report carries the number of slice jobs
@@ -557,23 +566,23 @@ sliced file and no error report. Its last progress report says which of the two 
 applies, because the page does different things with them: for a slice job that was
 replaced it does nothing, since it is already following the later one, and for one ended
 because the slice service was asked to stop it submits the plate again by itself. Today
-the last report of such a slice job gives no reason. Which slice jobs are ended when the
+the last report of such a slice job gives no reason. Which slice jobs are ended early when the
 slice service is asked to stop is under
 [What a user sees while the slice service stops](#what-a-user-sees-while-the-slice-service-stops).
 
 Whatever the use, the stop reaches the work itself:
 
-- A waiting slice job is ended at once.
+- A waiting slice job is ended early at once.
 - A slice job still building its plate stops at the next part or instance it writes. On
   the largest plate the checks accept, where building takes 24 to 28 seconds, the end was
   reported 0.05 to 0.17 seconds after it was asked.
-- A slice job whose Orca is running is reported as ended only after Orca and every
+- A slice job whose Orca is running is reported as ended early only after Orca and every
   process Orca started are gone. Nothing is ever reported as stopped while it is still
   running.
 - A slice job ended early discards its sliced file, even one Orca finished at the same
   instant: a replaced slice is of a plate that has since changed, and a slice ended
   because the slice service was asked to stop is submitted again by its page.
-- Ending a slice job that has already ended changes nothing.
+- Ending early a slice job that has already ended changes nothing.
 
 If the slice had already failed for another reason when it was to be ended early (it ran
 out of memory, ran out of time, or Orca crashed), that failure is what is reported.
@@ -646,7 +655,8 @@ largest plate the checks accept.
 
 ### Bounding Orca's memory
 
-*Built today, at a ceiling of 2,000 MB. Phase 3 sets the hosted ceiling.*
+*Built today, at a ceiling of 2,000 MB. Phase 3 sets the hosted ceiling, starting from
+6,000 MB.*
 
 Memory is the resource that decides everything about this service, and Orca's memory is
 hard to bound for one reason: its peak is a spike. The pinned Orca's memory jumps near the
@@ -667,7 +677,7 @@ The approach has three parts.
    Orca exits, so the reading that follows it catches the final spike.
 3. **Stop Orca when the peak passes the memory ceiling.** The slice fails, and the user is
    told the plate is too large to slice, with the ceiling named and a remedy of fewer
-   instances or a second plate (for a plate of a single instance, simplifying or splitting
+   instances or a new plate (for a plate of a single instance, simplifying or splitting
    the part).
 
 Why this approach: it needs nothing from the host but what any Linux gives, it measures
@@ -822,7 +832,8 @@ bytes.
 
 ## How well it must do it
 
-Every figure below is either measured, proposed, or someone else's limit, and says which.
+Every figure below is either measured, chosen without a measurement, or someone else's
+limit, and says which.
 All measurements are from aarch64 Linux machines, almost all from one with 4 processors, with the pinned Orca
 2.4.2 and the default set, one slice at a time. The hosted machines are believed to be
 x86_64, and nothing has been measured there.
@@ -863,19 +874,19 @@ to read all eight real parts and up to 5.8 seconds to accept the largest plate.
 
 | Limit | Figure | What it bounds, and where the figure comes from | How it is checked |
 |---|---|---|---|
-| Memory ceiling, today | 2,000 MB | The most memory one Orca may reach. Chosen from the measurements: the Popcorn Penguins' heaviest target plate is 585 MB under it. Twelve of the largest block with supports on, and about 95 pulleys or more, pass it and are stopped, with a second plate as the remedy | A real slice at a 100 MB ceiling shows the stop; a real slice at a ceiling 5 percent under the plate's own peak shows the spike is caught |
-| Memory ceiling, hosted | 6,000 MB, proposed | The same, in the slice container. Railway allows the container 8 GB, and stops a container that passes it, which would take the waiting slice jobs too. 6,000 MB leaves 2 GB for the slice service itself, its checks on arriving parts and the operating system. By the measurements: 6,000 MB, plus the 502 MB Orca can rise between two readings, plus 400 MB for the slice service, is 6,902 MB, under the 8 GB with about 1,100 MB to spare (the sum is proposed, not measured) | Phase 3's measurements on the slice container |
+| Memory ceiling, today | 2,000 MB | The most memory one Orca may reach. Chosen from the measurements: the Popcorn Penguins' heaviest target plate is 585 MB under it. Twelve of the largest block with supports on, and about 95 pulleys or more, pass it and are stopped, with a new plate as the remedy | A real slice at a 100 MB ceiling shows the stop; a real slice at a ceiling 5 percent under the plate's own peak shows the spike is caught |
+| Memory ceiling, hosted | 6,000 MB, the figure to start from on the hosted service, chosen without a measurement there | The same, in the slice container. Railway allows the container 8 GB, and stops a container that passes it, which would take the waiting slice jobs too. 6,000 MB leaves 2 GB for the slice service itself, its checks on arriving parts and the operating system. By the measurements: 6,000 MB, plus the 502 MB Orca can rise between two readings, plus 400 MB for the slice service, is 6,902 MB, under the 8 GB with about 1,100 MB to spare (the sum is a calculation, not a measurement) | Phase 3's measurements on the slice container, which confirm the figure or change it ([Unmeasured](#unmeasured)) |
 | Time limit | 240 seconds, until measured on the host | The longest one Orca may run. It must be long enough that every plate which would finish does finish, and no longer, because a slice that hangs holds up everyone behind it. 240 seconds is about seven times the slowest real plate measured (34.3 s) and about twenty-five times the largest plate of spacers (9.4 s). A plate near 6,000 MB will take longer than anything measured. After phase 3's measurements it is set at a few times the slowest plate that finishes | A test fires the timer by hand; no test waits |
 | Slices at once | 1 | Orcas running. Decided by memory, as above | A test with two stand-in Orcas, once it is a setting of the slice service |
 | Slice jobs waiting | 2 | Places behind the running slice, shared by all users with no limit for one user; one more slice job is told "busy". A starting figure, to be changed from what is seen in use | Tests fill the queue |
 | Instances on a plate | 150 | The work of the placement check and of writing the plate, not memory. 100 spacers is the plate a user needs; 150 used a third of the 2,000 MB ceiling. No real plate came near it | Tests at 150 and 151 |
 | Different parts on a plate | 25 | The upload and the disk: 25 parts of 7.5 MB each is 187.5 MB. Not a measured limit | Tests |
 | One part | 150,000 triangles; 7,500,084 bytes | The time to read and check one part, and one upload. Reading all eight real parts (7 MB together) took 0.17 to 0.19 seconds | Tests at the limit and one over |
-| A plate configuration without its files | 1 MB, proposed, from phase 2 | The description alone, and with it all the settings of one plate together | Tests |
+| A plate configuration without its files | 1 MB, from phase 2; chosen without a measurement | The description alone, and with it all the settings of one plate together. No plate of 150 instances has been measured against it | Tests at the limit and one over |
 | The text of one text setting | The length of the longest text value in the profile catalog, from phase 2 | What one setting can add to the profile written for Orca and to a line of the log. The figure is read from the catalog when the check is built | Tests at the limit and one over |
 | A sliced file | 50 MB, from phase 2 | What each preview, download and print moves, and each fetch against the 100 MB Cloudflare allows one request. The largest measured is 14.1 MB | A test with a stand-in Orca that writes a larger file |
 | Margin, spacing, least size | 3 mm; 5 mm and 12 mm; 0.1 mm | See [Check a plate before it is sliced](#check-a-plate-before-it-is-sliced). The spacings are measured, with room to spare | The upstream check slices the tightest pairs exactly the spacing apart |
-| A part in the part store | Two hours after last use; 25 for one user | Disk, and how long a stranger's model rests on the server. The 25 predates several plates for one user and is [undecided](#the-limit-of-25-parts-for-one-user-now-that-a-user-may-have-several-plates) | Tests that move a clock |
+| A part in the part store | Two hours after last use; no count for one user | Disk, and how long a stranger's model rests on the server. The part store's overall limit on disk is what bounds the number of parts, and its figure is not set ([Unmeasured](#unmeasured)) | Tests that move a clock |
 | A slice job remembered | Two hours after it ends, from phase 2 (one hour today) | Memory of the slice service process | Tests that move a clock |
 | A quiet progress stream | Something sent at least every 15 seconds | Railway's 5 minutes and Cloudflare's 125 seconds without data, both theirs | A test |
 | Grace when stopping Orca | 5 seconds, then killed | How long a stop can take to be reported | Tests with a stand-in Orca that ignores the request |
@@ -971,10 +982,12 @@ the same sign-in as anyone else.
   that proves too little. How fast one user may submit plates is limited by the front
   server, at a figure its builder settles
   ([its guide](../front/README.md#how-many-users-at-once-and-what-happens-when-the-threads-run-out)).
-- One user cannot fill the disk: at most 25 parts, each at most 7.5 MB, with the part
-  store's overall limit behind that. The count of 25 predates several plates for one
-  user and is undecided
-  ([its item](#the-limit-of-25-parts-for-one-user-now-that-a-user-may-have-several-plates)).
+- No user can fill the disk: the part store's overall limit on disk bounds all users'
+  parts together, each part is at most 7.5 MB and leaves two hours after its last use.
+  Nothing counts the parts of one user, so one user with many plates can push other
+  users' parts out of the part store. Those users' pages upload them again, and the cost
+  is a slice that starts later than usual. The front server limits how fast one user may
+  upload parts, which bounds how much one user can push out.
 - A slice whose user has left still runs to its end.
 - Anything that can reach the slice service's address is believed to be the front server,
   with whatever user key it names; the private network, or the loopback address, is the
@@ -994,19 +1007,19 @@ one exception described under
 | What happened | What the user is told | What they can do |
 |---|---|---|
 | A part cannot be used | Which part, and what is wrong with it: not an STL, a text STL, too detailed, too small, flat, nothing to print, larger than the printer | Export the part again, or simplify it. From phase 2 this arrives on the Parts step and the part is not added |
-| The plate is not acceptable | Which instance is off the plate or too tall, or which two instances are closer than the spacing | Move them, press Arrange, turn supports off, or use a second plate |
+| The plate is not acceptable | Which instance is off the plate or too tall, or which two instances are closer than the spacing | Move them, press Arrange, turn supports off, or use a new plate |
 | A profile or setting is not accepted | To choose from the lists. From phase 2 a refused setting is named | Choose again |
 | The slicer is busy: all three places are taken | "The slicer is busy, try again in a minute." | Slice again; the same plate may succeed unchanged. The page does not try again by itself |
-| The plate needs too much memory | "This plate is too large to slice: the slicer needed more than the 2,000 MB of memory the print server allows." | Fewer instances or a second plate; for a single instance, split or simplify the part |
+| The plate needs too much memory | "This plate is too large to slice: the slicer needed more than the 2,000 MB of memory the print server allows." | Fewer instances or a new plate; for a single instance, split or simplify the part |
 | The slice ran out of time | "The slicer took too long on this plate." | The same remedies |
-| Orca found two instances' paths would meet | Which two, and that supports are the likely cause when they are on | Spread them out, turn supports off, or use a second plate |
+| Orca found two instances' paths would meet | Which two, and that supports are the likely cause when they are on | Spread them out, turn supports off, or use a new plate |
 | A part has a gap with nothing under it | Which instance, and between which heights nothing would be printed. From phase 2 the error report also carries Orca's own sentence | Turn supports on, offered as the single action. With supports already on, the part must be repaired |
 | Nothing printable was found | That no layers were found (a surface with holes, a part too thin), or that the print is empty (a part thinner than the nozzle prints), naming the part when the plate has one | Repair the part in CAD, or check its size |
 | An instance lies partly or wholly off the plate in Orca's eyes | That it is not on the plate | Move it |
 | Orca failed and gave only a general reason | "The slicer could not slice this plate.", with Orca's warnings added and labelled as possibly unrelated | Act on a warning if one fits |
 | Orca crashed, or something on the server killed it | That the slicer crashed, or was stopped before it finished | Slice again |
 | Orca finished but its file is missing, damaged or incomplete | That the sliced file is damaged or missing | Slice again |
-| The sliced file would be larger than 50 MB (phase 2) | That the sliced file is too large | Fewer instances or a second plate |
+| The sliced file would be larger than 50 MB (phase 2) | That the sliced file is too large | Fewer instances or a new plate |
 | The server could not write into the slice job's folder (a full disk, for one) | That the print server could not write the slicer's working files | Slice again; if it persists it is for the owner to fix |
 | The slice service has a bug | "The slicer failed unexpectedly." The full trace goes to the log | Slice again |
 | The slice job is not known (it expired, or the slice service restarted) | From phase 2: if the slice was waiting or running and was submitted less than two hours ago, nothing, the page submits it again by itself. If it had finished, nothing: the page finds its sliced file through the front server, which keeps it until two hours after the slice ended or two hours after its last print ended, whichever is later. Once the sliced file itself has expired, the page keeps the plate and, on its Preview or Send step, says that the slice has expired | Nothing, or slice again |
@@ -1019,13 +1032,16 @@ the first, and of the second only what
 [What a user sees while the slice service stops](#what-a-user-sees-while-the-slice-service-stops)
 describes.
 
-In these sentences "the print server" is the old word for the slice service.
+In these sentences "the print server" is the old word for the slice service. Where a
+remedy is another plate, the sentences say "a new plate", the words of the wizard's
+panel, from phase 2; today they say "a second plate".
 
 Two failures have a known weak spot. A part whose very first layer is empty (a needle
 thinner than the nozzle prints, for example) fails with only the general sentence, because
-the pinned Orca writes that reason nowhere the slice service can read. And the sentences
-that tell a user to ask someone for help still use the old words for people; changing them
-is known future work.
+the pinned Orca writes that reason nowhere the slice service can read. That is a known
+limit and stays as it is: no check is added for such a part and Orca is not patched for
+it. And the sentences that tell a user to ask someone for help still use the old words
+for people; changing them is known future work.
 
 ### Orca's own sentence in an error report
 
@@ -1059,12 +1075,12 @@ one loss is time: a slice that was cut off runs again from its start.
 
 ### What a user sees while the slice service stops
 
-*Built today: a stop that ends every slice job. To be built in phase 2: everything else
+*Built today: a stop that ends every slice job early. To be built in phase 2: everything else
 in this section.*
 
 **When asked to stop.** A deploy asks the slice service to stop, and the project is
 deployed continuously, so this happens while people are slicing. Today the slice service
-ends every slice job, says so on each progress stream, waits until every Orca is gone,
+ends every slice job early, says so on each progress stream, waits until every Orca is gone,
 and exits. From phase 2 it does four things:
 
 1. **It finishes the slice it is running,** bounded by the time limit, and keeps
@@ -1111,8 +1127,8 @@ the new front server.
 
 *Built today: one line for every change of a slice job's state, written to the process's
 output. To be built in phase 2: the collecting of the lines by the front server, with
-the name of the component on every line. To be built in phase 3: the time and the user
-key on every line, and the three new kinds of line.*
+the name of the component, the time and the user key on every line. To be built in
+phase 3: the three new kinds of line.*
 
 The owner runs the service alone and cannot look at a user's screen, so the log has
 to answer what went wrong and whether the service is the right size. The slice service
@@ -1186,8 +1202,9 @@ to reach a goal, whether for an error, for progress or for a minor feature. Ever
 paid for again at each new version, and for Orca the price is high: a patched Orca can no
 longer be the published release and must be built from source, which is why each patch to
 Orca is the owner's decision and why the upgrade command stops when a patch exists. There
-is no patch today. The one place a patch would buy something is
-[A part whose first layer is empty](#a-part-whose-first-layer-is-empty).
+is no patch today. The one place a patch would buy something is the reason for a part
+whose first layer is empty ([When things go wrong](#when-things-go-wrong)), and none is
+made for it.
 
 **The rule on reading Orca's source.** An implementer may read Orca's source to
 understand its algorithms and methods, and never copies its code. Orca is licensed under
@@ -1239,8 +1256,16 @@ allowed 8 GB; how long a stopping container is given; that Orca under its own Un
 cannot write outside its scratch folder, which is tested in the container's image.
 
 From phase 2, each row of the table "The slice container restarts" in
-[the architecture](../docs/architecture.md#what-a-restart-does) is a test that runs on one
-machine with the front server, in which the slice service is restarted at that moment.
+[the architecture](../docs/architecture.md#what-a-restart-does) is tested in two ways. The
+slice service's own fast suite proves its half of each row through its interface: a new
+slice service starts with an empty part store and knows no earlier slice job, so it lists
+the missing parts when a plate names them; a slice still waiting at a stop is ended early
+with the reason that the slice service was asked to stop; a submission during a stop gets
+the answer that it is stopping. The front server's and the wizard's suites prove their
+halves against their own stand-ins. And one joined suite, outside the fast suites, runs the
+real front server and the real slice service together, with the stand-in Orca, drives the
+wizard in a browser, and restarts the slice service at each row's moment
+([the architecture](../docs/architecture.md#keeping-it-true)).
 
 A change to the slice service is checked by someone who did not write it: the suites are
 rerun in random order, the changed checks are broken on purpose to see a test fail, and
@@ -1265,9 +1290,10 @@ hostile inputs are tried.
 - the upgrade command and the upstream check.
 
 **Built today and replaced in phase 2:** the request that carries a whole plate's files;
-the ending of a slice job nobody has followed for 120 seconds; the keeping of a
+the ending early of a slice job nobody has followed for 120 seconds; the keeping of a
 finished slice job, with its uploads and its sliced file, for one hour; the stop that
-ends every slice job.
+ends every slice job early; "a second plate" in the sentences whose remedy is another
+plate.
 
 **Built today and left as it is, unused:** the request that cancels a slice job. The
 front server never sends it.
@@ -1275,9 +1301,12 @@ front server never sends it.
 **Phase 2, on one machine, adds:**
 
 - the user key on every request, and each user's parts and slice jobs kept apart;
-- the part store, with each part uploaded once and checked on arrival;
-- the units of each part, applied only here;
-- plate configurations that name parts by hash and carry no files;
+- the part store, with each part uploaded once and checked on arrival, bounded by its
+  overall limit on disk and by no count for one user;
+- the units of each part, applied only here, and the refusal of a part without a units
+  label;
+- plate configurations that name parts by hash and carry no files, of at most 1 MB;
+- "a new plate" in every sentence whose remedy is another plate;
 - every setting that is a parameter with a value, for the process profile only, each
   value checked before Orca runs;
 - the table of settings, taken from Orca's source, with every setting classified, and
@@ -1295,7 +1324,10 @@ front server never sends it.
 - the number of slice jobs ahead, in a waiting slice job's progress report;
 - finishing the running slice when asked to stop, and answering new submissions meanwhile
   with an answer of its own;
-- the log lines collected by the front server, each carrying the component's name;
+- the log lines collected by the front server, each carrying the component's name, the
+  time and the user key;
+- an instance that lies on any face of its part's convex hull, not only on a side of its
+  bounding box, by a general turn in the plate configuration;
 - the shared set of plates for the two placement checks;
 - a test for each row of the architecture's table of what a restart of the slice container
   does.
@@ -1304,13 +1336,13 @@ front server never sends it.
 
 - the time limit, the number of slices at once and the number waiting as settings of the
   slice service;
-- the memory ceiling set for the slice container;
+- the memory ceiling set for the slice container, starting from 6,000 MB;
 - the measurements on the slice container that set the ceiling, the time limit and the
   estimates;
 - the comment line on a quiet progress stream;
 - Orca as a Unix user of its own;
 - a new Orca version as a new image;
-- the time and the user key on every log line, and the three new kinds of line.
+- the three new kinds of log line.
 
 **Phases 4 and 5 add nothing here.** Parts from Onshape arrive as any part does, and
 printing does not pass through the slice service.
@@ -1327,28 +1359,35 @@ These are things only the hosted machines, or the service in use, can show.
 
 **Orca on the hosted machines, up to the hosted ceiling.** *To be learned:* the memory
 and the time Orca takes on the slice container for plates of rising weight, up to the
-proposed ceiling of 6,000 MB, and what Orca makes of the processors it is given there.
+starting ceiling of 6,000 MB, and what Orca makes of the processors it is given there.
 Every measurement so far is from aarch64 Linux, almost all from one machine with 4
 processors, and from plates under 2,600 MB; Railway's machines are believed to be x86_64,
 and how many processors the slice container gets is not known. *Why it matters:* every
 limit in this guide was set from machines the service will not run on. Until it is
 measured the time limit is 240 seconds, and a plate near the ceiling may not finish in
 it; its user would be told the slicer took too long on a plate that would have finished.
-*What depends on it:* the memory ceiling, the time limit (a few times the slowest plate
-that finishes) and the two estimates.
+*What depends on it:* the hosted memory ceiling, which starts at 6,000 MB and is
+confirmed or changed by these measurements; the time limit (a few times the slowest
+plate that finishes); the two estimates; and, with the next item and the log in use,
+whether one Orca at 6,000 MB or two at about 3,000 MB each serves users better. By a
+calculation, not a measurement, two would take 2 × 3,000 MB, plus 2 × 502 MB for the rise
+of each between two readings, plus 400 MB for the slice service, which is 7,404 MB of
+the 8 GB.
 
 **What the slice service needs beside Orca.** *To be learned:* the slice service's own
 memory with the part store and the checks of parts on arrival, both of which phase 2
 adds; the 400 MB a host is sized for was measured without them. *Why it matters:* the
-2 GB left above the proposed ceiling has to cover it, together with the 502 MB Orca can
+2 GB left above the starting ceiling has to cover it, together with the 502 MB Orca can
 rise between two readings and the operating system. *What depends on it:* the hosted
 memory ceiling, which comes down if the true figure is much larger.
 
 **Disk.** *To be learned:* what the part store takes on the slice container's disk, and
-what finished slice jobs hold. The known bounds are 187.5 MB of parts for one user at the
-limit, and 269 to 448 MB for one slice job's folder on the largest plate. *Why it
-matters:* a full disk fails every slice. *What depends on it:* the part store's overall
-limit, which has no figure and must be given one before phase 3.
+what finished slice jobs hold. The known figures are 187.5 MB of parts for one full
+plate, and 269 to 448 MB for one slice job's folder on the largest plate. *Why it
+matters:* a full disk fails every slice, and the overall limit is the only bound on the
+number of parts the part store holds. *What depends on it:* the part store's overall
+limit. On one machine in phase 2 its builder sets a starting figure; the figure for the
+slice container is set from this measurement before phase 3.
 
 **How long Railway allows a stopping container, and whether it starts the new one
 first.** *To be learned:* both. *Why it matters:* finishing the running slice at a deploy
@@ -1378,8 +1417,8 @@ slice job waits, for how long, and how often one is told the slicer is busy. The
 once-a-minute log line and the wait recorded on each slice job's last line are there to
 answer it. *Why it matters:* everyone shares three places, and one user may hold them
 all. *What depends on it:* the two counts, one running and two waiting, and the choice
-between one Orca and two under
-[Proposed, and the owner's to change](#proposed-and-the-owners-to-change).
+between one Orca and two
+([Run one slice at a time, and let a few wait](#run-one-slice-at-a-time-and-let-a-few-wait)).
 
 **Orca's processor time,** as distinct from elapsed time. *Why it matters:* only if a
 second Orca at once is considered, since two would share the processors. *What depends
@@ -1406,87 +1445,23 @@ user meets it, or by a user. It is to be settled the first time Orca is upgraded
 nothing built before then depends on the answer. The front server's guide carries
 [the same item](../front/README.md#a-configuration-that-names-a-profile-the-catalog-has-lost).
 
-#### The limit of 25 parts for one user, now that a user may have several plates
+#### Proposals nobody has ruled on
 
-*What it is.* The part store holds at most 25 parts for one user key, and removes that
-user's least recently used part when a twenty-sixth arrives. A user may have several
-plates at once, one in each browser tab, and two plates of one user can need more than
-25 parts between them. Each plate's uploads then push the other's parts out of the part
-store, to be uploaded again when that plate is next sliced.
+Five small rules of this guide are proposals: each is stated in the body as the design, and
+each is what is built until it is ruled on. Each can be changed without changing anything
+else of the design.
 
-*What is known.* The figure of 25 is the most one plate can use, and it was set when a
-user had one plate. Nothing breaks: the part store is a cache, and the page uploads a
-missing part again from the browser's storage without the user being told. The cost is
-uploads made again and again, each of up to 7.5 MB and each checked again on arrival.
-The part store also has a limit on the disk it may take in all, past which the least
-recently used parts of any user are removed; that limit has no figure yet
-([Unmeasured](#unmeasured)).
-
-*The options.*
-
-| Option | What it costs | What a user would see |
-|---|---|---|
-| Keep 25 for each user | Nothing to build. A user with two full plates uploads up to 25 parts again each time they go from slicing one plate to slicing the other | A slice that starts later than usual, while the parts go up again. Nothing is said |
-| Count the 25 for each plate | A part must arrive with the id of its plate, which changes the upload. The id is made by the page, so a page that invents ids escapes the count, and the disk one user can take is bounded only by the overall limit | Nothing unusual for a user with several plates |
-| Drop the count for each user and rely on the overall limit on disk | Less to build than today's design. One user with many plates can push other users' parts out of the part store, and those users' pages upload them again. The overall limit must have its figure first | Nothing unusual while the disk has room. When it has none, a slice that starts later than usual, for any user |
-
-*Recommendation.* Drop the count for each user and rely on the overall limit. A count
-for each plate protects no more than the overall limit does, since the page makes the
-ids, and a count for each user makes an honest user with two plates pay for a limit
-meant for a hostile one. The overall limit is needed in any case, a part leaves after
-two hours without use, and the front server limits how fast one user may upload parts,
-which bounds how much one user can push out.
-
-#### A part whose first layer is empty
-
-*What it is.* The user gets "The slicer could not slice this plate." and no reason,
-because the pinned Orca collects that error and loses it.
-
-*The options.* Leave it: no cost, and a poor message for a rare part. Detect such parts
-in the slice service's own checks before slicing: a workaround, to be designed, which
-must not refuse parts that print. Patch Orca to write the reason: a small patch for an
-error, which the rule on patching allows, at the price of building Orca from source at
-every version from then on.
-
-*Recommendation.* Leave it until a real part shows the need, which is also the cheapest
-to reverse. No patch is proposed.
-
-#### Parts that pass through themselves
-
-*What it is.* A part whose surface passes through itself is not detected. Orca sliced
-the cases tried, so nothing is refused wrongly; what a user might get is a print that is
-not what they meant, with no warning.
-
-*Recommendation.* Detecting it is real work on large parts, and it is not proposed until
-a real part shows the need.
-
-### Proposed, and the owner's to change
-
-Two kinds of proposal stand until the owner changes them: the hosted memory ceiling, and
-four small rules.
-
-**The hosted memory ceiling, proposed at 6,000 MB: what the other choice would be.** What
-is known: the heaviest plate ever measured peaked at 2,569 MB, and the heaviest plate of
-real robot parts at 2,307 MB. The options:
-
-| Option | What a user gets | What it costs |
-|---|---|---|
-| One Orca at 6,000 MB (proposed) | Any plate up to more than twice the heaviest ever measured can slice | Every user waits behind whoever is slicing. It costs more money only while a heavy plate is slicing, since Railway bills the memory held at each moment |
-| Two Orcas at about 3,000 MB each | Two users slice at once. Every plate measured so far still fits | Plates over about 3,000 MB are stopped as too large. The margin under the 8 GB is thinner; by this guide's own sum, not a measurement: 2 × 3,000 MB, plus 2 × 502 MB for the rise of each between two readings, plus 400 MB for the slice service, is 7,404 MB. The two share the processors, so each is slower |
-
-Nothing measured so far needs more than 3,000 MB, and nothing is known yet about how
-often two users slice at once. The measurements on the host and the first weeks of the log
-supply both.
-
-**Four small rules.** Each is stated in the body as the design and marked there as a
-proposal.
-
-| Rule proposed | Where it is | What it settles, and the other choice |
-|---|---|---|
-| On arrival, a part is tested for fit against the largest printer in the profile catalog | [Check a part when it arrives](#check-a-part-when-it-arrives) | A part arrives before any plate names a printer. A part too large for every printer is refused on the Parts step; one too large only for the plate's own printer is refused when the plate is submitted. The other choice is no fit test on arrival, and every such refusal at submission |
-| A part that arrives without a units label, or with one that is neither inches nor millimetres, is refused, and so is a plate configuration that names a part without one | [Units](#units) | The slice service never guesses units. The other choice is to take a missing label as millimetres, which slices a part in inches 25.4 times too small without a word |
-| The warning "every side under 5 mm" is not raised for a part labelled in inches | [Units](#units) | The warning exists to catch a file in inches read as millimetres, and a part labelled in inches cannot be that. The other choice is to raise it for every small part |
-| A plate configuration without its files is at most 1 MB | [Check a plate before it is sliced](#check-a-plate-before-it-is-sliced) | What one submission can make the slice service read, with all of a plate's settings in it. No plate of 150 instances has been measured against it |
+- **The fit test on arrival uses the largest printer in the profile catalog,** since a part
+  arrives before any plate names a printer; the plate's own printer is tested again when a
+  plate names the part ([Check a part when it arrives](#check-a-part-when-it-arrives)).
+- **A part that arrives without a units label is refused,** rather than read as
+  millimetres ([Units](#units)).
+- **No warning that every side is under 5 mm for a part labelled in inches,** since the
+  warning exists to catch a file in inches read as millimetres ([Units](#units)).
+- **A plate configuration without its files is at most 1 MB,** chosen without a measurement
+  ([The limits](#the-limits)).
+- **The memory ceiling on the hosted service starts at 6,000 MB,** of the slice container's
+  8 GB, until phase 3's measurements confirm or change it ([The limits](#the-limits)).
 
 ### Known future work
 
@@ -1496,8 +1471,7 @@ examined. Until then the slice service stays on 2.4.2 and takes no fixes from ne
 versions.
 
 **The words in the sentences users read.** Some sentences still say whom to ask in the old
-words for people, call the service "the print server", and say "a second plate" where
-the wizard's panel says "a new plate". The wizard shows the slice service's sentences as
+words for people and call the service "the print server". The wizard shows the slice service's sentences as
 they are, so they are mended here. Changing them is a change of its own, with its tests.
 
 **More than one slice container.** The design has one, and one slice service process in

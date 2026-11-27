@@ -606,29 +606,51 @@ headed "Item" are the items of
 [the record of that day's decisions](../guides/decisions-2026-11-27.md), where "proposed"
 marks a proposal the owner did not object to.
 
+The rows headed W, F, S and P are the items of the owner's reviews of that day: W of
+[the wizard's guide](../guides/owner-review-wizard.md), F of
+[the front server's guide](../guides/owner-review-front.md), and S and P of what bears on
+[the slice service's guide](../guides/owner-review-slice.md) and
+[printer delivery's guide](../guides/owner-review-delivery.md) (the owner has not yet read
+printer delivery's guide itself). Where these reviews and the day's decisions differ, the
+reviews win.
+
 These decisions replace what the rows above record of the spec: 1.1 and the row on R2's
 backstop replace D7, D91, D92, D93, D94 and D247; 1.9 replaces D234; 1.5 replaces D111.
+W14 and S8 replace D97, D98, D244 and D295 (there is no limit of one unfinished slice job
+for each user; only a plate's own later slice replaces its earlier one); W15 and S11
+replace D105's "cancelled by a later slice of the same user", which becomes "replaced by
+the same plate's later slice"; W12 replaces D106 and the part of D203 that drops the
+stored parts when the sliced file has expired; W10 and W11 replace the rest of D203 and
+D336 (a plate for each tab, dropped after 12 hours unused); W7 and F8 replace D134 and
+D340 (there is no "sign in again"); F6 replaces the thirty days of D125 and D204, which
+run from the last use; W40 replaces D237's "next moment when nothing is in flight"; F28
+to F30 replace D196's "files named by date and component"; W5 and W6 replace D118's
+"the user changes it there" for a user in one group and inside Onshape; F11 adds to D146
+a plain page for a user of Safari; F16 and S12 replace D369's "tried again without
+telling the user", since the wizard says the slicer is restarting; the part store's limit of 25 parts for one user key
+in D80, D244 and D294 gives way to a limit on the disk alone, since each tab has a plate
+of its own (W10).
 
 | Decision | Home |
 |---|---|
-| 1.1: a sliced file is kept until two hours after its slice ended or two hours after its last print ended (the end of the latest delivery job that used it), whichever is later; Send is enabled again after a print of any length; a three-day rule at R2 is the backstop (the row on R2's backstop, below) | [The front server's details](../../../front/README-details.md#two-hours-deleting-and-the-backstop) |
-| 1.9: the page retries quietly; after 20 seconds of failed retries it says the server is being slow, with a countdown to the next attempt; it retries for up to 300 seconds, then says the server could not be reached and offers to try again; no work is dropped | [The wizard's details](../../../wizard/README-details.md#retrying-every-request) |
-| 2.4: the relay writes the time a daemon goes offline to the paired-printer record, once, so how long a printer has been silent survives a restart of the front server | [Printer delivery's details](../../../delivery/README-details.md#from-the-wizards-mockup) |
+| 1.1: a sliced file is kept until two hours after its slice ended or two hours after its last print ended (the end of the latest delivery job that used it), whichever is later; Send is enabled again after a print of any length; a three-day rule at R2 is the backstop (the row on R2's backstop, below) | [The front server's details](../../../front/README-details.md#two-hours-the-sweep-and-the-backstop) |
+| 1.9: the page retries quietly; after 20 seconds of failed retries it says the server is being slow, with a countdown to the next attempt; it retries for up to 300 seconds, then says the server could not be reached and offers to try again; no work is dropped | [The wizard's details](../../../wizard/README-details.md#retrying) |
+| 2.4: the relay writes the time a daemon goes offline to the paired-printer record, once, so how long a printer has been silent survives a restart of the front server | [Printer delivery's details](../../../delivery/README-details.md#how-long-a-printer-has-been-silent) |
 | 1.5: the layer preview uses four fixed colours whatever the filament; the configuration still holds a colour for each filament, shown where the user chooses a filament | [The configuration's contract](../../../contracts/configuration.md) |
-| 1.2: a refresh keeps the parts, layout and settings, from the browser's storage | [The wizard's details](../../../wizard/README-details.md#what-the-page-keeps-in-the-browsers-storage) |
-| 1.3: work does not follow a user to another browser; the page finds its slice job by the id it kept | [The wizard's details](../../../wizard/README-details.md#what-a-returning-page-does) |
-| 1.4: the two hours count from when the slice ended | [The wizard's details](../../../wizard/README-details.md#the-sliced-file) |
-| 1.6: any signed-in user of the group types the pairing code, from any computer | [The wizard's details](../../../wizard/README-details.md#printers-from-phase-5) |
+| 1.2: a refresh keeps the parts, layout and settings, from the browser's storage | [The wizard's details](../../../wizard/README-details.md#what-the-browser-keeps) |
+| 1.3: work does not follow a user to another browser; the page finds its slice job by the id it kept | [The wizard's details](../../../wizard/README-details.md#when-a-user-comes-back) |
+| 1.4: the two hours count from when the slice ended | [The wizard's details](../../../wizard/README-details.md#a-sliced-plate-that-expires) |
+| 1.6: any signed-in user of the group types the pairing code, from any computer | [The wizard's details](../../../wizard/README-details.md#pairing-a-printer) |
 | 1.7: the paired-printer record links the group to its daemon; the configuration names the printer's Orca profile | [The configuration's contract](../../../contracts/configuration.md) |
-| 1.8: a part that cannot be used is a notification, and is not added | [The wizard's details](../../../wizard/README-details.md#uploading-each-part-when-it-is-added) |
-| 1.10: a returning page whose stored plate has a delivery job, running or ended, opens on the Send step | [The wizard's details](../../../wizard/README-details.md#what-a-returning-page-does) |
-| 1.11: the configuration is the signed-in user's current group's, never one from a link | [The wizard's details](../../../wizard/README-details.md#the-configuration) |
-| 2.1: the plate's size and height come from the printer's Orca profile in the configuration | [The wizard's details](../../../wizard/README-details.md#the-configuration) |
-| 2.2: a delivery job's record carries the sender's display name, a one-line description of the plate, its end time and, for a failure, its layer (route names still *proposed*) | [Printer delivery's details](../../../delivery/README-details.md#from-the-wizards-mockup) |
-| 2.3: a page can find its user's live delivery job and last print (route names still *proposed*) | [The contract](../../../contracts/wizard-front-server.md#printers-from-phase-5) |
+| 1.8: a part that cannot be used is a notification, and is not added | [The wizard's details](../../../wizard/README-details.md#a-part-that-cannot-be-used) |
+| 1.10: a returning page whose stored plate has a delivery job, running or ended, opens on the Send step | [The wizard's details](../../../wizard/README-details.md#when-a-user-comes-back) |
+| 1.11: the configuration is the signed-in user's current group's, never one from a link | [The wizard's details](../../../wizard/README-details.md#the-configuration-and-the-table-of-settings) |
+| 2.1: the plate's size and height come from the printer's Orca profile in the configuration | [The wizard's details](../../../wizard/README-details.md#the-configuration-and-the-table-of-settings) |
+| 2.2: a delivery job's record carries the sender's display name, a one-line description of the plate, its end time and, for a failure, its layer (route names still *proposed*) | [Printer delivery's details](../../../delivery/README-details.md#what-the-wizard-needs) |
+| 2.3: a page can find its user's live delivery job and last print (route names still *proposed*) | [The contract](../../../contracts/wizard-front-server.md#the-users-live-delivery-job-and-last-print) |
 | 2.5: the configuration holds each profile's own name and purpose | [The configuration's contract](../../../contracts/configuration.md) |
-| 2.6: there is no "plate too large" error | [The wizard's details](../../../wizard/README-details.md#errors-the-wizard-explains) |
-| The backstop rule at R2 for sliced files is three days, not one, since a sliced file now lives until two hours after its last print ended; a file the front server failed to delete can rest at R2 for up to about four days after it was stored. | [The front server's details](../../../front/README-details.md#two-hours-deleting-and-the-backstop) |
+| 2.6: there is no "plate too large" error | [The wizard's details](../../../wizard/README-details.md#when-a-slice-fails) |
+| The backstop rule at R2 for sliced files is three days, not one, since a sliced file now lives until two hours after its last print ended; a file the front server failed to delete can rest at R2 for up to about four days after it was stored. | [The front server's details](../../../front/README-details.md#two-hours-the-sweep-and-the-backstop) |
 | Item 1: a component's guide is for the person who decides, a product manager and an engineering manager at once, and holds the architectural and user-interface decisions and the requirements | [CLAUDE.md](../../../CLAUDE.md) |
 | Item 2: a guide is prose, with no line limit and no code-level names; key limits are in it in plain words with their figures | [CLAUDE.md](../../../CLAUDE.md) |
 | Item 3: `README-details.md` holds the code-level names; the details marked *proposed* are the builder's to settle while building | [CLAUDE.md](../../../CLAUDE.md) |
@@ -637,13 +659,13 @@ backstop replace D7, D91, D92, D93, D94 and D247; 1.9 replaces D234; 1.5 replace
 | Item 6: a part's units travel beside it as a label; the browser never changes its bytes; only the slice service scales and checks with them; the same file under other units is another part | [The plate configuration's contract](../../../contracts/plate-configuration.md#to-be-built) |
 | Item 7: the thirteen design rulings of the two older guides (R1 to R3, R5 to R12, R14, R18) stand, open to revisiting | The guides of the slice service and printer delivery |
 | Item 8: the profiles the wizard offers for each filament are in the configuration; until the edit screens exist there is a fixed set of configurations | [The configuration's contract](../../../contracts/configuration.md) |
-| Item 12 (proposed): a send stores the sliced file afresh, restarting R2's count; a send whose file has gone answers that it has expired | [The front server's details](../../../front/README-details.md#two-hours-deleting-and-the-backstop) |
+| Item 12 (proposed): a send stores the sliced file afresh, restarting R2's count; a send whose file has gone answers that it has expired | [The front server's details](../../../front/README-details.md#two-hours-the-sweep-and-the-backstop) |
 | Item 13 (proposed): a delivery job's record names the sliced file it used | [Printer delivery's details](../../../delivery/README-details.md#the-records-of-delivery-jobs) |
-| Item 14: the retrying of 1.9, with the waits between attempts growing; the exact waits and words are the builder's | [The wizard's details](../../../wizard/README-details.md#retrying-every-request) |
-| Item 16: the mockup's open questions are answered (M1, M2, M3, M6, M16, M17, M18, M29 as decided; M7, M11, M21, M22, M23, M25, M26 and the 11 px pointer line as the mockup has them) | [The wizard's details](../../../wizard/README.md) |
-| Item 17: the twelve screens the mockup never showed are designed in words in the wizard's guide, on the mockup's patterns, with no mockups first | [The wizard's details](../../../wizard/README-details.md#screens-the-design-needs-that-the-mockup-does-not-show) |
+| Item 14: the retrying of 1.9, with the waits between attempts growing; the exact waits and words are the builder's | [The wizard's details](../../../wizard/README-details.md#retrying) |
+| Item 16: the mockup's open questions are answered (M1, M2, M3, M6, M16, M17, M18, M29 as decided; M7, M11, M21, M22, M23, M25, M26 and the 11 px pointer line as the mockup has them) | [The wizard's guide](../../../wizard/README.md#the-layout-step) |
+| Item 17: the twelve screens the mockup never showed are designed in words in the wizard's guide, on the mockup's patterns, with no mockups first | [The wizard's details](../../../wizard/README-details.md#screens-designed-in-the-guide) |
 | Item 18: the Preview step's guide states what must be achieved (frame rate, browser, machine, decision 33's appearance); the method is found while building | [The wizard's details](../../../wizard/README-details.md#where-this-guide-departs-from-the-mockups-decisions) |
-| Item 19 (proposed part): the time written is that of the daemon's last sync; after a restart of the front server, a daemon not heard from within two minutes is shown silent "for at least" the time since the start | [Printer delivery's details](../../../delivery/README-details.md#from-the-wizards-mockup) |
+| Item 19 (proposed part): the time written is that of the daemon's last sync; after a restart of the front server, a daemon not heard from within two minutes is shown silent "for at least" the time since the start | [Printer delivery's details](../../../delivery/README-details.md#how-long-a-printer-has-been-silent) |
 | Item 20: printer delivery's tests that wait on the wall clock move to a fake clock and fakes that order network events, first in phase 5 | [Printer delivery's details](../../../delivery/README-details.md#first-the-tests-on-a-fake-clock) |
 | Item 21: the component for working inside Onshape is the Onshape integration: the app and its panel, the exchange with Onshape's page, and the export of the selected parts with their units; signing in is the front server's; its split between browser and server is for phase 4 | [The plan](../../plans/penguin-slicer-plan.md#the-repository) |
 | Item 22: where the code came from leaves the plan, except one mention in phase 4 of the branch to port from | [The plan](../../plans/penguin-slicer-plan.md#phase-4-inside-onshape) |
@@ -653,7 +675,87 @@ backstop replace D7, D91, D92, D93, D94 and D247; 1.9 replaces D234; 1.5 replace
 | Item 26: the plan holds only what a reader with nothing else needs, and no figure, default or mechanism another document owns unless its own point needs it | [The plan](../../plans/penguin-slicer-plan.md) |
 | Item 27: the Layout step's risk is laying on a face, orienting and arranging on real exported parts; direct manipulation at 320 px is shown by the mockup | [The plan](../../plans/penguin-slicer-plan.md#phase-1-the-wizards-guide) |
 | Item 28: the README opens with PenguinSlicer as 3D printing from Onshape, with FRC teams as its first users | [README.md](../../../README.md) |
-| The four guides (the slice service's, printer delivery's, the front server's and the wizard's) were rewritten as documents for the person who decides; each ends with what is undecided or unmeasured, and every such item is gathered in one table, with when it must be answered | [The cross-check of the four guides](../guides/cross-check.md#every-undecided-or-unmeasured-item) |
+| The four guides (the slice service's, printer delivery's, the front server's and the wizard's) were rewritten as documents for the person who decides; each ends with what is undecided or unmeasured, which holds every item still open in its component | Each guide's last part; [the plan](../../plans/penguin-slicer-plan.md#where-things-stand) |
+| W1: inside Onshape's panel the sign-in is not felt as separate from Onshape's and has no sign-out link; outside, it lasts thirty days, with a sign-out link | [The wizard's guide](../../../wizard/README.md#signing-in) |
+| W2: a missing or expired sign-in is renewed by the page's own trip at a quiet moment, back to the same step; the button appears only when the trip fails | [The wizard's guide](../../../wizard/README.md#signing-in) |
+| W3, F5: a different person signed in to Onshape is followed: the sign-in is made again | [The front server's guide](../../../front/README.md#the-cookie-inside-onshapes-panel) |
+| W4: stored work is tied to the signed-in user and cleared when a different user signs in | [The wizard's guide](../../../wizard/README.md#what-the-browser-keeps-and-why-it-is-the-record) |
+| W5: a user in one group sees only the configuration's name in the header; a list and a choice only for a user in several | [The wizard's guide](../../../wizard/README.md#the-current-group) |
+| W6, F9: inside Onshape the group is the open document's, with no choice; choosing is seen only outside Onshape | [The wizard's guide](../../../wizard/README.md#the-current-group) |
+| W7, F8: no "Sign in again"; the front server reads groups again at every sign-in and when Onshape names a company the cookie lacks | [The front server's guide](../../../front/README.md#groups-and-the-current-group) |
+| W8: changing group clears parts, layout, settings and slice, asking first when there is work to lose | [The wizard's guide](../../../wizard/README.md#a-user-in-several-groups-outside-onshape) |
+| W9, F12: to confirm in phase 4 whether Onshape tells a panel the user and the company, and whether the trip can be unseen; the fallback is one click on Connect | [The wizard's guide](../../../wizard/README.md#to-be-confirmed-inside-onshape-in-phase-4) |
+| W10: a plate for each tab; more storage accepted | [The wizard's guide](../../../wizard/README.md#what-the-browser-keeps-and-why-it-is-the-record) |
+| W11: a new tab shows the most recent plate if used under 12 hours ago and not held by another tab; a plate unused for 12 hours is dropped | [The wizard's guide](../../../wizard/README.md#what-the-browser-keeps-and-why-it-is-the-record) |
+| W12: a returning page whose sliced file expired keeps its plate and offers Slice again (departs from the mockup's decision 48) | [The wizard's guide](../../../wizard/README.md#coming-back-to-running-work) |
+| W13: a New plate button; no count of plates; "a new plate", never "a second plate" | [The wizard's guide](../../../wizard/README.md#the-parts-step) |
+| W14, F13, S8, S9: no limit on slices for each user; everyone shares the places; a plate's new slice replaces its own earlier one, by an id the page makes for each plate | [The slice service's guide](../../../slice/README.md#run-one-slice-at-a-time-and-let-a-few-wait) |
+| W15, F14, S11: no cancel of a slice by hand; stopping Orca stays the slice service's own, for four uses; the built cancel request stays unused | [The slice service's guide](../../../slice/README.md#end-a-slice-job-early) |
+| W16, S14: Orca's own sentence is quoted under Details, marked as Orca's, on the two gap failures only | [The wizard's guide](../../../wizard/README.md#orcas-own-sentence-under-details) |
+| W17: a progress stream not reopened in 20 seconds, or open and silent for 45, is treated as failed | [The wizard's guide](../../../wizard/README.md#when-the-server-is-slow-or-cannot-be-reached) |
+| W18: a sliced plate that expires while open: a grey message with Slice again; no slicing by itself | [The wizard's guide](../../../wizard/README.md#a-sliced-plate-that-expires) |
+| W19: no room to wait: an amber message with Slice again; no retrying by itself | [The wizard's guide](../../../wizard/README.md#slicing) |
+| W20: a slice that ran out of memory offers no Slice again | [The wizard's guide](../../../wizard/README.md#when-a-slice-fails) |
+| W21: the slow-server message sits on the panel's line, with its countdown and "Retry now" | [The wizard's guide](../../../wizard/README.md#when-the-server-is-slow-or-cannot-be-reached) |
+| W22: an upload takes binary STL only | [The wizard's guide](../../../wizard/README.md#the-parts-step) |
+| W23: a switch, "Read STL files in: inches / millimetres", starts at the configuration's value and is kept in the browser | [The wizard's guide](../../../wizard/README.md#the-parts-step) |
+| W24: a part the slice service accepts and the browser cannot draw is not added; a notification, and a line in the log | [The wizard's guide](../../../wizard/README.md#a-part-that-cannot-be-used) |
+| W25, F24: the wizard is never given an invalid configuration; the default is served, the saved file untouched, an error logged | [The front server's guide](../../../front/README.md#reading-it-and-writing-it) |
+| W26: the look follows the mockup at version 8, which is kept as the reference | [The wizard's guide](../../../wizard/README.md#the-mockup-this-guide-and-orca) |
+| W27: the behaviour follows the guide, with real parts and files | [The wizard's guide](../../../wizard/README.md#the-mockup-this-guide-and-orca) |
+| W28: authority: the guide's decisions, then the mockup, then Orca for the Layout and Preview steps only | [The wizard's guide](../../../wizard/README.md#the-mockup-this-guide-and-orca) |
+| W29, S7: Orca's source may be read for its methods; its code is never copied | [The plan](../../plans/penguin-slicer-plan.md#standing-requirements) |
+| W30, S3: advanced mode shows Orca's labels, groups and explanations, from a table taken from Orca's source at each integration, which needs that version's source | [The slice service's guide](../../../slice/README.md#taking-a-new-orca-version) |
+| W31: no keyboard support on the Layout step beyond the mockup's; wider accessibility not a goal of this version | [The wizard's guide](../../../wizard/README.md#accessibility) |
+| W32: the main thread is never held over 250 milliseconds, on the machine without a graphics card | [The wizard's guide](../../../wizard/README.md#keeping-the-page-answering) |
+| W33: a worker does everything that reads an STL file's or a sliced file's internals; hashing needs none | [The wizard's guide](../../../wizard/README.md#keeping-the-page-answering) |
+| W34: the Preview step at 30 frames a second with a graphics card and 10 without, in Chrome; Edge tested; Safari unsupported | [The wizard's guide](../../../wizard/README.md#the-layer-preview-as-a-requirement) |
+| W35: test renders in Playwright on real sliced files, pinned coarsely; a person judges the look | [The wizard's guide](../../../wizard/README.md#how-it-is-tested) |
+| W36, F27: the page reports a summary of its drawing for each use of the Layout view and the Preview step | [The wizard's guide](../../../wizard/README.md#what-the-wizard-reports-about-itself) |
+| W37, F26: the page reports its failures, one log line each, a few a minute at most, never a part's bytes | [The wizard's guide](../../../wizard/README.md#what-the-wizard-reports-about-itself) |
+| W38, S16: one shared set of plates keeps the wizard's and the slice service's placement checks in agreement | [The slice service's guide](../../../slice/README.md#shared-plates-for-the-two-placement-checks) |
+| W39: the guide's other proposed targets and small screen rules stand; a part the storage cannot hold gets an amber line | [The wizard's guide](../../../wizard/README.md#how-well-it-must-do-it) |
+| W40: the page reloads for a new version only between steps or after 120 seconds without interaction, never during its own request, and says nothing | [The wizard's guide](../../../wizard/README.md#the-page-reloading-itself-for-a-new-version) |
+| W41, P1: the pairing form is only in the printer details; the Send step links there | [The wizard's guide](../../../wizard/README.md#pairing-a-printer) |
+| W42, P3: Unpair is only in the printer details; any user may; off while a print is followed | [The wizard's guide](../../../wizard/README.md#pairing-a-printer) |
+| W43, F31, P4: "Stop following" for the sender only; otherwise a stale print waits for the daemon or the relay's day | [Printer delivery's guide](../../../delivery/README.md#stop-following) |
+| W44, F32, P2: the printer's name is the one the printer reports, sent by the daemon at pairing | [Printer delivery's guide](../../../delivery/README.md#in-phase-5-records-in-a-store-the-front-server-supplies) |
+| W45, P7: a printer not yet heard from shows a grey dot and "…" | [The wizard's guide](../../../wizard/README.md#the-printer-status-icon) |
+| W46, P9: the Send step exists from phase 2 with "Download the sliced file"; phase 5 adds sending | [The wizard's guide](../../../wizard/README.md#the-send-step) |
+| W47, S22, P14: trials and unmeasured items say what is learned, why and what depends on it; how is in the details files | [The wizard's guide](../../../wizard/README.md#the-risks-to-try-first-in-phase-2) |
+| F1: signing in is open to anyone with an Onshape account; no company or classroom makes a group of one | [The front server's guide](../../../front/README.md#who-may-sign-in) |
+| F2: nothing limits how often a user signs in; the year's calls are watched in the log | [The front server's guide](../../../front/README.md#sign-ins-and-the-allowance) |
+| F3: inside the panel, PenguinCAM's means: a cookie sent to an embedded page, a Connect button and a small window; an unseen trip is tried for | [The front server's guide](../../../front/README.md#the-cookie-inside-onshapes-panel) |
+| F4: the answer to a request not signed in is what tells the page to make the trip | [The front server's guide](../../../front/README.md#onshape-is-the-only-sign-in-and-there-are-no-accounts) |
+| F6: outside Onshape a sign-in lasts thirty days from its last use; groups are then not read again until the app is public | [The front server's guide](../../../front/README.md#the-cookie-and-why-there-are-no-sessions) |
+| F7: the sign-out link removes the cookie; none inside the panel | [The front server's guide](../../../front/README.md#signing-out) |
+| F10: from phase 3 the app asks to read the user, their companies and classrooms, and their documents, never to write | [The front server's guide](../../../front/README.md#onshape-is-the-only-sign-in-and-there-are-no-accounts) |
+| F11: a user of Safari gets a plain page saying PenguinSlicer needs Chrome | [The front server's guide](../../../front/README.md#onshape-is-the-only-sign-in-and-there-are-no-accounts) |
+| F15, S10: a submission carries a value of its own; a repeat with that value gets the first attempt's slice job | [The front server's guide](../../../front/README.md#a-plate-configuration-submitted-twice) |
+| F16, S12: while the slice service stops, the front server holds nothing; the wizard shows the slice waiting, says the slicer is restarting and submits again for up to 300 seconds | [The slice service's guide](../../../slice/README.md#what-a-user-sees-while-the-slice-service-stops) |
+| F17: a slice job is reported finished only once its sliced file is stored | [The front server's guide](../../../front/README.md#progress) |
+| F18: the front server tells the page the moment a sliced file expires, with its details | [The front server's guide](../../../front/README.md#telling-the-page-when-a-sliced-file-expires) |
+| F19, S13: a sliced file is at most 50 MB; the slice service ends a larger one, the front server refuses to store one | [The front server's guide](../../../front/README.md#the-front-server-follows-every-slice-job-itself) |
+| F20, S5: the table of settings and the profile catalog's names come from the slice service, passed on by the front server | [The front server's guide](../../../front/README.md#the-list-of-settings-and-the-profile-catalogs-names) |
+| F21, P8: the front server's following of slice jobs counts among its 100 threads; progress streams for slices and prints; a limit on one user's streams | [The front server's guide](../../../front/README.md#how-many-users-at-once-and-what-happens-when-the-threads-run-out) |
+| F22: no answer but the page files may be kept by a proxy or browser | [The contract](../../../contracts/wizard-front-server.md#not-kept-by-any-proxy-or-browser) |
+| F23: until the edit screens exist every group gets the default, unless the owner places a document by hand | [The front server's guide](../../../front/README.md#the-fixed-set-until-the-edit-screens-exist) |
+| F25: the configuration holds, for each profile a user can pick, the three Orca profile names | [The configuration's contract](../../../contracts/configuration.md) |
+| F28, S20, P10: one file each minute holds every component's lines, written once | [The front server's guide](../../../front/README.md#where-it-goes-and-who-reads-it) |
+| F29: log files in folders by year, month and day; names in UTC, shown in Pacific time | [The front server's guide](../../../front/README.md#where-it-goes-and-who-reads-it) |
+| F30: every line carries its component; the command that reads the log filters by it | [The front server's guide](../../../front/README.md#where-it-goes-and-who-reads-it) |
+| F33: the check after each deploy tells the owner when it fails; the owner puts the previous version back by hand; an outside watcher comes later | [The front server's guide](../../../front/README.md#a-deploy-that-fails-and-learning-that-the-service-is-down) |
+| F34: each container's previous version works against the other's new one | [The architecture](../../architecture.md#old-and-new-versions-together) |
+| F35: the log is built in phase 2, into a folder; the defences against requests from other sites in phase 3 | [The front server's guide](../../../front/README.md#requests-from-other-sites) |
+| F36, F37: streaming without holding whole files, the upload and submission rate limits and the sweep's interval are the builder's | [The front server's details](../../../front/README-details.md) |
+| S2: a setting replaces a value of the process profile only | [The slice service's guide](../../../slice/README.md#accept-settings) |
+| S4: the agent taking a version classifies every setting; the programmatic ones are listed with reasons; the upstream check fails on an unclassified one | [The slice service's guide](../../../slice/README.md#how-the-list-of-accepted-settings-is-made) |
+| S6: each value is checked against its setting's kind and permitted values; the longest text comes from the catalog | [The slice service's guide](../../../slice/README.md#accept-settings) |
+| S17, F20: who notices a configuration naming a profile the catalog lost is open until the first Orca upgrade | [The slice service's guide](../../../slice/README.md#who-notices-a-configuration-that-names-a-profile-the-catalog-has-lost) |
+| S18: the hosted memory ceiling starts at 6,000 MB and is the owner's to change | [The slice service's guide](../../../slice/README.md#the-limits) |
+| S19, S23: the slice service's small rules (the fit test against the largest printer in the catalog, refusing a part without a units label, no "every side under 5 mm" warning in inches, 1 MB for a plate configuration) are stated as the design | [The slice service's guide](../../../slice/README.md#check-a-part-when-it-arrives) |
+| P6: whether the recorded time of silence is cleared when the daemon returns stays open | [Printer delivery's guide](../../../delivery/README.md#clearing-the-recorded-time-of-silence) |
+| P13: printer delivery's own open items stay open, each with its backing and a recommendation | [Printer delivery's guide](../../../delivery/README.md#what-is-undecided-or-unmeasured) |
 
 ## Possible disagreements in the spec
 

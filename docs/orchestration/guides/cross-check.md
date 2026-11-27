@@ -1,5 +1,11 @@
 # Cross-check of the four guides
 
+This is a record of a check made before the owner reviewed the four guides on Fri
+2026-11-27: its list of disagreements with the architecture and the plan was resolved
+afterwards, and most of the undecided items in its table have since been decided by the
+owner. The items still open are in the last part of each guide, "What is undecided or
+unmeasured".
+
 Checked Fri 2026-11-27, Pacific time: [the slice service's guide](../../../slice/README.md),
 [printer delivery's guide](../../../delivery/README.md),
 [the front server's guide](../../../front/README.md) and

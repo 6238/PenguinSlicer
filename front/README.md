@@ -134,7 +134,7 @@ explained in the section of this guide that deals with it.
 
 | With | What passes | The contract |
 |---|---|---|
-| The wizard | Pages; parts and plate configurations going up; progress and the sliced file coming down; the group's configuration; the list of settings for advanced mode; the wizard's reports about itself; from phase 5, sends and the printer's status | [The wizard and the front server](../contracts/wizard-front-server.md), whose exact requests are written with phase 2's design; failures as [error reports](../contracts/error-report.md), progress as [progress reports](../contracts/progress-report.md) |
+| The wizard | Pages; parts and plate configurations going up; progress and the sliced file coming down; the group's configuration; the list of settings for advanced mode; the wizard's reports about itself; from phase 5, sends and the printer's status | [The wizard and the front server](../contracts/wizard-front-server.md), which fixes the exact requests; failures as [error reports](../contracts/error-report.md), progress as [progress reports](../contracts/progress-report.md) |
 | The slice service | Parts and [plate configurations](../contracts/plate-configuration.md) going in; progress, the [sliced file](../contracts/sliced-file.md), the list of settings, the profile catalog's names and log lines coming out | The slice service's own interface ([its guide](../slice/README.md)) |
 | Onshape | Who a user is and which companies and classrooms they belong to; from phase 4, the parts a user selected | Onshape's public interface |
 | The state bucket | Each group's configuration, the sliced files and, from phase 5, what the relay must remember | [The configuration's contract](../contracts/configuration.md) for the configuration |
@@ -538,8 +538,9 @@ page makes a value for each submission, and a repeat that carries the same value
 answered with the first attempt's slice job. The value is remembered beside the slice
 job by the slice service, which is what the front server relies on
 ([the slice service's guide](../slice/README.md#a-plate-configuration-submitted-twice));
-the front server passes the value in and the answer back. It is the same idea as the
-repeated send of phase 5.
+the front server passes the value in and the answer back. The same idea is recommended
+for the repeated send of phase 5, which is open
+([printer delivery's guide](../delivery/README.md#a-send-repeated-while-its-delivery-job-is-live)).
 
 ### A plate configuration submitted while the slice service stops
 
@@ -731,9 +732,8 @@ document for each group, kept in the state bucket, and it holds:
   units, is read in inches or millimetres.
 - **No secret.** No token, key or pairing code is ever in it.
 
-Its exact fields are written with phase 2's design, in
-[the configuration's contract](../contracts/configuration.md), with an example that
-explains every field.
+Its exact fields are in [the configuration's contract](../contracts/configuration.md),
+with an example that explains every field.
 
 ### Reading it and writing it
 
@@ -840,11 +840,14 @@ from starting twice across a restart.
 file, the front server reads it from the state bucket, where it is kept under the rule
 above.
 
-**It makes a repeated send harmless.** A page retries a request whose answer it did not
-receive. A send repeated by the same user with the same sliced file, while its delivery
-job is still live, is answered with that same delivery job. It does not start a second
-print and is not refused on the grounds that the printer is now busy. Printer delivery
-as built refuses the repeat instead; changing that is part of phase 5.
+**A repeated send must be harmless, and how is open.** A page retries a request whose
+answer it did not receive, so a send can arrive twice from the same user with the same
+sliced file while its delivery job is still live. Printer delivery as built refuses the
+repeat, which shows the user an error for a send that worked. What the repeat is
+answered with is an open item of printer delivery's, to be settled for phase 5. The
+recommendation there is to answer it with that same delivery job, so that it starts no
+second print and is not refused on the grounds that the printer is now busy
+([printer delivery's guide](../delivery/README.md#a-send-repeated-while-its-delivery-job-is-live)).
 
 **It spends a thread on each idle daemon.** A daemon's regular request to the relay is
 the **sync**. While a printer is idle the relay holds its answer to the daemon's sync
@@ -907,8 +910,9 @@ allows a stopping container, which is not known (see
 **Every request is safe to repeat.** The page retries every request it makes. A request
 sent twice because its first answer was lost must leave the same result as one sent
 once: uploading the same part again gives the same answer; a repeated submission is
-answered with the first attempt's slice job; a repeated send is answered with the same
-delivery job.
+answered with the first attempt's slice job. For a repeated send the recommendation is
+the same delivery job as its answer, and that is open
+([printer delivery's guide](../delivery/README.md#a-send-repeated-while-its-delivery-job-is-live)).
 
 What the user sees is the wizard's doing: nothing at all if the gap is under 20
 seconds; after that a message that the server is being slow and the browser is
@@ -1174,8 +1178,11 @@ else gets the sign-in or a refusal.
 
 The sign-in is open to anyone with an Onshape account
 ([Who may sign in](#who-may-sign-in)). What bounds such a person is what bounds every
-user: the slice service's places, which all users share; at most 25 parts in the part
-store for one user key (the most a plate can use); every slice bounded in memory and
+user: the slice service's places, which all users share; the part store's overall limit
+on disk, which bounds all users' parts together with no count for one user, and the
+limit on how fast one user may upload parts
+([the slice service's guide](../slice/README.md#keep-each-part-once-the-part-store));
+every slice bounded in memory and
 time; four progress streams; and, from phase 5, wrong pairing codes limited for each
 signed-in user.
 
@@ -1312,6 +1319,13 @@ Rules a manager can hold the builder to:
 - From phase 5, the front server's place for the relay's records passes the relay's own
   tests of such a place.
 
+Beside these everyday tests, one joined suite runs the real front server and the real
+slice service together on one machine, with the slice service's stand-in for Orca, and
+drives the wizard in a browser: from adding parts to downloading the sliced file, and
+through each row of the architecture's table of what a restart of the slice container does
+([Keeping it true](../docs/architecture.md#keeping-it-true)). The front server's builder
+writes it once the three components exist.
+
 What only the real thing can prove: how Railway behaves at a deploy; that Cloudflare
 and Railway pass progress on as it is sent; that a 7.5 MB upload and a 50 MB download
 pass both; what Onshape really answers, above all for an account with no company; what
@@ -1343,9 +1357,11 @@ bucket. Built here:
 - the configuration: the built-in default, reading, the default served in place of an
   invalid document, and the conditional write;
 - passing the list of settings and the profile catalog's names to the wizard;
-- the log, with the page's reports about itself, gathered once a minute into the folder
-  that stands for the log bucket, one file for all components, in folders by day;
-- the version on every answer.
+- the log, with the page's reports about itself and the slice service's lines, gathered
+  once a minute into the folder that stands for the log bucket, one file for all
+  components, in folders by day;
+- the version on every answer;
+- the format number on the configuration and on every record the front server writes.
 
 **Phase 3: hosted.** First, before anything else of this phase,
 [what Railway does at a deploy](#what-railway-does-at-a-deploy) is tried. Then:
@@ -1358,7 +1374,8 @@ bucket. Built here:
   and the plain page for Safari;
 - the defences against requests from other sites;
 - the second cookie key, and the written procedure for replacing each secret;
-- the format number on every record in the state bucket;
+- the test that a record written by the previous front server is read by the new one, from
+  the first release after the one that wrote it;
 - finishing work in flight when asked to stop;
 - the refusal to start with the development identity on Railway;
 - the command that reads the log bucket, and the check that runs after each deploy and

@@ -1,0 +1,9 @@
+{
+  "job": "j7c1d03ae",
+  "state": "queued",
+  "stage": "queued",
+  "stage_label": "Waiting for the slicer",
+  "elapsed_s": 0,
+  "sequence": 2,
+  "ahead": 2
+}

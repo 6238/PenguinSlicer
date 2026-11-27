@@ -17,17 +17,17 @@ result. It gives no time estimates. Where something is open, it says so.
   and printer delivery (tested against the simulated printer only, never against the real
   H2S). **Not started:** the wizard, the front server and the Onshape integration. The
   wizard exists as a mockup, version 8, which the owner accepted as the last version on
-  Thu 2026-11-26.
+  Thu 2026-11-26 and which is kept as the reference for how the wizard looks.
 - **How the components fit together when hosted is designed** and approved by the owner
   (Thu 2026-11-26): it is in [the architecture](../architecture.md). Each component's guide
   says what that design asks of it and what of that is built.
-- **The phases, in the owner's order:** (1) write the rest of the wizard's guide from the
-  accepted mockup; (2) the wizard and the front server outside Onshape, on one machine,
-  with the slice service, ending in a downloaded sliced file; (3) the same hosted on
-  Railway, with Onshape sign-in; (4) the wizard inside Onshape, with the Onshape
-  integration; (5) the real printer, with daemon telemetry.
-- **Phase 2 is built from the components' guides, their details files and the
-  contracts.** The contracts' routes and fields are written before building starts. Each
+- **The phases, in the owner's order:** (1) the wizard's guide, which is written; (2) the
+  wizard and the front server outside Onshape, on one machine, with the slice service,
+  ending in a downloaded sliced file; (3) the same hosted on Railway, with Onshape
+  sign-in; (4) the wizard inside Onshape, with the Onshape integration; (5) the real
+  printer, with daemon telemetry.
+- **Phase 2 is built from the four guides, their details files and the contracts,**
+  which are written in full. It opens with the two trials the wizard's guide names. Each
   later phase that builds something starts with a design spec agreed with the owner, for
   what the guides do not yet settle.
 
@@ -37,12 +37,21 @@ result. It gives no time estimates. Where something is open, it says so.
 |---|---|---|
 | This plan | Nothing | What PenguinSlicer is, its terms, the standing requirements, where each component stands, and the phases |
 | [The architecture](../architecture.md) | This plan | The hosted design's terms, what runs where when hosted, where each piece of state lives, restarts and deploys, security, the log, and what is still to be confirmed |
-| A component's guide: [slice](../../slice/README.md), [delivery](../../delivery/README.md), [wizard](../../wizard/README.md), [front](../../front/README.md) (the Onshape integration has none yet) | This plan | For the person who decides: what the component must do and why, how it does the hard parts, its limits and its security, and what is built and what is to be built |
-| A component's `README-details.md` | Its guide | For the builder: everything someone building or changing the component needs, with the code-level names, every figure, rule, error code and required test |
-| [contracts/](../../contracts/README.md) | This plan; for the contract between the wizard and the front server, the architecture | The shapes that pass between components |
-| [The mockup's decisions](../mockups/print-wizard/DECISIONS.md) | This plan | Every design choice of the wizard's mockup, until the wizard's guide replaces it |
+| A component's guide: [slice](../../slice/README.md), [delivery](../../delivery/README.md), [wizard](../../wizard/README.md), [front](../../front/README.md) (the Onshape integration has none yet) | This plan | For the person who decides: what the component must do and why, how it does the hard parts, its limits and its security, what is built and what is to be built, and, in its last part, what is undecided or unmeasured |
+| A component's details file: [slice](../../slice/README-details.md), [delivery](../../delivery/README-details.md), [wizard](../../wizard/README-details.md), [front](../../front/README-details.md) | Its guide | For the builder: everything someone building or changing the component needs, with the code-level names, every figure, rule, error code and required test |
+| [contracts/](../../contracts/README.md) | This plan | The list of the contracts and the rules every contract follows |
+| [The part set](../../contracts/part-set.md) | The contracts' list | The parts the Onshape integration or a file upload hands the wizard |
+| [The wizard and the front server](../../contracts/wizard-front-server.md) | The architecture | Every request the wizard makes of the front server and every answer |
+| [The configuration](../../contracts/configuration.md) | The contracts' list | What a group's configuration holds, with an example for writing one by hand |
+| [The table of settings](../../contracts/settings-table.md) | The contracts' list | The settings the slice service accepts, with Orca's labels, groups and explanations, for the wizard's advanced mode |
+| [The plate configuration](../../contracts/plate-configuration.md) | The contracts' list | What the wizard, through the front server, asks the slice service to slice |
+| [The sliced file](../../contracts/sliced-file.md) | The contracts' list | What the slice service returns, and what printer delivery receives |
+| [The slice service's HTTP interface](../../contracts/slice-http-interface.md) | The contracts' list | Every request the front server makes of the slice service and every answer |
+| [The error report](../../contracts/error-report.md) and [the progress report](../../contracts/progress-report.md) | The contracts' list | The one shape of a failure and the one shape of progress, for every component |
+| [The mockup](../mockups/print-wizard/index.html) and [its decisions](../mockups/print-wizard/DECISIONS.md) | This plan | The reference for how the wizard looks, kept in the repository; what the wizard does is in its guide |
 | [The hosted architecture design](../specs/2026-11-25-hosted-architecture-design.md) | This plan | The record of what the owner approved on Thu 2026-11-26; not kept current, and needed only to check what was approved: nothing else depends on it |
 | [The map of the hosted design's decisions](../orchestration/hosted-architecture/decision-map.md) | The hosted architecture design | Which living document holds each decision of the approved design, and of the owner's decisions since |
+| The records of the owner's decisions of Fri 2026-11-27: [the day's decisions](../orchestration/guides/decisions-2026-11-27.md) and the reviews of the guides of [the wizard](../orchestration/guides/owner-review-wizard.md), [the front server](../orchestration/guides/owner-review-front.md), [the slice service](../orchestration/guides/owner-review-slice.md) and [printer delivery](../orchestration/guides/owner-review-delivery.md) | The decision map | Working records of what the owner decided; the guides state each decision as the design, so none is needed to build |
 
 Research, reference material and the build records of each piece of work are under
 `docs/research/`, `docs/reference/` and `docs/orchestration/`; none is needed to read the
@@ -114,13 +123,10 @@ that is why PenguinSlicer keeps PenguinCAM's stack and joins its components only
 contracts.
 
 - **[contracts/](../../contracts/README.md)** defines the shapes that pass between
-  components (the plate configuration, the sliced file, the error report and the
-  progress report), each with example files. Not written yet: the part set. Begun: the
-  [configuration](../../contracts/configuration.md), whose contract says what it must
-  hold, and the
-  [contract between the wizard and the front server](../../contracts/wizard-front-server.md),
-  which says what it must provide. Their fields and routes are written before phase 2's
-  building starts.
+  components, each with example files: the part set, the requests between the wizard and
+  the front server, the configuration, the table of settings, the plate configuration,
+  the sliced file, the slice service's HTTP interface, the error report and the progress
+  report. All are written; what phase 2 builds is marked in each as to be built.
 - **The slice service**, in `slice/`, takes a plate configuration and its parts through
   its HTTP interface, runs Orca under the memory watchdog and returns the sliced file and
   its summary ([its guide](../../slice/README.md)).
@@ -128,10 +134,13 @@ contracts.
   printed: the relay inside the caller's process, the daemon on the daemon's computer, and
   the simulated printer for tests ([its guide](../../delivery/README.md)).
 - **The wizard**, in `wizard/`, is the user interface: the code in the browser. None of it
-  is built. [Its guide](../../wizard/README.md) holds what the architecture asks of it; the
-  steps a user sees are written into it from the mockup in phase 1. The mockup is in
+  is built. [Its guide](../../wizard/README.md) is its design, every step included. The
+  wizard looks the same as the mockup, which is kept in
   [docs/mockups/print-wizard](../mockups/print-wizard/index.html), with every design choice
-  in its [DECISIONS.md](../mockups/print-wizard/DECISIONS.md).
+  in its [DECISIONS.md](../mockups/print-wizard/DECISIONS.md), as the reference for the
+  look. Its behaviour follows its guide, since the mockup's scripts were faked; and for the
+  Layout and Preview steps, where the guide and the mockup are silent, Orca's behaviour is
+  the model.
 - **The front server**, in `front/`, is everything behind the wizard's address: it serves
   the wizard's pages, signs users in, calls the slice service, keeps sliced files and
   configurations, and from phase 5 runs the relay. None of it is built
@@ -191,8 +200,8 @@ happened in a sentence a user understands, where (the part, the instance, the he
 step, when known), what to do next and which single action fixes it when one does, and the
 underlying detail (Orca's own words, the printer's status), kept for the server log and
 never thrown away. Each component writes the sentences of its own failures, and the wizard
-shows them as they are. Whether a user may also read a quotation of Orca's own sentence on
-two failures of a slice is undecided
+shows them as they are; Orca's own words reach a user in only two failures of a slice,
+quoted and marked as Orca's
 ([Orca's own sentence under Details](../../wizard/README.md#orcas-own-sentence-under-details)).
 Each code is listed in its component's details file and has a test
 that produces it on purpose. People read errors, so an error says more than a screen
@@ -210,9 +219,16 @@ start to finish: the stage, how far through when that can be known (never invent
 time taken so far and the time expected. A client that connects late gets the current
 progress report at once.
 
-**Cancellation.** Every long job can be cancelled at any moment. Cancelling stops the work
-itself (the Orca process, the upload), not only the reporting of it, and ends in a state
-from which the same work can be started again.
+**Cancellation.** Every long job can be stopped at any moment by the component that runs
+it. Stopping ends the work itself (the Orca process, the upload), not only the reporting
+of it, and ends in a state from which the same work can be started again. A slice job is
+not cancelled by hand: the wizard offers no way to, and neither it nor the front server
+asks the slice service to. The slice service stops a slice job only for its own reasons
+(its time limit, its memory ceiling, the same plate's later slice, or being asked to
+stop), and a user who no longer wants a slice changes the plate or lets it finish
+([the slice service's guide](../../slice/README.md#end-a-slice-job-early)). A delivery job can be
+cancelled until the printer is told to start it, and at no point after
+([printer delivery's guide](../../delivery/README.md#cancelling)).
 
 **Cleanup.** When a client goes away without cancelling, the component notices, waits a
 stated time in case the client returns, then stops the work and removes its files.
@@ -246,6 +262,14 @@ or for a minor feature. Each patch is a file against a named version with a note
 by the upgrade command. Patching Orca means building it from source, so each such patch is
 the owner's decision. There is no patch today, to Orca or to the printer library.
 
+An implementer may read Orca's source to understand its algorithms and methods, and never
+copies its code: Orca is licensed under the AGPL and PenguinSlicer under the MIT licence,
+and the licence covers the code as written, not the idea behind it. The table of settings
+the slice service accepts, with Orca's own labels, groups and explanations, is taken from
+Orca's source each time an Orca version is integrated, so taking a new Orca version needs
+that version's source as well as its release
+([Taking a new Orca version](../../slice/README.md#taking-a-new-orca-version)).
+
 **Tests.** A test never sleeps and never waits a number of seconds to see whether
 something has happened: time passes through a fake clock that the test moves, and a test
 waits on an event, never on a duration. Code that talks over a network or depends on the
@@ -269,21 +293,25 @@ As of Fri 2026-11-27:
   its guide lists as still to be built, and tested against the simulated printer only.
   Its state is in [its guide](../../delivery/README.md).
 - **The mockup** is at version 8, which the owner accepted as the last version on Thu
-  2026-11-26, every step reviewed. Its design and the requirements it puts on the
-  implementation are in [DECISIONS.md](../mockups/print-wizard/DECISIONS.md); the
-  wizard's guide follows it and says where it departs from it. The build records of each
-  version are under `docs/orchestration/`.
+  2026-11-26, every step reviewed. It is kept as the reference for the look, with its
+  [DECISIONS.md](../mockups/print-wizard/DECISIONS.md); the wizard's guide says where
+  the wizard's behaviour departs from it. The build records of each version are under
+  `docs/orchestration/`.
 - **The hosted architecture** is designed and approved by the owner (Thu 2026-11-26):
   [the architecture](../architecture.md). Almost none of it is built; each component's
   guide says what it asks of that component and which phase builds it.
+- **The four guides** (the slice service's, printer delivery's, the front server's and
+  the wizard's) were reviewed by the owner on Fri 2026-11-27, except printer delivery's,
+  which the owner has not yet read; it carries the decisions of the other reviews that
+  bear on it. With their details files and the contracts they are enough to build
+  phase 2.
 - **The wizard, the front server and the Onshape integration** have no code.
 
-**What is undecided.** Each of the four guides ends with what is undecided or unmeasured
-in its component, each item with what is known, the options and a recommendation. A table
-of all of them, with the guide that owns each and when it must be answered, is in
-[the cross-check of the four guides](../orchestration/guides/cross-check.md#every-undecided-or-unmeasured-item):
-92 items, of which 24 must be answered before phase 2 can be built, 5 are trials that open
-phase 2, and 63 can wait for a later phase.
+**What is undecided.** The last part of each of the four guides, "What is undecided or
+unmeasured", holds what remains open in its component: what only a trial, the real host,
+real Onshape or the real printer can show, and the few choices still open, each with
+what is known, the options and a recommendation. Where such an item touches phase 2, the
+guide's recommendation or proposal is what is built until the item is decided.
 
 ## The phases
 
@@ -294,29 +322,29 @@ updated as each phase changes it.
 
 ### Phase 1: the wizard's guide
 
-The owner has reviewed every step of the mockup, the Layout step included, over versions
-6 to 8, and accepted version 8 on Thu 2026-11-26. What remains is the wizard's guide
-written in full, which the owner reviews. [The guide](../../wizard/README.md) holds what
-the architecture asks of the code in the browser; the steps a user sees are written into
-it from the mockup and its [DECISIONS.md](../mockups/print-wizard/DECISIONS.md), with the
-screens the design needs and the mockup never showed designed in words on the patterns
-the mockup established. Phase 2 builds the wizard from that guide. The owner's direction
-for the wizard stands: keep the conventions of PenguinCAM's CNC wizard and its look unless
+Written, and reviewed by the owner on Fri 2026-11-27. The owner reviewed every step of
+the mockup over versions 6 to 8 and accepted version 8 on Thu 2026-11-26.
+[The wizard's guide](../../wizard/README.md) is the wizard's design in full: every step a
+user sees, with the screens the mockup never showed designed in words on the mockup's
+patterns, and what the architecture asks of the code in the browser. The order of
+authority for what the wizard is: its look is the mockup's, which is kept in the
+repository as the reference; its behaviour is the guide's; and for the Layout and Preview
+steps, where both are silent, Orca's behaviour is the model. The direction for the
+wizard stands: keep the conventions of PenguinCAM's CNC wizard and its look unless
 additive manufacturing is distinctly different; make the common case short, since most
 prints use one filament and one of a few profiles; keep every slicing setting reachable;
 and bring over what is needed from Orca's Prepare tab (arranging parts on the plate) and
-Preview tab (inspecting the sliced file layer by layer). The mockup is thrown away once
-the wizard's guide is complete.
+Preview tab (inspecting the sliced file layer by layer).
 
-- **Done when** the owner has agreed the wizard's guide.
+- **Done:** the owner has reviewed the wizard's guide.
 - **Components:** the wizard (its guide). The guide also says what the wizard needs from
-  the slice service and from printer delivery.
-- **Risks:** the Layout step's tools on real parts. Placing instances by direct
-  manipulation at 320 px, the narrowest width the wizard must work at, is shown to work
-  by the mockup. What is unproven is laying a part on a face, orienting and arranging on
-  real exported parts: the mockup tried them only on its own generated parts, and the
-  wizard's are written fresh, since Orca's code for them cannot be taken over (Orca is
-  AGPL; PenguinSlicer is MIT). Phase 2 tries them first.
+  the front server, the slice service and printer delivery.
+- **Risk carried into phase 2:** the Layout step's tools on real parts. Placing instances
+  by direct manipulation at 320 px, the narrowest width the wizard must work at, is shown
+  to work by the mockup. What is unproven is laying a part on a face, orienting and
+  arranging on real exported parts: the mockup tried them only on its own generated
+  parts, and the wizard's are written fresh, since Orca's code cannot be taken over (see
+  [Upstream code](#standing-requirements)). Phase 2 tries them first.
 
 ### Phase 2: the wizard and the front server outside Onshape, on one machine
 
@@ -326,42 +354,66 @@ service, all three on the same machine. The user downloads the sliced file. No p
 and no Onshape: the front server signs in a made-up development identity, and a folder
 stands in for each bucket.
 
-The phase is built from the guides of the wizard, the front server and the slice service,
-their details files and the contracts. Before building starts, the 24 undecided items
-that the [cross-check's table](../orchestration/guides/cross-check.md#every-undecided-or-unmeasured-item)
-marks as needed before phase 2 are answered, and the contracts' routes and fields are
-written.
+The phase is built from the four guides, their details files and the contracts, which
+are written in full. Printer delivery's guide bears on it only for the Send step's place
+in the wizard; the rest of it waits for phase 5.
 
 - **Done when** a user on one machine opens the wizard in a browser, adds parts from STL
   files, lays them out, slices them through the slice service on that machine, inspects
-  the preview and downloads the sliced file.
+  the preview and downloads the sliced file from the Send step.
 - **Components:**
-  - The wizard, built for the first time, as [its guide](../../wizard/README.md) lists:
-    opened directly, with parts from files; the browser's storage, uploading, submitting
-    by hash, the returning page, progress streams, retrying, reloading on a newer version,
-    the current group, the preview and the download. The wizard's guide proposes that the
-    download be the one button of a Send step that exists from phase 2, so that the five
-    steps keep their names when the printer arrives
-    ([its choice 12](../../wizard/README.md#choices-made-in-designing-these-screens)); the
-    phases here stand until the owner decides it.
-  - The front server, built for the first time, as [its guide](../../front/README.md)
+  - The wizard, built for the first time, as [its guide](../../wizard/README.md#what-is-to-be-built-by-phase)
+    lists: opened directly, with parts from files; all five steps, the Send step with
+    "Download the sliced file" as its one button, so that the steps keep their names when
+    the printer arrives; the browser's storage, with a plate for each tab; uploading,
+    submitting by hash, the returning page, progress streams, retrying, reloading for a
+    new version; the preview; the wizard's reports about itself; and the mark only the
+    wizard's own page can add, on every changing request (checked by the front server
+    from phase 3).
+  - The front server, built for the first time, as [its guide](../../front/README.md#what-is-built-in-which-phase)
     lists: serving the pages; the development identity and the cookie, with one cookie
     key; the user key and the check of the current group; passing parts and slice jobs;
     following slice jobs and storing sliced files; refusing and deleting expired sliced
-    files; the configuration; a folder for each bucket; the log, gathered into the folder
-    for the log bucket; the version on every answer, for the wizard's reloading. The
-    development identity and the folders exercise all of these on one machine.
-  - The slice service, extended as [its guide](../../slice/README.md) lists for this
-    phase: the user key; the part store, with each part's units; parts named by hash; one
-    unfinished slice job for each user key; a slice job that runs to its end whether or
-    not anyone follows it; a slice job remembered for a while after it ends; the route
-    that lists the slice jobs; a waiting slice job's place in the queue; finishing the
-    running slice when asked to stop. With it, the slice container's half of
-    [Restarts and deploys](../architecture.md#what-a-restart-does), with a test for each
-    row of the table "The slice container restarts".
-  - `contracts/`: the part set for parts from files; the routes of the contract between
-    the wizard and the front server; the fields of the configuration; the plate
-    configuration's units for each part.
+    files; the configuration, never served invalid, and the table of settings passed on
+    from the slice service; a folder for each bucket; the log, gathered into the folder
+    for the log bucket, with the page's reports and the slice service's lines; the version
+    on every answer, for the wizard's reloading; the format number on the configuration and
+    on every record the front server writes. The development identity and the folders
+    exercise all of these on one machine.
+  - The slice service, extended as [its guide](../../slice/README.md#what-is-built-and-what-is-not)
+    lists for this phase: the user key; the part store, with each part's units; parts
+    named by hash; a plate's later slice replacing its earlier one; a repeated submission
+    answered with the first attempt's slice job; a slice job that runs to its end whether
+    or not anyone follows it; a slice job remembered for a while after it ends; the route
+    that lists the slice jobs; a waiting slice job's place in the queue; the table of
+    settings and the profile catalog's names; finishing the running slice when asked to
+    stop; its log lines given to the front server, each carrying the component's name, the
+    time and the user key; an instance laid on any face of its part's convex hull; and,
+    first of all, the shared set of plates for the two placement checks. With it, the slice
+    container's half of [Restarts and deploys](../architecture.md#what-a-restart-does),
+    with the slice service's half of each row of the table "The slice container restarts"
+    in its own suite.
+  - `contracts/`: what each contract marks as to be built in phase 2.
+  - The joined suite, which runs the front server and the slice service together on one
+    machine and drives the wizard in a browser, through the phase's "Done when" and each
+    row of the table "The slice container restarts"
+    ([Keeping it true](../architecture.md#keeping-it-true)). The front server's builder
+    writes it last.
+- **Run on one machine** as
+  [Running phase 2 on one machine](../../front/README-details.md#running-phase-2-on-one-machine)
+  says: the start commands, each setting's default and the development identity's values.
+- **Needing an answer from the owner,** none of which holds up the building, since each
+  guide's recommendation or proposal is built until it is answered:
+  - what a quick change's menu shows when the profile's value is not on it
+    ([the wizard's guide](../../wizard/README.md#a-quick-change-whose-value-is-not-on-its-menu));
+  - the five proposals of the slice service's guide nobody has ruled on
+    ([Proposals nobody has ruled on](../../slice/README.md#proposals-nobody-has-ruled-on));
+  - for the second trial, round parts exported from Onshape at its coarse and fine settings,
+    which only the owner can supply; until they arrive the trial uses the real parts in the
+    repository ([how the trials are run](../../wizard/README-details.md#how-the-trials-and-measurements-are-run));
+  - each trial's part for the owner: the renders and the Mac's frame rate for the preview,
+    and a look at each real part's chosen orientation, neither of which the builder waits
+    for.
 - **Settled by [the architecture](../architecture.md#where-each-piece-of-state-lives):** how
   parts reach the slice service, where the sliced file is kept, how a page that has lost
   its state comes back to its work, and how the browser reaches the slice service
@@ -373,9 +425,10 @@ written.
   - Settings: the slice service accepts every setting Orca allows that is a parameter
     with a value, and the wizard's advanced mode offers them all; it refuses the settings
     that run a program, name a file on the server or carry custom G-code
-    ([the slice service's guide](../../slice/README.md#accept-settings)). Where advanced
-    mode gets its list of settings is undecided and is answered before phase 2
-    ([its item](../../slice/README.md#where-the-wizard-gets-the-list-of-settings-and-the-profile-catalogs-names)).
+    ([the slice service's guide](../../slice/README.md#accept-settings)). The slice
+    service supplies the table of settings, with Orca's own labels, groups and
+    explanations, and the front server passes it to the wizard
+    ([the table of settings](../../contracts/settings-table.md)).
   - Profiles: the configuration names each filament's profiles, each under the group's
     own name and purpose, and the wizard offers those
     ([the configuration's contract](../../contracts/configuration.md)).
@@ -388,16 +441,13 @@ written.
     mockup requires
     ([the wizard's guide](../../wizard/README.md#the-layer-preview-as-a-requirement)). How
     it is drawn is found while building.
-- **Tried first,** since each could change the design, five trials open the phase
-  ([the wizard's guide](../../wizard/README.md#what-is-undecided-or-unmeasured)): the
-  preview's speed on a machine without a graphics card, on the heaviest real plates
-  (about a million lines of G-code); laying out real exported parts, which may have tens
-  of thousands of corners, on a face, oriented and arranged; the layer preview's frame
-  rate, browser and machine, with whether its look may be simpler while the view moves;
-  the wizard's proposed targets for speed and memory, timed on real parts; and whether the
-  browser's storage holds a full plate.
+- **Tried first,** since each could show that part of the design cannot be built as
+  written, the two trials the wizard's guide names open the phase
+  ([The risks to try first in phase 2](../../wizard/README.md#the-risks-to-try-first-in-phase-2)):
+  the layer preview's speed on a machine without a graphics card, on the heaviest real
+  plates; and laying on a face, auto-orient and Arrange on real exported parts.
 - **Risks:** this is the first time components run joined, and a mismatch between them
-  shows first here; feasibility: the first two trials above; resources: the wizard is the
+  shows first here; feasibility: the two trials above; resources: the wizard is the
   largest piece of building left.
 
 ### Phase 3: the same, hosted
@@ -421,16 +471,18 @@ because it has the three things the design needs of its object store
     with groups read from Onshape; the second cookie key; finishing work when asked to
     stop; the checks that matter only when hosted, on requests from other sites and the
     refusal to start with the development identity on Railway.
-  - The wizard, as [its guide](../../wizard/README.md) lists: Onshape sign-in and "sign in
-    again"; the mark only the wizard's own page can add, on every changing request.
+  - The wizard, as [its guide](../../wizard/README.md#what-is-to-be-built-by-phase) lists:
+    signing in with Onshape by the page's own trip, a page that comes back from a trip
+    still not signed in, Sign out, the stored work tied to its user, and choosing a group
+    for a user in several.
   - The slice service, as [its guide](../../slice/README.md) lists for this phase: its
     limits as settings; the memory ceiling set for the slice container; the measurements
-    below; the comment line on its progress stream; Orca as a Unix user of its own; the
-    route that gives the front server its log lines, and its new log lines.
+    below; the comment line on its progress stream; Orca as a Unix user of its own; and
+    its three new kinds of log line.
   - The rules of
     [Old and new versions together](../architecture.md#old-and-new-versions-together)
-    that phase 2 does not build: a format number on each record in the state bucket.
-    (Its rule for an installed daemon applies from phase 5.)
+    that phase 2 does not build: the test that a record written by the previous front
+    server is read by the new one. (Its rule for an installed daemon applies from phase 5.)
   - The command that reads the log bucket, the check that runs after each deploy, and the
     hosting itself, which is new.
 - **First, what Railway does at a deploy,** since the standing requirement on deploys
@@ -458,7 +510,10 @@ panel, the exchange with Onshape's page that tells the wizard which document and
 it is in and what is selected, and the export of the selected parts and the document's
 units, delivered to the wizard as a part set. Signing in is the front server's and is
 already there from phase 3: the panel uses the same sign-in and the same routes as
-phase 3. How the integration divides between the browser and the server is for this
+phase 3, made inside the panel as PenguinCAM does, by a Connect button and a small window
+the first time in a browser, and the current group follows the document the user has
+open ([the wizard's guide](../../wizard/README.md#to-be-confirmed-inside-onshape-in-phase-4)
+says what only real Onshape can confirm). How the integration divides between the browser and the server is for this
 phase's design spec.
 
 - **Done when** a user opens PenguinSlicer in Onshape's right panel in a real Part Studio
@@ -495,9 +550,10 @@ H2S. Daemon telemetry is part of this phase and is not designed.
   daemon telemetry does what its own design says.
 - **Components:** printer delivery (the relay in the front server, the daemon on the
   daemon's computer, the simulated printer's invented sequences replaced by recordings),
-  the wizard (the Send step and the printer-status icon; under the wizard's proposed
-  choice 12 the Send step already exists with Download, and this phase adds sending to
-  it), and the front server (the relay's caller, and the store for the relay's records).
+  the wizard (the Send step exists from phase 2 with Download as its one button; this
+  phase adds sending to the printer, the print card, the printer-status icon and pairing
+  in the printer details), and the front server (the relay's caller, and the store for
+  the relay's records).
 - **First, printer delivery's tests on a fake clock.** The first piece of this phase's work
   on printer delivery rewrites its tests that wait on the wall clock to use a fake clock
   and fakes that put network events in an exact order, and the new work of the phase is
@@ -531,13 +587,14 @@ H2S. Daemon telemetry is part of this phase and is not designed.
   moves to Rust or Go. It is new behaviour on both halves and gets its own design. Today
   both halves write structured log lines only.
 - **What the wizard needs from printer delivery:** who sent a delivery job, a one-line
-  description of the plate, when it ended and, for a failure, its layer; the sliced file
-  each delivery job used; a page's way to find its user's live delivery job and last
+  description of the plate, when it ended and, for a failure, its layer; "stop following"
+  accepted from the sender only; the printer's name as the printer itself reports it,
+  sent by the daemon when it is paired; the sliced file each delivery job used; a page's way to find its user's live delivery job and last
   print; and the time of a daemon's last sync before it went offline, written once to the
   paired-printer record (whether it is cleared when the daemon syncs again is undecided:
   [printer delivery's item](../../delivery/README.md#clearing-the-recorded-time-of-silence)).
   Each is not provided, or only in part
-  ([printer delivery's details](../../delivery/README-details.md#from-the-wizards-mockup)
+  ([printer delivery's details](../../delivery/README-details.md#what-the-wizard-needs)
   list them as to be built).
 - **Risks:** feasibility: everything printer delivery knows about the H2S beyond one
   status document is invented; the upload's TLS version, the format of the printer's file

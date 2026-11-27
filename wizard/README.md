@@ -175,10 +175,11 @@ rest.
   must learn by trial (whether the layer preview can be fast enough without a graphics
   card, and whether the new geometry works on real parts), what only real Onshape can
   confirm in phase 4, two things only use will show (whether the browser's storage holds
-  a full plate, and whether progress reaches the page as it is sent when hosted), three
-  items of the design that are still open (what the panel shows
-  after a print is no longer followed, whether the panel says that a part will need
-  supports, and who writes the one-line description of a plate), and the open items of
+  a full plate, and whether progress reaches the page as it is sent when hosted), four
+  items of the design that are still open (what a quick change's menu shows for a value
+  not on it, what the panel shows after a print is no longer followed, whether the panel
+  says that a part will need supports, and who writes the one-line description of a
+  plate), and the open items of
   the other three guides that would change what the panel shows.
 
 Everything else in the guide is stated as the design. Its targets for speed and memory
@@ -337,10 +338,11 @@ that wrote it, and in its tests. Two consequences:
 
 States that are not failures are the wizard's to put into words, from the figures it is
 sent: a slice waiting behind others, a busy printer, a printer not heard from, a print
-that has gone quiet. Some sentences of the slice service and of printer delivery still
-say "the print server", "a second plate" where the panel says "a new plate", and use the
-old words for people; changing them is known work in those components, and until it is
-done the wizard shows what they write.
+that has gone quiet. From phase 2 the slice service's sentences say "a new plate", as the
+panel does, where a remedy is another plate. Some sentences of the slice service and of
+printer delivery still say "the print server" and use the old words for people; changing
+them is known work in those components, and until it is done the wizard shows what they
+write.
 
 ### Units
 
@@ -430,10 +432,13 @@ Onshape: the sign-in lasts as long as the user is signed in to Onshape, and the 
 has no sign-out link.
 
 **Inside Onshape's panel, the first time in a browser, the user presses one button.**
-The way is PenguinCAM's, which is known to work in Onshape's panel. In place of the
-step's content the panel shows one button, **Connect**. Pressing it opens a small
+The way is PenguinCAM's, which is known to work in Onshape's panel. The panel shows a
+plain page with the header's first line and one button, **Connect**. That page is the
+front server's to serve, in the wizard's look, since the wizard's code is not sent to a
+browser with no sign-in; it has no printer-status icon. Pressing Connect opens a small
 window in which the trip to Onshape is made, and the window closes itself when the trip
-is done; the panel then shows the wizard on its first step. After that a user who opens
+is done; the panel then shows the wizard on its first step. A page already open whose
+sign-in runs out shows the same button in place of the step's content. After that a user who opens
 the panel sees the wizard, and nothing about signing in. That one click is what the
 design relies on. A trip to Onshape that the user never sees, with no button and no
 window, is what phase 4 tries for
@@ -454,13 +459,20 @@ session to expire.
 
 **When the trip fails,** and only then, the user reads something about signing in. The
 user is signed out of Onshape and does not sign in, or refuses Onshape's request, or
-Onshape does not answer. The step's content is replaced by one message, with the front
-server's sentences, of this kind: "PenguinSlicer could not sign you in with Onshape.",
+Onshape does not answer. What the user then sees is a plain page that the front server
+serves, as for Safari below, since the wizard's code cannot run without a sign-in: in the
+wizard's look, with the header's first line and no printer-status icon, and one message,
+with the front server's sentences, of this kind: "PenguinSlicer could not sign you in with Onshape.",
 then what is specific ("You did not allow PenguinSlicer to read your Onshape account. It
 reads your name, the companies and classrooms you belong to, and your documents, and it
 never changes anything in Onshape." or "Onshape did not answer."), then "Your parts, layout and settings are kept in this browser." One button,
-**Sign in with Onshape**, takes the trip again. The header keeps its first line; from
-phase 5 its printer-status icon shows a grey dot and "…", since the page cannot ask.
+**Sign in with Onshape**, takes the trip again. Inside the panel, where the trip is made
+in the small window, the window reports the failure to the open panel instead, and the
+wizard shows the same message in place of the step's content, with the Connect button. A
+page that comes back from a trip and is still not signed in, as when the browser withholds
+its cookie, does not leave again by itself, and likewise shows the message in place of the
+step's content. In these two cases the wizard's own page is showing, and from phase 5 its
+printer-status icon shows a grey dot and "…", since the page cannot ask.
 
 **A different person at the same browser.** PenguinSlicer follows Onshape: when the
 person signed in to Onshape is not the one PenguinSlicer's sign-in names, the sign-in is
@@ -692,7 +704,12 @@ the printer-status icon already names the printer.
 **The quick changes** are four menus for the settings most often changed for one print:
 Infill, Walls, Supports and Brim. They sit one to a row below 480 px and two to a row from
 there. A quick change is a change like any other: it and advanced mode edit one shared set
-of changes.
+of changes. Each offers the mockup's values: Infill 15, 25, 40, 60 and 100 percent; Walls
+2, 3, 4 and 6; Supports Off, and On, which is tree supports placed automatically; Brim
+Auto, Off and Outer only. A menu set to the profile's own value is no change. What a menu
+shows when the profile's value, or a change made in advanced mode, is not one of its
+values is not decided
+([A quick change whose value is not on its menu](#a-quick-change-whose-value-is-not-on-its-menu)).
 
 **Changing the filament or the profile clears every change,** because a change is a
 departure from one profile and means nothing against another. From the first change until
@@ -721,8 +738,9 @@ Orca's settings applies here. The table of settings (each one's label, group,
 explanation, kind, range and choices) is taken from Orca's source each time an Orca
 version is integrated, never written by hand. The slice service supplies it, since the
 slice service alone holds Orca's profiles and settings for the Orca version it runs,
-and the front server passes it to the wizard, which asks for it when advanced mode
-opens
+and the front server passes it to the wizard, which asks for it when the page opens,
+since the Layout step takes the plate's size and height from it and the plate summary and
+the changes box take each profile's values from it
 ([the front server's guide](../front/README.md#the-list-of-settings-and-the-profile-catalogs-names)).
 So the table changes with the Orca version, and the wizard draws each setting from its
 kind and not from a design made by hand for each setting. Which settings count as
@@ -800,7 +818,8 @@ From top to bottom:
 - **One line of printer and plate figures:** "Shop H2S: plate 340 × 320 mm, up to 340 mm
   tall, 12 mm apart". It is kept because nothing else on the panel gives the plate's size,
   the height limit or the spacing. The size and height come from the printer's Orca
-  profile named in the configuration, the same profile the slice service slices for.
+  profile named in the configuration, which the table of settings gives, the same profile
+  the slice service slices for.
 - **The messages:** anything the wizard moved, and under "Fix these 2 before Next:" one red
   message for each problem, each with the button that fixes it. A message about a move
   the wizard made, and Arrange's "Arranged 16 instances.", goes when the user leaves the
@@ -1275,7 +1294,7 @@ header and not on the Send step alone.
 | Failed (red) | A print ended on a fault someone at the printer has to see to |
 | Offline (grey) | The daemon has not been heard from for two minutes |
 | No printer (grey) | The current group has no printer paired |
-| A grey dot and "…" | A printer is paired and nothing has been heard from it yet: for a few seconds after the front server restarts, for up to half a minute after pairing, and while a sign-in could not be made |
+| A grey dot and "…" | A printer is paired and nothing has been heard from it yet: for a few seconds after the front server restarts, for up to half a minute after pairing, and while the wizard's own page shows that a sign-in could not be made ([Signing in](#signing-in)) |
 
 A printer not yet heard from shows the grey dot and "…", with "Waiting to hear from Shop
 H2S." on the Send step, so that a user sees a state and not a hole; a print card that
@@ -1700,9 +1719,8 @@ first thing phase 2 must learn
 ## What the wizard asks of the front server
 
 The wizard talks to nothing else, so this is everything it needs from outside. The exact
-requests are fixed in
-[their contract](../contracts/wizard-front-server.md), whose requests are written with
-phase 2's design. In words:
+requests are fixed in [their contract](../contracts/wizard-front-server.md), which is
+written in full. In words:
 
 - **Who the user is, and their groups,** to tie the stored work to its user, to name the
   configuration in use and, for a user in several groups outside Onshape, to offer the
@@ -1727,7 +1745,8 @@ phase 2's design. In words:
 - **The sliced file and its summary,** for as long as the sliced file is kept, with the
   moment at which the front server will refuse it as expired. A sliced file is at most
   50 MB.
-- **The table of settings for advanced mode,** as the slice service supplies it.
+- **The table of settings,** as the slice service supplies it, with the profile catalog's
+  names and each printer's plate, when the page opens.
 - **Its version on every answer,** so an older page knows to reload.
 - **To take the wizard's reports about itself,** of failures in the browser and of how
   fast it draws, and write each to the log
@@ -1744,16 +1763,18 @@ by the component that failed and are shown by the wizard as they are, and whose 
 detail the wizard never shows
 ([Who writes the sentences of a failure](#who-writes-the-sentences-of-a-failure)). Every
 request can safely be sent twice, because the page retries: a send repeated because its
-first answer was lost must not start a second print. And a page loaded before a deploy
+first answer was lost must not start a second print, and what such a repeat is answered
+with is open in printer delivery's guide
+([A send repeated while its delivery job is live](../delivery/README.md#a-send-repeated-while-its-delivery-job-is-live)).
+And a page loaded before a deploy
 must keep working against the front server deployed after it, until it reloads.
 
-**What the other components do not provide yet,** and the wizard as designed needs. The
-first eleven rows are asks that the contract between the wizard and the front server
-does not hold yet, or holds differently.
+**What the other components do not provide yet,** and the wizard as designed needs. Every
+ask in the table is now in the contracts, and remains to be built by the component named.
 
 | Needed | From | For |
 |---|---|---|
-| The moment a sliced file will be refused as expired, as the front server reckons it, sent with the sliced file's summary and again when a print of the plate ends. The contract carries no such moment, and the page's own clock may be wrong ([Telling the page when a sliced file expires](../front/README.md#telling-the-page-when-a-sliced-file-expires)) | The front server, and the contract | [A sliced plate that expires](#a-sliced-plate-that-expires) |
+| The moment a sliced file will be refused as expired, as the front server reckons it, sent with the sliced file's summary and again when a print of the plate ends, since the page's own clock may be wrong ([Telling the page when a sliced file expires](../front/README.md#telling-the-page-when-a-sliced-file-expires)) | The front server, and the contract | [A sliced plate that expires](#a-sliced-plate-that-expires) |
 | A request by which the page reports a failure in the browser or a summary of its drawing, each written as one log line, with a limit at the front server so that a broken page cannot fill the log ([the front server's guide](../front/README.md#what-the-wizards-guide-asks-of-the-front-server)) | The front server, and the contract | [What the wizard reports about itself](#what-the-wizard-reports-about-itself) |
 | Signing out, outside Onshape ([Sign-out](#sign-out)) | The front server, and the contract | A shared computer |
 | A sign-in made by a trip that the page starts itself and that returns to the same step; outside Onshape, a sign-in that lasts thirty days from its last use; inside the panel, the Connect button with its small window and a sign-in that lasts as long as Onshape's | The front server, and the contract | [Signing in](#signing-in) |
@@ -1766,11 +1787,13 @@ does not hold yet, or holds differently.
 | An answer of its own, passed on at once, to a plate submitted while the slice service is stopping, different from "no room to wait" | The slice service and the front server, with the contract's requests | The slice shown as waiting while the slicer restarts ([Slicing](#slicing)) |
 | A slice ended, with the slice service's own sentence, when its sliced file would be larger than 50 MB | The slice service | [When a slice fails](#when-a-slice-fails) |
 | Units for each part in the plate configuration, applied by the slice service | The slice service and the plate configuration's contract | Parts in inches |
+| A general turn of an instance in the plate configuration, so that a part laid on any face of its convex hull can be sliced | The slice service and the plate configuration's contract | [Laying an instance on a face](#laying-an-instance-on-a-face) |
 | Every setting of Orca's that is a parameter with a value accepted as a change; as built, four are | The slice service | Advanced mode |
 | The table of those settings, taken from Orca's source at each Orca version, with each one's label, group, explanation, kind, range and choices, and each profile's value for it | The slice service, which supplies it, and the front server, which passes it to the wizard ([Advanced mode](#advanced-mode)) | Advanced mode, the changes box |
 | Orca's own sentence with the heights, as a quotation for the user, marked as Orca's, in the error reports of the two slice failures that carry Details | The slice service and the error report's contract | [Orca's own sentence under Details](#orcas-own-sentence-under-details) |
 | The shared set of plates for the two placement checks, kept with the contracts and run by both components' tests | The slice service, with the wizard | [Arranging the plate](#arranging-the-plate) |
-| Sentences in the slice service's and printer delivery's error reports that say "your CAD program" and "a new plate", and never a role word, "the print server" or "a second plate" | The slice service and printer delivery, as their known future work | [Who writes the sentences of a failure](#who-writes-the-sentences-of-a-failure) |
+| Sentences in the slice service's error reports that say "a new plate" and never "a second plate" | The slice service, phase 2 | [Who writes the sentences of a failure](#who-writes-the-sentences-of-a-failure) |
+| Sentences in the slice service's and printer delivery's error reports that say "your CAD program", and never a role word or "the print server" | The slice service and printer delivery, as their known future work | [Who writes the sentences of a failure](#who-writes-the-sentences-of-a-failure) |
 | A slice that runs on when its page goes away, parts kept and named by hash, a waiting slice's place | The slice service, phase 2 | The Preview step and coming back |
 | The printer's own name, sent by the daemon when the printer is paired | Printer delivery, phase 5 | [The printer-status icon](#the-printer-status-icon) |
 | A request to stop following accepted only from the sender of the print | Printer delivery, phase 5 | [A print that has gone quiet](#a-print-that-has-gone-quiet) |
@@ -2128,8 +2151,8 @@ were faked, and the wizard's behaviour is built from this guide
 
 | Phase | What of the wizard is built |
 |---|---|
-| 2, one machine | The page opened directly in a browser, with no sign-in. The panel, the header naming the configuration in use, and all five steps: parts from binary STL files, with the switch that says how they are read, and New plate; the Settings step and advanced mode; the Layout step with laying on a face, auto-orient, Arrange and the placement check; the Preview step with slicing, every slice failure and the layer preview; the Send step with Download as its one button. The workers. The browser's storage with a plate for each tab, sending each part once, coming back, progress streams, retrying, and reloading for a new version. The wizard's reports about itself |
-| 3, hosted | Signing in with Onshape by the page's own trip, a sign-in that could not be made, Sign out, the stored work tied to its user, choosing a group for a user in several, and the mark on every request that changes something |
+| 2, one machine | The page opened directly in a browser, with no sign-in. The panel, the header naming the configuration in use, and all five steps: parts from binary STL files, with the switch that says how they are read, and New plate; the Settings step and advanced mode; the Layout step with laying on a face, auto-orient, Arrange and the placement check; the Preview step with slicing, every slice failure and the layer preview; the Send step with Download as its one button. The workers. The browser's storage with a plate for each tab, sending each part once, coming back, progress streams, retrying, and reloading for a new version. The wizard's reports about itself. The mark on every request that changes something (checked by the front server from phase 3) |
+| 3, hosted | Signing in with Onshape by the page's own trip, Sign out, the stored work tied to its user, choosing a group for a user in several, and the message in place of the step for a page that comes back from a trip still not signed in. A trip that fails at Onshape ends on the front server's plain page, not the wizard's |
 | 4, inside Onshape | The page in Onshape's panel, with parts picked in Onshape and their units, its storage kept apart from a tab's, the Connect button with its small window and the sign-in that follows Onshape's, and the group that follows the document |
 | 5, the real printer | The printer-status icon and the printer details; pairing and unpairing; Send, the print card, the busy card, Cancel sending, Stop following; the last-print note; coming back to the Send step |
 
@@ -2164,8 +2187,30 @@ patches, which is a visible change and comes back for a decision.
 
 ### Still open in the design
 
-Three things a user would see are not decided. Each says what it is, what is known, the
+Four things a user would see are not decided. Each says what it is, what is known, the
 options with what each costs, and a recommendation.
+
+#### A quick change whose value is not on its menu
+
+**What it is.** Each of the four quick changes offers a short list of values (Infill 15,
+25, 40, 60 and 100 percent; Walls 2, 3, 4 and 6; Supports Off and On; Brim Auto, Off and
+Outer only), while the setting under it can hold any value the table of settings allows.
+The profile's own value may be off the list (a profile with 18 percent infill, or five
+walls, or a mouse-ear brim), and so may a value the user set in advanced mode. What the
+menu then shows is not decided. It matters in phase 2, when the Settings step is built.
+
+**What is known.** The mockup draws the menus from these lists only, and its made-up
+profiles never meet the case. How many of the profile catalog's process profiles use
+values off the lists has not been counted; the table of settings gives each profile's
+values, so the count is made when the Settings step is built.
+
+| Option | What a user sees | What it costs |
+|---|---|---|
+| The value off the list is one more entry of the menu, at its top, written as advanced mode writes it ("18 %", "Mouse ear") and chosen; picking another value replaces it, and the entry stays while it is the profile's value | The true value, always; the menu never claims a value the plate will not be sliced with | A menu whose entries vary by profile; a little more to build and test |
+| The menu shows "Other: set in advanced mode", which opens advanced mode at that setting | That the value is set elsewhere, without what it is | A sentence of the wizard's and a link; the user must open advanced mode to learn the value |
+| The menu shows the nearest value on its list | A value that is not the one the plate will be sliced with | Nothing to build, and a quiet lie: the plate summary and the menu disagree |
+
+**Recommended:** the first.
 
 #### After a print is no longer followed
 
@@ -2301,6 +2346,10 @@ showing the sentence.
   settle once the figure is ruled on. One answer needs nothing new of the front server:
   the page without a stream asks for the latest progress report by a short request
   every second or two, and the user sees progress up to two seconds late.
+- **A send repeated while its delivery job is live.** What the repeat is answered with
+  is undecided in printer delivery's guide; its recommendation is the delivery job
+  already under way, which the page follows as if its first answer had arrived
+  ([A send repeated while its delivery job is live](../delivery/README.md#a-send-repeated-while-its-delivery-job-is-live)).
 - **Unpairing while a print is followed.** The wizard withholds Unpair then; whether the
   relay also refuses it is undecided in printer delivery's guide
   ([Unpairing while a delivery job has not ended](../delivery/README.md#unpairing-while-a-delivery-job-has-not-ended)).

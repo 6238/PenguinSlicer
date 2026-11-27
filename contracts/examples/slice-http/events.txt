@@ -1,0 +1,24 @@
+id: 1
+event: progress
+data: {"job": "j7c1d03ae", "state": "queued", "stage": "queued", "stage_label": "Waiting for the slicer", "elapsed_s": 0, "expected_s": 75, "sequence": 1, "ahead": 0}
+
+id: 2
+event: progress
+data: {"job": "j7c1d03ae", "state": "running", "stage": "building_plate", "stage_label": "Building the plate", "elapsed_s": 0.1, "expected_s": 75, "sequence": 2}
+
+id: 3
+event: progress
+data: {"job": "j7c1d03ae", "state": "running", "stage": "slicing", "stage_label": "Slicing the plate", "elapsed_s": 0.4, "expected_s": 75, "sequence": 3}
+
+id: 17
+event: progress
+data: {"job": "j7c1d03ae", "state": "running", "stage": "generating_supports", "stage_label": "Checking and generating supports", "fraction": 0.42, "elapsed_s": 31.5, "expected_s": 75, "sequence": 17}
+
+id: 17
+event: progress
+data: {"job": "j7c1d03ae", "state": "running", "stage": "generating_supports", "stage_label": "Checking and generating supports", "fraction": 0.42, "elapsed_s": 31.5, "expected_s": 75, "sequence": 17}
+
+id: 38
+event: progress
+data: {"job": "j7c1d03ae", "state": "done", "stage": "reading_result", "stage_label": "Reading the sliced file", "fraction": 1.0, "elapsed_s": 52.8, "expected_s": 75, "sequence": 38}
+
