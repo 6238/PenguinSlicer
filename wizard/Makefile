@@ -43,8 +43,10 @@ test-browser: build
 build:
 	$(PY) $(CURDIR)/build.py
 
-# The two opening trials of phase 2, each its own entry point.
-trials: trials-preview trials-geometry
+# The two opening trials of phase 2, each its own entry point: both run, even when the
+# first fails, and the target fails when either does.
+trials:
+	@status=0; $(MAKE) trials-preview || status=1; $(MAKE) trials-geometry || status=1; exit $$status
 
 trials-preview:
 	$(PY) $(CURDIR)/trials/preview/run.py
