@@ -5,13 +5,16 @@ when they are hosted: where each piece of state lives, who may reach what, what 
 restart does, how a daemon is told to print, and where the project's owner reads what
 happened. It gives no time estimates.
 
-Written Wed 2026-11-25 and revised Thu 2026-11-26, Pacific time, from design discussions
-with the project's owner. The owner has reviewed "The shape" (except its last subsection, "Progress streams",
-which was moved there since), "Where each piece of state
-lives", "Sign-in", and an earlier form of "Restarts and deploys" and of the table of all
-the state. On Thu 2026-11-26 the owner decided how often a daemon talks to the relay,
-what the log holds and how a secret is replaced, and has not yet read "Printers",
-"Reading what happened" or "Security" as written here, nor agreed the document.
+**A record, not kept current.** The project's owner approved this document on Thu
+2026-11-26, Pacific time, and it has not been changed since, apart from this note. It was
+written on Wed 2026-11-25 and Thu 2026-11-26 from design discussions with the owner. The
+current design is in [the architecture](../architecture.md), the components' guides and
+[the plan](../plans/penguin-slicer-plan.md), and
+[the map of its decisions](../orchestration/hosted-architecture/decision-map.md) says
+where each decision made here now lives. One decision came after the approval and is not
+in the text below: what this document calls the wizard's server side is a component of
+its own, the front server, in `front/`; the wizard is the code in the browser, in
+`wizard/`; and a contract between the two is to be written.
 
 **Read after:** [the plan](../plans/penguin-slicer-plan.md). This document uses the
 plan's terms. Where it differs from the plan or from the code as built, the difference is
