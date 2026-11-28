@@ -76,15 +76,15 @@ class TestRead:
         assert (job.describe()["plate_id"], job.describe()["submission_id"]) == (PLATE_ID, SUBMISSION_ID)
 
     def test_the_contracts_phase_2_example_is_accepted_once_its_parts_are_uploaded(self, tmp_path):
-        """contracts/examples/plate-configuration-phase-2.json, its overrides in the form as
-        built (item 6 of README-details.md's phase 2 gives them Orca's own names)."""
+        """contracts/examples/plate-configuration-phase-2.json as it is, its overrides under
+        Orca's own names."""
         from helpers import CONTRACTS
         example = json.loads((CONTRACTS / "examples" / "plate-configuration-phase-2.json").read_text())
         parts = Parts(tmp_path)
         for name in ("bracket.stl", "spacer.stl"):
             parts.add((CONTRACTS / "examples" / "parts" / name).read_bytes())
-        example["overrides"] = {"infill": 20, "walls": 3, "supports": "off", "brim": "auto"}
         configuration = parts.read(example)
+        assert configuration.overrides == example["overrides"]
         assert [c["ref"] for c in configuration.instances] == ["bracket", "bracket", "spacer", "bracket"]
         assert configuration.instances[3]["rotation"] == pytest.approx([0.707106781, -0.588348405, 0.39223227, 0.0],
                                                                        abs=1e-6)
@@ -93,7 +93,7 @@ class TestRead:
     @pytest.mark.parametrize("change, detail", [
         (lambda d: d["instances"][0].update(colour="red"),
          "instance 0 has fields this plate configuration format does not have: colour"),
-        (lambda d: d.update(overides={"supports": "on"}),
+        (lambda d: d.update(overides={"enable_support": "1"}),
          "it has fields this plate configuration format does not have: overides"),
         (lambda d: d["parts"]["box"].update(stl="box.stl"),
          "part 'box' has fields this plate configuration format does not have: stl"),
@@ -113,7 +113,8 @@ class TestRead:
 
     def test_catalog_profiles_and_overrides(self, base):
         job = base.read(plate_configuration(printer=P4, filament="Bambu PLA Basic @BBL H2S",
-                                            process="0.20mm Standard @BBL H2S", overrides={"infill": 40, "brim": "off"}))
+                                            process="0.20mm Standard @BBL H2S",
+                                            overrides={"sparse_infill_density": "40%", "brim_type": "no_brim"}))
         assert job.profiles.printer.name == "Bambu_Lab_H2S_0.4_nozzle.json"
         assert job.overrides == {"sparse_infill_density": "40%", "brim_type": "no_brim"}
         assert (job.filament, job.process) == ("Bambu PLA Basic @BBL H2S", "0.20mm Standard @BBL H2S")
@@ -280,7 +281,7 @@ class TestRead:
                  lambda d: d["instances"][0].update(x=huge), lambda d: d.update({huge: 1}),
                  lambda d: d["instances"][0].update({huge: 1}), lambda d: d["parts"]["box"].update({huge: 1}),
                  lambda d: d.update(printer=huge), lambda d: d.update(overrides={huge: "on"}),
-                 lambda d: d.update(overrides={"supports": huge})]
+                 lambda d: d.update(overrides={"enable_support": huge})]
         for change in cases:
             data = plate_configuration()
             change(data)
@@ -443,10 +444,33 @@ class TestRead:
         assert job.estimated_peak_mb > limits.DEFAULT_MAX_PEAK_MB and job.memory_ceiling_mb == 2000
 
     def test_supports_raise_the_estimate(self, base):
-        off = base.read(plate_configuration(overrides={"supports": "off"}))
-        on = base.read(plate_configuration(overrides={"supports": "on"}))
+        off = base.read(plate_configuration(overrides={"enable_support": "0"}))
+        on = base.read(plate_configuration(overrides={"enable_support": "1"}))
         assert (off.supports_on, on.supports_on) == (False, True)
-        assert on.estimated_peak_mb > off.estimated_peak_mb and on.expected_s > off.expected_s
+        assert abs(on.estimated_peak_mb - off.estimated_peak_mb * limits.MEMORY_SUPPORTS_FACTOR) <= 1   # both rounded
+        assert on.expected_s > off.expected_s
+
+    def test_supports_on_through_the_process_profile(self, base, tmp_path, monkeypatch):
+        """A process profile whose own enable_support is "1", and no override: supports are on,
+        with the 12 mm spacing and the supports factor; an override of "0" turns them off."""
+        from penguin_slice import service
+        from penguin_slice.slicer import DEFAULT_PROFILES, SliceProfiles
+        process = json.loads(DEFAULT_PROFILES.process.read_text())
+        process["enable_support"] = "1"
+        (tmp_path / "supported.json").write_text(json.dumps(process))
+        supported = SliceProfiles(DEFAULT_PROFILES.printer, DEFAULT_PROFILES.filament, tmp_path / "supported.json")
+        plain = base.read(plate_configuration())
+        monkeypatch.setattr(service, "choose_profiles", lambda *args, **kwargs: supported)
+        on = base.read(plate_configuration())
+        assert (plain.supports_on, on.supports_on) == (False, True)
+        assert abs(on.estimated_peak_mb - plain.estimated_peak_mb * limits.MEMORY_SUPPORTS_FACTOR) <= 1
+        assert base.read(plate_configuration(overrides={"enable_support": "0"})).supports_on is False
+        apart_8 = [{"ref": "box", "orientation": "+z", "angle": 0, "x": 50.0, "y": 50.0},
+                   {"ref": "box", "orientation": "+z", "angle": 0, "x": 78.0, "y": 50.0}]       # 20 mm boxes, 8 apart
+        with pytest.raises(Exception) as caught:      # noqa: PT011 - the placement check's refusal
+            base.read(plate_configuration(instances=apart_8))
+        assert error_report(caught.value)["code"] == "slice.placement_too_close"
+        assert base.read(plate_configuration(instances=apart_8, overrides={"enable_support": "0"})).supports_on is False
 
     def test_a_part_too_large_for_the_plates_printer_but_not_the_largest_is_refused_at_submission(self, base,
                                                                                                   monkeypatch):
@@ -510,8 +534,9 @@ class TestRead:
 
     def test_bad_overrides(self, base):
         with pytest.raises(OverrideError) as caught:
-            base.read(plate_configuration(overrides={"infill": 25}))
-        assert caught.value.details == "override 'infill' is 25, not one of [10, 15, 20, 30, 40, 60, 100]"
+            base.read(plate_configuration(overrides={"sparse_infill_density": "125%"}))
+        assert caught.value.details == "override 'sparse_infill_density' is 125%, above max 100"
+        assert caught.value.message == "Sparse infill density (Strength, Infill) must be at most 100%, not 125%."
 
     @pytest.mark.parametrize("instances, rule, message, where", [
         ([{"ref": "box", "orientation": "+z", "angle": 0, "x": 5.0, "y": 50.0}], "off_plate",

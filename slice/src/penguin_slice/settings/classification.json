@@ -1,26 +1,26 @@
 {
-    "about": "Every process setting of the pinned Orca, classified by hand: a parameter (in the table of settings, accepted in a plate configuration), programmatic (refused: it runs a program, names a file on the server, or is custom G-code), or not offered (refused: Orca shows it on no page of its process settings, or it holds a list the table cannot describe). scripts/make_settings_table.py fails when a process setting of Orca's source is in none of the three, or a setting here is not one of Orca's. See slice/README-details.md, \"The table of settings\".",
+    "about": "Every process setting of the pinned Orca, classified by hand: a parameter (in the table of settings, accepted in a plate configuration), programmatic (refused: it runs a program, names a file on the server, or is custom G-code), or not offered (refused: Orca shows it on no page of its process settings, or it holds a list the table cannot describe). Each reason completes the sentence 'The setting <name> cannot be changed: ...', which a refusal shows. scripts/make_settings_table.py fails when a process setting of Orca's source is in none of the three, or a setting here is not one of Orca's. See slice/README-details.md, \"The table of settings\".",
     "orca_version": "2.4.2",
     "programmatic": {
-        "post_process": "runs a program: the post-processing scripts Orca runs on the finished file",
-        "process_change_extrusion_role_gcode": "custom G-code: printer commands written in at each change of extrusion role",
-        "filename_format": "names a file on the server: the name Orca gives the sliced file, which the slice service sets itself"
+        "post_process": "it runs a program (the post-processing scripts Orca runs on the finished file)",
+        "process_change_extrusion_role_gcode": "it is custom G-code (printer commands written in at each change of extrusion role)",
+        "filename_format": "it names a file on the server (the name Orca gives the sliced file, which the slicer sets itself)"
     },
     "not_offered": {
-        "travel_speed_z": "on no page of Orca's process settings",
-        "enforce_support_layers": "on no page of Orca's process settings",
-        "raft_expansion": "on no page of Orca's process settings",
-        "print_extruder_id": "on no page of Orca's process settings: the profile's own map of its extruder variants",
-        "print_extruder_variant": "on no page of Orca's process settings: the profile's own list of its extruder variants",
-        "support_interface_loop_pattern": "on no page of Orca's process settings",
-        "prime_tower_flat_ironing": "on no page of Orca's process settings",
-        "compatible_printers": "on no page of Orca's process settings: the profile's own list of the printers it fits",
-        "compatible_printers_condition": "on no page of Orca's process settings: the profile's own condition on its printers",
-        "inherits": "on no page of Orca's process settings: the profile it was made from",
-        "wiping_volumes_extruders": "on no page of Orca's process settings",
-        "small_area_infill_flow_compensation_model": "a list of values (a table of figures), which the table of settings cannot describe",
-        "calib_flowrate_topinfill_special_order": "on no page of Orca's process settings: used by Orca's calibration only",
-        "ironing_expansion": "on no page of Orca's process settings: Orca hides it as not used yet"
+        "travel_speed_z": "it is on no page of Orca's process settings",
+        "enforce_support_layers": "it is on no page of Orca's process settings",
+        "raft_expansion": "it is on no page of Orca's process settings",
+        "print_extruder_id": "it is on no page of Orca's process settings (the profile's own map of its extruder variants)",
+        "print_extruder_variant": "it is on no page of Orca's process settings (the profile's own list of its extruder variants)",
+        "support_interface_loop_pattern": "it is on no page of Orca's process settings",
+        "prime_tower_flat_ironing": "it is on no page of Orca's process settings",
+        "compatible_printers": "it is on no page of Orca's process settings (the profile's own list of the printers it fits)",
+        "compatible_printers_condition": "it is on no page of Orca's process settings (the profile's own condition on its printers)",
+        "inherits": "it is on no page of Orca's process settings (the profile it was made from)",
+        "wiping_volumes_extruders": "it is on no page of Orca's process settings",
+        "small_area_infill_flow_compensation_model": "it holds a list of values (a table of figures), which the table of settings cannot describe",
+        "calib_flowrate_topinfill_special_order": "it is on no page of Orca's process settings (used by Orca's calibration only)",
+        "ironing_expansion": "it is on no page of Orca's process settings (Orca hides it as not used yet)"
     },
     "parameters": [
         "layer_height", "initial_layer_print_height", "wall_loops", "alternate_extra_wall", "slice_closing_radius",

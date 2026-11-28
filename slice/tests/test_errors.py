@@ -153,7 +153,7 @@ def fake_orca(mode, **slice_kwargs):
 
 def with_supports(scene):
     install_fake_orca(scene.tmp, scene.monkeypatch, "empty_layers")
-    scene.slice(plate_configuration(overrides={"supports": "on"}))
+    scene.slice(plate_configuration(overrides={"enable_support": "1"}))
 
 
 def timeout(scene):
@@ -270,9 +270,10 @@ EXPECTED = {
         "Choose a filament and print settings from the lists and slice again.",
         "filament 'Bambu PLA Basic @BBL H2S' or process None is not offered with the default set"),
     "slice.bad_overrides": Expected(
-        lambda s: s.read(plate_configuration(overrides={"walls": 5})),
-        "These print settings could not be read; choose them from the lists.", "checking", False, "choose_profiles",
-        "Choose the print settings from the lists and slice again.", "override 'walls' is 5, not one of [2, 3, 4, 6]"),
+        lambda s: s.read(plate_configuration(overrides={"wall_loops": "5.5"})),
+        "Wall loops (Strength, Walls) must be a whole number, not '5.5'.", "checking", False, "choose_profiles",
+        "Change that setting to a value it takes, or back to the profile's, and slice again.",
+        "override 'wall_loops' is '5.5', not of the form integer"),
     "slice.profile_unreadable": Expected(
         profile_unreadable, "The print server's settings for this printer could not be read.", "checking", False,
         None, "Ask a mentor to check the print server's profiles; `make upgrade-orca` with the pinned version writes "
@@ -652,14 +653,53 @@ def test_with_supports_on_the_placement_check_asks_for_the_supports_spacing(tmp_
     runs, with both instances named and a remedy that offers turning supports off."""
     scene = Scene(tmp_path, monkeypatch)
     with pytest.raises(service_module.PlateConfigurationRefused) as caught:
-        scene.read(plate_configuration(instances=SPACED, overrides={"supports": "on"}))
+        scene.read(plate_configuration(instances=SPACED, overrides={"enable_support": "1"}))
     report = error_report(caught.value)
     assert report["code"] == "slice.placement_too_close"
     assert report["message"] == "Box #1 and Box #2 are closer than 12 mm, the room supports need between instances."
     assert report["where"] == {"part": "Box", "instance": "Box #1", "other_instance": "Box #2", "stage": "checking"}
     assert (report["remedy"], report["action"]) == (TOO_CLOSE_SUPPORTS_REMEDY, "arrange")
     scene.read(plate_configuration(instances=SPACED))                                   # supports off: passes
-    scene.read(plate_configuration(instances=[TWO[0], dict(TWO[1], x=82.0)], overrides={"supports": "on"}))  # 12 mm
+    scene.read(plate_configuration(instances=[TWO[0], dict(TWO[1], x=82.0)], overrides={"enable_support": "1"}))  # 12
+
+
+def test_a_wide_brim_passes_the_placement_check_and_orca_refuses_it(tmp_path, monkeypatch):
+    """A brim (or a raft, or printing one object at a time) makes an instance need more room;
+    the placement check does not know it, so a plate 5 mm apart passes and Orca's -101 comes
+    back as slice.orca_too_close."""
+    scene = Scene(tmp_path, monkeypatch)
+    apart_5 = [TWO[0], dict(TWO[1], x=75.0)]            # 20 mm boxes, footprints 5 mm apart
+    brim = {"brim_type": "outer_only", "brim_width": "10"}
+    assert scene.read(plate_configuration(instances=apart_5, overrides=brim)).overrides == brim
+    install_fake_orca(tmp_path, monkeypatch, "refuse")
+    with pytest.raises(slicer.SliceError) as caught:
+        scene.slice(plate_configuration(instances=apart_5, overrides=brim))
+    assert error_report(caught.value)["code"] == "slice.orca_too_close"
+
+
+def test_a_table_of_settings_that_cannot_be_read(tmp_path, monkeypatch):
+    """The server's own table damaged on disk: a plate with settings is refused with the
+    server's failure, and the route that serves the table answers 500 with the same report."""
+    from penguin_slice import settings_table
+    broken = tmp_path / "table.json"
+    broken.write_text("{not a table")
+    monkeypatch.setattr(settings_table, "TABLE_PATH", broken)
+    settings_table.load.cache_clear()
+    try:
+        scene = Scene(tmp_path, monkeypatch)
+        with pytest.raises(settings_table.TableUnreadable) as caught:
+            scene.read(plate_configuration(overrides={"wall_loops": "3"}))
+        report = error_report(caught.value)
+        assert_report_shape(report)
+        assert (report["code"], report["message"]) == ("slice.profile_unreadable",
+                                                       "The slicer could not read its table of settings.")
+        assert "JSONDecodeError" in report["detail"] and report["where"] == {"stage": "checking"}
+        client, _pool = scene.web()
+        answer = client.get("/settings-table")
+        assert answer.status_code == 500
+        assert answer.get_json()["code"] == "slice.profile_unreadable"
+    finally:
+        settings_table.load.cache_clear()
 
 
 PAIR_MEETS = "Box #1 and Box #2 are too close together: the slicer found that their paths would meet"
@@ -680,7 +720,8 @@ def test_orcas_too_close_names_the_pair_from_its_debug_log(mode, supports, messa
     scene = Scene(tmp_path, monkeypatch)
     install_fake_orca(tmp_path, monkeypatch, mode)
     with pytest.raises(slicer.SliceError) as caught:
-        scene.slice(plate_configuration(instances=[TWO[0], dict(TWO[1], x=95.0)], overrides={"supports": supports}))
+        scene.slice(plate_configuration(instances=[TWO[0], dict(TWO[1], x=95.0)],
+                                        overrides={"enable_support": "1" if supports == "on" else "0"}))
     report = error_report(caught.value)
     assert_report_shape(report)
     assert (report["code"], report["message"], report["remedy"]) == ("slice.orca_too_close", message, remedy)

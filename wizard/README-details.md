@@ -868,7 +868,7 @@ advanced mode writes it, and chosen.
 
 Advanced mode fills the panel (`#advanced` in the mockup, "advanced mode" in
 `css/panel.css`) and offers every entry of the table of settings, which is every setting of
-Orca's that is a parameter with a value (about 295 at the pinned Orca), and no other: the
+Orca's that is a parameter with a value (338 at the pinned Orca 2.4.2), and no other: the
 programmatic settings are not in the table, and the slice service refuses them. It shows
 Orca's own `label`, `section`, `group` and `explanation` for each, in the table's order, and
 draws each setting's control from its `kind`: a menu of `choices` (an on-and-off setting has

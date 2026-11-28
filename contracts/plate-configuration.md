@@ -25,11 +25,11 @@ design under To be built wins.
 
 *Partly built in phase 2.* Built in the slice service: parts named by hash with their
 units, no files sent, `plate_id` and `submission_id` required and logged, an instance's
-`rotation`, the parts missing from the part store listed in one report, and the limits of
-[Limits in phase 2](#limits-in-phase-2); the slice service no longer reads the form of
-[Fields](#fields), [Part](#part) and [Instance](#instance) below. To be built: every setting
-of the table of settings under Orca's own name (the `overrides` are still those of
-[Overrides](#overrides)), and the repeat and the replacement of
+`rotation`, the parts missing from the part store listed in one report, the limits of
+[Limits in phase 2](#limits-in-phase-2), and every setting of the table of settings under
+Orca's own name ([Settings in phase 2](#settings-in-phase-2)); the slice service no longer
+reads the form of [Fields](#fields), [Part](#part), [Instance](#instance) and
+[Overrides](#overrides) below. To be built: the repeat and the replacement of
 [The plate and the submission](#the-plate-and-the-submission).
 
 What changes, in short:
@@ -477,8 +477,10 @@ from phase 2 the slice service also supplies those names in the
 
 ## Overrides
 
-*Built today. Replaced in phase 2 by every setting of the table of settings, under Orca's
-own names: see [Settings in phase 2](#settings-in-phase-2).*
+*The form before phase 2, which the slice service no longer reads: it reads every setting of
+the table of settings under Orca's own name, see [Settings in phase 2](#settings-in-phase-2).
+Kept for the example of [Example](#example), whose four overrides the slice service's tests
+send under the Orca names in the table's last column.*
 
 Each override is optional; its value must be one of the listed values, of the listed type.
 
@@ -533,7 +535,8 @@ The slice service also estimates the peak, in MB, as
 with `MEMORY_BASE_MB` = 170, `MEMORY_PER_INSTANCE_MB` = 3, `MEMORY_PER_CM3_MB` = 0.985 and
 `MEMORY_SUPPORTS_FACTOR` = 1.4, a part's volume being its mesh's when the mesh is
 watertight, else its bounding box's, summed over the instances; supports are on when the
-`supports` override says so, else when the process profile's `enable_support` is 1. The
+`overrides` set `enable_support` to `"1"`, or do not set it and the process profile's own
+`enable_support` is `"1"` ([Settings in phase 2](#settings-in-phase-2)). The
 estimate is rough (wrong both ways by up to four times on plates outside those it was
 fitted to), so it only goes into the slice service's log; it refuses nothing.
 

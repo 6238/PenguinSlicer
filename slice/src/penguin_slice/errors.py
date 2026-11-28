@@ -11,8 +11,9 @@ slicer.ORCA_RETURN_CODES, the one table of them.
 from .jobs import GENERIC_FAILURE, JobFailure, QueueFull, exception_text
 from .mesh import MeshError
 from .plate import TOO_CLOSE_REMEDY
-from .print_config import OverrideError, ProfileError
+from .print_config import ProfileError
 from .service import PlateConfigurationRefused
+from .settings_table import OverrideError, TableUnreadable
 from .slicer import UNSTARTABLE_MESSAGE, SliceCancelled, SliceError
 
 # The queue's refusal had no sentence of its own; this is the original route's.
@@ -37,7 +38,7 @@ CODES = {
     "slice.profiles_not_offered": ("checking", False, "choose_profiles",
                                    "Choose a filament and print settings from the lists and slice again."),
     "slice.bad_overrides": ("checking", False, "choose_profiles",
-                            "Choose the print settings from the lists and slice again."),
+                            "Change that setting to a value it takes, or back to the profile's, and slice again."),
     "slice.profile_unreadable": ("checking", False, None,
                                  "Ask a mentor to check the print server's profiles; `make upgrade-orca` with the "
                                  "pinned version writes them again."),
@@ -120,7 +121,7 @@ CODES = {
 }
 
 # The slice service's own exceptions: each carries message, details, error_code and where.
-_OWN = (PlateConfigurationRefused, MeshError, ProfileError, OverrideError, SliceError, SliceCancelled)
+_OWN = (PlateConfigurationRefused, MeshError, ProfileError, OverrideError, TableUnreadable, SliceError, SliceCancelled)
 
 
 def report_for_code(code, message, detail="", where=None, remedy=None):

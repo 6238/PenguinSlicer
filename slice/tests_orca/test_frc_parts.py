@@ -21,6 +21,7 @@ import pytest
 
 import frc_parts
 from helpers import Parts
+from measure_plate import SUPPORTS_OFF, SUPPORTS_ON
 from penguin_slice import plate as plate_module
 from penguin_slice.errors import error_report
 from penguin_slice.mesh import orientation_footprints, read_binary_stl
@@ -152,7 +153,7 @@ def test_the_real_parts_slice_through_the_http_interface(tmp_path, meshes, plate
     instances = frc_parts.PLATES[plate]
     configuration = frc_parts.plate_configuration(instances)
     if supports == "on":
-        configuration["overrides"] = {"supports": "on"}
+        configuration["overrides"] = dict(SUPPORTS_ON)
     _stages, report, data, summary = through_the_http_interface(tmp_path / "work", configuration,
                                                                 frc_parts.files_for(configuration))
     assert report["state"] == "done", report                   # no error report
@@ -204,7 +205,7 @@ def tight_plate(gap):
 def slice_or_report(tmp_path, instances, supports):
     """The real parts' plate through the slice service: (summary, None) or (None, error report)."""
     configuration = frc_parts.plate_configuration(instances)
-    configuration["overrides"] = {"supports": supports}
+    configuration["overrides"] = dict(SUPPORTS_ON if supports == "on" else SUPPORTS_OFF)
     parts = Parts(tmp_path)
     for data in frc_parts.files_for(configuration):
         parts.add(data)

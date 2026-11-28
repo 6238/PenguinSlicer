@@ -378,20 +378,13 @@ after an upgrade is open
 
 ### Accept settings
 
-*Built today: four settings, each with a short list of values. To be built in phase 2:
-every setting that is a parameter with a value, the table of settings they are checked
-against, and the supplying of that table to the front server.*
+*Built in phase 2: every setting that is a parameter with a value, the table of settings
+they are checked against, and the supplying of that table to the front server.*
 
-Today a plate configuration may replace four of the process profile's settings: infill
-density (10, 15, 20, 30, 40, 60 or 100 percent), the number of walls (2, 3, 4 or 6),
-supports (off or on; on means Orca's automatic tree supports) and the brim (automatic,
-off, or outer edge only). Anything else is refused, with a sentence that does not name
-the setting: "These print settings could not be read; choose them from the lists."
-
-From phase 2 the slice service accepts **every setting Orca allows that is a parameter
-with a value**: a choice from a list, a number, a piece of text. All of them are available
-in the wizard's advanced mode. It refuses every setting that is **programmatic**, of which
-there are three kinds:
+The slice service accepts **every setting Orca allows that is a parameter with a value**:
+a choice from a list, a number, a piece of text. At the pinned Orca 2.4.2 that is 338 of
+its 355 process settings. All of them are available in the wizard's advanced mode. It
+refuses every setting that is **programmatic**, of which there are three kinds:
 
 - a setting that runs a program, such as a script Orca runs on the finished file;
 - a setting that names a file on the server;
@@ -399,7 +392,16 @@ there are three kinds:
 
 The reason for the line: a parameter can only choose among things Orca already does,
 while a programmatic setting would let a user run something on the server or direct a
-shared printer.
+shared printer. Three of Orca's process settings are programmatic: the scripts Orca runs
+on the finished file, the name Orca gives the sliced file (which the slice service sets
+itself), and the printer commands written in at each change of what is being printed. The
+other custom printer commands belong to the printer profile and are refused with it.
+
+Fourteen more process settings are **not offered**: thirteen that Orca itself shows on no
+page of its process settings (among them the profile's own records of which printers it
+fits and what it was made from), so there is nowhere in advanced mode to show them, and one
+that holds a whole table of figures, which no kind of entry in the table of settings can
+describe. They are refused like a programmatic setting.
 
 **A setting replaces a value of the process profile only.** The process profile holds
 everything about how a part is printed: layers, walls, infill, supports, speeds. The
@@ -409,12 +411,27 @@ printer where a wrong process value spoils one print. A user who needs another
 temperature or flow for a filament needs another filament profile in the group's
 configuration.
 
-**Each value is checked before Orca runs.** A choice is checked against its setting's
-list, a number against its range, and a text against a greatest length, which is set from
-the longest text value in the profile catalog. A value that does not fit is refused with
-the setting named, so a bad value fails at once and not minutes later inside Orca. A
-setting that is programmatic, or that the table of settings does not hold, is refused in
-the same way.
+**Each value is checked before Orca runs.** Each value is written as Orca writes it in a
+profile. A choice is checked against its setting's list, a number against its form (a
+whole number, a decimal, a percentage with its sign) and its range, and a text against a
+greatest length, which is set from the longest text value in the profile catalog. A value
+that does not fit is refused with the setting named by Orca's own label, page and group
+("Wall loops (Strength, Walls) must be at most 1000, not 1001."), so a bad value fails at
+once and not minutes later inside Orca. A setting that is programmatic, not offered, of
+the filament or printer profile, or simply not one of Orca's, is refused in the same way,
+named and with the reason. Every value each catalog profile itself gives passes the checks.
+
+The longest text value in the catalog is short: no catalog profile gives any of the four
+text settings a value, so each of them takes at most one character today. That follows
+the rule as written; a longer limit is a change to the rule.
+
+**Where a profile holds a value for each nozzle, Orca uses the first.** Bambu Lab's
+profiles give some speeds two values, one for the standard nozzle and one for the High
+Flow nozzle, but the pinned Orca keeps those speeds once and reads the first value, the
+standard nozzle's, even on the High Flow nozzle of the default printer. This was checked
+by slicing: five of the sixteen process profiles print some walls and infill at the
+standard nozzle's lower speeds. The table of settings gives the value Orca really slices
+with, so what a user sees as the profile's value is what is printed.
 
 **The checks that ask whether supports are on stay as they are.** The placement check's
 spacing and the two estimates go on asking that one question. Other accepted settings can
@@ -425,34 +442,40 @@ started and not at once.
 
 #### How the list of accepted settings is made
 
-*To be built in phase 2.*
+*Built in phase 2.*
 
 The slice service knows which settings it accepts from the **table of settings**: for
 every setting of the pinned Orca, its name, its kind (a choice, a number, a text), its
 permitted values, and Orca's own label, group and explanation for it. The table is taken
 from Orca's source for the pinned version each time an Orca version is integrated, and is
-never written by hand. Taking a new Orca version therefore needs that version's source as
-well as its release.
+never written by hand: a program reads three of Orca's source files as data (the list of
+process settings, their definitions, and the pages Orca shows them on), and nothing of
+Orca's code is copied. The source is downloaded from Orca's own release and checked
+against a checksum kept beside the version, so taking a new Orca version needs that
+version's source as well as its release. The table is about 380 kilobytes, about 35
+compressed.
 
 Orca's source does not say which settings are programmatic, so each setting is
-classified, as a parameter or as programmatic, by the agent doing the work: every setting
-when the table is first made, and each new setting as part of taking a new Orca version.
-The programmatic settings are listed in the repository by name, each with its reason, so
-the line can be read and disputed setting by setting. Taking a new version is not
+classified, as a parameter, as programmatic or as not offered, by the agent doing the
+work: every setting when the table is first made, and each new setting as part of taking
+a new Orca version. The programmatic and the not offered settings are listed in the
+repository by name, each with its reason, so the line can be read and disputed setting by
+setting. Taking a new version is not
 finished until every new setting is classified, and the upstream check, run against the
 new version, fails when it finds a setting classified nowhere. A setting that a new Orca adds is
 therefore never accepted, and never offered, without someone having looked at it.
 
 #### Where the wizard gets the list of settings and the profile catalog's names
 
-*To be built in phase 2. Today the HTTP interface answers about slice jobs and nothing
-else.*
+*Built in phase 2.*
 
 The slice service holds the table of settings and supplies it to the front server,
 together with the profile catalog's names and each process profile's own value of each
 setting. The front server passes them to the wizard and keeps no copy from one start to
 the next ([the front server's guide](../front/README.md#the-list-of-settings-and-the-profile-catalogs-names)).
 The table supplied holds the accepted settings only; a programmatic setting is not in it.
+It is sent compressed when the caller can take it so, and anyone who can reach the slice
+service may ask for it, since it is the same for every user.
 
 The wizard's advanced mode is drawn from the table: it shows Orca's own labels, groups
 and explanations, so a user who knows Orca finds each setting where Orca has it
@@ -1206,9 +1229,9 @@ read is in [the architecture](../docs/architecture.md#reading-what-happened) and
 
 ## Taking a new Orca version
 
-*Built today: the upgrade command and the checks that guard it. To be built in phase 2:
-the table of settings taken from Orca's source, and the classifying of each setting. To
-be built in phase 3: the new version rolled out as a new image of the slice container.*
+*Built today: the upgrade command and the checks that guard it, the table of settings taken
+from Orca's source, and the classifying of each setting. To be built in phase 3: the new
+version rolled out as a new image of the slice container.*
 
 The slice service rests on Orca's program, its profiles, its command line, its codes, the
 wording of some of its messages and the format of its debug log. Any of these can change
@@ -1222,20 +1245,24 @@ assumption loud.
   own profiles, and runs the upstream check, whose tests pin every behaviour of Orca the
   slice service relies on. Each of those tests states
   what it protects, so a failure names the assumption that broke.
-- **From phase 2 it needs the new version's source as well as its release,** because the
-  table of settings is taken from the source: each setting's name, kind and permitted
-  values, and Orca's own label, group and explanation for it.
-- **From phase 2 every new setting is classified before the work is finished,** as a
-  parameter or as programmatic, by the agent taking the version. The upstream check fails
-  when it finds a setting classified nowhere
+- **It needs the new version's source as well as its release,** because the table of
+  settings is taken from the source: each setting's name, kind and permitted values, and
+  Orca's own label, group and explanation for it. Orca publishes no checksum of its source,
+  so the command keeps the checksum of the source it downloads, and every later download is
+  checked against it. The command regenerates the table after the profile catalog.
+- **Every new setting is classified before the work is finished,** as a parameter, as
+  programmatic or as not offered, by the agent taking the version. Making the table stops,
+  naming each setting classified nowhere, and the upstream check fails when it finds one
+  or when the table in the repository is not the one the source gives
   ([How the list of accepted settings is made](#how-the-list-of-accepted-settings-is-made)).
 - **Going back is the same command** with the old version.
 - **Everything that knows Orca's quirks is in one part of the code,** with its stand-in
   for the fast tests, so a change is made in one place and its stand-in beside it.
 
-After the command passes, two things deserve a person's eye: what changed in the default
-set's values, since a changed default changes every slice, and which profiles appeared in
-or left the catalog, since a group's configuration may name one
+After the command passes, three things deserve a person's eye: what changed in the default
+set's values, since a changed default changes every slice; which settings appeared in or
+left the table of settings; and which profiles appeared in or left the catalog, since a
+group's configuration may name one
 ([Who notices a configuration that names a profile the catalog has lost](#who-notices-a-configuration-that-names-a-profile-the-catalog-has-lost)).
 
 Hosted, a new Orca version is a new image of the slice container, built with the version
@@ -1296,9 +1323,11 @@ alone and on mixed plates, and holds the summary, the warnings and every instanc
 placement to the measured values. It pins Orca's stages, its codes, the wording the slice
 service reads, the debug log's format, the two spacings, the stop at the memory ceiling
 and the catching of the spike. It also keeps the stand-in honest, by comparing the
-stand-in's progress lines and log line with the real ones. From phase 2 it fails when the
-pinned Orca has a setting that is classified nowhere, and it pins the wording of the one
-sentence of Orca's that a user is shown.
+stand-in's progress lines and log line with the real ones. It fails when the pinned Orca
+has a setting that is classified nowhere or when the table of settings is not the one its
+source gives, and it slices with the table's values and with a setting of every kind
+changed, and finds each in the settings Orca says it used. From phase 2 it also pins the
+wording of the one sentence of Orca's that a user is shown.
 
 **What only the host can prove.** How Orca behaves on Railway's machines; the memory and
 time of plates between 2,600 MB and the hosted ceiling; whether the container is really
@@ -1337,7 +1366,10 @@ hostile inputs are tried.
   store lacks listed in one answer;
 - the checks on every part and on every plate;
 - the profile catalog and the default set, for Orca 2.4.2;
-- four settings with listed values;
+- every setting that is a parameter with a value, for the process profile only, each value
+  checked before Orca runs;
+- the table of settings, taken from Orca's source, with every setting classified, and
+  supplied to the front server with the profile catalog's names;
 - slicing with Orca, with Orca's own stages and percentages as progress;
 - one slice at a time and two waiting, with "busy" beyond that;
 - stopping a slice job at any stage, leaving no Orca and no files, with a request that
@@ -1350,7 +1382,7 @@ hostile inputs are tried.
 - the shared set of plates for the two placement checks, the first piece of phase 2, run
   through the slice service's own interface.
 
-**Built today and replaced in phase 2:** the four settings with listed values; the ending early of a slice job nobody has followed for 120 seconds; the keeping of a
+**Built today and replaced in phase 2:** the ending early of a slice job nobody has followed for 120 seconds; the keeping of a
 finished slice job, with its hold on its parts and its sliced file, for one hour; the stop that
 ends every slice job early; "a second plate" in the sentences whose remedy is another
 plate.
@@ -1361,10 +1393,6 @@ front server never sends it.
 **Phase 2, on one machine, adds besides:**
 
 - "a new plate" in every sentence whose remedy is another plate;
-- every setting that is a parameter with a value, for the process profile only, each
-  value checked before Orca runs;
-- the table of settings, taken from Orca's source, with every setting classified, and
-  supplied to the front server with the profile catalog's names;
 - a plate's later slice replacing its earlier one, by the id the page gives each plate;
 - a repeated submission answered with the first attempt's slice job;
 - the reason in the last progress report of a slice job ended early;
