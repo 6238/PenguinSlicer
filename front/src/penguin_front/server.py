@@ -46,6 +46,12 @@ def serve(args, *, environ=None, stdout, stderr, clock=None, on_listening=None):
         return 2
     server = waitress.create_server(app, host=args.host, port=args.port,
                                     threads=settings.threads, ident="")
+    # Each following of a slice job runs on a thread of its own, counted among the
+    # `threads`: while n slice jobs are followed, the web server serves with n fewer (at
+    # least one), so the front server holds one set of threads to size and to watch.
+    follower = app.extensions[EXTENSION]["follower"]
+    follower.on_count = lambda followed: server.task_dispatcher.set_thread_count(
+        max(1, settings.threads - followed))
     log.write("start", version=app.extensions[EXTENSION]["version"], host=args.host,
               port=int(server.effective_port), threads=settings.threads,
               dev_identity=settings.dev_identity)
@@ -59,10 +65,12 @@ def serve(args, *, environ=None, stdout, stderr, clock=None, on_listening=None):
         with _stop_on_signals():
             server.run()
     finally:
-        server.task_dispatcher.shutdown()
         # The slice jobs being followed are left to run; a front server started later
-        # follows them again.
-        app.extensions[EXTENSION]["follower"].stop()
+        # follows them again. The web server's threads are no longer adjusted, so that a
+        # following ending now starts none after the shutdown.
+        follower.on_count = None
+        follower.stop()
+        server.task_dispatcher.shutdown()
         log.write("stop")
         log.stop()
     return 0

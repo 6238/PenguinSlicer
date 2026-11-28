@@ -2,7 +2,7 @@
 
 This is the builder's document for the front server. The guide beside it,
 [README.md](README.md), is what the owner reads and decides from. Where the two differ, the
-guide is right and this file is to be corrected. Of the front server, items 1 to 9 of
+guide is right and this file is to be corrected. Of the front server, items 1 to 12 of
 [Phase 2](#phase-2-one-machine-no-onshape-no-printer) are built: the project and its fakes,
 [the bucket interface](#the-bucket-interface) in its folder form,
 [the rules for every request](#rules-for-every-request) with
@@ -11,7 +11,10 @@ guide is right and this file is to be corrected. Of the front server, items 1 to
 [the cookie](#the-cookie) with one cookie key,
 [serving the wizard's pages](#serving-the-wizards-pages),
 [the current group's check and `GET /api/me`](#groups-and-the-current-group),
-[the configuration](#the-configuration) and [the table of settings](#the-table-of-settings).
+[the configuration](#the-configuration), [the table of settings](#the-table-of-settings),
+[the user key](#the-user-key) and [uploading a part](#parts),
+[submitting a plate configuration](#submitting-a-plate-configuration), and
+[following every slice job and storing its sliced file](#following-slice-jobs-and-storing-sliced-files).
 What this file says of those is true of the code in `front/`;
 every other sentence is design: it restates each requirement of the guide in the builder's
 terms, with the code-level names (requests, settings, constants, error codes, records) and
@@ -195,11 +198,14 @@ below: [The cookie](#the-cookie), [Groups and the current group](#groups-and-the
   `errors.FRONT_REPORTS` with its status, `retryable` and its two sentences, added in the
   commit that first produces it. So far: `front.bad_request`, `front.no_such_request`,
   `front.unexpected`, `front.not_signed_in`, `front.group_not_allowed`,
-  `front.configuration_changed`, `front.configuration_invalid`, `front.slice_unreachable`
-  and `front.state_bucket_unreachable`. A report whose sentence must say what in particular
-  went wrong (`front.configuration_invalid`) passes its own `message`. Another component's
-  report is passed by raising `PassedReport(status, body, report)`, answered with its bytes
-  unchanged.
+  `front.configuration_changed`, `front.configuration_invalid`, `front.slice_unreachable`,
+  `front.state_bucket_unreachable`, `front.too_many_requests` and
+  `front.sliced_file_too_large` (whose status is `None`: it is only ever the `error` of a
+  `failed` report). A report whose sentence must say what in particular
+  went wrong (`front.configuration_invalid`) passes its own `message`; a refusal that needs
+  a header beside its report passes `headers` (`Retry-After` on `front.too_many_requests`).
+  Another component's report is passed by raising `PassedReport(status, body, report)`,
+  answered with its bytes unchanged.
 - **Not offered** includes an `OPTIONS` request to any path, a request target whose path
   does not start with a slash (`GET x`, or `GET http://host` with no path at all), a path
   with a doubled slash anywhere in it, its start included, a path holding an encoded slash
@@ -740,10 +746,22 @@ slice service answers `slice.unknown_job` for another user key's slice job, and 
 server turns that into `front.slice_unknown`; sliced files are kept under the user key in
 the state bucket, so another user's is never found.
 
+**As built** (`penguin_front.slice_client`): `user_key_header(user_key)` is the only place
+the header `X-Penguin-User-Key` is made, from `signed_in().user_id`; the client's requests
+are built from the front server's own headers alone, so no header, query parameter or body
+field of the browser's names a user key to the slice service. The body of a plate
+configuration passes unchanged, but the slice service reads its user key from the header
+only. The following of a slice job (item 12) keeps the user key it was given at the
+submission and sends it on every request about that slice job. Answering another user's
+slice job `front.slice_unknown` is built with the requests that ask about one (items 13 to
+15); so far the following's `subscribe` and `latest` give nothing for a slice job followed
+for another user key.
+
 ### Tests
 
 - A request carrying a user key or another user's id in its body, query or headers reaches
-  the stand-in for the slice service with the cookie's user key.
+  the stand-in for the slice service with the cookie's user key (built for uploading a part
+  and submitting a plate configuration: `tests/test_parts.py`, `tests/test_slices.py`).
 - Asking about, following, and fetching the details or the file of another user's slice
   job each answer `404` `front.slice_unknown`, the same body as for one that never existed,
   and write a refusal line.
@@ -779,13 +797,22 @@ the page no request to cancel one. A slice service that does not answer is, to t
 `503` `front.slice_unreachable`, a quiet retry. A slice service's answer of `slice.no_user_key`
 is a fault of the front server's and is answered `500` `front.unexpected`.
 
-**As built** (`penguin_front.slice_client.SliceClient`, used so far by the table of
-settings): one httpx client for `PENGUIN_SLICE_URL`, with `trust_env` off so that no proxy
-or `.netrc` the environment names is used for it; `get_raw(path, headers)` gives the
-status, the headers and the answer's bytes as sent, never decompressed; no connection, a
-connection cut, or nothing for `SLICE_TIMEOUT_S` (30 s, *proposed*) is `SliceUnreachable`.
-A test passes an httpx `transport` in place of the network, which raises what a silent
-slice service makes the network raise, so that no test waits out the 30 s.
+**As built** (`penguin_front.slice_client.SliceClient`): one httpx client for
+`PENGUIN_SLICE_URL`, shared by every request and every following, with `trust_env` off so
+that no proxy or `.netrc` the environment names is used for it. `send(method, path,
+headers=, params=, content=)` gives the status, the headers and the answer's bytes as sent,
+never decompressed (it asks for `Accept-Encoding: identity` unless told otherwise); its
+`content` may be an iterable of byte pieces, passed on as they come with the
+`Content-Length` the caller gives, and a failure of that iterable (the browser's upload cut
+short) is raised as it is. `get_raw(path, headers)` is `send("GET", …)`. `stream(path,
+headers)` holds a `GET` open for a progress stream or a sliced file. No connection, a
+connection cut, or nothing for `SLICE_TIMEOUT_S` (30 s, *proposed*) is `SliceUnreachable`
+(within `stream`, a failure after the answer has begun is httpx's own `TransportError`).
+`refusal(raw, what)` is what a failure answer of the slice service becomes for the page: its
+own `slice.*` report passed byte for byte with its status, or, for `slice.no_user_key` and
+for an answer that is not the slice service's report, a failure answered `500`
+`front.unexpected`. A test passes an httpx `transport` in place of the network, which raises
+what a silent slice service makes the network raise, so that no test waits out the 30 s.
 
 ### Tests
 
@@ -820,9 +847,12 @@ units, for two hours after its last use. The front server keeps no copy.
   [examples/error-report-part-over-size.json](../contracts/examples/error-report-part-over-size.json)
   holds it; the slice service's suite asserts its own answer against the same file. No
   `Content-Length` is `400` `front.bad_request`.
-- **Passed in pieces.** *Proposed:* the body passes to the slice service in pieces and is
-  never held whole in memory, so the front server's memory does not grow with the uploads
-  under way.
+- **Passed in pieces.** The body passes to the slice service in pieces of at most
+  `PIECE_BYTES` (64 KiB) and is never held whole by the front server's code, so its memory
+  does not grow with the uploads under way. The web server, waitress, receives the whole
+  body before the application runs, keeping a body over 512 KB in a temporary file rather
+  than in memory; so "refused before the body is read" means before the front server reads
+  it, and the slice service is never sent a byte of it.
 - **A repeat.** The same bytes under the same units answer the same record and count as a
   use; nothing more is needed of the front server.
 - **How fast.** Uploads are limited for each signed-in user; past the limit, `429`
@@ -830,6 +860,20 @@ units, for two hours after its last use. The front server keeps no copy.
   (*proposed*: 120 uploads a minute for each user, `PART_UPLOADS_PER_MINUTE`, enough for a
   part set of 25 parts uploaded again after a restart of the slice service with room to
   spare).
+
+**As built** (`penguin_front.parts`, `penguin_front.ratelimit.RateLimit`): the checks run in
+this order: signed in; the current group; `Content-Length` (none is `400`
+`front.bad_request`, over the limit is the slice service's `413` report made by the front
+server, `parts.over_size(length)`, whose `detail` gives the length sent and equals the
+example's at 7,500,085); the limit on how fast; then the upload. The limit's window slides:
+a user may make `PART_UPLOADS_PER_MINUTE` uploads in any sixty seconds of the front
+server's clock; a refused request does not count; `Retry-After` is the whole seconds until
+the oldest counted upload leaves the window, at least 1; the counts are in memory, so a
+restart forgets them. `units` is passed exactly as the page sent it, or left out when the
+page sent none, so the slice service gives `slice.bad_units`. A body that ends short of its
+`Content-Length` is `400` `front.bad_request`. Each part accepted writes a line
+`part_uploaded` (`user_key`, `group`, `sha256`, `units`, `bytes`, `triangles`, the number
+of `warnings`); each refusal writes the `error` line every report writes.
 
 **Open:** [Railway's limit on one request](README.md#railways-limit-on-one-request): build
 the 7.5 MB limit; a lower limit has no fallback.
@@ -844,9 +888,13 @@ the 7.5 MB limit; a lower limit has no fallback.
   [examples/error-report-part-over-size.json](../contracts/examples/error-report-part-over-size.json);
   7,500,084 passes. No `Content-Length` is `400` `front.bad_request`.
 - A part streamed through a stand-in that reads slowly does not raise the front server's
-  memory by the part's size (*proposed*: measured by the bytes held in the pipe).
+  memory by the part's size, measured by the bytes held in the pipe: a slice service of the
+  test's that reads the upload piece by piece notes, after each piece, how far the front
+  server has read ahead of it, which is never more than `PIECE_BYTES` (built).
 - Past the limit on a fake clock, `429` `front.too_many_requests` with `Retry-After`; once
   the clock moves on, accepted.
+
+Built: `tests/test_parts.py`.
 
 ## Submitting a plate configuration
 
@@ -868,10 +916,12 @@ turn or runs in the slice container.
   [examples/error-report-plate-configuration-over-size.json](../contracts/examples/error-report-plate-configuration-over-size.json)
   holds it, which both components' suites assert.
 - **The current group** is noted beside the slice job, for the log and for the sliced
-  file's record. *Proposed:* on acceptance the front server writes the slice job's record
+  file's record. On acceptance the front server writes the slice job's record
   in the state bucket ([The records](#the-records-of-a-sliced-file)) with the group and the
   state `submitted`, so that a front server started later still knows the group; a write
-  that fails is not an error for the page, and the group is then kept in memory only.
+  that fails is not an error for the page (it writes the line `slice_record_unwritten`), and
+  the group is then kept in the following's memory only. The record is written only if the
+  slice job has none, so a repeat never replaces a stored file's record.
 - **The answer** is the contract's: `202` `{"slice": {"id", "plate_id", "submission_id",
   "progress"}}` made from the slice service's `202` (`job`, `plate_id`, `submission_id`,
   `progress`, `part_warnings`; [its example](../contracts/examples/slice-http/slice-accepted.json)). The
@@ -905,6 +955,22 @@ turn or runs in the slice container.
 Once accepted, the front server [follows](#following-slice-jobs-and-storing-sliced-files)
 the slice job.
 
+**As built** (`penguin_front.slices`): the checks run in this order: signed in; the current
+group; a `Content-Length` over the limit (the slice service's `413` report made by the
+front server, `slices.over_size`, equal to the example at 1,048,577); the limit on how fast,
+with the same sliding window as uploads; then the body is read, and a body sent without
+`Content-Length` is read no further than one byte past the limit and refused the same way
+when longer. The body passes to the slice service unchanged, even when it is not JSON:
+the slice service owns the plate configuration's form and answers
+`slice.bad_plate_configuration`, so the front server never answers `front.bad_request` here.
+A `202` whose body is not a slice job (no `job` of the id's form, no `progress` object) is
+`500` `front.unexpected`. The answer's `progress` is the report as pages see it
+(`Follower.as_pages_see`): a `done` report of a repeat is held back until its sliced file is
+stored, as on the stream. The slice service's `part_warnings` are not in the answer, since
+the contract's slice job has none; they reach the page in the summary. Each acceptance
+writes a line `slice_submitted` (`user_key`, `group`, `slice`, `plate_id`, `submission_id`,
+`state`, and `repeat`, true when the slice job was already followed).
+
 ### Tests
 
 - A plate configuration reaches the stand-in with the cookie's user key, unchanged; the
@@ -919,9 +985,12 @@ the slice job.
   `cancelled` report with `cancel_reason` `replaced`.
 - A repeat with the same `submission_id` answers the first attempt's slice job, and the
   front server follows one slice job, not two.
-- After acceptance the slice job's record holds the current group (*proposed*).
+- After acceptance the slice job's record holds the current group; a record already there
+  is not replaced; a record that cannot be written is no error for the page.
 - No request offered by the front server reaches the stand-in's cancel.
 - Past the limit on a fake clock, `429` `front.too_many_requests` with `Retry-After`.
+
+Built: `tests/test_slices.py`.
 
 ## Following slice jobs and storing sliced files
 
@@ -938,7 +1007,8 @@ holds, so three tabs watching one slice job cost the slice service one connectio
   drops a report whose `sequence` it has already passed (the slice service as built
   repeats its latest report every fifteen seconds on a quiet stream until phase 3).
 - **A stream that closes** before a final report is reopened, with waits that grow
-  (*proposed*: one second doubling to thirty, on the fake clock in tests). A slice service
+  (*proposed*: one second doubling to thirty, `FIRST_WAIT_S` and `LONGEST_WAIT_S`, on the
+  fake clock in tests; a stream that opened starts the waits afresh). A slice service
   that answers the slice job unknown (the slice container restarted, or the record expired)
   ends the following; the pages' streams are closed, and each page then learns
   `front.slice_unknown` and decides from the time it kept
@@ -972,8 +1042,8 @@ sequenceDiagram
 
 - **Nothing half-written.** The file is written first and the record last, so a record
   always names a whole file; a fetch that fails partway writes no record and is tried again.
-  *Proposed:* the file passes from the slice service to the state bucket in pieces and is
-  never held whole in memory.
+  The file passes from the slice service to the state bucket in pieces of at most
+  `CHUNK_BYTES` (1 MiB) and is never held whole in memory.
 - **The state bucket not answering.** The front server keeps trying, with waits that grow;
   the slice container keeps its copy until told it is stored, and every page goes on seeing
   the slice job as running.
@@ -992,19 +1062,73 @@ From then on the state bucket's copy is the one everything uses. The browser nev
 sliced file, and no request takes one from a browser, so a printer only ever runs a file
 the slice service made.
 
+**As built** (`penguin_front.following.Follower`, one for the application, in its context
+as `follower`):
+
+- `follow(user_key, job, group)` starts a following on a daemon thread of its own, unless
+  the slice job is followed already; `followed()` names the slice jobs followed;
+  `subscribe(user_key, job, deliver)` gives a page's `deliver` every report pages are to
+  see, then `None` when the following ends, and answers `None` for a slice job not followed
+  for that user key; `latest(user_key, job)` is the latest report pages are to see;
+  `as_pages_see(user_key, job, report)` turns a report the slice service gave elsewhere
+  (the `202` of a submission) into what pages see, holding back a `done` until stored.
+  `stop()` follows nothing more: each following ends at its next wait or when its stream
+  next carries something; `join()` waits for the threads, for the tests.
+- **Each following has a thread of its own, counted among the 100.** The follower tells
+  `on_count` the number followed whenever it changes, and the running server then serves
+  with that many fewer request threads, never fewer than one ([Threads](#threads)). So a
+  following never waits for a free request thread, and the process holds one set of
+  threads to size and to watch.
+- **What pages see while a `done` waits:** the slice service's report before it. A page
+  that has none (it asks after the slice ended) is given `held_back(done)`: the `done`
+  report as `running`, one `sequence` earlier.
+- **Each step of storing is tried again from where it failed**, after the same growing
+  waits: reading the slice job's record (a record already `stored` or `failed`, written by
+  this front server before a restart or by an earlier one, is passed to pages as it is and
+  nothing is fetched again), fetching the summary, fetching and writing the file, writing
+  the record, telling the slice service. A summary or file the slice service answers
+  `slice.unknown_job` ends the following as unknown; `slice.file_gone` (the copy gone
+  without being stored) ends it with the line `sliced_file_lost`. A delete answered
+  `slice.unknown_job` counts as done, since the slice service then holds no copy.
+- **When the slice ended** (`slice_ended_at`) is the moment, on the front server's clock,
+  that the `done` report reached the front server, to the second.
+- **Over the limit:** `MAX_SLICED_FILE_BYTES` is in `penguin_front.sliced`; the delete is
+  sent before the `failed` record is written, and sent again with it if that write is tried
+  again. The `failed` report is the `done` report with `state` `failed` and `error` the
+  front server's `front.sliced_file_too_large` report.
+- **A fault of the front server's** while following or storing writes `following_failed`
+  with its trace, and the stream is opened again after a wait; a `done` whose storing failed
+  so is handled again when the stream gives it again.
+- **The lines:** `slice_followed`; `slice_progress` on each change of `state` or `stage`
+  (`state`, `stage`, `sequence`); `slice_stream_reopening` (`why`, `wait_s`);
+  `slice_ended` for a `failed` or `cancelled` end (`state`, `cancel_reason`, the error's
+  `code`); `slice_unknown`; `sliced_file_retry` (`step`, `why`, `wait_s`);
+  `sliced_file_stored` (`size_bytes`, `stored_after_s`, the seconds from the slice's end to
+  its storing); `sliced_file_too_large` (`size_bytes`, `limit_bytes`); `sliced_file_lost`;
+  `following_failed` (`trace`). Each carries `user_key`, `group` and `slice`.
+
 ### The records of a sliced file
 
-*Proposed* names and fields, within [the bucket interface](#the-bucket-interface):
+The names and fields, within [the bucket interface](#the-bucket-interface)
+(`penguin_front.sliced`, built):
 
 - `sliced/<user_key>/<slice>.gcode.3mf`: the sliced file, byte for byte as the slice
   service gave it.
-- `sliced/<user_key>/<slice>.json`: its record: `format` (1), `slice`, `group`, `state`
-  (`submitted`, `stored`, `failed` or `expired`), `file` (the sliced file's name),
-  `size_bytes`, `summary` (the slice service's, unchanged), `slice_ended_at`, the `done`
-  report as passed to pages (or the `failed` one), and from phase 5 `last_print_ended_at`.
+- `sliced/<user_key>/<slice>.json`: its record, of the kind `sliced_file`: `format` (1),
+  `slice`, `group`, `state` (`submitted`, `stored`, `failed` or, from the two-hour rule,
+  `expired`), and as the state gives them `submitted_at`, `file` (the sliced file's name, the
+  summary's `file`), `size_bytes`, `summary` (the slice service's, unchanged),
+  `slice_ended_at`, `stored_at`, `report` (the `done` report as passed to pages, without its
+  `sliced_file`, which `sliced.final_report` makes afresh each time it is given, since
+  `expires_in_s` counts from that moment; or the `failed` one), and from phase 5
+  `last_print_ended_at`.
 
 The record of a stored file is what lets the front server answer about a slice job after the
-slice service has forgotten it.
+slice service has forgotten it. A `submitted` record whose slice job never ended `done`
+(it failed, was replaced, or the slice service restarted) stays `submitted`; the sweep
+([Two hours](#two-hours-the-sweep-and-the-backstop)) is to delete such a record once its
+slice job can no longer be known (*proposed*: two hours after `submitted_at` plus the
+slice service's own two hours).
 
 ### Tests
 
@@ -1026,8 +1150,13 @@ clock:
 - A stand-in giving a sliced file of 50 MB and one byte (the test may lower the limit)
   leaves nothing stored, sends the delete, and reaches the page as `failed` with
   `front.sliced_file_too_large` and the `done` report's `sequence`; one at the limit is
-  stored. A `Content-Length` that understates the size is caught by the count.
+  stored. A `Content-Length` that understates the size is caught by the count (tested with
+  no `Content-Length`, since an HTTP client reads no further than the length a header
+  states).
 - Three pages on one slice job make one connection to the stand-in.
+
+Built: `tests/test_following.py`, where a page is a `deliver` the test gives `subscribe`,
+until the progress streams (item 13) give pages theirs.
 
 ## Asking about a slice job
 
@@ -1742,7 +1871,11 @@ it lasts:
   (the **held wait**);
 - a page's open progress stream, on a slice job or, from phase 5, on a print;
 - the front server's own following of an unfinished slice job, counted among the 100: the
-  slice service starts with one slice running and two waiting, so at most three;
+  slice service starts with one slice running and two waiting, so at most three. As built
+  each following runs on a thread of its own, and while n slice jobs are followed waitress
+  serves with n fewer threads, never fewer than one (`Follower.on_count`, set by
+  `server.serve`, calling waitress's `set_thread_count`), so the threads of the process
+  stay at `PENGUIN_FRONT_THREADS`;
 - an upload or a download in progress, and every short request for its moment.
 
 **The target,** the guide's proposal, is about fifty idle daemons and forty pages following
@@ -1764,6 +1897,9 @@ forty and four; build the four as a constant and the test below against fifty an
   one closes (event-ordered, no sleep).
 - Forty progress streams and three followings held open against the stand-ins, with short
   requests still answered; from phase 5, with fifty held syncs beside them.
+- While slice jobs are followed, the running server serves with that many fewer threads,
+  never fewer than one, and with all of them again once the followings end (built:
+  `tests/test_server.py`).
 
 ## Running the relay, from phase 5
 
@@ -2168,6 +2304,12 @@ order, any number of times. A test that fails once is fixed at its cause, never 
 - `onshape_standin.py`: `OnshapeStandIn`, Onshape's approval page and token exchange and the
   two calls of a sign-in, counting each call (`calls`); `refuse_approval`, `refuse_codes`,
   `unreachable`.
+- `conftest.py` gives every test a `standin` fixture on the test's clock, and
+  `front_helpers.shut(app, standin)` ends what an application started: its followings, then
+  the stand-in's streams, then it waits for the followings' threads. A test of the following
+  waits for its next wait on the fake clock by a clock that notes each wait
+  (`Recording.next_wait` in `tests/test_following.py`), never by counting sleepers, which
+  can still count a sleeper that has just been woken.
 
 Rules the suite is held to:
 
@@ -2232,7 +2374,7 @@ From [the guide](README.md#what-is-built-in-which-phase).
 
 The front server runs beside one slice service process on one machine, with the development
 identity and a folder for each bucket. Build in this order; each item rests on those before
-it, and each is done with its tests. Items 1 to 9 are built.
+it, and each is done with its tests. Items 1 to 12 are built.
 
 1. **The project and its fakes** (built). `front/` as a `uv` project with its make targets; the
    fake clock; the stand-in for the slice service on the requests of
@@ -2268,15 +2410,15 @@ it, and each is done with its tests. Items 1 to 9 are built.
 9. **The table of settings** passed from the slice service (built)
    ([The table of settings](#the-table-of-settings); contract:
    [`GET /api/settings-table`](../contracts/wizard-front-server.md#get-apisettings-table)).
-10. **The user key, and uploading a part,** with its limit on how fast
+10. **The user key, and uploading a part,** with its limit on how fast (built)
     ([The user key](#the-user-key), [Parts](#parts); contract:
     [`POST /api/parts`](../contracts/wizard-front-server.md#post-apiparts--upload-one-part)).
 11. **Submitting a plate configuration,** with each plate's id and each submission's value
-    passed through, the stopping answer passed unchanged, and the limit on how fast
+    passed through, the stopping answer passed unchanged, and the limit on how fast (built)
     ([Submitting a plate configuration](#submitting-a-plate-configuration); contract:
     [`POST /api/slices`](../contracts/wizard-front-server.md#post-apislices)).
 12. **Following every slice job and storing the sliced file and its summary,** with the
-    refusal of one over 50 MB ([Following](#following-slice-jobs-and-storing-sliced-files);
+    refusal of one over 50 MB (built) ([Following](#following-slice-jobs-and-storing-sliced-files);
     guide: [The front server follows every slice job itself](README.md#the-front-server-follows-every-slice-job-itself)).
 13. **Progress streams,** four at most for one user
     ([Progress streams](#progress-streams); contract:

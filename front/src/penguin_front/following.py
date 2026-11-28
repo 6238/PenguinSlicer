@@ -129,6 +129,10 @@ class Follower:
         self._jobs = {}
         self._threads = []
         self._stopping = threading.Event()
+        #: Told the number of slice jobs followed whenever it changes, so that the web
+        #: server can count the followings' threads among its own (`server.serve`).
+        self.on_count = None
+        self._count_lock = threading.Lock()
 
     # What the rest of the front server asks of it.
 
@@ -144,7 +148,16 @@ class Follower:
                                       name=f"follow-{job}", daemon=True)
             self._threads.append(thread)
         thread.start()
+        self._count_changed()
         return True
+
+    def _count_changed(self):
+        with self._count_lock:
+            tell = self.on_count
+            if tell is not None:
+                with self._lock:
+                    count = len(self._jobs)
+                tell(count)
 
     def followed(self):
         """The slice jobs followed now, by id."""
@@ -429,6 +442,7 @@ class Follower:
             followed.closed = True
             subscribers, followed.subscribers = followed.subscribers, []
             del self._jobs[followed.job]
+        self._count_changed()
         for deliver in subscribers:
             deliver(None)
 
