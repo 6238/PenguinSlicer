@@ -1,4 +1,4 @@
-.PHONY: install check-node sync install-browser test test-page test-tools test-browser build look \
+.PHONY: install check-node sync install-browser test test-page test-tools test-browser build look look-parts \
 	trials trials-preview trials-geometry trials-parts trials-serve
 
 UV ?= uv
@@ -55,6 +55,12 @@ build:
 # docs/orchestration/phase-2/look/wizard-2/, for a person to look at.
 look: build
 	$(PY) $(CURDIR)/tests_browser/look.py
+
+# The picture of each kept part as its row will show it, at 88 pixels, drawn by the page's own
+# worker in Chromium, into docs/orchestration/phase-2/look/wizard-3/, with the main thread's
+# longest hold for each part.
+look-parts: build
+	$(PY) $(CURDIR)/tests_browser/look_parts.py
 
 # The two opening trials of phase 2, each its own entry point: both run, even when the
 # first fails, and the target fails when either does.

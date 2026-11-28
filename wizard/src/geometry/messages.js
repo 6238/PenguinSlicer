@@ -8,6 +8,8 @@
 //                                       carries that turn
 //   arrange  {plateConfiguration, geometry, printer, supports}
 //   check    {plateConfiguration, geometry, printer, supports}
+//   picture  {key, px, colour}          the part's picture for its row, px by px RGBA pixels
+//                                       (a Uint8ClampedArray, transferred), drawn as modelled
 //   forget   {key}
 // `geometry` maps each part key of the plate configuration to the key it was read under;
 // `printer` is the printable area ({min, max, height}) and `supports` whether supports are on.
@@ -16,6 +18,7 @@ import { GeometryError, LAYOUT_FAILED, errorReport } from './errors.js';
 import { autoOrient } from './orient.js';
 import { analysePart } from './part.js';
 import { checkPlate, plateOf } from './placement.js';
+import { MAX_PICTURE_PX, MIN_PICTURE_PX, drawPicture } from './picture.js';
 import { readBinaryStl } from './stl.js';
 import { ORIENTATION_MATRICES, instanceTurn } from './turn.js';
 
@@ -115,6 +118,17 @@ export function createGeometry() {
     check(m) {
       checkInstances(m.plateConfiguration, m.geometry);
       return [{ problems: checkPlate(m.plateConfiguration, pointsFor(m.geometry), plateFor(m), footprints) }, []];
+    },
+    picture(m) {
+      const part = partOf(m.key);
+      if (!Number.isInteger(m.px) || m.px < MIN_PICTURE_PX || m.px > MAX_PICTURE_PX) {
+        throw new PageFault(`px must be a whole number from ${MIN_PICTURE_PX} to ${MAX_PICTURE_PX}, not ${JSON.stringify(m.px)}`);
+      }
+      if (!Number.isInteger(m.colour) || m.colour < 0 || m.colour > 0xffffff) {
+        throw new PageFault(`colour must be a whole number from 0 to 0xffffff, not ${JSON.stringify(m.colour)}`);
+      }
+      const picture = drawPicture(part.mesh, { px: m.px, colour: m.colour });
+      return [picture, [picture.pixels.buffer]];
     },
     forget(m) {
       parts.delete(m.key);
