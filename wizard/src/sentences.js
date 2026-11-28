@@ -54,6 +54,44 @@ export const CONFIG_NOW_USES = (filament, profile) => `The plate now uses ${fila
 // A part's row when the browser refused to store the part (What the browser keeps).
 export const PART_NOT_SAVED = 'This part could not be saved in this browser, so a refresh will lose it.';
 
+// ---- The Settings step and advanced mode (the guide, "The Settings step", "Advanced mode").
+// The caution under the Profile menu, the changes box, a quick change's tooltip, advanced mode's
+// header and Reset all's confirmation; Orca's own words for each setting come from the table.
+const changesWord = (count) => (count === 1 ? 'change' : `${count} changes`);
+export const PROFILE_CLEARS = (count) => `Changing the filament or the profile clears your ${changesWord(count)}.`;
+export const CHANGES_BOX_TITLE = (count, profile) => `${count} setting${count === 1 ? '' : 's'} changed from ${profile}`;
+export const OPEN_AT = (label) => `Open advanced mode at ${label}`;
+export const ADVANCED_MODE = 'Advanced mode';
+export const IN_ADVANCED_MODE = (label) => `${label} in advanced mode`;
+export const PROFILE_PURPOSE = (purpose) => `For ${purpose}`;
+export const ADVANCED_SUB = (profile, count) => `${profile}, ${count ? `${count} changed` : 'no changes'}`;
+export const CHANGED_COUNT = (count) => `· ${count} changed`;
+export const PROFILE_WAS = (value) => `Profile ${value} `;
+export const RESET = 'Reset';
+export const RESET_TO = (label, value) => `Reset ${label} to the profile’s ${value}`;
+export const RESET_ALL = 'Reset all';
+export const RESET_ALL_QUESTION = (count, profile) =>
+  `Put ${count === 1 ? 'the changed setting' : `all ${count} changed settings`} back to ${profile}’s values?`;
+export const KEEP_CHANGES = 'Keep my changes';
+export const EXPAND_ALL = 'Expand all';
+export const COLLAPSE_ALL = 'Collapse all';
+export const IN_SECTION = (what, section) => `${what} in ${section}`;
+export const ALSO_QUICK = (label) => `Also on the Settings step as ${label}.`;
+export const BACK_TO_SETTINGS = 'Back to Settings';
+
+// A value typed in advanced mode that does not fit its setting, refused where it is typed: the
+// page's own check of what the slice service would refuse (contracts/plate-configuration.md,
+// "Settings in phase 2"), so nothing is sent. `kept` is the value the setting keeps, as shown.
+export function settingRefused(label, why, kept, detail) {
+  return {
+    code: 'wizard.setting_refused',
+    message: `${label} ${why}.`,
+    remedy: kept === null || kept === undefined ? 'Type a value that fits.' : `Kept ${kept}.`,
+    retryable: false,
+    detail,
+  };
+}
+
 // ---- The Parts step (the guide, "The Parts step", "A part that cannot be used", "The limits on
 // a plate"). The upload area, its switch, a row, the line under the list and New plate.
 export const UPLOAD_PROMPT = 'Drop STL files here, or click to choose';
