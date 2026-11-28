@@ -68,14 +68,13 @@ def me():
 
 def identity_or_none():
     """The signed-in user's `Identity`, or None; notes a cookie due to be extended."""
-    if "penguin_identity" not in g:
-        ctx = context()
-        now = ctx["clock"].now()
-        identity = ctx["cookie_key"].open(request.cookies.get(COOKIE_NAME, ""), now)
-        g.penguin_identity = identity
-        if identity is not None and now - identity.used_at > COOKIE_EXTEND_AFTER_S:
-            g.penguin_extend = identity.used(now)
-    return g.penguin_identity
+    ctx = context()
+    now = ctx["clock"].now()
+    identity = ctx["cookie_key"].open(request.cookies.get(COOKIE_NAME, ""), now)
+    g.penguin_identity = identity
+    if identity is not None and now - identity.used_at > COOKIE_EXTEND_AFTER_S:
+        g.penguin_extend = identity.used(now)
+    return identity
 
 
 def signed_in():

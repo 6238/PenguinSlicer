@@ -22,7 +22,8 @@ REQUIRED = {"code": str, "message": str, "remedy": str, "retryable": bool, "deta
 #: The contract's requests the front server offers so far, as (method, path). Each item of
 #: README-details.md's phase 2 list that builds a request adds it here; at the end of
 #: phase 2 this is every phase 2 row of the contract's table.
-BUILT = {("GET", "/signin"), ("GET", "/api/me"), ("GET", "/"), ("GET", "/assets/<file>")}
+BUILT = {("GET", "/signin"), ("GET", "/api/me"), ("GET", "/"), ("GET", "/assets/<file>"),
+         ("GET", "/api/configuration"), ("PUT", "/api/configuration")}
 #: The requests whose answers are page files, marked to be kept, not `no-store`.
 PAGE_FILES = {("GET", "/"), ("GET", "/assets/<file>")}
 

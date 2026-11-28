@@ -27,12 +27,19 @@ class UnreadableRecord(Exception):
     """A record whose format this front server does not read."""
 
 
+def record_bytes(kind, record):
+    """The bytes `write_record` writes for `record`: its JSON, with the front server's format
+    for `kind` first. One record always gives the same bytes, so a write repeated with the
+    same record can be told by comparing them."""
+    stored = {"format": FORMATS[kind], **{k: v for k, v in record.items() if k != "format"}}
+    return json.dumps(stored).encode()
+
+
 def write_record(bucket, name, kind, record, **condition):
     """Write `record` (a dict) as JSON under `name` with the front server's format for
     `kind`; `condition` is `if_marker=` or `if_absent=`, passed to the bucket. Gives the
     record's new marker."""
-    stored = {"format": FORMATS[kind], **{k: v for k, v in record.items() if k != "format"}}
-    return bucket.put(name, json.dumps(stored).encode(), **condition)
+    return bucket.put(name, record_bytes(kind, record), **condition)
 
 
 def read_record(bucket, name, kind, log):
