@@ -64,7 +64,18 @@ rebuilt.
    (`test_a_record_that_cannot_be_read_is_left_alone_and_the_sweep_goes_on`,
    `test_a_record_of_other_wrong_types_fails_alone_and_the_sweep_goes_on`,
    `test_a_folder_where_a_record_or_a_sliced_file_is_expected_is_passed_over`); the nested
-   cases failed first.
+   cases failed first. The review of this pull request found that the six cases of
+   `test_a_record_of_other_wrong_types_fails_alone_and_the_sweep_goes_on` checked only
+   that the other file expired, so a sweep that passed such records over without a word
+   kept the suite green (1,084 tests). **Fixed in this batch:** each case now asserts
+   `failed` 1 at two sweeps running and one `sweep_item_failed` line at each, with the
+   record's user key, slice and group and a `why` beginning
+   `the record is malformed: `; the test of the unreadable record asserts `files_expired`
+   1 at the first sweep and 0 at the second. With the sweep passing over a record whose
+   `state` is not text or that has no `slice`, three cases fail (`state-a-list`,
+   `state-an-object`, `due-without-slice`); with an end time that cannot be read taken as
+   not due (a `stored` record) or not old (a `failed` one), the other three fail
+   (`end-a-list`, `end-past-year-9999`, `end-a-number`). The details file names all six.
 7. **Pull request 36 (slice-5-stop-log-restarts), the face-area condition:** fixed and
    tested as found. With `contact_area_mm2(...) < REST_AREA_MM2` replaced by `True`, both
    cases of
@@ -143,13 +154,26 @@ rebuilt.
    `slice.unreadable_output`, `slice.no_gcode`); `slice.unknown_printer`;
    `slice.profile_unreadable`; `slice.scratch_unwritable`; `slice.orca_missing`;
    `slice.orca_unstartable`; `slice.orca_crashed`; `slice.output_unwritable`; and
-   `slice.bad_request`. Phase 2 newly reaches two of them: `slice.profile_unreadable` is
-   the answer of `GET /settings-table` when the table cannot be read (batch slice-2,
-   decision 11), which the front server passes to the page as it is, and
+   `slice.bad_request`. Phase 2 newly reaches two of them: `slice.profile_unreadable`
+   through `GET /settings-table`, which a user can read (see "Targets missed"), and
    `slice.bad_request` answers an `after` of `GET /log` that is not a whole number (batch
    slice-5), which only the front server sees. The words "student" and "team" appear only
    in comments of `limits.py`, `plate.py` and `slicer.py`, which no user reads. To
    overrule: reword all of them in one change, as batch slice-2's decisions 17 and 30 say.
+7. **A record whose end time cannot be read fails, whatever its state.** The review asked
+   which outcome is meant for a `slice_ended_at` that is a list, a number or past the year
+   9999. The details file said only "not an RFC 3339 time" of `submitted_at` and
+   `expired_at`. Chosen: counted `failed` with `sweep_item_failed`, as the code already
+   does, since such a record can be neither expired nor deleted on any time the sweep can
+   trust, and a line at every sweep is how somebody comes to look. The details file now
+   names these cases. To overrule: catch the fault in `Sweeper._record` and choose another
+   outcome, with the three cases of the test.
+8. **Two minor findings of the review are declined.** The stand-in's 18-digit cap on
+   `after` survives being raised to 4,000: no line number reaches 18 digits, so no answer
+   changes, and the cap is kept only to match the slice service's route. The surviving
+   mutation is not worth a test. A well-formed record that names another slice job of the
+   same user is listed under "Not done" rather than fixed, as the review suggested, since
+   the request path shares the fault and another agent is changing `front/` now.
 
 ## Targets missed
 
@@ -157,8 +181,12 @@ rebuilt.
    worker and 4.6 to 4.8 s on two on a machine shared by four builders, and not at 11.8 s
    or 27.9 s while they ran (decision 5). No figure of the plan's is sharper than
    "seconds".
-2. **The fixes of this batch were checked only by their builder** until this pull request
-   is reviewed.
+2. **No sentence a user reads says "mentor"** is not met by `slice.profile_unreadable`,
+   which phase 2 newly reaches: it is the answer of the slice service's `GET /settings-table`
+   when the table cannot be read (batch slice-2, decision 11), and the front server passes
+   it to the page unchanged, remedy "Ask a mentor ..." included. One sentence, reached only
+   when the slice service's profiles cannot be read; it is reworded with the others
+   (decision 6).
 
 ## Not done
 
@@ -168,6 +196,14 @@ rebuilt.
    `RecursionError` there. It is outside this batch's findings (the slice service is a
    component on the private network that never writes such an answer) and is left for
    whoever next changes those readers.
+2. **A record that names another slice job.** The sweep and `sliced.expire` act on the
+   record's own `slice` field, not on the slice its name gives. A well-formed `stored`
+   record at `sliced/<user_key>/A.json` whose `slice` is `B` (another slice job of the same
+   user) makes the sweep delete B's sliced file before it is due and rewrite B's record as
+   `expired`. The review showed it with a test it then removed; it was there before this
+   batch, the front server never writes such a record, and it does not stop the sweep. The
+   fix is to treat a record whose `slice` is not the one its name gives as malformed, in
+   the sweep and in the requests that expire a file, in one change.
 
 ## For the owner to look at
 

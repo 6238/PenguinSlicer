@@ -245,9 +245,9 @@ def test_a_record_that_cannot_be_read_is_left_alone_and_the_sweep_goes_on(
     bucket.put(sliced.record_name("aaaa", "broken"), body)
     write_stored(bucket)
     at(clock, ENDED + 7200)
-    for _ in range(2):  # and again at the next sweep
+    for expired in (1, 0):  # the due file goes at the first sweep; the record stays
         counts = sweeper(app).sweep()
-        assert counts["files_expired"] in (0, 1) and counts["failed"] == 0
+        assert counts["files_expired"] == expired and counts["failed"] == 0
     assert read_state(bucket) == "expired"
     assert sliced.record_name("aaaa", "broken") in names(bucket)
     assert [line["record"] for line in log.events("record_unreadable")] == [
@@ -271,10 +271,16 @@ def test_a_record_of_other_wrong_types_fails_alone_and_the_sweep_goes_on(
     write_record(bucket, sliced.record_name("aaaa", "broken"), sliced.KIND, record)
     write_stored(bucket)
     at(clock, ENDED + 7200)
-    counts = sweeper(app).sweep()
-    assert counts["files_expired"] == 1 and counts["checked"] == 2
+    for expired in (1, 0):  # it fails again at the next sweep, left as it is
+        counts = sweeper(app).sweep()
+        assert counts["files_expired"] == expired and counts["checked"] == 2
+        assert counts["failed"] == 1
     assert read_state(bucket) == "expired"
     assert sliced.record_name("aaaa", "broken") in names(bucket)
+    lines = log.events("sweep_item_failed")
+    assert [(line["user_key"], line["slice"], line["group"]) for line in lines] == [
+        ("aaaa", "broken", GROUP)] * 2
+    assert all(line["why"].startswith("the record is malformed: ") for line in lines)
 
 
 def test_a_folder_where_a_record_or_a_sliced_file_is_expected_is_passed_over(

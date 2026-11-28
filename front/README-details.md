@@ -1475,8 +1475,10 @@ clock):
   make (`sliced/<user_key>/<slice>.json` and `.gcode.3mf` only; a folder at such a name
   holds names of another form and is passed over).
 - A record of a format the front server reads but with a field missing or malformed (no
-  `slice_ended_at` on a `stored` record, a `submitted_at` or `expired_at` that is not an
-  RFC 3339 time, a `state` that is a list or an object, a due record with no `slice`) is
+  `slice_ended_at` on a `stored` record, a `slice_ended_at` of a `stored` or `failed`
+  record or a `submitted_at` or `expired_at` that is not an RFC 3339 time (a list, a
+  number, a year past 9999), a `state` that is a list or an object, a due record with no
+  `slice`) is
   counted `failed` and written as `sweep_item_failed` with `why`
   `the record is malformed: <the fault>`; the record and its file are left as they are,
   and fail the same way at every sweep until somebody looks. The sweep goes on to every
