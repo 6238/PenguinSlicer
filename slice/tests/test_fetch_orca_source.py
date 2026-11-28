@@ -135,6 +135,27 @@ def test_the_cache_keeps_a_verified_download(tmp_path):
     assert len(seen) == 1 and (tmp_path / "b" / "VERSION").is_file()
 
 
+def test_a_changed_archive_in_the_cache_is_refused_and_named(tmp_path):
+    data, seen = archive(), []
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    cached = cache / "OrcaSlicer-9.9.9.tar.gz"
+    cached.write_bytes(archive(extra=[("OrcaSlicer-9.9.9/planted.txt", b"x")]))
+    dest = tmp_path / "s"
+    with pytest.raises(FetchError, match=rf"checksum mismatch for the cached archive {cached}: expected "
+                                         rf"{digest(data)}.*remove it"):
+        fetch("9.9.9", digest(data), dest, opener=opener_for(data, seen), cache=cache)
+    assert seen == [] and not dest.exists()
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["cache", "orca-placeholder"]   # no work folder left
+
+
+def test_a_download_that_fails_its_checksum_is_not_cached(tmp_path):
+    cache = tmp_path / "cache"
+    with pytest.raises(FetchError, match="checksum mismatch"):
+        fetch("9.9.9", "0" * 64, tmp_path / "s", opener=opener_for(archive(), []), cache=cache)
+    assert not (cache / "OrcaSlicer-9.9.9.tar.gz").exists()
+
+
 def test_main_fetches_the_pin_and_reports_a_failure(tmp_path, capsys, monkeypatch):
     import fetch_orca_source
     data = archive("2.4.2")

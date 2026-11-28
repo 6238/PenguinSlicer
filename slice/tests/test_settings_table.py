@@ -211,6 +211,27 @@ class TestRefused:
         assert error.message == "Sparse infill density (Strength, Infill) must be at least 0%, not -1%."
         assert "below min 0" in error.details
 
+    @pytest.mark.parametrize("name, value, words", [
+        ("wall_loops", "-1", "must be at least 0, not -1."),                       # an integer
+        ("layer_height", "-0.2", "must be at least 0, not -0.2."),                 # a decimal
+        ("outer_wall_line_width", "-0.1", "must be at least 0, not -0.1."),        # a number or a percentage,
+        ("outer_wall_line_width", "-1%", "must be at least 0, not -1%."),          # in each of its two forms
+        ("outer_wall_line_width", "1000.5", "must be at most 1000, not 1000.5."),
+        ("outer_wall_line_width", "5000%", "must be at most 1000, not 5000%."),
+    ])
+    def test_each_form_is_held_to_both_its_bounds(self, name, value, words):
+        error = refused({name: value})
+        assert error.message.endswith(words)
+        assert ("below min" if "least" in words else "above max") in error.details
+
+    @pytest.mark.parametrize("value", ["1000", "0", "1000%", "0%", "0.45"])
+    def test_a_number_or_a_percentage_at_its_bounds_is_taken(self, value):
+        assert validate_overrides({"outer_wall_line_width": value}) == {"outer_wall_line_width": value}
+
+    def test_a_whole_number_below_what_orca_holds(self):
+        assert "a whole number" in refused({"wall_loops": "-99999999999"}).message
+        assert "a whole number" in refused({"wall_loops": str(-2 ** 31 - 1)}).message
+
     def test_a_text_one_character_over_its_length(self):
         entry = load().entries["extra_solid_infills"]
         error = refused({"extra_solid_infills": "5" * (entry["max_length"] + 1)})

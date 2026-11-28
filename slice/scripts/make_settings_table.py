@@ -398,7 +398,7 @@ def _entry(definition, page, group, per_variant):
         entry["number_form"] = number_form
         for bound in ("min", "max"):
             value = getattr(definition, bound)
-            if value is not None and abs(value) < 2 ** 31 - 1:       # INT_MIN, INT_MAX: Orca's "no bound"
+            if value is not None:
                 entry[bound] = value
     return entry
 

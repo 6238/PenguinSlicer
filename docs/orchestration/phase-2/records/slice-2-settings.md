@@ -68,7 +68,9 @@ What was built is described in
    named constant of the file; choices may be pushed, listed in braces or taken from another
    definition's variable; defaults are read from `set_default_value` and enum defaults
    turned into keys through `s_keys_map_<Type>`. A line it cannot read fails the generator
-   only for a setting the table needs. `INT_MIN`/`INT_MAX` bounds are left out. It worked
+   only for a setting the table needs. A setting with no `min` or `max` line has no bound
+   (Orca 2.4.2 writes no `INT_MIN`/`INT_MAX` bound, and the filter once kept for them acted
+   on nothing, so it was removed in review). It worked
    on the whole of 2.4.2; the upstream check holds the result to what Orca slices with. To
    overrule: a different reader; the tests on the hand-written stand-in source say what it
    must do.
@@ -127,6 +129,20 @@ What was built is described in
     section is marked as no longer read, and the tests send them under Orca's names.
 15. **The wizard's guide and details said "about 295".** They now say 338 (one line each).
     The mockup's DECISIONS.md, which is never edited, still says 295.
+16. **A changed archive in the cache (from review).** The details said the cache keeps
+    "each verified archive" but not what happens when one changes there. Chosen: it is
+    verified against the pin like a download; on a mismatch the fetch fails with "checksum
+    mismatch for the cached archive <path> ... remove it to download the source again",
+    keeps nothing and leaves the cached file in place, so nothing the operator put there is
+    deleted silently. To overrule: delete the cached file and download again in
+    `fetch_orca_source.fetch`.
+17. **Review finding declined: the `slice.profile_unreadable` remedy says "Ask a
+    mentor".** Real, but the wording is in `errors.CODES` from before this batch, the same
+    words stand in eight of the slice service's remedies, and the details file defers the
+    rewording of the old remedies; changing one here would leave the rest inconsistent. Left
+    for the batch that rewords the remedies. To overrule: reword all of them in one change.
+18. **Review finding declined: text settings take one character.** The contract's rule
+    gives that; changing the rule is the owner's decision (see "Targets missed").
 
 ## Targets missed
 

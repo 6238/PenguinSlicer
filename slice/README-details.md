@@ -1063,7 +1063,10 @@ records the pin downloads nothing. A wrong checksum, an archive that is not a `.
 that lacks one of the three files keeps nothing new and leaves an earlier source as it was;
 the members are read by name and written by the script, never extracted, so no path in the
 archive is followed. `PENGUIN_SLICE_ORCA_CACHE` keeps each verified archive as
-`OrcaSlicer-<version>.tar.gz` and reuses it. `make test-upstream` runs `make orca-source`
+`OrcaSlicer-<version>.tar.gz` and reuses it, verified against the pin like a download: a
+cached archive that has changed is refused by name, nothing is kept, and it stays in the
+cache until removed (`test_a_changed_archive_in_the_cache_is_refused_and_named`); an
+archive that fails its checksum is never cached. `make test-upstream` runs `make orca-source`
 first. GitHub publishes no checksum of a tag's archive, so `make upgrade-orca` fetches the
 new version's archive trusting the download and pins the checksum of what it received
 ([Taking a new upstream version](#taking-a-new-upstream-version)); every later fetch is
@@ -1082,7 +1085,7 @@ the file, `max_temp`), the `enum_values` and `enum_labels` of a choice (pushed o
 given as a braced list, or taken over from another definition through its variable,
 `def_top_fill_pattern->enum_values`), and the default given to `set_default_value`, an
 enum's default turned into its key through the file's `s_keys_map_<Type>` tables. A
-`min` or `max` at Orca's "no bound" (`INT_MIN`, `INT_MAX`) is left out. Which settings Orca
+setting without a `min` or `max` line has no bound in the table. Which settings Orca
 keeps for each extruder variant comes from `print_options_with_variant`. From `Tab.cpp`
 it takes the page (`section`) and setting group of each setting from `TabPrint::build`, in
 the order Orca shows them, which is the table's order. Orca's type gives the kind:

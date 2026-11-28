@@ -450,7 +450,7 @@ permitted values, and Orca's own label, group and explanation for it. The table 
 from Orca's source for the pinned version each time an Orca version is integrated, and is
 never written by hand: a program reads three of Orca's source files as data (the list of
 process settings, their definitions, and the pages Orca shows them on), and nothing of
-Orca's code is copied. The source is downloaded from Orca's own release and checked
+Orca's code is copied. The source is GitHub's archive of the version's release tag, checked
 against a checksum kept beside the version, so taking a new Orca version needs that
 version's source as well as its release. The table is about 380 kilobytes, about 35
 compressed.

@@ -134,4 +134,7 @@ only some of Orca's infill patterns; the 0.6 mm nozzle's printer and three of it
 profiles, with their values from the profile catalog; and three filaments. The real table
 is generated and holds every accepted setting, every choice and every profile of the
 catalog, and its words are Orca's own, where the example's labels, explanations and ranges
-are only of the kind Orca gives.
+are only of the kind Orca gives. The example marks `outer_wall_speed` `per_variant` with a
+High Flow value of 500 to show how such a setting is written; at the pinned Orca 2.4.2 no
+setting is `per_variant` (see `per_variant` above), and the real table gives that profile
+120, the value Orca slices with.

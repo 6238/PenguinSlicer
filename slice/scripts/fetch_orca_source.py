@@ -106,6 +106,9 @@ def fetch(version, sha, dest=SOURCE_DIR, *, opener=None, cache=None):
             actual = _sha_of(archive)
         else:
             actual = _download(url, archive, opener)
+        if sha and actual != sha and cached and cached.is_file():
+            raise FetchError(f"checksum mismatch for the cached archive {cached}: expected {sha}, got {actual}; "
+                             f"remove it to download the source again")
         if sha and actual != sha:
             raise FetchError(f"checksum mismatch for {url}: expected {sha}, got {actual}; download deleted")
         tree = work / "tree"
