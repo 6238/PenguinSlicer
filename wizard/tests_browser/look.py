@@ -154,6 +154,7 @@ def wizard_at(browser, server, width):
     page.clock.install(time=datetime.datetime(2026, 11, 28, 20, 0, tzinfo=datetime.timezone.utc))
     page.goto(server.url)
     page.wait_for_selector('html[data-started="true"]', state="attached")
+    page.wait_for_selector('html[data-opened="true"]', state="attached")     # the opening's own state set first
     return page
 
 
@@ -232,6 +233,7 @@ def paused_page(browser, server, width):
     page.clock.install(time=START)
     page.goto(server.url)
     page.wait_for_selector('html[data-started="true"]', state="attached")
+    page.wait_for_selector('html[data-opened="true"]', state="attached")
     page.clock.pause_at(START + datetime.timedelta(minutes=10))
     return page
 

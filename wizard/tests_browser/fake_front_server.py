@@ -7,7 +7,8 @@ files carries `Cache-Control: no-store`.
 
 A test sets what the next requests to a path meet with `script(method, path, *answers)`: each
 answer is `(status, body)` or `(status, body, headers)`, the body a dict sent as JSON. The
-requests are recorded with their headers.
+requests are recorded with their headers and their bodies. `files` maps a path to bytes that a
+test's own code fetches (a part's STL file, which in use comes from the user's disk).
 """
 import json
 import threading
@@ -66,6 +67,8 @@ class FakeFrontServer:
         self.page = (self.dist / "index.html").read_text(encoding="utf-8").replace(PLACEHOLDER, version)
         self.requests = []
         self.request_headers = []
+        self.bodies = []                # (method, path, the request's body as bytes)
+        self.files = {}                 # path: bytes, served to a test's own fetch (a part's STL file)
         self.scripts = {}
         self.lock = threading.Lock()
         server = self
@@ -73,13 +76,17 @@ class FakeFrontServer:
         class Handler(BaseHTTPRequestHandler):
             def handle_any(self, method):
                 length = int(self.headers.get("Content-Length") or 0)
-                if length:
-                    self.rfile.read(length)
+                body = self.rfile.read(length) if length else b""
                 with server.lock:
                     server.requests.append(self.path)
                     server.request_headers.append((method, self.path, {k.lower(): v for k, v in self.headers.items()}))
+                    server.bodies.append((method, self.path, body))
                     queue = server.scripts.get((method, self.path.split("?")[0]))
                     scripted = queue.pop(0) if queue else None
+                    test_file = server.files.get(self.path) if method == "GET" else None
+                if test_file is not None:
+                    self.answer(200, "application/octet-stream", test_file)
+                    return
                 if method == "GET" and self.path == "/":
                     self.answer(200, TYPES[".html"], server.page.encode("utf-8"), page=True)
                     return
