@@ -21,6 +21,11 @@ export const MAX_FACES = 254;           // all but the largest this many are dro
 export const SLIVER_DEG = 1;            // a face with a corner sharper than this is dropped
 export const ROUND_SIDE_DEG = 20;       // a facet among its like bends less than this from a neighbour
 export const BBOX_COVER_DEG = 30.5;     // 30 degrees, plus half a degree for rounding
+// What lies on a face: within this distance of its plane and this angle of its direction. A
+// thin strip of the hull that lies on a larger face's plane is part of that face; a triangle of
+// the part that lies on a hull face is the part's own surface there, not a bridge.
+export const FLAT_GAP_MM = 0.01;
+export const FLAT_TURN_DEG = 1;
 // A corner within this distance of the hull is on it, not outside it. Far below the rounding
 // of a single-precision STL coordinate, so that no corner of the hull is lost: a tolerance of
 // 1e-3 mm, tried first, left a corner of Clamp Plate Inner 0.006 mm outside its hull and

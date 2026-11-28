@@ -6,29 +6,10 @@ import assert from 'node:assert/strict';
 import { analysePart } from '../../src/geometry/part.js';
 import { autoOrient } from '../../src/geometry/orient.js';
 import { rotateVector } from '../../src/geometry/turn.js';
-import { box, meshOf, prism, turned, rotationX } from './shapes.js';
+import { box, meshOf, moved, prism, turned, union, rotationX } from './shapes.js';
 
 const down = (choice, normal) => rotateVector(choice.lay, normal);
 const close = (a, b, tol = 1e-9) => a.every((v, i) => Math.abs(v - b[i]) <= tol);
-
-// Two boxes joined into one closed surface: their triangles together (they touch only along a
-// face, which the hull and the scoring both see through).
-function union(...meshes) {
-  const tris = [];
-  for (const m of meshes) {
-    for (let i = 0; i < m.positions.length; i += 9) {
-      const p = m.positions;
-      tris.push([[p[i], p[i + 1], p[i + 2]], [p[i + 3], p[i + 4], p[i + 5]], [p[i + 6], p[i + 7], p[i + 8]]]);
-    }
-  }
-  return meshOf(tris);
-}
-
-function moved(mesh, [dx, dy, dz]) {
-  const out = new Float64Array(mesh.positions);
-  for (let i = 0; i < out.length; i += 3) { out[i] += dx; out[i + 1] += dy; out[i + 2] += dz; }
-  return meshOf(Array.from({ length: out.length / 9 }, (_, t) => [0, 1, 2].map((k) => [out[t * 9 + k * 3], out[t * 9 + k * 3 + 1], out[t * 9 + k * 3 + 2]])));
-}
 
 test('a tall block is laid on one of its largest faces, as low as it goes', () => {
   const part = analysePart(box(10, 20, 60));

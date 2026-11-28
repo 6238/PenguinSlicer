@@ -1,0 +1,177 @@
+{
+  "machine": {
+    "architecture": "aarch64",
+    "system": "Linux",
+    "cgroup_cpu_max": "800000 100000",
+    "cgroup_processors": 8.0,
+    "cgroup_memory_max": "12884901888",
+    "cgroup_memory_gib": 12.0,
+    "processors_the_vm_reports": 8,
+    "chromium": "159.0.8154.6",
+    "browser_hardware_concurrency": 8,
+    "graphics": "none: Chromium headless, the geometry draws nothing"
+  },
+  "times": [
+    {
+      "what": "patches of hub-150k.stl after selecting it",
+      "worst_ms": 1.9,
+      "target_ms": 100,
+      "met": true
+    },
+    {
+      "what": "auto-orient of hub-150k.stl after it arrives",
+      "worst_ms": 254.4,
+      "target_ms": 1000,
+      "met": true
+    },
+    {
+      "what": "Arrange of 150 hex-spacer.stl",
+      "worst_ms": 28.7,
+      "target_ms": 2000,
+      "met": true
+    },
+    {
+      "what": "Arrange of a mix of 150 real parts",
+      "worst_ms": 50.2,
+      "target_ms": 2000,
+      "met": true
+    },
+    {
+      "what": "placement check of a drag at 150 hex-spacer.stl",
+      "worst_ms": 3.8,
+      "target_ms": 100,
+      "met": true
+    },
+    {
+      "what": "placement check of a drag at 150 of the mix",
+      "worst_ms": 6.3,
+      "target_ms": 100,
+      "met": true
+    }
+  ],
+  "flat_faces": {
+    "clamp-plate-inner": {
+      "flat_faces": 6,
+      "without_hull_patch": []
+    },
+    "elevator-block-bottom-inner": {
+      "flat_faces": 3,
+      "without_hull_patch": []
+    },
+    "elevator-block-carriage": {
+      "flat_faces": 3,
+      "without_hull_patch": []
+    },
+    "elevator-block-top": {
+      "flat_faces": 3,
+      "without_hull_patch": []
+    },
+    "elevator-top-inner": {
+      "flat_faces": 6,
+      "without_hull_patch": []
+    },
+    "inner-spacer": {
+      "flat_faces": 6,
+      "without_hull_patch": []
+    },
+    "outer-clamp": {
+      "flat_faces": 6,
+      "without_hull_patch": []
+    },
+    "pulley-v3": {
+      "flat_faces": 2,
+      "without_hull_patch": []
+    }
+  },
+  "patches": {
+    "clamp-plate-inner": {
+      "hull": 6,
+      "box": [],
+      "laid_on": 1,
+      "height_mm": 4.76
+    },
+    "elevator-block-bottom-inner": {
+      "hull": 12,
+      "box": [],
+      "laid_on": 1,
+      "height_mm": 82.55
+    },
+    "elevator-block-carriage": {
+      "hull": 9,
+      "box": [],
+      "laid_on": 3,
+      "height_mm": 31.75
+    },
+    "elevator-block-top": {
+      "hull": 9,
+      "box": [],
+      "laid_on": 1,
+      "height_mm": 31.75
+    },
+    "elevator-top-inner": {
+      "hull": 6,
+      "box": [],
+      "laid_on": 1,
+      "height_mm": 57.15
+    },
+    "inner-spacer": {
+      "hull": 6,
+      "box": [],
+      "laid_on": 0,
+      "height_mm": 1.26
+    },
+    "outer-clamp": {
+      "hull": 6,
+      "box": [],
+      "laid_on": 0,
+      "height_mm": 4.76
+    },
+    "pulley-v3": {
+      "hull": 2,
+      "box": [
+        "+y",
+        "-y",
+        "+z",
+        "-z"
+      ],
+      "laid_on": 0,
+      "height_mm": 17.78
+    },
+    "hub-150k": {
+      "hull": 2,
+      "box": [
+        "+x",
+        "-x",
+        "+y",
+        "-y"
+      ],
+      "laid_on": 0,
+      "height_mm": 20
+    },
+    "hex-spacer": {
+      "hull": 2,
+      "box": [
+        "+x",
+        "-x",
+        "+y",
+        "-y"
+      ],
+      "laid_on": 1,
+      "height_mm": 3.17
+    }
+  },
+  "arrange": {
+    "spacers-150": {
+      "placed": 150,
+      "packer": "shelf"
+    },
+    "mix-150": {
+      "placed": 38,
+      "packer": "pile"
+    }
+  },
+  "longest_main_thread_task_ms": 867,
+  "page_errors": [],
+  "round_parts": "The round parts exported from Onshape at its coarse and fine settings can only come from the owner; until they arrive the trial's round parts are pulley-v3.stl and inner-spacer.stl, as wizard/README-details.md says.",
+  "missed": []
+}

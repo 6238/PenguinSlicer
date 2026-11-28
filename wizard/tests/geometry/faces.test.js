@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 
 import { findFaces } from '../../src/geometry/faces.js';
 import { convexHull } from '../../src/geometry/hull.js';
-import { box, cylinder, prism, regularPolygon, turned, rotationX, rotationZ } from './shapes.js';
+import { box, cylinder, meshOf, moved, prism, regularPolygon, turned, union, rotationX, rotationZ } from './shapes.js';
 
 const facesOf = (mesh) => findFaces(convexHull(mesh.positions), mesh);
 const kinds = (result) => result.patches.map((p) => p.kind);
@@ -62,6 +62,20 @@ test('a wedge leaves the two sides 45 degrees from its slope uncovered', () => {
   assert.deepEqual(sides(result), ['+x', '+y']);
 });
 
+test('a round side whose facets have thin slivers between them is still one round side', () => {
+  // 36 facets 10 degrees apart, each pair separated by a facet 0.2 mm wide: no facet has a
+  // neighbour half its size, but each reaches the next across a sliver bending 5 degrees.
+  const outline = [];
+  for (let i = 0; i < 36; i++) {
+    const t = (2 * Math.PI * i) / 36;
+    const dt = 0.2 / 20;
+    outline.push([20 * Math.cos(t), 20 * Math.sin(t)], [20 * Math.cos(t + dt), 20 * Math.sin(t + dt)]);
+  }
+  const result = facesOf(prism(outline, 0, 10));
+  assert.equal(result.patches.filter((p) => p.kind === 'hull').length, 2);
+  assert.deepEqual(sides(result), ['+x', '+y', '-x', '-y']);
+});
+
 test('a flat face beside a shallow chamfer keeps its patch; the chamfer loses its own', () => {
   // A 40 x 40 block 10 tall whose top edge along +x is cut by a 1 mm chamfer at 10 degrees.
   const outline = [[0, 0], [40, 0], [40, 10 - 1 * Math.tan((10 * Math.PI) / 180)], [39, 10], [0, 10]];
@@ -77,6 +91,50 @@ test('a chamfer at 45 degrees bends too far to be caught and keeps its patch', (
   const result = facesOf(prism(outline, 0, 40));
   assert.equal(result.faces.filter((f) => f.dropped).length, 0);
   assert.equal(result.patches.filter((p) => p.kind === 'hull').length, 7);
+});
+
+test('a flat face of the part beside a hull face that bridges a step keeps its patch; the bridge loses its own', () => {
+  // A 40 x 40 block 20 tall on one set back 1.05 mm on +x: on +x the hull has the upper block's
+  // flat face (800 mm² of the part's own surface) and, 3 degrees from it, a face of the same size
+  // bridging down to the lower block's bottom edge, which touches the part only along its edges.
+  const mesh = union(moved(box(40, 40, 20), [0, 0, 20]), box(38.95, 40, 20));
+  const result = findFaces(convexHull(mesh.positions), mesh);
+  const plusX = result.patches.filter((p) => p.normal[0] > 0.99);
+  assert.equal(plusX.length, 1);
+  assert.ok(Math.abs(plusX[0].normal[0] - 1) < 1e-9, 'the patch is on the flat face, not the bridge');
+  assert.deepEqual(sides(result), []);
+});
+
+test('a flat face keeps its patch beside a bridge four times its size; a strip under 25 mm² does not', () => {
+  const plusX = (upper) => {
+    const mesh = union(moved(box(40, 40, upper), [0, 0, 40]), box(38, 40, 40));
+    return findFaces(convexHull(mesh.positions), mesh).patches.filter((p) => p.kind === 'hull' && p.normal[0] > 0.999);
+  };
+  assert.equal(plusX(10).length, 1, 'a 400 mm² flat face beside a 1,600 mm² bridge');
+  assert.equal(plusX(0.5).length, 0, 'a 20 mm² strip beside a bridge');
+});
+
+test('the facets of a round side are all the part\'s own surface, so the rule for them is unchanged', () => {
+  const result = facesOf(cylinder(48, 10, 5));
+  assert.equal(result.faces.filter((f) => f.dropped === 'round_side').length, 48);
+});
+
+test('a hull face the part would tip over from keeps its patch: the plate holds the first layer', () => {
+  // A post 10 x 10 x 50 with an arm 60 long on top: on the post's foot the centre of mass is
+  // far out over the arm, and the foot is still offered (auto-orient marks it unstable).
+  const gamma = union(box(10, 10, 50), moved(box(60, 10, 10), [10, 0, 40]));
+  const result = findFaces(convexHull(gamma.positions), gamma);
+  assert.ok(result.patches.some((p) => p.kind === 'hull' && p.normal[2] < -0.999));
+});
+
+test('a strip of the hull a few thousandths of a millimetre off a face\'s plane is part of that face', () => {
+  // A corner 0.4 mm out from the top's edge and 0.005 mm below it: the hull's top then has a
+  // strip tilted 0.7 degrees, too far to be joined by direction, close enough to be the same flat.
+  const mesh = union(box(40, 40, 10), meshOf([[[20, 40.4, 9.995], [20, 40.4, 9.995], [20, 40.4, 9.995]]]));
+  const result = findFaces(convexHull(mesh.positions), mesh);
+  const tops = result.faces.filter((f) => f.normal[2] > 0.99);
+  assert.equal(tops.length, 1);
+  assert.ok(Math.abs(tops[0].area - 1608) < 0.1, `area ${tops[0].area}`);
 });
 
 test('a face under 5 mm² is dropped as too small', () => {

@@ -35,6 +35,25 @@ export function prism(outline, z0, z1) {
   return meshOf(tris);
 }
 
+// Solids joined into one: their triangles together (they may touch along a face, which the hull
+// and the scoring both see through).
+export function union(...meshes) {
+  const tris = [];
+  for (const m of meshes) {
+    const p = m.positions;
+    for (let i = 0; i < p.length; i += 9) {
+      tris.push([[p[i], p[i + 1], p[i + 2]], [p[i + 3], p[i + 4], p[i + 5]], [p[i + 6], p[i + 7], p[i + 8]]]);
+    }
+  }
+  return meshOf(tris);
+}
+
+export function moved(mesh, [dx, dy, dz]) {
+  const out = new Float64Array(mesh.positions);
+  for (let i = 0; i < out.length; i += 3) { out[i] += dx; out[i + 1] += dy; out[i + 2] += dz; }
+  return { triangles: mesh.triangles, positions: out, ...boxOf(out) };
+}
+
 export const box = (x, y, z) => prism([[0, 0], [x, 0], [x, y], [0, y]], 0, z);
 
 export function regularPolygon(sides, radius, phase = 0) {

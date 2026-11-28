@@ -30,13 +30,13 @@ function massAndTriangles(positions) {
 
 export function analysePart(mesh) {
   const hull = convexHull(mesh.positions);
-  const found = findFaces(hull, mesh);
   const tri = massAndTriangles(mesh.positions);
   let centre = tri.centre;
   if (!centre) {
     // A surface enclosing nothing: the middle of its box stands in for the centre of mass.
     centre = [0, 1, 2].map((k) => (mesh.min[k] + mesh.max[k]) / 2);
   }
+  const found = findFaces(hull, mesh, { triangles: tri });
   return {
     mesh, hull, faces: found.faces, patches: found.patches, hullTriangles: found.hullTriangles,
     triangleNormals: tri.normals, triangleAreas: tri.areas, volume: tri.volume, centre,
