@@ -25,12 +25,14 @@ import traceback
 from flask import Flask, Response, g, request
 from werkzeug.exceptions import HTTPException, MethodNotAllowed, NotFound
 
-from . import configuration, identity, pages, settings_table
+from . import configuration, identity, pages, parts, settings_table, slices
 from .answers import json_body, page_file, target_path as _path  # noqa: F401 - used by tests
 from .buckets import FolderBucket
 from .context import EXTENSION
 from .cookie import CookieKey
 from .errors import FrontError, PassedReport, error_report
+from .following import Follower
+from .ratelimit import RateLimit
 from .slice_client import SliceClient
 from .version import is_version, version_at
 
@@ -63,8 +65,15 @@ def create_app(settings, *, clock, log, version=None, state_bucket=None, slice_c
         "pages": pages.load_pages(settings.wizard_dist, version),
         "state_bucket": state_bucket or FolderBucket(settings.state_dir, clock),
         "slice": slice_client or SliceClient(settings.slice_url),
+        "part_uploads": RateLimit(clock, parts.PART_UPLOADS_PER_MINUTE),
+        "part_uploads_per_minute": parts.PART_UPLOADS_PER_MINUTE,
+        "submissions": RateLimit(clock, slices.SUBMISSIONS_PER_MINUTE),
+        "submissions_per_minute": slices.SUBMISSIONS_PER_MINUTE,
     }
-    for part in (pages, identity, configuration, settings_table):
+    ctx = app.extensions[EXTENSION]
+    ctx["follower"] = Follower(clock=clock, slice_client=ctx["slice"],
+                               bucket=ctx["state_bucket"], log=log)
+    for part in (pages, identity, configuration, settings_table, parts, slices):
         part.register(app)
 
     @app.before_request
@@ -84,7 +93,9 @@ def create_app(settings, *, clock, log, version=None, state_bucket=None, slice_c
 
     @app.errorhandler(FrontError)
     def refused(error):
-        return _answer_report(log, error.status, error.report)
+        response = _answer_report(log, error.status, error.report)
+        response.headers.update(error.headers)
+        return response
 
     @app.errorhandler(PassedReport)
     def passed(error):

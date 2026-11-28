@@ -56,9 +56,9 @@ def test_the_built_front_server_uses_the_folders_of_its_settings(tmp_path, clock
     assert context["version"] == VERSION
 
 
-def run_served(tmp_path, clock, environment, use):
-    """Serve on a port the system chooses, call `use(port)`, stop; gives the lines written
-    on standard output and the exit status."""
+def run_served(tmp_path, clock, environment, use, with_server=False):
+    """Serve on a port the system chooses, call `use(port)` (`use(port, server)` with
+    `with_server`), stop; gives the lines written on standard output and the exit status."""
     stdout = io.StringIO()
     listening = threading.Event()
     servers = []
@@ -75,7 +75,7 @@ def run_served(tmp_path, clock, environment, use):
     assert listening.wait(10)
     port = int(servers[0].effective_port)
     try:
-        use(port)
+        use(port, servers[0]) if with_server else use(port)
     finally:
         stop_server(servers[0])
         thread.join(10)
@@ -103,6 +103,43 @@ def test_the_front_server_answers_over_http_writes_its_start_line_and_stops(tmp_
     events = [json.loads(line)["event"] for path in written
               for line in path.read_text().splitlines()]
     assert events[0] == "start" and "error" in events and events[-1] == "stop"
+
+
+@pytest.mark.parametrize("threads, followed, during", [(4, 2, 2), (2, 3, 1)])
+def test_each_following_of_a_slice_job_is_counted_among_the_threads(tmp_path, clock,
+                                                                    monkeypatch, threads,
+                                                                    followed, during):
+    from front_helpers import nobody_listens
+    from penguin_front import server as served
+
+    counts, built = [], []
+    real_build = served.build
+
+    def keep(*args, **kwargs):
+        built.append(real_build(*args, **kwargs))
+        return built[-1]
+
+    monkeypatch.setattr(served, "build", keep)
+
+    def use(_port, server):
+        dispatcher = server.task_dispatcher
+        running = lambda: len(dispatcher.threads) - dispatcher.stop_count  # noqa: E731
+        follower = built[0][0].extensions["penguin_front"]["follower"]
+        counts.append(running())
+        for n in range(followed):  # nobody answers: each following waits and tries again
+            follower.follow("dev-user", f"j{n}", "dev-group")
+        counts.append(running())
+        follower.stop()   # each following ends at its wait, and gives its thread back
+        clock.wake()
+        follower.join()
+        counts.append(running())
+
+    lines, result, _port = run_served(
+        tmp_path, clock, environ(tmp_path, PENGUIN_FRONT_THREADS=str(threads),
+                                 PENGUIN_SLICE_URL=nobody_listens()), use, with_server=True)
+    # At least one thread is always left to serve requests.
+    assert result == [0] and counts == [threads, during, threads]
+    assert lines[0]["threads"] == threads
 
 
 def test_a_start_without_a_cookie_key_makes_one_and_says_so_after_the_start_line(tmp_path,

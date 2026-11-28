@@ -491,16 +491,17 @@ and not from a design made by hand for that setting.
 
 ### Run one slice at a time, and let a few wait
 
-*Built today: one slice running and two waiting, fixed in the code. To be built in phase
-2: a plate's later slice replacing its earlier one, a repeated submission answered with
-the first attempt's slice job, and a waiting slice job that says how many are ahead. To
-be built in phase 3: the two counts as settings of the slice service (a **setting of the
-slice service** is a value fixed when the slice service is deployed, not chosen by a
-user).*
+*Built today: one slice running and two waiting, fixed in the code; a plate's later slice
+replacing its earlier one; a repeated submission answered with the first attempt's slice
+job; and a waiting slice job that says how many are ahead. To be built in phase 3: the two
+counts as settings of the slice service (a **setting of the slice service** is a value
+fixed when the slice service is deployed, not chosen by a user).*
 
 One Orca runs at a time, and two slice jobs may wait behind it. These three are the
 slice service's **places**. A further slice job is not accepted: its user is told the
-slicer is busy and to try again in a minute, and the page does not try again by itself.
+slicer is busy and to try again in a minute, and the page does not try again by itself. A
+slice job that is being ended early gives up its place at once, even though its Orca may
+take a moment more to stop.
 
 **Memory decides how many run at once.** The slice service never runs more Orcas than fit
 in its memory with each at the **memory ceiling**, the most memory one Orca is allowed.
@@ -531,7 +532,8 @@ plate's. How a slice job is ended early, and what its page is told, is under
 
 **A slice job that waits says so.** Its progress report carries the number of slice jobs
 ahead of it, those running and those waiting before it, and a new report is sent whenever
-that number changes. Today a waiting slice job says only "Waiting for the slicer".
+that number changes. A slice that is being ended early still counts as running until its
+Orca is gone, because until then it holds the one Orca.
 
 How many may wait is a trade between two bad experiences: being told "busy, try again",
 and waiting behind slices that may each run to the time limit, the longest one Orca may
@@ -542,20 +544,23 @@ slice at the same moment is not known.
 
 #### A plate configuration submitted twice
 
-*To be built in phase 2.*
+*Built today.*
 
 The page tries a request again when its answer does not arrive, so the same submission
 can arrive twice. Without a rule, the repeat would count as the plate's later slice and
 end the slice job its own first attempt made. So the page makes a value for each
 submission, the slice service remembers that value beside the slice job, and a repeat
 that carries the same value is answered with the first attempt's slice job and starts
-nothing. The front server passes the value in and the answer back
+nothing. The repeat is recognised before the plate is checked at all, and even when every
+place is taken, so a repeat is never refused. Two attempts that arrive at the same moment
+are answered with one slice job. A submission that was refused started nothing, so the
+same value sent again is checked afresh. The same value from two users is two
+submissions. The front server passes the value in and the answer back
 ([the front server's guide](../front/README.md#a-plate-configuration-submitted-twice)).
 
 ### Report progress
 
-*Built today, except the count of slice jobs ahead and the reason on a slice job ended
-early (phase 2) and the quiet-line change (phase 3).*
+*Built today, except the quiet-line change (phase 3).*
 
 A slice job is followed on a **progress stream**: a connection on which the slice service
 sends each progress report as it happens. Every report carries the state, the stage in
@@ -608,10 +613,9 @@ latest report at once.
 
 ### End a slice job early
 
-*Built today: stopping a slice job at any stage, on a request made of the HTTP interface
-or when the slice service itself is asked to stop. To be built in phase 2: ending a
-plate's earlier slice job when its later one arrives, and the reason in the last
-progress report.*
+*Built today: stopping a slice job at any stage, on a request made of the HTTP interface,
+when the same plate's later slice arrives, or when the slice service itself is asked to
+stop, with the reason in the last progress report.*
 
 **A slice is not cancelled by hand.** The wizard has no button for it, and neither the
 wizard nor the front server asks the slice service to cancel a slice job. A user who no
@@ -635,8 +639,9 @@ The first two are failures and are described under
 sliced file and no error report. Its last progress report says which of the two reasons
 applies, because the page does different things with them: for a slice job that was
 replaced it does nothing, since it is already following the later one, and for one ended
-because the slice service was asked to stop it submits the plate again by itself. Today
-the last report of such a slice job gives no reason. Which slice jobs are ended early when the
+because the slice service was asked to stop it submits the plate again by itself. The
+request made of the HTTP interface, which nothing sends, gives a third reason of its own.
+Which slice jobs are ended early when the
 slice service is asked to stop is under
 [What a user sees while the slice service stops](#what-a-user-sees-while-the-slice-service-stops).
 
@@ -662,13 +667,12 @@ submitted again.
 
 ### Go on without the page
 
-*To be built in phase 2. Today a slice job whose progress stream nobody has open is
-ended early 120 seconds after the last one closed, or after it was submitted if none was
-ever opened.*
+*Built today: a slice job that runs to its end whether or not anything follows it. To be
+built in phase 2: the three things of the slice service's side listed below.*
 
 Once submitted, a slice job runs to its end whether or not anything is following it:
 through a refresh, a dropped connection or a closed laptop lid. A user who comes back
-finds the slice done, where today they would find it gone and have to slice again.
+finds the slice done.
 
 The cost is accepted: a slice whose user never returns holds the one Orca until it ends.
 The time limit bounds that.
@@ -997,8 +1001,7 @@ never names a folder itself (see [the part store](#keep-each-part-once-the-part-
 no user key, however it is written, reaches a file outside its own folder. The id of a
 plate and the value of a submission, both made by the page, are compared only among slice
 jobs of the same user key, so no page can end or be handed another user's slice job by
-naming its id or value; that comparison arrives with a plate's later slice replacing its
-earlier one, later in phase 2.
+naming its id or value.
 
 **What it holds.** No credentials: no sign-in secret, no key to the state bucket or the log bucket, no
 token of Onshape's or of a printer's. That is why the front server fetches each sliced
@@ -1383,9 +1386,14 @@ hostile inputs are tried.
 - one log line for every change of a slice job's state;
 - the upgrade command and the upstream check;
 - the shared set of plates for the two placement checks, the first piece of phase 2, run
-  through the slice service's own interface.
+  through the slice service's own interface;
+- a plate's later slice replacing its earlier one, by the id the page gives each plate;
+- a repeated submission answered with the first attempt's slice job;
+- the reason in the last progress report of a slice job ended early;
+- the number of slice jobs ahead, in a waiting slice job's progress report;
+- a slice job that goes on without its page.
 
-**Built today and replaced in phase 2:** the ending early of a slice job nobody has followed for 120 seconds; the keeping of a
+**Built today and replaced in phase 2:** the keeping of a
 finished slice job, with its hold on its parts and its sliced file, for one hour; the stop that
 ends every slice job early; "a second plate" in the sentences whose remedy is another
 plate.
@@ -1396,17 +1404,12 @@ front server never sends it.
 **Phase 2, on one machine, adds besides:**
 
 - "a new plate" in every sentence whose remedy is another plate;
-- a plate's later slice replacing its earlier one, by the id the page gives each plate;
-- a repeated submission answered with the first attempt's slice job;
-- the reason in the last progress report of a slice job ended early;
-- a slice job that goes on without its page;
 - a slice job remembered for two hours, and its sliced file deleted once the front server
   has stored it;
 - the limit of 50 MB on a sliced file;
 - Orca's own sentence in the error reports of the two failures about a gap with nothing
   under it;
 - the list of slice jobs, for a restarted front server;
-- the number of slice jobs ahead, in a waiting slice job's progress report;
 - finishing the running slice when asked to stop, and answering new submissions meanwhile
   with an answer of its own;
 - the log lines collected by the front server, each carrying the component's name, the

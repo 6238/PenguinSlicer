@@ -5,25 +5,40 @@ processes allowed at once (MAX_RUNNING); the queue beyond it is deliberately sma
 because queued work nobody will wait for is worse than an honest refusal.
 
 Every job's latest progress report (contracts/progress-report.md) is kept, with a
-sequence number that rises by one with every report, so a subscriber can tell a missed
-report from a repeated one and a late subscriber gets the latest at once. A job ends in
+sequence number that rises by one with every report, so a follower can tell a missed
+report from a repeated one and a late follower gets the latest at once. A job ends in
 one of the final states done, failed or cancelled, and sends nothing after it.
 
-Cancellation (cancel): a queued job is cancelled at once; a running one is asked to stop
-(its worker's Stop), and is reported cancelled only once the worker has returned, which
-for a slice means Orca and every child it started are gone (a slice still writing its
-plate 3MF stops at the next object and never starts Orca). A cancel that arrives before
-the final report wins over a slice that finishes at the same instant: the job is
-cancelled and its sliced file discarded. Cancelling a finished job changes nothing.
+The places: MAX_RUNNING running and MAX_QUEUED waiting, counted together over every user
+key. A job being stopped (asked to end early) holds no place, though it may still hold an
+Orca until that Orca is gone. A further job is refused (QueueFull).
 
-Cleanup (sweep): a job nobody is following is cancelled once ABANDON_GRACE_S has passed
-since its last subscriber left (or since it was submitted, if none ever came); a
-subscriber that returns within the grace time keeps it. Nobody is then waiting for its
-file, so an abandoned job ends exactly as a caller's cancel does: `cancelled`, a slice that
-finishes at that instant discarded, its log lines carrying cancel_reason "abandoned" (and
-file_discarded, the name of a finished sliced file thrown away). A final job's record, and its
-sliced file through `on_discard`, go RECORD_TTL_S after its final report. shutdown()
-cancels every job and waits for every worker.
+Every queued report carries `ahead`: the jobs running (a job being stopped included, since
+it still holds its Orca) and the jobs waiting before it, in the order they were accepted,
+which is the order the executor runs them. Whenever that count changes a new report is
+sent; no other report carries it.
+
+A repeat (submit with the user key and submission_id of a job the pool remembers, for as
+long as it remembers the job) raises RepeatedSubmission naming that job, and changes
+nothing; it is looked for before anything else, so it is answered while the pool closes
+and while every place is taken. remembered() looks for one without submitting.
+
+A replacement: a job submitted with the user key and plate_id of an earlier job that is
+still queued or running ends the earlier one early, with cancel_reason "replaced", and the
+earlier one gives up its place before the new one is counted. A later job refused because
+every place is taken replaces nothing.
+
+Ending early (cancel, with a reason of CANCEL_REASONS): a queued job is cancelled at once;
+a running one is asked to stop (its worker's Stop), and is reported cancelled only once the
+worker has returned, which for a slice means Orca and every child it started are gone (a
+slice still writing its plate 3MF stops at the next object and never starts Orca). A stop
+that arrives before the final report wins over a slice that finishes at the same instant:
+the job is cancelled and its sliced file discarded. Ending a finished job changes nothing.
+Every cancelled report carries `cancel_reason`.
+
+A job goes on whether or not anything follows it: nothing ends a job on account of its
+followers. A final job's record, and its sliced file through `on_discard`, go RECORD_TTL_S
+after its final report (sweep). shutdown() cancels every job and waits for every worker.
 
 One structured log line (a dict passed to `log`) per job transition: the job id, the
 state, the plate configuration's description (profiles, overrides, parts, instances), the outcome, the
@@ -46,13 +61,16 @@ from .slicer import SliceCancelled, Stop
 MAX_RUNNING = 1          # Orca processes at once
 MAX_QUEUED = 2           # jobs waiting beyond the running ones
 RECORD_TTL_S = 3600      # a final record expires this long after its final report
-ABANDON_GRACE_S = 120    # a job nobody follows is cancelled after this long
-WAIT_S = 15.0            # a subscriber's wait when nothing changes (a keep-alive cadence)
+WAIT_S = 15.0            # a follower's wait when nothing changes (a keep-alive cadence)
 SWEEP_INTERVAL_S = 10    # the sweeper's cadence
+# Why a slice job ended early (contracts/progress-report.md, cancel_reason): the same plate's
+# later slice job replaced it; the slice service was asked to stop; DELETE /slices/<job>.
+CANCEL_REASONS = ("replaced", "shutdown", "requested")
+REQUESTED = "requested"
 
 FINAL = ("done", "failed", "cancelled")
 GENERIC_FAILURE = "The slicer failed unexpectedly."
-# Every stage a slice job reports, in order, with its words for a student. Orca's own
+# Every stage a slice job reports, in order, with its words for a user. Orca's own
 # stages are slicer.ORCA_STAGES' values.
 STAGES = {
     "queued": "Waiting for the slicer",
@@ -72,11 +90,19 @@ STAGES = {
 
 
 class QueueFull(Exception):
-    """The pool is running MAX_RUNNING jobs and MAX_QUEUED more are waiting."""
+    """Every place is taken: MAX_RUNNING running and MAX_QUEUED waiting (or the pool closes)."""
+
+
+class RepeatedSubmission(Exception):
+    """A submission the pool remembers: `job_id` is the job its first attempt started."""
+
+    def __init__(self, job_id):
+        super().__init__(job_id)
+        self.job_id = job_id
 
 
 class JobFailure(Exception):
-    """A worker failure with a student-facing message and log-only details."""
+    """A worker failure with a message a user reads and details for the log only."""
 
     def __init__(self, message, details=""):
         super().__init__(message)
@@ -133,13 +159,12 @@ class JobPool:
     files) once the job ends failed or cancelled, or its record expires."""
 
     def __init__(self, worker, *, executor=None, max_running=MAX_RUNNING, max_queued=MAX_QUEUED,
-                 ttl_s=RECORD_TTL_S, abandon_grace_s=ABANDON_GRACE_S, clock=time.monotonic, log=None,
-                 error_report=None, on_discard=None, cleanup=None):
+                 ttl_s=RECORD_TTL_S, clock=time.monotonic, log=None, error_report=None, on_discard=None,
+                 cleanup=None):
         self._worker = worker
         self._executor = executor or ThreadPoolExecutor(max_workers=max_running, thread_name_prefix="slice")
-        self._max_queued = max_queued
+        self._places = max_running + max_queued
         self._ttl_s = ttl_s
-        self._grace_s = abandon_grace_s
         self._clock = clock
         log = log or (lambda entry: None)
         self._log = log if isinstance(log, SafeLog) else SafeLog(log)
@@ -153,26 +178,53 @@ class JobPool:
 
     # -- public ---------------------------------------------------------
 
-    def submit(self, payload=None, *, describe=None, expected_s=None, user_key=None):
+    def submit(self, payload=None, *, describe=None, expected_s=None, user_key=None, plate_id=None,
+               submission_id=None):
         """Queue a job; its id. `describe` (a dict) goes into every log line of the job;
-        `user_key` is whose it is (owned_by)."""
+        `user_key` is whose it is (owned_by); `plate_id` names its plate, whose earlier
+        unfinished job of the same user key it replaces; `submission_id` names this
+        submission. Raises RepeatedSubmission for a submission the pool remembers, and
+        QueueFull when every place is taken or the pool closes."""
         job_id = "j" + secrets.token_hex(8)
         with self._lock:
-            if self._closing.is_set() or sum(1 for r in self._jobs.values() if r["state"] == "queued") >= \
-                    self._max_queued:
+            repeat = self._remembered(user_key, submission_id)
+            if repeat is not None:
+                raise RepeatedSubmission(repeat)
+            if self._closing.is_set():
                 raise QueueFull()
-            now = self._clock()
+            earlier = [(other, r) for other, r in self._jobs.items() if r["state"] not in FINAL
+                       and plate_id is not None and user_key is not None
+                       and (r["user_key"], r["plate_id"]) == (user_key, plate_id)]
+            taken = sum(1 for r in self._jobs.values() if self._holds_a_place(r))
+            if taken - sum(1 for _other, r in earlier if self._holds_a_place(r)) >= self._places:
+                raise QueueFull()
+            for other, record in earlier:
+                self._end_early(other, record, "replaced")
+            ahead = self._ahead_of_a_new_job()
             self._jobs[job_id] = {"report": {"job": job_id, "state": "queued", "stage": "queued",
                                              "stage_label": STAGES["queued"], "elapsed_s": 0.0, "sequence": 1},
-                                  "state": "queued", "submitted": now, "started": None, "finished": None,
-                                  "stop": Stop(), "subscribers": 0, "alone_since": now, "result": None,
-                                  "describe": describe or {}, "expected_s": expected_s, "cancel_asked": None,
-                                  "payload": payload, "user_key": user_key}
+                                  "state": "queued", "submitted": self._clock(), "started": None, "finished": None,
+                                  "stop": Stop(), "result": None, "describe": describe or {},
+                                  "expected_s": expected_s, "cancel_asked": None, "payload": payload,
+                                  "user_key": user_key, "plate_id": plate_id, "submission_id": submission_id}
             if expected_s is not None:
                 self._jobs[job_id]["report"]["expected_s"] = expected_s
+            self._jobs[job_id]["report"]["ahead"] = ahead
             self._log_transition(job_id, "queued")
-        self._executor.submit(self._run, job_id, payload)
+        self._after_ending_early(earlier, "replaced")
+        self._executor.submit(self._run_next)
         return job_id
+
+    def remembered(self, user_key, submission_id):
+        """The id of the job the pool remembers under this user key and submission_id, or None."""
+        with self._lock:
+            return self._remembered(user_key, submission_id)
+
+    def payload(self, job_id):
+        """The payload a job was submitted with, or None for an unknown job."""
+        with self._lock:
+            record = self._jobs.get(job_id)
+            return record["payload"] if record else None
 
     def get(self, job_id):
         """The job's latest progress report, or None for an unknown job."""
@@ -203,42 +255,23 @@ class JobPool:
             record = self._jobs.get(job_id)
             return self._snapshot(record) if record else None
 
-    def subscribe(self, job_id):
-        with self._lock:
-            record = self._jobs.get(job_id)
-            if record:
-                record["subscribers"] += 1
-                record["alone_since"] = None
-            return record is not None
-
-    def unsubscribe(self, job_id):
-        with self._lock:
-            record = self._jobs.get(job_id)
-            if record and record["subscribers"] > 0:
-                record["subscribers"] -= 1
-                if record["subscribers"] == 0:
-                    record["alone_since"] = self._clock()
-
     def follow(self, job_id, wait_s=WAIT_S):
-        """Every report of a job from the latest on, ending with its final report; while
-        it runs the caller counts as a subscriber. A report repeats only when `wait_s`
-        passes with no change (a keep-alive)."""
-        if not self.subscribe(job_id):
-            return
-        try:
-            report = self.get(job_id)
-            while report is not None:
-                yield report
-                if report["state"] in FINAL:
-                    return
-                report = self.wait(job_id, report["sequence"], timeout=wait_s)
-        finally:
-            self.unsubscribe(job_id)
+        """Every report of a job from the latest on, ending with its final report. A report
+        repeats only when `wait_s` passes with no change (a keep-alive). Following a job, or
+        ceasing to, changes nothing about the job."""
+        report = self.get(job_id)
+        while report is not None:
+            yield report
+            if report["state"] in FINAL:
+                return
+            report = self.wait(job_id, report["sequence"], timeout=wait_s)
 
-    def cancel(self, job_id, reason="cancel"):
-        """Cancel a job. Returns "cancelled" (it was queued, and is now cancelled),
-        "cancelling" (it is running; its final report will say cancelled once its work has
-        stopped), "finished" (it had already ended; nothing changes) or "unknown"."""
+    def cancel(self, job_id, reason=REQUESTED):
+        """End a job early, with `reason` (one of CANCEL_REASONS) as its cancel_reason.
+        Returns "cancelled" (it was queued, and is now cancelled), "cancelling" (it is
+        running; its final report will say cancelled once its work has stopped), "finished"
+        (it had already ended; nothing changes) or "unknown". A job already being stopped
+        keeps its first reason."""
         with self._lock:
             record = self._jobs.get(job_id)
             if record is None:
@@ -246,26 +279,14 @@ class JobPool:
             if record["state"] in FINAL:
                 return "finished"
             was_queued = record["state"] == "queued"
-            if was_queued:
-                record["cancel_asked"] = reason
-                self._finish(record, job_id, "cancelled")
-            else:
-                first = record["cancel_asked"] is None
-                record["cancel_asked"] = record["cancel_asked"] or reason
-                if first:
-                    self._log_transition(job_id, "cancelling", reason=reason)
-        if was_queued:
-            self._cleanup(record["payload"])
-            return "cancelled"
-        record["stop"].set(reason)
-        return "cancelling"
+            self._end_early(job_id, record, reason)
+        self._after_ending_early([(job_id, record)], reason)
+        return "cancelled" if was_queued else "cancelling"
 
     def sweep(self, now=None):
-        """Cancel abandoned jobs and drop expired records; (abandoned, expired) counts."""
+        """Drop the records that expired, with their files; how many."""
         now = self._clock() if now is None else now
         with self._lock:
-            abandoned = [job_id for job_id, r in self._jobs.items() if r["state"] not in FINAL
-                         and r["alone_since"] is not None and now - r["alone_since"] >= self._grace_s]
             expired = [job_id for job_id, r in self._jobs.items() if r["state"] in FINAL
                        and now - r["finished"] >= self._ttl_s]
             discards = []
@@ -274,13 +295,11 @@ class JobPool:
                 discards.append((record["result"], record["payload"]))
                 self._log_transition(job_id, "expired", record=record)
             self._changed.notify_all()
-        for job_id in abandoned:
-            self.cancel(job_id, reason="abandoned")
         for result, payload in discards:
             if result is not None:
                 self._on_discard(result)
             self._cleanup(payload)
-        return len(abandoned), len(expired)
+        return len(expired)
 
     def start_sweeper(self, interval_s=SWEEP_INTERVAL_S, also=()):
         """A daemon thread that sweeps every `interval_s` until shutdown(), calling each of
@@ -319,6 +338,52 @@ class JobPool:
 
     # -- internals ------------------------------------------------------
 
+    def _remembered(self, user_key, submission_id):
+        """Under the lock: the job remembered under this user key and submission_id, or None."""
+        if user_key is None or submission_id is None:
+            return None
+        for job_id, record in self._jobs.items():
+            if (record["user_key"], record["submission_id"]) == (user_key, submission_id):
+                return job_id
+        return None
+
+    @staticmethod
+    def _holds_a_place(record):
+        return record["state"] not in FINAL and record["cancel_asked"] is None
+
+    def _ahead_of_a_new_job(self):
+        """Under the lock, before a new job is added: every job running or queued is ahead of it."""
+        return sum(1 for r in self._jobs.values() if r["state"] in ("running", "queued"))
+
+    def _refresh_ahead(self):
+        """Under the lock: a new report for every queued job whose count ahead changed."""
+        ahead = sum(1 for r in self._jobs.values() if r["state"] == "running")
+        for record in self._jobs.values():
+            if record["state"] == "queued":
+                if record["report"].get("ahead") != ahead:
+                    self._send(record, ahead=ahead)
+                ahead += 1
+
+    def _end_early(self, job_id, record, reason):
+        """Under the lock, for a job that has not ended: end it at once if it is queued, or
+        ask it to stop if it is running. A job keeps the first reason it was given."""
+        if record["state"] == "queued":
+            record["cancel_asked"] = reason
+            self._finish(record, job_id, "cancelled")
+        elif record["cancel_asked"] is None:
+            record["cancel_asked"] = reason
+            self._log_transition(job_id, "cancelling", reason=reason)
+
+    def _after_ending_early(self, ended, reason):
+        """Outside the lock, for each (job_id, record) _end_early ended or asked: a job that
+        never started has its files removed; a started one has its stop set (which changes
+        nothing once its worker has returned)."""
+        for _job_id, record in ended:
+            if record["started"] is None:
+                self._cleanup(record["payload"])
+            else:
+                record["stop"].set(reason)
+
     def _snapshot(self, record):
         report = dict(record["report"])
         if record["state"] == "running":
@@ -352,8 +417,15 @@ class JobPool:
         record["state"] = state
         record["finished"] = self._clock()
         record["result"] = result
-        self._send(record, state=state, stage=None, stage_label=None, fraction=None, error=error)
+        if state == "cancelled":       # always with its reason; a stop the pool never asked counts as requested
+            record["cancel_asked"] = record["cancel_asked"] or REQUESTED
+        # A cancelled report keeps the stage it was ended at, as the contract's example of a
+        # replaced slice job does; a done or failed one has no stage left.
+        kept = {} if state == "cancelled" else {"stage": None, "stage_label": None}
+        self._send(record, state=state, fraction=None, error=error, ahead=None,
+                   cancel_reason=record["cancel_asked"] if state == "cancelled" else None, **kept)
         self._log_transition(job_id, state, exc=exc, discarded=discarded)
+        self._refresh_ahead()
 
     def _log_transition(self, job_id, state, exc=None, reason=None, record=None, discarded=None):
         record = record or self._jobs[job_id]
@@ -380,14 +452,22 @@ class JobPool:
             entry["cancel_reason"] = reason
         self._log(entry)
 
-    def _run(self, job_id, payload=None):
+    def _run_next(self):
+        """One task of the executor: run the oldest waiting job, if any. Every submit gives
+        the executor one task and every task starts at most one job, so no waiting job is
+        left without a task; a task whose own job was ended while waiting runs the next one,
+        or nothing. Taking the oldest, not the task's own, keeps the order of acceptance
+        even when two submits reach the executor in the other order (it is called outside
+        the lock), and with it every count ahead: starting the oldest changes none."""
         with self._lock:
-            record = self._jobs.get(job_id)
-            if record is None or record["state"] != "queued":      # cancelled while queued
+            job_id = next((j for j, r in self._jobs.items() if r["state"] == "queued"), None)
+            if job_id is None:
                 return
+            record = self._jobs[job_id]
+            payload = record["payload"]
             record["state"] = "running"
             record["started"] = self._clock()
-            self._send(record, state="running", stage=None, stage_label=None)
+            self._send(record, state="running", stage=None, stage_label=None, ahead=None)
             self._log_transition(job_id, "running")
             stop = record["stop"]
         context = JobContext(self, job_id, stop)
