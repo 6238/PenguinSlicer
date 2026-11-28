@@ -1,0 +1,21 @@
+{
+  "page": "c1e07b3a-5d2f-4e91-8a6c-0f3b9d27e4a1",
+  "view": "preview",
+  "fps_typical": 58.5,
+  "fps_worst": 31,
+  "first_layer_ms": 412,
+  "longest_hold_ms": 96,
+  "instances": 4,
+  "sliced_file_bytes": 1843207,
+  "sliced_file_lines": 120345,
+  "browser": "Chrome",
+  "browser_version": "131.0",
+  "os": "macOS",
+  "drawing": "graphics_card",
+  "graphics_card": "Apple M2",
+  "processors": 8,
+  "memory_gb": 8,
+  "panel_width_px": 360,
+  "pixel_ratio": 2,
+  "in_onshape": false
+}

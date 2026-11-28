@@ -40,7 +40,13 @@ A job goes on whether or not anything follows it: nothing ends a job on account 
 followers. A final job's record, and its sliced file through `on_discard`, go RECORD_TTL_S
 (two hours) after its final report (sweep). delete_file() gives up a done job's sliced file
 once the front server has stored it: the record stays until it expires, and says the file
-is no longer held (file_deleted). shutdown() cancels every job and waits for every worker.
+is no longer held (file_deleted).
+
+Asked to stop (stop(), the first SIGTERM): every waiting job is ended early with
+cancel_reason "shutdown", every new one is refused (Stopping, never QueueFull; a repeat is
+still answered), and the running one runs to its end; drained() and wait_drained() say when
+nothing runs and no done job still holds a sliced file. shutdown() (a second stop, and the
+end of serve) cancels every job and waits for every worker.
 
 One structured log line (a dict passed to `log`) per job transition: the job id, the
 state, the plate configuration's description (profiles, overrides, parts, instances), the outcome, the
@@ -93,7 +99,19 @@ STAGES = {
 
 
 class QueueFull(Exception):
-    """Every place is taken: MAX_RUNNING running and MAX_QUEUED waiting (or the pool closes)."""
+    """Every place is taken: MAX_RUNNING running and MAX_QUEUED waiting."""
+
+
+STOPPING_DETAIL = "asked to stop; finishing the running slice job before exiting"
+
+
+class Stopping(Exception):
+    """The slice service has been asked to stop: no new slice job is accepted (slice.stopping,
+    never slice.busy)."""
+
+    def __init__(self, detail=STOPPING_DETAIL):
+        super().__init__(detail)
+        self.detail = detail
 
 
 class RepeatedSubmission(Exception):
@@ -183,7 +201,8 @@ class JobPool:
         self._lock = threading.Lock()
         self._changed = threading.Condition(self._lock)
         self._jobs = {}
-        self._closing = threading.Event()
+        self._stopping = threading.Event()    # asked to stop once: stop()
+        self._closing = threading.Event()     # shutdown(): the second stop, or the end of serve
 
     # -- public ---------------------------------------------------------
 
@@ -199,8 +218,8 @@ class JobPool:
             repeat = self._remembered(user_key, submission_id)
             if repeat is not None:
                 raise RepeatedSubmission(repeat)
-            if self._closing.is_set():
-                raise QueueFull()
+            if self._stopping.is_set() or self._closing.is_set():
+                raise Stopping()
             earlier = [(other, r) for other, r in self._jobs.items() if r["state"] not in FINAL
                        and plate_id is not None and user_key is not None
                        and (r["user_key"], r["plate_id"]) == (user_key, plate_id)]
@@ -222,7 +241,13 @@ class JobPool:
             self._jobs[job_id]["report"]["ahead"] = ahead
             self._log_transition(job_id, "queued")
         self._after_ending_early(earlier, "replaced")
-        self._executor.submit(self._run_next)
+        try:
+            self._executor.submit(self._run_next)
+        except RuntimeError:
+            # The executor was shut down between the look above and here (a second stop):
+            # the job ends with it, and the submission is answered as one while stopping.
+            self.cancel(job_id, reason="shutdown")
+            raise Stopping() from None
         return job_id
 
     def remembered(self, user_key, submission_id):
@@ -270,6 +295,7 @@ class JobPool:
                 return "deleted", None
             record["file_deleted"] = True
             self._log_transition(job_id, "file_deleted")
+            self._changed.notify_all()            # a stopping slice service may now be drained
             return "deleted", record["result"]
 
     def listing(self):
@@ -338,13 +364,13 @@ class JobPool:
             discards = []
             for job_id in expired:
                 record = self._jobs.pop(job_id)
-                discards.append((None if record["file_deleted"] else record["result"], record["payload"]))
+                discards.append((job_id, None if record["file_deleted"] else record["result"], record["payload"]))
                 self._log_transition(job_id, "expired", record=record)
             self._changed.notify_all()
-        for result, payload in discards:
+        for job_id, result, payload in discards:
             if result is not None:
                 self._on_discard(result)
-            self._cleanup(payload)
+            self._cleanup(payload, job_id)
         return len(expired)
 
     def start_sweeper(self, interval_s=SWEEP_INTERVAL_S, also=(), wait=None):
@@ -366,9 +392,40 @@ class JobPool:
         thread.start()
         return thread
 
+    def stop(self):
+        """Asked to stop (the first SIGTERM or Ctrl-C): refuse every new job (Stopping, a
+        repeat still answered), end every waiting job early with cancel_reason "shutdown",
+        and let the running one run to its end. The ids of the jobs it ended; asked again,
+        it ends nothing more."""
+        with self._lock:
+            self._stopping.set()
+            waiting = [(job_id, r) for job_id, r in self._jobs.items() if r["state"] == "queued"]
+            for job_id, record in waiting:
+                self._end_early(job_id, record, "shutdown")
+        self._after_ending_early(waiting, "shutdown")
+        return [job_id for job_id, _record in waiting]
+
+    def stopping(self):
+        """Whether the pool has been asked to stop (stop() or shutdown())."""
+        return self._stopping.is_set() or self._closing.is_set()
+
+    def drained(self):
+        """Whether nothing is waiting or running and no done job still holds a sliced file
+        the front server has not collected (delete_file): a stopping slice service may exit."""
+        with self._lock:
+            return self._drained()
+
+    def wait_drained(self, timeout=None):
+        """Wait until the pool is drained or shut down; whether it is drained or shut down."""
+        with self._lock:
+            return self._changed.wait_for(lambda: self._drained() or self._closing.is_set(), timeout)
+
     def shutdown(self):
-        """Refuse new jobs, cancel every job and wait until every worker has returned."""
+        """Refuse new jobs, cancel every job and wait until every worker has returned: the
+        second stop, and the end of serve."""
         self._closing.set()
+        with self._lock:
+            self._changed.notify_all()            # a wait for the drain ends
         with self._lock:
             ids = [job_id for job_id, r in self._jobs.items() if r["state"] not in FINAL]
         for job_id in ids:
@@ -396,6 +453,11 @@ class JobPool:
             if (record["user_key"], record["submission_id"]) == (user_key, submission_id):
                 return job_id
         return None
+
+    def _drained(self):
+        """Under the lock: see drained()."""
+        return all(r["state"] in FINAL and (r["state"] != "done" or r["result"] is None or r["file_deleted"])
+                   for r in self._jobs.values())
 
     @staticmethod
     def _holds_a_place(record):
@@ -428,9 +490,9 @@ class JobPool:
         """Outside the lock, for each (job_id, record) _end_early ended or asked: a job that
         never started has its files removed; a started one has its stop set (which changes
         nothing once its worker has returned)."""
-        for _job_id, record in ended:
+        for job_id, record in ended:
             if record["started"] is None:
-                self._cleanup(record["payload"])
+                self._cleanup(record["payload"], job_id)
             else:
                 record["stop"].set(reason)
 
@@ -548,10 +610,10 @@ class JobPool:
         if discard is not None:
             self._on_discard(discard)
         if state != "done":
-            self._cleanup(payload)
+            self._cleanup(payload, job_id)
 
-    def _cleanup(self, payload):
+    def _cleanup(self, payload, job_id):
         try:
             self._cleanup_payload(payload)
         except Exception:      # a cleanup that fails must not take the pool with it
-            self._log({"event": "slice_cleanup_error", "traceback": traceback.format_exc()})
+            self._log({"event": "slice_cleanup_error", "job": job_id, "traceback": traceback.format_exc()})

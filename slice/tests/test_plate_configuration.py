@@ -101,6 +101,17 @@ def test_missing_name_fails_left_off(configuration, scratch, names):
     assert caught.value.message == LEFT_OFF_MESSAGE
 
 
+@pytest.mark.parametrize('process', ['missing.json', 'list.json'])
+def test_a_process_that_cannot_be_read_gives_the_default_first_layer(configuration, tmp_path, process):
+    """The first layer resting_on_no_face measures at: the default process's height and
+    line width, when the slice job's process file is gone or is no object."""
+    from dataclasses import replace
+    (tmp_path / 'list.json').write_text('[1, 2]')
+    configuration.profiles = replace(DEFAULT_PROFILES, process=tmp_path / process)
+    configuration.overrides = {}
+    assert plate_configuration._first_layer(configuration) == (0.3, 0.62)
+
+
 def test_slice_error_passes_through(configuration, scratch):
     def refuse(*args, **kwargs):
         raise SliceError("Two instances are too close together.", "exit code 155", -101)

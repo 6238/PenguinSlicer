@@ -8,15 +8,15 @@ shapes that travel in these requests are the data contracts:
 [the table of settings](settings-table.md), [the error report](error-report.md) and
 [the progress report](progress-report.md).
 
-*Partly built in phase 2.* This contract is the interface of phase 2. Built in the slice
-service: the user key on every request marked "yes", `POST /parts`, `POST /slices` with the
+*Built in phase 2.* This contract is the interface of phase 2, and the slice service answers
+all of it: the user key on every request marked "yes", `POST /parts`, `POST /slices` with the
 plate configuration in its phase 2 form, with the repeat and the replacement of
 [Repeat and replacement](#post-slices--submit-a-plate-configuration), `ahead` in a waiting
 slice job's report, `GET`, `events`, `file`, `summary` and `DELETE` of one slice job,
-`GET /settings-table`, `GET /slices`, `DELETE /slices/<job>/file` and
-`slice.output_too_large`. To be built: `GET /log` and `slice.stopping`
+`GET /settings-table`, `GET /slices`, `DELETE /slices/<job>/file`, `GET /log`,
+`slice.output_too_large` and `slice.stopping`
 ([The HTTP interface](../slice/README-details.md#the-http-interface) in the slice
-service's details file says what is built). The slice service's builder and the front
+service's details file). The slice service's builder and the front
 server's builder both build to this file; neither settles a name or a shape of it alone. A
 change to it changes this file, its examples in [examples/slice-http/](examples/slice-http/)
 and both components' tests in one commit ([the contracts' rules](README.md#rules)).
@@ -270,7 +270,8 @@ and writes them with every other component's into the log
 credential to store anything itself.
 
 **Request.** `after`, a whole number: the `n` of the last line the front server received from
-this process, `0` for none.
+this process, `0` for none (left out, it is `0`). Any other `after` is answered `400`
+`slice.bad_request`.
 
 **Answer.** `200`:
 
@@ -298,7 +299,7 @@ checks and of a slice, are listed in the slice service's details file
 | Code | Status | When |
 |---|---|---|
 | `slice.no_user_key` | `400` | A request that needs the user key arrived without it, or with an empty one. A fault of the front server's; the front server answers its page `500` `front.unexpected` |
-| `slice.bad_request` | `400`, `404`, `405` | No `Content-Length` on an upload; a path the interface does not offer; a method a path does not take |
+| `slice.bad_request` | `400`, `404`, `405` | No `Content-Length` on an upload; an `after` on `GET /log` that is not a whole number; a path the interface does not offer; a method a path does not take |
 | `slice.bad_units` | `400` | An upload whose units label is missing or is neither `mm` nor `in` |
 | `slice.bad_plate_configuration` | `400`, `413` | A plate configuration that is not JSON, is multipart, breaks its form, or is over 1,048,576 bytes (`413`) |
 | `slice.stopping` | `503` | A new plate configuration while the slice service has been asked to stop; `retryable` true. Never `slice.busy` |

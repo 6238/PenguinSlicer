@@ -244,6 +244,107 @@ class TestTurnedFootprint:
         assert footprint["offset"] == [-10.0, 5.0, 0.0]
 
 
+class TestContactArea:
+    """The area of the part's faces that lie on the plate once it is turned: zero for a part
+    that touches the plate only along an edge or at a point, which the pinned Orca cannot
+    give a first layer (slice.rests_on_an_edge)."""
+
+    BRACKET = (__import__("helpers").CONTRACTS / "examples" / "parts" / "bracket.stl").read_bytes()
+    HULL_FACE = (0.707106781, -0.588348405, 0.39223227, 0.0)     # the contract example's fourth instance
+
+    def test_a_box_on_a_face_rests_on_that_face(self):
+        from penguin_slice.mesh import contact_area_mm2
+        mesh = read_binary_stl(box_stl(10, 20, 30), "Box")
+        assert contact_area_mm2(mesh, ORIENTATION_MATRICES["+z"]) == pytest.approx(200)
+        assert contact_area_mm2(mesh, ORIENTATION_MATRICES["+x"]) == pytest.approx(600)
+
+    def test_a_box_on_an_edge_or_a_corner_has_none(self):
+        import math
+        from penguin_slice.mesh import contact_area_mm2
+        from penguin_slice.plate import quaternion_matrix
+        mesh = read_binary_stl(box_stl(10, 20, 30), "Box")
+        on_edge = quaternion_matrix([math.cos(math.pi / 8), math.sin(math.pi / 8), 0, 0])
+        assert contact_area_mm2(mesh, on_edge) == 0
+        corner_up = quaternion_matrix([0.88807383, 0.32505758, -0.32505758, 0.0])
+        assert contact_area_mm2(mesh, corner_up) == 0
+
+    def test_the_bracket_on_its_hull_face_across_the_open_corner_has_none(self):
+        from penguin_slice.mesh import contact_area_mm2
+        from penguin_slice.plate import quaternion_matrix
+        mesh = read_binary_stl(self.BRACKET, "Bracket")
+        assert contact_area_mm2(mesh, quaternion_matrix(self.HULL_FACE)) == 0
+        half = 0.5 ** 0.5
+        assert contact_area_mm2(mesh, quaternion_matrix([half, 0, -half, 0])) == pytest.approx(360)   # its -x face
+
+    def test_a_part_in_inches_is_measured_in_millimetres(self):
+        from penguin_slice.mesh import contact_area_mm2
+        mesh = read_binary_stl(box_stl(1, 1, 0.5), "Block", scale=25.4)
+        assert contact_area_mm2(mesh, ORIENTATION_MATRICES["+z"]) == pytest.approx(25.4 ** 2)
+
+
+class TestFirstLayerSection:
+    """The part's section a given height above its lowest point once it is turned, the shape
+    the slicer's first layer is cut from: a curved part that touches the plate at a point or
+    along a line is millimetres across there, a part on an edge a fraction of a line."""
+
+    AT, HALF_LINE = 0.15, 0.31          # the default process: half its 0.3 mm first layer, half its 0.62 mm line
+
+    def section(self, stl, matrix, name="Part"):
+        from penguin_slice.mesh import first_layer_section
+        return first_layer_section(read_binary_stl(stl, name), matrix, self.AT)
+
+    def test_a_box_on_a_face_is_cut_to_that_face(self):
+        assert self.section(box_stl(10, 20, 30), ORIENTATION_MATRICES["+z"]).area == pytest.approx(200)
+
+    def test_a_box_on_an_edge_is_a_strip_narrower_than_a_line(self):
+        import math
+        from penguin_slice.plate import quaternion_matrix
+        on_edge = quaternion_matrix([math.cos(math.pi / 8), math.sin(math.pi / 8), 0, 0])
+        section = self.section(box_stl(10, 20, 30), on_edge)
+        assert section.area == pytest.approx(10 * 2 * self.AT, rel=1e-3)        # 10 mm long, 0.3 mm wide
+        assert section.buffer(-self.HALF_LINE).is_empty
+
+    def test_the_bracket_on_its_hull_face_is_two_strips_narrower_than_a_line(self):
+        from penguin_slice.plate import quaternion_matrix
+        section = self.section(TestContactArea.BRACKET, quaternion_matrix(TestContactArea.HULL_FACE), "Bracket")
+        assert section.area > 0 and section.buffer(-self.HALF_LINE).is_empty
+
+    def test_a_ball_on_its_pole_is_millimetres_across(self):
+        from helpers import ball_stl
+        from penguin_slice.mesh import contact_area_mm2
+        mesh_matrix = ORIENTATION_MATRICES["+z"]
+        assert contact_area_mm2(read_binary_stl(ball_stl(), "Ball"), mesh_matrix) == 0
+        section = self.section(ball_stl(), mesh_matrix, "Ball")
+        assert section.area > 10 and not section.buffer(-self.HALF_LINE).is_empty
+
+    def test_a_tube_lying_on_a_line_of_vertices_is_millimetres_across(self):
+        from penguin_slice.mesh import contact_area_mm2
+        tube = cylinder_stl(10, 40, segments=48)          # vertices at 0 and 180 degrees: '+x' lays a line on the plate
+        assert contact_area_mm2(read_binary_stl(tube, "Tube"), ORIENTATION_MATRICES["+x"]) == 0
+        section = self.section(tube, ORIENTATION_MATRICES["+x"], "Tube")
+        assert section.area > 40 and not section.buffer(-self.HALF_LINE).is_empty
+
+    def test_above_the_part_or_through_an_open_surface_it_is_empty(self):
+        from types import SimpleNamespace
+        from penguin_slice.mesh import first_layer_section
+        box = read_binary_stl(box_stl(10, 20, 30), "Box")
+        assert first_layer_section(box, ORIENTATION_MATRICES["+z"], 31).is_empty
+        # The box without one side (the reader refuses so open a part; a part read before may be).
+        open_box = SimpleNamespace(vertices=box.vertices, faces=box.faces[[0, 1, 2, 3, 6, 7, 8, 9, 10, 11]])
+        cut = first_layer_section(box, ORIENTATION_MATRICES["+z"], self.AT)
+        assert cut.area == pytest.approx(200)
+        assert first_layer_section(open_box, ORIENTATION_MATRICES["+z"], self.AT).is_empty   # a U, no outline
+
+    def test_a_part_with_a_hole_through_it_keeps_the_hole(self):
+        import numpy as np
+        from helpers import mesh_stl
+        outer, inner = (read_binary_stl(box_stl(s, s, 5, origin=(o, o, 0)), "x") for s, o in ((20, 0), (10, 5)))
+        # The inner box's faces turned inward: a 20 mm square with a 10 mm square hole through it.
+        stl = mesh_stl(np.vstack([outer.vertices, inner.vertices]),
+                       np.vstack([outer.faces, inner.faces[:, ::-1] + len(outer.vertices)]))
+        assert self.section(stl, ORIENTATION_MATRICES["+z"]).area == pytest.approx(300)
+
+
 @pytest.mark.parametrize("name", ORIENTATIONS)
 def test_matrices_put_the_named_axis_up(name):
     sign = 1 if name[0] == "+" else -1

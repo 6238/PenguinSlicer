@@ -33,7 +33,8 @@ body that is not a plate configuration; 404 for an unknown slice job or a path n
 (yet); 410 for a sliced file gone from the disk; 413 for a part or a plate configuration
 too large, refused before its body is read; 422 for a part or plate configuration a check
 refused; 500 for the slice service's own failure (its work folder or part store not
-writable, a bug); 503 when the queue is full.
+writable, a bug); 503 when the queue is full (slice.busy) or the slice service has been asked
+to stop (slice.stopping, answered after the repeat and before any check).
 
 Each part is checked when it arrives, and each plate configuration when it arrives, before
 a slice job is queued for it, so a refusal comes back at once. Before any check, a plate
@@ -56,6 +57,7 @@ accepted its slice job, and a server that runs several worker processes behind o
 address loses slice jobs.
 """
 import json
+import re
 import shutil
 import tempfile
 import traceback
@@ -66,7 +68,8 @@ from werkzeug.exceptions import HTTPException
 
 from . import limits, part_store, settings_table
 from .errors import error_report, report_for_code
-from .jobs import FINAL, JobPool, QueueFull, RepeatedSubmission, SafeLog, exception_text
+from .jobs import FINAL, JobPool, QueueFull, RepeatedSubmission, SafeLog, Stopping, exception_text
+from .log_buffer import LogBuffer
 from .mesh import MeshError
 from .service import (BAD_CONFIGURATION_MESSAGE, UPLOAD_REMEDIES, clean_stale_scratch, make_scratch, parts_missing,
                       read_plate_configuration, slice_plate_configuration, upload_part)
@@ -82,6 +85,18 @@ BAD_UNITS_MESSAGE = "The slicer was not told whether this part is in millimetres
 NO_LENGTH_MESSAGE = "The slicer was not told how large this part is."
 PART_STORE_UNWRITABLE_MESSAGE = "The slicer could not keep this part."
 UPLOAD_NOT_WHOLE_MESSAGE = "This part did not arrive whole."
+BAD_AFTER_MESSAGE = "The slicer was asked for its log after a line that is not a whole number."
+WHOLE_NUMBER = re.compile(r"[0-9]+")      # GET /log's `after`: ASCII digits only, never "²"
+# An `after` of more digits than this, leading zeros aside, is past any line a process writes;
+# it is read as this many nines, which keeps int() clear of Python's limit on long digit strings.
+AFTER_DIGITS = 18
+
+
+def _after(text):
+    """GET /log's `after` as a number: leading zeros are dropped, and a number of more than
+    AFTER_DIGITS digits is read as the largest of AFTER_DIGITS digits."""
+    digits = text.lstrip("0") or "0"
+    return int(digits) if len(digits) <= AFTER_DIGITS else 10 ** AFTER_DIGITS - 1
 TOO_LARGE_PROBLEM = f"it is larger than {limits.MAX_PLATE_CONFIGURATION_BYTES:,} bytes"
 JOB_PARTS = "parts"           # a slice job's hold on its parts' files, in its folder
 STORE_LABEL = "parts-"        # the part store's folder: slice-<pid>-<start>-parts-<random>
@@ -161,7 +176,10 @@ def create_app(work_dir=None, pool=None, *, log=None, start_sweeper=True, enviro
     store_bytes = part_store.max_bytes(environ)
     work_dir = Path(work_dir or tempfile.mkdtemp(prefix="penguin-slice-")).resolve()
     work_dir.mkdir(parents=True, exist_ok=True)
-    log = log if isinstance(log, SafeLog) else SafeLog(log or (lambda entry: None))     # a failing sink is counted
+    # Every line goes into the buffer the front server collects (GET /log) and on to `log`;
+    # a failing buffer or sink is counted (SafeLog) and changes no answer.
+    buffer = log if isinstance(log, LogBuffer) else LogBuffer(sink=log)
+    log = SafeLog(buffer)
     clean_stale_scratch(work_dir)
     if store is None:
         store = part_store.PartStore(make_scratch(work_dir, STORE_LABEL), store_bytes)
@@ -173,6 +191,8 @@ def create_app(work_dir=None, pool=None, *, log=None, start_sweeper=True, enviro
     app.config["MAX_CONTENT_LENGTH"] = MAX_BODY_BYTES
     app.extensions["penguin_slice_pool"] = pool
     app.extensions["penguin_slice_store"] = store
+    app.extensions["penguin_slice_log"] = log
+    app.extensions["penguin_slice_log_buffer"] = buffer
 
     @app.after_request
     def no_store(answer):
@@ -320,7 +340,7 @@ def create_app(work_dir=None, pool=None, *, log=None, start_sweeper=True, enviro
                                                    BAD_CONFIGURATION_MESSAGE.format(problem=problem),
                                                    f"{type(exc).__name__}: {exc}"[:300]), 400
                 else:
-                    body, status = _repeat(data, asked_key()) or _queue(data, asked_key())
+                    body, status = _repeat(data, asked_key()) or _stopping() or _queue(data, asked_key())
         if status != 202:
             log_refusal(body, status, data)
         return jsonify(body), status
@@ -352,6 +372,11 @@ def create_app(work_dir=None, pool=None, *, log=None, start_sweeper=True, enviro
             return None
         job_id = pool.remembered(user_key, submission_id)
         return None if job_id is None else _answer_repeat(job_id, user_key)
+
+    def _stopping():
+        """After the repeat, before any check: (slice.stopping, 503) once the slice service has
+        been asked to stop, else None."""
+        return (error_report(Stopping()), 503) if pool.stopping() else None
 
     def _queue(data, user_key):
         """Check the plate configuration, hold its parts and queue its slice job: (answer,
@@ -389,7 +414,7 @@ def create_app(work_dir=None, pool=None, *, log=None, start_sweeper=True, enviro
             missing = [{"key": ref, "sha256": part.sha256, "units": part.units}
                        for ref, part in configuration.parts.items() if (part.sha256, part.units) in gone]
             return error_report(parts_missing(missing)), 422
-        except QueueFull as exc:
+        except (QueueFull, Stopping) as exc:       # every place taken, or asked to stop meanwhile
             shutil.rmtree(job_dir, ignore_errors=True)
             return error_report(exc), 503
         except OSError as exc:
@@ -459,6 +484,16 @@ def create_app(work_dir=None, pool=None, *, log=None, start_sweeper=True, enviro
             answer = Response(table.raw, mimetype="application/json")
         answer.headers["Vary"] = "Accept-Encoding"
         return answer
+
+    @app.get("/log")
+    def log_lines():
+        """The log lines written after the line numbered `after` (0 when left out), for the
+        front server to collect. It answers for the whole slice service, so the user key is
+        not looked at."""
+        after = request.args.get("after", "0")
+        if not WHOLE_NUMBER.fullmatch(after):
+            return _report("slice.bad_request", BAD_AFTER_MESSAGE, f"GET /log with after {after[:40]!r}", 400)
+        return jsonify(buffer.read(_after(after)))
 
     @app.get("/slices")
     def every_slice_job():

@@ -192,6 +192,36 @@ def test_a_rotation_and_a_part_in_inches_slice_where_the_checks_place_them(tmp_p
     assert {name: e for name, e in errors.items() if e > PLACEMENT_TOLERANCE_MM} == {}
 
 
+@pytest.mark.parametrize("overrides, sliced", [
+    ({"enable_support": "0"}, False),
+    ({"enable_support": "1", "support_type": "tree(auto)"}, False),
+    ({"enable_support": "1", "support_type": "tree(auto)", "raft_layers": "2"}, True)])
+def test_a_part_resting_on_an_edge_has_no_first_layer_unless_supported_on_a_raft(tmp_path, overrides, sliced):
+    """Protects: slice.rests_on_an_edge. The contract's phase 2 example lays its fourth
+    instance on the face of the bracket's convex hull across the L's open corner, so the
+    bracket touches the plate along two edges only, and its first layer is two strips about
+    0.2 mm wide, narrower than any line Orca lays down. The pinned Orca then refuses the plate
+    with -100 ("One object has an empty first layer and can't be printed. Please Cut the
+    bottom or enable supports.", which it writes to no file: its stderr says only "Errors"),
+    with supports off and with tree supports on, and slices it with supports and a raft. The
+    slice service names the instance and says why; the placement check accepts the plate, as
+    it must for any face of a part's hull."""
+    example = json.loads((CONTRACTS / "examples" / "plate-configuration-phase-2.json").read_text())
+    example["instances"] = [dict(example["instances"][3], x=170.0, y=160.0)]
+    example["overrides"] = overrides
+    example["submission_id"] = f"edge-{len(overrides)}"
+    bracket = (EXAMPLE_PARTS / "bracket.stl").read_bytes()
+    _stages, report, data, _summary = through_the_http_interface(tmp_path / "work", example, [bracket])
+    print(f"\n[orca] the bracket on its hull face, {overrides}: {report['state']} {report.get('error')}")
+    if sliced:
+        assert report["state"] == "done" and data, report.get("error")
+    else:
+        assert report["state"] == "failed"
+        assert report["error"]["code"] == "slice.rests_on_an_edge", report["error"]
+        assert report["error"]["where"]["instance"] == "Bracket #1"
+        assert "orca code -100" in report["error"]["detail"]
+
+
 def test_catalog_profiles_and_overrides_reach_the_gcode(example_slice):
     """Protects: the profile fields the catalog and the overrides depend on reach Orca."""
     out, summary, _stages = example_slice
@@ -676,17 +706,9 @@ def test_an_orca_that_cannot_load_its_libraries_is_unstartable(tmp_path, monkeyp
 
 
 def block_on_a_stem_stl():
-    """A 20 x 20 x 5 mm block on a stem 0.4 mm across and 30 mm tall, too thin for the
-    nozzle: the pinned Orca fails it with only its general error_string (its own reason,
-    "One object has an empty first layer", is thrown, collected and lost), and its debug log
-    holds the warning it reported while slicing: floating regions."""
-    import numpy as np
-    from penguin_slice.mesh import read_binary_stl
-    from helpers import mesh_stl
-    stem, block = (read_binary_stl(box_stl(*size, origin=origin), "x") for size, origin in
-                   (((0.4, 0.4, 30.5), (9.8, 9.8, 0.0)), ((20, 20, 5), (0.0, 0.0, 30.0))))
-    return mesh_stl(np.vstack([stem.vertices, block.vertices]),
-                    np.vstack([stem.faces, block.faces + len(stem.vertices)]))
+    """helpers.block_on_a_stem_stl, the block on a stem the fast suite uses too."""
+    from helpers import block_on_a_stem_stl as block
+    return block()
 
 
 def test_orcas_reason_for_a_general_failure_is_read_from_its_debug_log(tmp_path):
@@ -741,6 +763,27 @@ def test_a_sound_parts_warning_is_not_given_as_the_reason_another_part_failed(tm
     assert report["message"] == slicer.SLICE_FAILED_WARNED_MESSAGE.format(warnings=warning) == (
         f"The slicer could not slice this plate. It also warned, though this may not be why it failed: {warning}")
     assert "Needle" not in report["message"]                     # the needle's reason reaches no file
+
+
+def test_a_ball_that_prints_is_not_blamed_for_the_block_on_a_stem(tmp_path):
+    """Protects: slice.rests_on_an_edge names only an instance with no first layer. A ball of
+    radius 20 mm touches the plate at a point, yet slices alone; beside the block on a stem
+    0.4 mm across, which fails with Orca's general failure, the report stays
+    slice.orca_failed with Orca's warning of the block, and the ball is named nowhere."""
+    from helpers import ball_stl
+    ball, block = ball_stl(), block_on_a_stem_stl()
+    alone = phase_2({"ball": ("Ball", ball)}, [{"ref": "ball", "orientation": "+z", "angle": 0, "x": 100.0, "y": 150.0}],
+                    submission_id="ball-alone")
+    _stages, report, _data, _summary = through_the_http_interface(tmp_path / "alone", alone, [ball])
+    print(f"\n[orca] a ball alone: {report['state']} {report.get('error')}")
+    assert report["state"] == "done", report.get("error")
+    both = phase_2({"ball": ("Ball", ball), "block": ("Block", block)},
+                   [{"ref": "ball", "orientation": "+z", "angle": 0, "x": 60.0, "y": 150.0},
+                    {"ref": "block", "orientation": "+z", "angle": 0, "x": 160.0, "y": 150.0}], submission_id="ball-block")
+    _stages, report, _data, _summary = through_the_http_interface(tmp_path / "both", both, [ball, block])
+    print(f"\n[orca] a ball beside a block on a stem: {report['state']} {report.get('error')}")
+    assert report["state"] == "failed" and report["error"]["code"] == "slice.orca_failed", report.get("error")
+    assert "Ball" not in report["error"]["message"] and "Block #1 has floating regions" in report["error"]["message"]
 
 
 def test_the_reference_plate_of_100_spacers(tmp_path):

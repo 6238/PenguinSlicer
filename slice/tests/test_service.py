@@ -318,7 +318,7 @@ class TestRead:
         error = refused(plate_configuration(instances=instances), base)
         assert error.error_code == "slice.too_many_instances"
         assert error.message == ("This plate has 151 instances; the slicer takes up to 150 on one plate, so print "
-                                 "the rest on a second plate.")
+                                 "the rest on a new plate.")
         assert error.details == "151 instances, cap 150"
 
     def test_the_reference_plate_of_100_spacers_is_accepted(self, base):
@@ -340,7 +340,7 @@ class TestRead:
         error = refused(plate_configuration(parts=parts, instances=grid), base)
         assert (error.error_code, error.message) == (
             "slice.too_many_instances", "This plate has 151 instances; the slicer takes up to 150 on one plate, so "
-                                        "print the rest on a second plate.")
+                                        "print the rest on a new plate.")
 
     def test_too_many_different_parts(self, base):
         parts = {f"p{i}": part_entry(f"P{i}", PEG) for i in range(limits.MAX_PARTS + 1)}
@@ -349,7 +349,7 @@ class TestRead:
         error = refused(plate_configuration(parts=parts, instances=instances), base)
         assert (error.error_code, error.details) == ("slice.too_many_parts", "26 different parts, cap 25")
         assert error.message == ("This plate uses 26 different parts; the slicer takes up to 25 on one plate, so "
-                                 "print the rest on a second plate.")
+                                 "print the rest on a new plate.")
         parts.pop(f"p{limits.MAX_PARTS}")                       # 25 parts pass this check
         assert len(base.read(plate_configuration(parts=parts, instances=instances[:-1])).parts) == 25
 

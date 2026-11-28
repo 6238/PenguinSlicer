@@ -6,6 +6,7 @@ Nothing here reads the real clock or sleeps."""
 import socket
 from pathlib import Path
 
+import secret_watch
 from penguin_front.app import create_app
 from penguin_front.settings import Settings
 
@@ -30,7 +31,15 @@ class Lines:
         self.lines = []
 
     def write(self, event, **fields):
-        self.lines.append({"event": event, **fields})
+        self._keep({"event": event, **fields})
+
+    def write_as(self, component, event, **fields):
+        """A line written for another component, as for the page's reports."""
+        self._keep({"event": event, "component": component, **fields})
+
+    def _keep(self, line):
+        secret_watch.current.text("a test's log", line)
+        self.lines.append(line)
 
     def events(self, event):
         return [line for line in self.lines if line["event"] == event]
@@ -97,6 +106,9 @@ def shut(app, standin=None):
     streams (which ends a following thread blocked on one), then wait for the following
     threads to end, and close the client for the slice service."""
     ctx = app.extensions["penguin_front"]
+    for loop in ("collector", "gatherer"):
+        if ctx.get(loop) is not None:
+            ctx[loop].stop()
     if ctx.get("streams") is not None:
         ctx["streams"].stop()
     follower = ctx.get("follower")

@@ -26,10 +26,10 @@ def test_sentences_follow_the_caps():
     assert limits.TOO_DETAILED_MESSAGE.format(name="Gear") == \
         "Gear is too detailed to print here (over 150,000 triangles)."
     assert limits.TOO_MANY_INSTANCES_MESSAGE.format(count=151) == \
-        "This plate has 151 instances; the slicer takes up to 150 on one plate, so print the rest on a second plate."
+        "This plate has 151 instances; the slicer takes up to 150 on one plate, so print the rest on a new plate."
     assert limits.TOO_MANY_PARTS_MESSAGE.format(count=26) == \
         "This plate uses 26 different parts; the slicer takes up to 25 on one plate, so print the rest on a " \
-        "second plate."
+        "new plate."
     assert limits.MIN_PART_EXTENT_MM == 0.1
     assert not hasattr(limits, "PLATE_TOO_LARGE_MESSAGE")      # the estimate refuses nothing
 
