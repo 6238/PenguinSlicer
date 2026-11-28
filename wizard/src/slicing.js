@@ -16,7 +16,12 @@
 //   busy    no room to wait: an amber message with Slice again
 //   failed  a red message: the error report's sentences, its buttons, and folded Details on the two
 //           empty-layers failures
-//   done    the plate is sliced: a placeholder where the result and the layer preview will be
+//   done    the plate is sliced: the sliced file's details (asked for when the done report lacks
+//           them), from which the result, the layer preview and the Send step are drawn; the page
+//           counts the details' expires_in_s on its own clock from the moment they arrived
+//   expired the sliced plate has expired: a grey message with Slice again, on the Preview and Send
+//           steps, in the wizard's sentence at the moment of expiry, or in the front server's when a
+//           request was refused first as expired; the page does not slice again by itself
 import { followJob } from './following.js';
 import { SPACING_SUPPORTS_MM } from './geometry/constants.js';
 import {
@@ -92,13 +97,25 @@ export function clockText(seconds) {
 const isErrorReport = (r) => r !== null && typeof r === 'object' && typeof r.code === 'string'
   && typeof r.message === 'string' && typeof r.remedy === 'string';
 
+// The sliced file's details (contracts/wizard-front-server.md, "The sliced file's details"), as
+// far as the page relies on them: the name a download is offered under, and the summary.
+export const isDetails = (d) => d !== null && typeof d === 'object' && typeof d.file === 'string'
+  && d.summary !== null && typeof d.summary === 'object';
+
+// The front server's refusal of a sliced file that has expired or gone.
+export const EXPIRED_CODE = 'front.sliced_file_expired';
+// The key of a notification that says the sliced plate "is still here", which goes at the moment
+// the sliced plate expires, since it has stopped being true.
+export const STILL_HERE_NOTICE = 'sliced-plate-still-here';
+
 // createSlicing({api, clock, storage, store, settings, layout, panel, report, newId, random, mode, follow}):
 //   storage   the storage module: the tab's plate, its parts' bytes, and the slice it keeps
 //   store     the panel's store: the step, the configuration, and `sliced`
 //   settings  {setQuick}: Turn on Supports and slice again sets the Supports quick change
 //   layout    {idle, notSliced}: the placement check run (idle resolves once it is), and the line
 //             the Layout step shows above its usual message when supports need more room
-//   panel     {goTo}: the wizard's own Back to Layout, Back to Parts and Back to Settings
+//   panel     {goTo, dropNotice}: the wizard's own Back to Layout, Back to Parts and Back to
+//             Settings, and the notification that goes when the sliced plate expires
 //   report(what, {detail})  a failure report about the page itself
 //   newId()   a new random UUID, for each submission
 //   mode      'stream' (the default) or 'ask': how a slice job is followed
@@ -109,7 +126,8 @@ export function createSlicing({
   ready = () => layout.idle(),
 }) {
   let run = 0;                  // moves on each time the page decides to slice; older work stops
-  let current = null;           // {id, submissionId, fingerprint, submittedMs}
+  let current = null;           // {id, submissionId, fingerprint, submittedMs, body}
+  let expiry = null;            // the timer of the sliced plate's expiry
   let view = { kind: 'idle' };
   let card = null;
   let follower = null;
@@ -151,12 +169,55 @@ export function createSlicing({
   function show(next) {
     view = next;
     if (next.kind !== 'card') card = null;
+    if (next.kind !== 'done') endExpiry();
+    const expired = next.kind === 'expired';
+    if (Boolean(store.get().expired) !== expired) store.set({ expired });
     tell();
   }
   function fail(errorReport) {
     stopFollowing();
     setSliced(false);
     show({ kind: 'failed', report: errorReport });
+  }
+
+  // ---- a sliced plate and its expiry
+  function endExpiry() {
+    if (expiry !== null) { clock.cancel(expiry); expiry = null; }
+  }
+  // The sliced file's details, from the done report, the summary or a later answer: the moment of
+  // expiry counted on the page's own clock from now, never from expires_at; none while it is null.
+  function takeDetails(details) {
+    if (view.kind !== 'done' || !isDetails(details)) return;
+    view = { ...view, details };
+    endExpiry();
+    const s = details.expires_in_s;
+    if (typeof s === 'number' && Number.isFinite(s)) {
+      expiry = clock.after(Math.max(0, s) * 1000, () => { expiry = null; expire(null); });
+    }
+    tell();
+  }
+  // The sliced plate has expired: the wizard's sentence at the moment of expiry (report null), or
+  // the front server's refusal's when a request was refused first. Nothing is sliced by itself.
+  function expire(report) {
+    if (!current) return;
+    stopFollowing();
+    endWaits();
+    setSliced(false);
+    show({
+      kind: 'expired', report,
+      what: report ? report.message : T.EXPIRED_WHAT,
+      todo: report ? report.remedy : T.EXPIRED_TODO,
+    });
+    if (panel.dropNotice) panel.dropNotice(STILL_HERE_NOTICE);
+  }
+  async function askDetails(mine) {
+    const path = `/api/slices/${encodeURIComponent(current.id)}/summary`;
+    const answer = await api.get(path);
+    if (mine !== run || view.kind !== 'done') return;
+    if (answer.ok && answer.body && isDetails(answer.body.sliced_file)) takeDetails(answer.body.sliced_file);
+    else if (answer.ok) fail(badAnswer(path, answer.status, JSON.stringify(answer.body)));
+    else if (answer.report.code === EXPIRED_CODE) expire(answer.report);
+    else fail(answer.report);
   }
 
   function newCard({ since, restarted }) {
@@ -231,9 +292,13 @@ export function createSlicing({
     } else if (r.state === 'done') {
       stopFollowing();
       setSliced(true);
-      show({ kind: 'done', report: r });
+      show({ kind: 'done', report: r, details: null, slice: current.id, body: current.body });
+      if (isDetails(r.sliced_file)) takeDetails(r.sliced_file);
+      else askDetails(mine);
     } else if (r.state === 'failed') {
-      fail(isErrorReport(r.error) ? r.error : badAnswer(`/api/slices/${current.id}`, 200, JSON.stringify(r)));
+      // the sliced file stored and since expired is the done report turned failed
+      if (isErrorReport(r.error) && r.error.code === EXPIRED_CODE) expire(r.error);
+      else fail(isErrorReport(r.error) ? r.error : badAnswer(`/api/slices/${current.id}`, 200, JSON.stringify(r)));
     } else if (r.state === 'cancelled') {
       stopFollowing();
       // asked to stop before it ran: the page submits the plate again by itself; replaced by the
@@ -249,13 +314,13 @@ export function createSlicing({
       // neither the slice service nor the state bucket knows it: a slice service that restarted,
       // when it was submitted less than two hours ago, by the page's own clock, and the page
       // submits again by itself; two hours or more, it has expired, and the page does not slice
-      // again by itself: the refusal is shown with Slice again, and entering the step again slices
-      // (the expired message of item 14 is to take its place)
-      if (clock.now() - current.submittedMs < SLICED_FILE_KEEP_S * 1000) {
-        slice({ restarted: true });
-        return;
-      }
+      // again by itself: the expired message, in the wizard's sentence, and entering the step
+      // again slices
+      if (clock.now() - current.submittedMs < SLICED_FILE_KEEP_S * 1000) slice({ restarted: true });
+      else expire(null);
+      return;
     }
+    if (r.code === EXPIRED_CODE) { expire(r); return; }
     fail(r);
   }
 
@@ -384,7 +449,7 @@ export function createSlicing({
       return;
     }
     const body = built.configuration;
-    current = { id: null, submissionId, fingerprint: fingerprint(body), submittedMs: clock.now() };
+    current = { id: null, submissionId, fingerprint: fingerprint(body), submittedMs: clock.now(), body };
     setSliced(false);
     const bytes = bodyBytes(body);
     if (bytes > MAX_PLATE_CONFIGURATION_BYTES) {
@@ -410,12 +475,12 @@ export function createSlicing({
   }
 
   // A slice kept in the stored plate, of the plate as it stands: followed, not submitted again.
-  function resume(kept) {
+  function resume(kept, body) {
     run += 1;
     const mine = run;
     stopFollowing();
     endWaits();
-    current = { id: kept.id, submissionId: kept.submission_id, fingerprint: kept.fingerprint, submittedMs: kept.submitted_ms };
+    current = { id: kept.id, submissionId: kept.submission_id, fingerprint: kept.fingerprint, submittedMs: kept.submitted_ms, body };
     newCard({ since: clock.now(), restarted: false });
     show({ kind: 'card' });
     startFollowing(mine);
@@ -439,7 +504,7 @@ export function createSlicing({
     if (current && current.fingerprint === fp && (view.kind === 'card' || view.kind === 'done')) return;
     const kept = storage.plate().slice;
     if (!current && kept && typeof kept.id === 'string' && kept.fingerprint === fp && Number.isFinite(kept.submitted_ms)) {
-      resume(kept);
+      resume(kept, built.configuration);
       return;
     }
     await slice();
@@ -497,6 +562,14 @@ export function createSlicing({
     };
   }
 
+  // Slice again from the expired message: on the Preview step it submits; on the Send step it goes
+  // to the Preview step, whose entering submits the plate, which is not sliced.
+  function sliceExpired() {
+    if (store.get().step === 'preview') return slice();
+    panel.goTo('preview');
+    return Promise.resolve();
+  }
+
   const act = (id) => {
     if (id === 'again') return () => slice();
     if (id === 'supports') return () => supportsAndSlice();
@@ -522,7 +595,13 @@ export function createSlicing({
           actions: failureButtons(r).map((b) => ({ ...b, run: act(b.id) })),
         };
       }
-      if (view.kind === 'done') return { kind: 'done', report: view.report, text: T.SLICED_PLACEHOLDER };
+      if (view.kind === 'done') return { kind: 'done', report: view.report, details: view.details, slice: view.slice, body: view.body };
+      if (view.kind === 'expired') {
+        return {
+          kind: 'expired', report: view.report, what: view.what, todo: view.todo,
+          actions: [{ id: 'again', label: T.SLICE_AGAIN, primary: true, run: sliceExpired }],
+        };
+      }
       return { kind: 'idle' };
     },
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
@@ -541,5 +620,13 @@ export function createSlicing({
     },
     enter,
     sliceAgain: () => slice(),
+    // The sliced file's details answered later (Download asks them first): the moment of expiry
+    // counted afresh from their arrival.
+    takeDetails,
+    // A request about the sliced plate `slice` refused as expired (the file, the summary): the
+    // expired message with the front server's sentence.
+    expire(report, slice) {
+      if (view.kind === 'done' && view.slice === slice) expire(report);
+    },
   };
 }

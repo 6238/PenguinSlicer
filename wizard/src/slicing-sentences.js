@@ -32,8 +32,10 @@ export const ORCA_SAYS = (sentence) => `Orca Slicer: ${sentence}`;
 // plate too close together for supports.
 export const NOT_SLICED_SUPPORTS = (mm) => `Not sliced: with Supports on, instances need ${mm} mm between them.`;
 
-// The placeholder where the result and the layer preview will be, until they are built.
-export const SLICED_PLACEHOLDER = 'The plate is sliced. Its print time, filament and layer preview will show here.';
+// A sliced plate that expires (wizard/README.md, "A sliced plate that expires"): the wizard's own
+// grey message at the moment of expiry, what happened and what to do, with Slice again.
+export const EXPIRED_WHAT = 'This plate\'s slice has expired.';
+export const EXPIRED_TODO = 'A sliced plate is kept for two hours after it is sliced or after its last print ends. Slice it again to print it; your parts, layout and settings are unchanged.';
 
 // The page's own failures on the Preview step.
 export function plateConfigurationOverSize(bytes, cap) {
