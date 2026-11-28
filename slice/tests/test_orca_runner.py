@@ -144,7 +144,7 @@ class TestSignals:
         _exc, report = failure(tmp_path, monkeypatch, plate, "sigkill")
         assert report["code"] == "slice.out_of_memory"
         assert report["message"] == "This plate is too large to slice: the slicer ran out of memory."
-        assert report["remedy"] == "Remove some instances or the largest part and print them on a second plate."
+        assert report["remedy"] == "Remove some instances or the largest part and print them on a new plate."
         assert report["retryable"] is False and report["action"] == "lower_quantities"
         assert report["detail"].startswith("ended by signal 9 (SIGKILL), not sent by the slice service; the "
                                            "kernel's oom_kill count rose by 1")

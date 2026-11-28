@@ -1114,7 +1114,7 @@ describes.
 
 In these sentences "the print server" is the old word for the slice service. Where a
 remedy is another plate, the sentences say "a new plate", the words of the wizard's
-panel, from phase 2; today they say "a second plate".
+panel.
 
 Two failures have a known weak spot. A part whose very first layer is empty (a needle
 thinner than the nozzle prints, for example) fails with only the general sentence, because
@@ -1401,17 +1401,16 @@ hostile inputs are tried.
 - the list of slice jobs, for a restarted front server;
 - the limit of 50 MB on a sliced file;
 - Orca's own sentence in the error reports of the two failures about a gap with nothing
-  under it.
+  under it;
+- "a new plate" in every sentence whose remedy is another plate.
 
-**Built today and replaced in phase 2:** the stop that ends every slice job early; "a
-second plate" in the sentences whose remedy is another plate.
+**Built today and replaced in phase 2:** the stop that ends every slice job early.
 
 **Built today and left as it is, unused:** the request that cancels a slice job. The
 front server never sends it.
 
 **Phase 2, on one machine, adds besides:**
 
-- "a new plate" in every sentence whose remedy is another plate;
 - finishing the running slice when asked to stop, and answering new submissions meanwhile
   with an answer of its own;
 - the log lines collected by the front server, each carrying the component's name, the

@@ -44,10 +44,10 @@ TOO_CLOSE_SUPPORTS_MESSAGE = ("{label} and {label2} are closer than {spacing:g} 
                               "instances.")
 # The remedies for two instances too close together, whether the placement check or Orca
 # found them (errors.CODES, slicer.orca_failure).
-TOO_CLOSE_REMEDY = ("Spread the instances out (or press Arrange), or move some instances to a second plate, "
+TOO_CLOSE_REMEDY = ("Spread the instances out (or press Arrange), or move some instances to a new plate, "
                     "and slice again.")
 TOO_CLOSE_SUPPORTS_REMEDY = ("Spread the instances out (or press Arrange), turn supports off, or move some instances "
-                             "to a second plate, and slice again.")
+                             "to a new plate, and slice again.")
 
 
 def _cos_sin(angle):

@@ -238,10 +238,10 @@ TWO = [{"ref": "box", "orientation": "+z", "angle": 0, "x": 50.0, "y": 50.0},
 SPACED = [dict(TWO[0]), dict(TWO[1], x=80.0)]
 SERVER = "Slice again; if it fails again, ask a mentor to check the print server."
 # Written out, not imported, so a change to the remedies fails a test.
-TOO_CLOSE_REMEDY = ("Spread the instances out (or press Arrange), or move some instances to a second plate, and "
+TOO_CLOSE_REMEDY = ("Spread the instances out (or press Arrange), or move some instances to a new plate, and "
                     "slice again.")
 TOO_CLOSE_SUPPORTS_REMEDY = ("Spread the instances out (or press Arrange), turn supports off, or move some instances "
-                             "to a second plate, and slice again.")
+                             "to a new plate, and slice again.")
 ASCII_BOX = b"solid box\n facet normal 0 0 1\n  outer loop\n   vertex 0 0 0\n" + b" " * 100 + b"\nendsolid box\n"
 LOOSE = (FIXTURES / "bad_stls" / "single_triangle.stl").read_bytes()
 EMPTY_LAYERS = "Box #1 has nothing to print between 9.9 and 11.34 mm high, so the layers above would start in mid-air."
@@ -264,14 +264,14 @@ EXPECTED = {
         False, None, "Lay out the plate again and send a new slice.", "it has no instances"),
     "slice.too_many_instances": Expected(
         lambda s: s.read(plate_configuration(instances=[TWO[0]] * 151)),
-        "This plate has 151 instances; the slicer takes up to 150 on one plate, so print the rest on a second plate.",
-        "checking", False, "lower_quantities", "Lower the quantities and print the rest on a second plate.",
+        "This plate has 151 instances; the slicer takes up to 150 on one plate, so print the rest on a new plate.",
+        "checking", False, "lower_quantities", "Lower the quantities and print the rest on a new plate.",
         "151 instances, cap 150"),
     "slice.too_many_parts": Expected(
         lambda s: s.read(plate_configuration(parts={f"p{i}": part_entry("Box", BOX) for i in range(26)},
                                              instances=[dict(TWO[0], ref=f"p{i}") for i in range(26)])),
-        "This plate uses 26 different parts; the slicer takes up to 25 on one plate, so print the rest on a second "
-        "plate.", "checking", False, None, "Use fewer different parts on this plate and print the rest on a second "
+        "This plate uses 26 different parts; the slicer takes up to 25 on one plate, so print the rest on a new "
+        "plate.", "checking", False, None, "Use fewer different parts on this plate and print the rest on a new "
         "plate.",
         "26 different parts, cap 25"),
     "slice.unknown_printer": Expected(
@@ -357,7 +357,7 @@ EXPECTED = {
     "slice.out_of_memory": Expected(
         over_the_memory_ceiling(SPACED), "This plate is too large to slice: the slicer needed more than the 2,000 MB "
                                          "of memory the print server allows.", "slicing", False,
-        "lower_quantities", "Remove some instances or the largest part and print them on a second plate.",
+        "lower_quantities", "Remove some instances or the largest part and print them on a new plate.",
         "Orca's processes reached a peak of 2,099,200 kB (the watchdog's high-water reading of Orca's processes)"),
     "slice.orca_crashed": Expected(
         fake_orca("segv"), "The slicer crashed while slicing this plate.", "slicing", False, None,
@@ -481,6 +481,25 @@ def test_failure_produces_its_code(code, tmp_path, monkeypatch):
     assert report["remedy"] == expected.remedy
     assert expected.detail in report["detail"]
     assert report.get("orca_sentence") == (ORCAS_GAP_SENTENCE if code in ORCA_SENTENCE_CODES else None)
+
+
+# The codes whose remedy is another plate: they say "a new plate", the words of the wizard's
+# panel (item 15 of the details file's phase 2), never "a new plate".
+NEW_PLATE_CODES = ("slice.too_many_instances", "slice.too_many_parts", "slice.out_of_memory",
+                   "slice.placement_too_close", "slice.orca_too_close", "slice.output_too_large")
+
+
+@pytest.mark.parametrize("code", list(EXPECTED))
+def test_no_report_says_a_second_plate_and_another_plate_is_a_new_plate(code, tmp_path, monkeypatch):
+    _exc, report = produce(code, tmp_path, monkeypatch)
+    assert "second plate" not in report["message"] + " " + report["remedy"]
+    assert ("a new plate" in report["remedy"]) is (code in NEW_PLATE_CODES)
+
+
+def test_the_supports_remedy_of_two_instances_too_close_says_a_new_plate():
+    from penguin_slice import plate
+    for remedy in (plate.TOO_CLOSE_REMEDY, plate.TOO_CLOSE_SUPPORTS_REMEDY):
+        assert "a new plate" in remedy and "second plate" not in remedy
 
 
 @pytest.mark.parametrize("code", list(EXPECTED))

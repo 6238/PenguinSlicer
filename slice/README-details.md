@@ -305,14 +305,8 @@ after the stop gets its slice job; a second stop ends the running slice job with
 `shutdown` once Orca is gone; a second stop while a done slice job's sliced file is
 uncollected makes `serve` exit at once. [D230, D306]
 
-**15. "A new plate" in the sentences** ([When things go wrong](README.md#when-things-go-wrong)).
-Every sentence whose remedy is another plate says "a new plate", the words of the wizard's
-panel, where as built it says "a second plate": `slice.too_many_instances`,
-`slice.too_many_parts`, `slice.out_of_memory`, `slice.placement_too_close` and
-`slice.orca_too_close` (in `errors.py`, `limits.py` and `plate.py`). The old words for people and "the print server" in
-other sentences stay: changing them is known future work
-([Known future work](README.md#known-future-work)). Tests: no report of
-`tests/test_errors.py` says "a second plate", and each such remedy says "a new plate".
+**15. "A new plate" in the sentences.** Built: see "A new plate" under
+[Error codes](#error-codes). What it leaves to later items: nothing.
 
 **16. The log collected by the front server** ([The log](README.md#the-log)). A route,
 [`GET /log?after=<n>`](../contracts/slice-http-interface.md#get-logaftern), answers
@@ -1999,7 +1993,7 @@ sentence, remedy, action, retryable flag and evidence its report must carry.
 | `slice.out_of_memory` | slicing | The memory watchdog stopped Orca at the memory ceiling before its sliced file was complete (the detail holds the measured peak); or Orca was killed and the cgroup's `oom_kill` count rose (the kernel's out-of-memory killer); or Orca printed `bad_alloc`. On a plate of one instance the remedy is to split or simplify the part, with no action. |
 | `slice.orca_crashed` | slicing | Orca died on a signal that means it failed (SIGSEGV, SIGABRT, SIGBUS, SIGFPE, SIGILL, SIGTRAP, SIGSYS), also when a stop of the service's was asked at the same moment (the detail says so). |
 | `slice.orca_killed` | slicing | Something else stopped Orca with a signal the service did not send (SIGKILL with the `oom_kill` count unchanged or unreadable, SIGTERM, SIGINT and the rest), also when a stop of the service's was asked at the same moment or Orca ignored the service's SIGTERM (the detail says so). |
-| `slice.orca_too_close` | slicing | Orca's return code -101: Orca found that two instances' paths would meet, on a plate the placement check passed. The report names the pair from Orca's debug log when it is there (`where`: `instance`, `other_instance`; the detail lists up to 5 pairs); with supports on the sentence names the supports as the likely cause and the remedy offers turning supports off. The remedy always offers spreading the instances (or Arrange) and a second plate. |
+| `slice.orca_too_close` | slicing | Orca's return code -101: Orca found that two instances' paths would meet, on a plate the placement check passed. The report names the pair from Orca's debug log when it is there (`where`: `instance`, `other_instance`; the detail lists up to 5 pairs); with supports on the sentence names the supports as the likely cause and the remedy offers turning supports off. The remedy always offers spreading the instances (or Arrange) and a new plate. |
 | `slice.crosses_edge` | slicing | Orca's return code -52: an instance partly off the plate beside others on it. |
 | `slice.empty_layers` | slicing | Orca refused empty layers with supports off: the report names the instance and the height, and offers `enable_supports`. |
 | `slice.empty_layers_with_supports` | slicing | The same with supports on: the part must be repaired, no action. |
@@ -2018,6 +2012,19 @@ sentence, remedy, action, retryable flag and evidence its report must carry.
 | `slice.file_gone` | fetching | The sliced file of a done slice job is no longer on the disk, or was deleted by `DELETE /slices/<job>/file` once the front server stored it (HTTP 410), for the file and the summary alike. |
 | `slice.bad_request` | fetching | The HTTP interface does not offer that path (404) or that method on it (405), or an upload has no Content-Length (400), or an upload's body ends before its Content-Length (400, "This part did not arrive whole."). The upload's report has its own sentence (`web.NO_LENGTH_MESSAGE`) and remedy (add the part again, or the server needs fixing), a fault of the front server's. |
 | `slice.unexpected` | slicing | Anything else: a bug in the slice service; the detail keeps the traceback. |
+
+**A new plate.** Item 15 of [Phase 2](#phase-2-one-machine), built
+([When things go wrong](README.md#when-things-go-wrong)). Every sentence whose remedy is
+another plate says "a new plate", the words of the wizard's panel, never "a second plate":
+the sentences and remedies of `slice.too_many_instances` and `slice.too_many_parts`
+(`limits.TOO_MANY_INSTANCES_MESSAGE`, `limits.TOO_MANY_PARTS_MESSAGE`, `errors.CODES`), the
+remedy of `slice.out_of_memory`, those of `slice.placement_too_close` and
+`slice.orca_too_close` with supports off and on (`plate.TOO_CLOSE_REMEDY`,
+`plate.TOO_CLOSE_SUPPORTS_REMEDY`), and that of `slice.output_too_large`. The old words for
+people and "the print server" in other sentences stay: changing them is known future work
+([Known future work](README.md#known-future-work)). Tests: no report of
+`tests/test_errors.py` says "second plate", and exactly those six codes' remedies say "a new
+plate" (`test_no_report_says_a_second_plate_and_another_plate_is_a_new_plate`).
 
 **The remedies of an upload.** A part refused when it arrives (`POST /parts`) was never
 added, and its report reaches the wizard's Parts step: its remedy is about adding the part
