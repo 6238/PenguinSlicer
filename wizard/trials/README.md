@@ -17,9 +17,8 @@ that the two can be built at the same time without touching the same file.
 | `plates/` | The preview trial's three plates, as plate configurations | `make_sliced_files.py --write-plates` writes them again; the fast suite checks they are unchanged |
 | `make_sliced_files.py` | Has a slice service slice each plate of `plates/` and saves the sliced files into `sliced/` | |
 
-`make -C wizard trials` runs both trials, the preview first. The preview trial is built
-([preview/README.md](preview/README.md)); until a trial's builder replaces its `run.py`,
-that entry point is a placeholder that says so and fails.
+`make -C wizard trials` runs both trials, the preview first. Both are built; the preview
+trial's own guide is [preview/README.md](preview/README.md).
 
 A trial's page loads three.js through an import map that names
 `/vendor/three/build/three.module.min.js` for `three`, and a part as

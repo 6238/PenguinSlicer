@@ -661,9 +661,9 @@ which the slice service warns may be a file in inches read as millimetres.
 The page also reads each file itself, to draw it. A file the page cannot read is, in
 almost every case, one the slice service refuses, and the slice service's notification is
 the one shown. If the slice service accepts a part that the page cannot draw, that is a
-defect in the wizard. The part is not added, the wizard's own notification says that
-PenguinSlicer could not show the part and that it cannot be imported, and the failure
-reaches the server's log
+defect in the wizard. The part is not added, the wizard's own notification says "PenguinSlicer
+could not show this part, so it cannot be imported.", with the remedy "Export the part again
+as a binary STL and add it again.", and the failure reaches the server's log
 ([What the wizard reports about itself](#what-the-wizard-reports-about-itself)).
 
 A part whose upload gets no answer is not refused. Its row stays, because the part is
@@ -1564,6 +1564,13 @@ result arrives a moment after it was asked for, so each of these jobs needs a st
 appear), and a part's geometry is handed between two threads, which the page's memory
 target has to allow for.
 
+If the worker's own code fails on a plate, which is a defect in the wizard, the
+notification says "PenguinSlicer could not work out the layout of this plate.", with the
+remedy "Reload the page; your parts, layout and settings are kept in this browser.", and
+the failure reaches the server's log. The remedy holds because the parts, the layout and
+the settings are in the browser's storage
+([What the browser keeps](#what-the-browser-keeps-and-why-it-is-the-record)).
+
 ### Reading a part without changing it
 
 The browser reads a part's file to draw it, to measure it and to lay it out. It never
@@ -1612,18 +1619,35 @@ A click turns the instance by the shortest rotation that points the chosen face 
 down, keeping its turn about the vertical. The faces are found once for each part and turn
 with it, so turning an instance costs nothing.
 
-What the approach costs: making the hull dominates, and by the simple method the time
-grows roughly with the square of the part's detail. On the mockup's own generated parts (up to 1,744 corners)
-finding the faces took 0.2 to 10 ms. A part exported from Onshape can have tens of
-thousands of corners, which is one reason the work is done in a worker; it may need a
-faster hull as well, for the patches to appear in time. Four things are known to be needed on real parts that the
-mockup's parts never exercised: a round side cut into unequal facets, where the rule of
-step 4 keeps the wide ones (a whole run of facets joined by shallow bends should be
-treated as one round side); a round side cut into fewer than 18 facets, which bend more
-than 20 degrees apart; a part modelled at an angle to its axes, whose bounding box does
-not meet its rim square; and a test of whether the part would tip over on a face, which
-Orca's tool lacks and PenguinSlicer's should have, using the test auto-orient already
-makes.
+Trying the steps on the robot's real exported parts (the second trial, below) showed
+three things the mockup's parts never had, and the rules now handle each. A flat face of
+an exported part can come out of the hull as one large piece and a few thin strips a
+tenth of a degree off it, where the corners of a fillet sit a thousandth of a millimetre
+above the face; anything lying within a hundredth of a millimetre of a larger face's
+plane is now part of that face. A round side whose facets are unequal, or have slivers
+between them, is treated as one round side, as was expected: a face is judged against
+every face it reaches across shallow bends, not only its direct neighbours. And a part
+made of a block on a slightly smaller block has, on each side, its real flat face and,
+three degrees from it, a hull face of the same size bridging down to the lower block;
+step 4 as first written dropped both, so a face of the part's own surface of at least
+25 mm² is no longer dropped on account of a neighbour that only bridges a hollow or a
+step.
+
+Each patch also carries the test of whether the part would tip over on it, which Orca's
+tool lacks, using the test auto-orient already makes. It is not used to hide patches: a
+printer's plate holds the first layer whichever way the part's weight falls, and hiding
+the faces a part would tip from removed four real flat sides of one of the robot's parts.
+Two cases are still not handled, and none of the robot's parts kept in the repository
+has them: a round side cut into fewer than 18 facets, which bend more than 20 degrees
+apart, and a part modelled at an angle to its axes, whose bounding box does not meet its
+rim square.
+
+What the approach costs: making the hull dominates. The hull is made by a method that
+keeps, for each of its faces, the corners outside it, so the time grows little faster
+than the part's detail: finding the faces of the largest part allowed, 150,000 triangles,
+takes about a fifth of a second in the worker, and of the robot's real parts at most a
+tenth. Since auto-orient finds them when the part arrives, selecting an instance only
+fetches patches already found, in a few milliseconds.
 
 ### Choosing how a part lies: auto-orient
 
@@ -1640,9 +1664,12 @@ It knows nothing of load, so a tall standoff whose strength runs along its lengt
 laid on its side; it has no notion of which faces are for show; and a part that needs
 supports whichever way it lies still gets the least bad answer with nothing said. That is
 why laying a part down by hand must stay one click. A part with no candidate at all, such
-as a sphere, stays as modelled. It runs once for each part when the part arrives; a part
-of 100,004 triangles with 28 candidates took about a tenth of a second outside a browser,
-and it has not been timed in one.
+as a sphere, stays as modelled, and so does a part that lies as modelled within 5% of the
+best cost, so that a part is never turned over for a difference nobody would see (a
+round hub whose two ends were cut a little differently). It runs once for each part when
+the part arrives; in the worker in Chrome, on the machine without a graphics card, the
+largest part allowed lies its best way about a quarter of a second after its file is
+read, and each of the robot's real parts in under a fifth of a second.
 
 ### Arranging the plate
 
@@ -1662,9 +1689,13 @@ because that is where the bed heats most evenly.
 
 What it costs: because it packs convex outlines, a curved or L-shaped part takes up its
 hollow side too, so two curved ribs cannot nest one inside the other. Packing true
-outlines would fix that and is a much larger piece of work; it is not planned. Outside a
-browser the two packers took 0.2 to 1.5 seconds on plates of up to 25 instances,
-unoptimised; a plate of 150 instances has not been timed.
+outlines would fix that and is a much larger piece of work; it is not planned. The two
+packers read a map of the plate in half-millimetre squares, each marked where an
+instance and half the spacing take room, so an arranged plate always passes the
+placement check, with at most about a millimetre more between instances than the
+spacing asks. In the worker in Chrome, on the machine without a graphics card, Arrange
+of 150 instances takes well under a tenth of a second: 150 small spacers all fit, and of
+a mix of 150 of the robot's real parts, 104 fit and the rest wait beside the plate.
 
 The **placement check** that colours the status line uses the same outlines and the same
 three rules the slice service applies when a plate arrives (3 mm inside the edge, the
@@ -1674,7 +1705,9 @@ must agree: a plate the wizard shows green and the slice service then refuses is
 in one of them. Each measures an instance's outline in its own code, so the two are kept
 in agreement by one shared set of plates, some just passing and some just failing, that
 both components' tests run
-([the slice service's guide](../slice/README.md#shared-plates-for-the-two-placement-checks)).
+([the slice service's guide](../slice/README.md#shared-plates-for-the-two-placement-checks)),
+and the wizard's check gives exactly the expected answer on every one of them. Each check
+of a plate of 150 instances during a drag takes a few milliseconds in the worker.
 
 ### The layer preview, as a requirement
 
@@ -1834,10 +1867,10 @@ card are confirmed.
 | Instances on a plate | 150 | The slice service | Someone else's | A hundred-and-fifty-first instance |
 | Storage in the browser | 25 parts of 7.5 MB for each tab's plate | A full plate surviving a refresh | Follows from the two limits | A full plate stored, the page reloaded |
 | A stored plate | Dropped after 12 hours unused, once no tab holds it | The storage not filling with plates nobody will open again, and yesterday's plate not greeting today's user | Set here | A test with a clock the test moves |
-| Faces found for a part | Patches appear within 100 ms of selecting an instance | Selecting feeling direct | Set here. Measured: 0.2 to 10 ms on generated parts of up to 1,744 corners; unmeasured on real ones | Timed on the real exported parts |
-| Auto-orient | A part lies its best way within one second of arriving | Parts arriving laid down, not jumping later | Set here. Measured: about 0.1 s for 100,004 triangles outside a browser | The same |
-| Arrange | Under 2 seconds for 150 instances | A button that feels like a button; anything longer would need progress and a way to cancel | Set here. Measured: 0.2 to 1.5 s for up to 25 instances, unoptimised | The same |
-| The placement check | Keeps up with a drag, with 150 instances on the plate | The status line telling the truth while the user moves things | Set here; unmeasured | The same |
+| Faces found for a part | Patches appear within 100 ms of selecting an instance | Selecting feeling direct | Set here. Met: at most 4 ms for the largest part allowed, its faces found when it arrived; about 0.2 s to find them from nothing | Timed on the real exported parts and the largest part allowed, in Chrome on the machine without a graphics card |
+| Auto-orient | A part lies its best way within one second of arriving | Parts arriving laid down, not jumping later | Set here. Met: at most 0.27 s for the largest part allowed, at most 0.18 s for a real part | The same |
+| Arrange | Under 2 seconds for 150 instances | A button that feels like a button; anything longer would need progress and a way to cancel | Set here. Met: at most 0.06 s for 150 instances | The same |
+| The placement check | Keeps up with a drag, with 150 instances on the plate | The status line telling the truth while the user moves things | Set here. Met: at most 5 ms for each check, against a frame's 100 ms at 10 frames a second | The same |
 | The Layout view | At least 30 frames a second while an instance is dragged or the view turned, on the machine with a graphics card, and at least 10 on the one without, at the largest plate allowed: 150 instances of parts of up to 150,000 triangles | Dragging an instance feeling joined to the hand | Set here, with no measurement behind it: the same figures as the layer preview, since the same hand does the dragging | Timed in Chrome on both machines, and reported by the page in real use |
 | The layer preview | In Chrome, at least 30 frames a second on the machine with a graphics card and at least 10 on the one without, while the view is turned or the layer bar dragged, on a 14.1 MB sliced file and on a plate at the 150-instance limit; a simpler look allowed while moving | Inspecting a plate being possible at all on a machine that draws in software | Set here. Measured: the one method tried took many seconds a frame without a graphics card ([The risks to try first](#the-risks-to-try-first-in-phase-2)) | Timed in Chrome on both machines, reported by the page in real use, and test renders |
 | The first layer drawn | Within 5 seconds of opening the Preview step on a sliced plate, with the print time and filament shown at once | The numbers a user plans around not waiting for the picture | Set here; unmeasured | The same |
@@ -2165,8 +2198,11 @@ published in the form the page loads as it is. For the two trials, the eight rea
 of the Popcorn Penguins' robot are kept beside the contracts, and two made parts beside
 the trials: a round hub at the largest size a part may have (150,000 triangles) and the
 slice service's reference spacer. Each trial has its own place and its own command, so
-that both can be built at once. The first trial, the layer preview's speed, has been run;
-its pages, figures and test renders are kept with the trials.
+that both can be built at once. Both trials have been run. The first, the layer preview's
+speed, keeps its pages, figures and test renders with the trials. After the second, the
+geometry of the Layout step (finding the faces a part can lie on, auto-orient, Arrange and
+the placement check) is built in the worker as the wizard's own code, with nothing on screen
+using it yet.
 
 | Phase | What of the wizard is built |
 |---|---|
@@ -2225,6 +2261,20 @@ mockup's seven generated parts. The decision that depends on it: tuning the rule
 their angles changes nothing a user sees and needs no decision; if no rule sorts real
 round sides well, the Layout step offers fewer patches and leans on the bounding-box
 patches, which is a visible change and comes back for a decision.
+
+What the trial found, on Fri 2026-11-27, on the machine without a graphics card: all
+three meet their times with a wide margin (the figures are under
+[How well it must do it](#how-well-it-must-do-it)), and, after three rules were tuned on
+the real parts ([Finding the faces a part can lie on](#finding-the-faces-a-part-can-lie-on)),
+every flat face of each of the robot's eight parts has its patch, and the round sides of
+the robot's pulley and of the made hub give no patches of their own: each part gets its
+two end faces and four bounding-box patches for its rim. Two things remain the owner's:
+a look at each part's picture, to say whether its chosen way and its patches are what a
+person would choose; and round parts exported from Onshape at its coarse and fine
+settings, which only the owner can supply. Until they come, the round parts tried are
+the pulley and the Inner Spacer, which turns out to be a thin square plate with rounded
+corners, so the pulley is the one real round side the rules have met. The pictures and what was seen in them are in
+[the trial's own notes](trials/geometry/README.md).
 
 ### Still open in the design
 

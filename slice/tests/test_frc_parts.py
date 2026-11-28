@@ -14,21 +14,22 @@ import frc_parts
 from penguin_slice import limits
 from penguin_slice.plate import ORIENTATIONS, check_placement, plate_from_printer
 from penguin_slice.plate_3mf import write_plate_3mf
+from helpers import Parts
 from penguin_slice.print_config import choose_profiles, printer_profile
-from penguin_slice.service import read_plate_configuration
 
 H2S = plate_from_printer(printer_profile(choose_profiles(None, None, None)))
 H2S_SUPPORTS = plate_from_printer(printer_profile(choose_profiles(None, None, None)), supports=True)
 
 
 @pytest.fixture(scope="module")
-def mixed():
-    """The mixed plate (one instance of every part) through the plate configuration checks,
-    its STL paths the fixture files themselves."""
+def mixed(tmp_path_factory):
+    """The mixed plate (one instance of every part) through the checks on arrival, each part
+    uploaded to a part store, and the plate configuration checks."""
     configuration = frc_parts.plate_configuration(frc_parts.MIXED)
-    for ref, part in configuration["parts"].items():
-        part["stl"] = str(frc_parts.FRC_PARTS_DIR / part["stl"])
-    return read_plate_configuration(configuration, frc_parts.FRC_PARTS_DIR, environ={})
+    parts = Parts(tmp_path_factory.mktemp("frc-parts"))
+    for data in frc_parts.files_for(configuration):
+        parts.add(data)
+    return parts.read(configuration, environ={})
 
 
 def test_every_part_is_in_the_folder_with_its_licence_note():

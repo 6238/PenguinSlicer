@@ -2,29 +2,29 @@
 "Shared plates for the placement checks"): the slice service's placement check gives every
 plate's expected answer, and the set is exactly what scripts/make_placement_parts.py writes.
 
-Until the phase 2 plate configuration is built (items 1 to 4 of README-details.md, "Phase 2:
-one machine"), each plate is turned into the plate configuration as built here: a part named
-by hash becomes the file of that hash in contracts/examples/parts/, `enable_support` becomes
-the `supports` override, and an instance with a `rotation` becomes an instance standing `+z`
-of a copy of its part turned by that rotation's matrix, which places it exactly as the
-contract's one transform does.
+Each plate goes through the slice service's front door, as any plate does: its parts are
+uploaded with POST /parts and the plate is submitted with POST /slices, whose answer is
+compared with the plate's `expected`; an instance with a `rotation` is placed by the code's
+own placement of a rotation. One thing is turned on the way in: until every setting under
+Orca's own name is built (item 6 of README-details.md's phase 2), the plate's
+`enable_support` is given as the `supports` override the code as built reads.
 """
 import hashlib
 import json
 import math
 import re
-import struct
 from pathlib import Path
 
 import pytest
 from shapely.geometry import Polygon
 
-from helpers import CONTRACTS, mesh_stl
+from helpers import CONTRACTS, Parts, submit, upload
 from make_placement_parts import POSTS, make_plates, write_post
-from penguin_slice import plate
+from penguin_slice import plate, service
 from penguin_slice.errors import error_report
+from penguin_slice.jobs import JobPool
 from penguin_slice.mesh import orientation_footprints, read_binary_stl
-from penguin_slice.service import read_plate_configuration
+from penguin_slice.web import create_app, slice_worker
 
 PLACEMENT = CONTRACTS / "examples" / "placement"
 PARTS = CONTRACTS / "examples" / "parts"
@@ -91,52 +91,49 @@ def quaternion_product(a, b):
             aw * bz + ax * by - ay * bx + az * bw]
 
 
-def turned_stl(path, rotation):
-    """The part's STL with every vertex turned by the rotation's matrix (`v' = M v`)."""
-    data = path.read_bytes()
-    count = struct.unpack("<I", data[80:84])[0]
-    m = quaternion_matrix(rotation)
-    vertices = []
-    for i in range(count):
-        corners = struct.unpack("<12fH", data[84 + 50 * i: 134 + 50 * i])[3:12]
-        for k in range(3):
-            v = corners[3 * k: 3 * k + 3]
-            vertices.append([sum(m[r][c] * v[c] for c in range(3)) for r in range(3)])
-    return mesh_stl(vertices, [(3 * i, 3 * i + 1, 3 * i + 2) for i in range(count)])
-
-
-def as_built(plate_configuration, directory):
-    """The plate configuration in the form the code as built reads (see the module's text)."""
-    files = file_of_hash()
-    parts = {key: {"name": part["name"], "stl": str(files[part["sha256"]])}
-             for key, part in plate_configuration["parts"].items()}
-    instances = []
-    for i, instance in enumerate(plate_configuration["instances"]):
-        instance = dict(instance)
-        if "rotation" in instance:
-            key = f"{instance['ref']}-turned-{i}"
-            source = plate_configuration["parts"][instance["ref"]]
-            turned = directory / f"{key}.stl"
-            turned.write_bytes(turned_stl(files[source["sha256"]], instance.pop("rotation")))
-            parts[key] = {"name": source["name"], "stl": str(turned)}
-            instance.update(ref=key, orientation="+z")
-        instances.append(instance)
-    overrides = plate_configuration.get("overrides", {})
-    built = {"parts": parts, "instances": instances}
+def with_overrides_as_built(plate_configuration):
+    """The plate with `enable_support` as the `supports` override the code as built reads
+    (see the module's text); every other field as the plate has it."""
+    configuration = json.loads(json.dumps(plate_configuration))
+    overrides = configuration.pop("overrides", {})
     if "enable_support" in overrides:
-        built["overrides"] = {"supports": "on" if overrides["enable_support"] == "1" else "off"}
-    return built
+        configuration["overrides"] = {"supports": "on" if overrides["enable_support"] == "1" else "off"}
+    return configuration
+
+
+def front_door(directory):
+    """A slice service's HTTP interface with every part of contracts/examples/parts/ uploaded
+    through it under USER_KEY, its slice jobs held (never run)."""
+    pool = JobPool(slice_worker, executor=type("Held", (), {"submit": lambda self, *a: None})(),
+                   error_report=error_report)
+    client = create_app(Path(directory) / "work", pool, start_sweeper=False).test_client()
+    for path in PARTS.glob("*.stl"):
+        assert upload(client, path.read_bytes()).status_code == 201, path.name
+    return client
 
 
 def answer(plate_configuration, directory):
-    """The answer of the slice service's checks, in the form of a plate's `expected`."""
-    try:
-        read_plate_configuration(as_built(plate_configuration, directory), directory)
-    except Exception as exc:  # noqa: BLE001 -- every refusal becomes its error report
-        report = error_report(exc)
-        return {"code": report["code"], **{k: report["where"][k] for k in ("instance", "other_instance")
-                                            if k in report["where"]}}
-    return {"accepted": True}
+    """The answer of POST /slices to the plate, in the form of a plate's `expected`."""
+    reply = submit(front_door(directory), with_overrides_as_built(plate_configuration))
+    if reply.status_code == 202:
+        return {"accepted": True}
+    report = reply.get_json()
+    return {"code": report["code"], **{k: report["where"][k] for k in ("instance", "other_instance")
+                                        if k in report["where"]}}
+
+
+def placed(plate_configuration, directory):
+    """The plate's instances' hulls on the plate, from the footprints the code makes for each
+    (service's own steps 4 and 5 up to the placement rules, which this measures)."""
+    parts = Parts(directory)
+    for path in PARTS.glob("*.stl"):
+        parts.add(path.read_bytes())
+    instances = [service._normalised(i) for i in plate_configuration["instances"]]
+    entries = {ref: service._checked_part(ref, part, parts.find()(part["sha256"], part["units"]),
+                                          service.largest_plate())
+               for ref, part in plate_configuration["parts"].items()}
+    service._place_rotations(instances, entries)
+    return [plate.instance_hull(i, entries[i["ref"]].footprints[plate.turn_of(i)]) for i in instances]
 
 
 class TestTheSet:
@@ -220,10 +217,7 @@ class TestThePlacementCheck:
     def test_each_plate_is_a_hundredth_from_its_figure(self, tmp_path, name):
         """The distance that decides the plate, measured from the placed footprints, is the
         rule's figure plus 0.01 mm on a passing plate and less 0.01 mm on a failing one."""
-        configuration = as_built(load(name)["plate_configuration"], tmp_path)
-        footprints = {key: orientation_footprints(read_binary_stl(Path(part["stl"]).read_bytes(), key))
-                      for key, part in configuration["parts"].items()}
-        hulls = [plate.instance_hull(i, footprints[i["ref"]][i["orientation"]]) for i in configuration["instances"]]
+        hulls = placed(load(name)["plate_configuration"], tmp_path)
         rule = name.rsplit("-", 1)[0]
         if rule == "margin":
             (hull,) = hulls
@@ -243,6 +237,14 @@ class TestThePlacementCheck:
         assert standing["parts"] == laid["parts"]
         assert [i["orientation"] for i in standing["instances"]] == ["+z"]
         assert [i["orientation"] for i in laid["instances"]] != ["+z"]
+
+    def test_the_codes_matrix_of_a_rotation_is_the_contracts(self):
+        for verdict in ("pass", "fail"):
+            for instance in load(f"rotation-{verdict}.json")["plate_configuration"]["instances"]:
+                if "rotation" in instance:
+                    for got, expected in zip(plate.quaternion_matrix(instance["rotation"]),
+                                             quaternion_matrix(instance["rotation"])):
+                        assert list(got) == pytest.approx(list(expected), abs=1e-12)
 
     def test_the_rotation_plates_turn_with_an_angle_after_the_rotation(self):
         """The rotation plates try an angle applied after a rotation (Rz(angle) M)."""

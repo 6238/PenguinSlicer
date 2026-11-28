@@ -3,8 +3,9 @@
 This is the builder's document for the wizard. The guide beside it,
 [README.md](README.md), is what the owner reads and decides from; where the two differ, the
 guide is right and this file is to be corrected. Of the wizard, only
-[The project and its tools](#the-project-and-its-tools) and the inputs of
-[the trials](#how-the-trials-and-measurements-are-run) are built, and those two sections
+[The project and its tools](#the-project-and-its-tools), the inputs of
+[the trials](#how-the-trials-and-measurements-are-run), the second trial and the geometry it
+tried ([The geometry, in a worker](#the-geometry-in-a-worker)) are built, and those sections
 say what is true of them as built; everything else here is the design to build: every screen, state and message of the guide, in
 the builder's terms, with the names the guide leaves out (requests, fields, error codes,
 constants, stored records, tests), the figures, the tests each part needs, and an order in
@@ -178,12 +179,18 @@ contract fixes (`MAX_*`, `MARGIN_MM`, `SPACING_*`).
 | `PAGE_MEMORY_MB` | 1,024 | The page at the largest plate with the layer preview of a 14.1 MB sliced file | The guide ("under 1 GB") |
 | `REPORTS_PER_MIN` | *proposed* 4 | The page's reports about itself ("a few a minute") | The guide; the front server has its own limit |
 | `POINTER_LINE_PX` | 11 | The pointer line's text, the one text under 14 px | [The Terms](../docs/mockups/print-wizard/DECISIONS.md#terms) |
-| `FACE_JOIN_DEG` | *proposed* 0.06 | Hull triangles joined into one flat face ("a fraction of a degree") | [The note on hull faces](../docs/research/2026-11-21-lay-on-face-hull-faces.md) |
-| `MIN_FACE_MM2`, `MAX_FACES`, `SLIVER_DEG` | 5, 254, *proposed* 1 | Faces dropped as too small, beyond the largest 254, or with a sliver corner | The guide; the sliver angle from the note |
-| `ROUND_SIDE_DEG` | 20 | A facet among its like (neighbour bends less than this and is at least half its size) | The guide |
+| `HULL_EPS_MM` | 1e-6 | A corner this close to the hull is on it: far below the rounding of a single-precision STL coordinate, so that no corner of a real part is left outside its hull (1e-3 mm left corners up to 0.006 mm out) | The second trial |
+| `FACE_JOIN_DEG` | 0.06 | Hull triangles joined into one flat face ("a fraction of a degree") | [The note on hull faces](../docs/research/2026-11-21-lay-on-face-hull-faces.md) |
+| `FLAT_GAP_MM`, `FLAT_TURN_DEG` | 0.01, 1 | What lies on a face: a strip of the hull within this distance of a larger neighbour's plane and this angle of its direction is part of that face; a triangle of the part this near a hull face is the part's own surface there | The second trial |
+| `MIN_FACE_MM2`, `MAX_FACES`, `SLIVER_DEG` | 5, 254, 1 | Faces dropped as too small, beyond the largest 254, or with a sliver corner | The guide; the sliver angle from the note |
+| `ROUND_SIDE_DEG` | 20 | A facet among its like (a face it reaches through faces bending less than this is at least half its size) | The guide |
 | `BBOX_COVER_DEG` | 30, plus 0.5 for rounding | A bounding-box side with no kept face within this angle gets a patch | The guide; [M29](../docs/mockups/print-wizard/DECISIONS.md#please-react-to-these) |
-| `MIN_CONTACT_MM2` | 25 | A resting candidate counts for auto-orient | The guide |
+| `MIN_CONTACT_MM2` | 25 | A resting candidate counts for auto-orient; a flat face of the part this large is never dropped beside a hull face that bridges | The guide |
+| `CONTACT_GAP_MM`, `OVERHANG_DEG` | 0.1, 45 | A triangle this close to the plate touches it; a downward triangle within this of straight down hangs over air | The mockup's score, kept |
+| `HEIGHT_CHARGE_PER_MM`, `NO_CONTACT_PENALTY` | 0.01, 100 | Auto-orient's small charge for height and large penalty under `MIN_CONTACT_MM2` | The mockup's score, kept |
+| `AS_MODELLED_MARGIN` | 0.05 | The part as modelled is kept when its cost is within this share of the best | The second trial |
 | `PILE_GRID_MM`, `PILE_REFINE_MM` | 5, 1 | The pile packer's grid and refinement | The guide |
+| `ARRANGE_CELL_MM`, `ARRANGE_SLACK_MM` | 0.5, 0.05 | Arrange's map of the plate in squares this wide; the room it leaves beyond the spacing | The second trial |
 
 ## The requests the wizard makes
 
@@ -1062,7 +1069,7 @@ patches and then the patches.
 
 **Keeping the page answering.** Nothing holds the browser's main thread for more than
 `MAIN_THREAD_HOLD_MS` (250 ms), on any step, with any plate up to the limits, on the machine
-without a graphics card. By design the **worker** (*proposed* module `geometry.worker`) does
+without a graphics card. By design the **worker** (`wizard/src/geometry.worker.js`) does
 everything that reads or works with the internals of an STL file or a sliced file's paths:
 reading a part for drawing; finding the faces a part can lie on; auto-orient; Arrange; the
 placement check on a full plate; preparing a sliced file for the Preview step. The main thread
@@ -1070,9 +1077,15 @@ keeps drawing and the user's gestures. Hashing a part uses the browser's own dig
 needs no worker. Every result arrives a moment after it was asked for, so each job has a "not
 yet" state (a row without its picture, an instance selected before its patches appear); a
 part's geometry is handed to the main thread as transferable buffers, so it is not copied
-twice. The page measures the longest stretch the main thread was held, by the browser's
-long-task timing, for its tests and its reports
-([What the wizard reports about itself](#what-the-wizard-reports-about-itself)).
+twice. The page measures the longest stretch the main thread was held by a heartbeat: a 10 ms
+timer on the main thread, the hold being the longest gap between two beats, for its tests and
+its reports ([What the wizard reports about itself](#what-the-wizard-reports-about-itself)).
+The browser's long-task timing is not the measure: in the second trial Chromium reported long
+tasks of 0.1 to 0.9 s during steps whose answers all came back in under 0.3 s while the
+heartbeat never went more than about 15 ms between beats
+([the trial's notes](trials/geometry/README.md)).
+Open: why Chromium's long-task timing reports those tasks; until it is known, a long-task
+figure is reported beside the heartbeat's and never counted against `MAIN_THREAD_HOLD_MS`.
 
 All of it is written fresh: an implementer may read Orca's source to understand a method,
 and no Orca code, comment or constant name enters the repository.
@@ -1090,49 +1103,72 @@ with two rules of PenguinSlicer's own for round parts
 [decision 49](../docs/mockups/print-wizard/DECISIONS.md#lay-on-face-faces-on-the-hull-version-5),
 [decision 61](../docs/mockups/print-wizard/DECISIONS.md#lay-on-face-faces-on-the-hull-version-5)):
 
-1. The part's convex hull.
+1. The part's convex hull (`geometry/hull.js`): quickhull, each face keeping the corners outside
+   it, the part's repeated corners dropped first, a corner within `HULL_EPS_MM` of a face on it.
 2. Hull triangles joined into flat faces, spreading to neighbours whose normal matches the
-   first triangle's (not the neighbour's) within `FACE_JOIN_DEG`.
+   first triangle's (not the neighbour's) within `FACE_JOIN_DEG`; then a face all of whose
+   corners lie within `FLAT_GAP_MM` of a larger neighbour's plane, turning from it by less than
+   `FLAT_TURN_DEG`, is made part of that neighbour (an exported flat face comes out of the hull
+   as a large piece and thin strips a tenth of a degree off, where a fillet's corners sit a
+   thousandth of a millimetre above it).
 3. Faces dropped under `MIN_FACE_MM2` (5 mm²), with a corner sharper than `SLIVER_DEG`, and all
    but the `MAX_FACES` (254) largest.
-4. A face dropped when a neighbouring hull face bends from it by less than `ROUND_SIDE_DEG`
-   (20 degrees) and is at least half its size (the facets of a round side); a flat face beside
-   a chamfer keeps its patch.
+4. A face dropped when a hull face it reaches through faces that all turn from it by less than
+   `ROUND_SIDE_DEG` (20 degrees) is at least half its size: the facets of a round side, also
+   when the facets are unequal or have slivers between them; a flat face beside a chamfer keeps
+   its patch. Except that a face of at least `MIN_CONTACT_MM2` that is mostly the part's own
+   surface (its triangles within `FLAT_GAP_MM` and `FLAT_TURN_DEG` of it cover at least half
+   of it) is not dropped on account of one that mostly bridges a hollow or a step: on
+   Elevator Top Inner each side's flat face sits 3 degrees from a hull face of the same size
+   bridging down to a smaller lower block, and the rule as first written dropped both.
 5. A bounding-box patch for each of the six sides of the part's bounding box with no kept face
    pointing within `BBOX_COVER_DEG` (30 degrees, plus half a degree for rounding) of it; end
-   patches included, even where they stand the part too tall. The angle is a starting point to
-   tune on real parts (M29).
+   patches included, even where they stand the part too tall (M29).
 
-A click turns the instance by the shortest rotation that points the chosen face straight down,
-keeping its turn about the vertical. Faces are found once for each part and turn with it.
-Known to be needed on real parts and not exercised by the mockup's: a round side cut into
-unequal facets (treat a run joined by shallow bends as one round side); a round side of fewer
-than 18 facets, which bend more than 20 degrees apart; a part modelled at an angle to its axes,
-whose bounding box does not meet its rim square; and a test of whether the part would tip over
-on a face, using auto-orient's stability test. The hull by the simple method grows roughly with
-the square of the part's detail; a faster hull may be needed for `PATCHES_MS` on parts of tens
-of thousands of corners.
+`findFaces` in `geometry/faces.js` gives every joined face with the step that dropped it, and the
+patches, each `{kind: 'hull' | 'box', normal, area, outline}` in the part's own coordinates. A
+click turns the instance by the shortest rotation that points the chosen face straight down,
+keeping its turn about the vertical (`layOnFace` in `geometry/turn.js`); the instance's turn is a
+unit quaternion, sent as the contract's `orientation` when it is one of the six axes followed by
+whole degrees about the vertical and as `rotation` otherwise (`instanceTurn`). Faces are found once
+for each part and turn with it. Each patch is marked with auto-orient's test of whether the part
+would stand on it without tipping (`stable`) and how tall it would stand; no patch is dropped for
+tipping, because the plate holds a print's first layer whichever way its weight falls, and a
+filter tried on the real parts dropped Elevator Top Inner's four flat sides. Still not handled:
+a round side of fewer than 18 facets, which bend more than 20 degrees apart, and a part modelled
+at an angle to its axes, whose bounding box does not meet its rim square; neither occurs among the
+real parts kept in the repository.
 
 ### Auto-orient
 
-Candidates: the faces above, and the part as modelled. A candidate counts only if it is stable
-(the centre of mass, dropped straight down, lands inside what touches the plate) and at least
-`MIN_CONTACT_MM2` (25 mm²) touches. The cost, lower being better: the area that would hang over
-air divided by the area touching, plus a small charge for height, plus a large penalty when
-almost nothing touches. A part with no candidate (a sphere) stays as modelled. It runs once for
-each part when the part arrives, within `AUTO_ORIENT_MS`. Its overhang threshold was invented for
-the mockup's parts (fake 14) and is to be tuned on real ones.
+`autoOrient` in `geometry/orient.js`. Candidates: the patches above, and the part as modelled. A
+candidate counts only if it is stable (the centre of mass, dropped straight down, lands inside the
+outline of the triangles that touch the plate, those within `CONTACT_GAP_MM` of it) and at least
+`MIN_CONTACT_MM2` (25 mm²) touches. The cost, lower being better: the area of downward triangles
+within `OVERHANG_DEG` of straight down that do not touch, divided by the area touching (at least
+1 mm²), plus `HEIGHT_CHARGE_PER_MM` for each millimetre of height, plus `NO_CONTACT_PENALTY` under
+`MIN_CONTACT_MM2`. The part as modelled is kept when its cost is within `AS_MODELLED_MARGIN` of the
+best, so that a hub whose two ends were cut a little differently is not turned over. A part with no
+candidate (a sphere) stays as modelled. It runs once for each part when the part arrives, finding
+the faces on the way, so selecting an instance later only fetches the patches already found.
 
 ### Arrange and the placement check
 
-**Arrange** works on each instance's convex outline seen from above, as it lies and as it is
-turned, grown by the spacing; it never turns one. Two packers run and the better result is kept:
-a shelf packer (largest first, each at the first free spot scanning from the front-left corner,
-the group then slid to the plate's middle) and a pile packer (largest first, every free spot on a
-`PILE_GRID_MM` grid, scored by how small and square the pile stays and how near the middle, the
+**Arrange** (`arrangePlate` in `geometry/arrange.js`) works on each instance's convex outline seen
+from above, as it lies and as it is turned (held by an outline of at most 32 corners), grown by half
+the spacing and `ARRANGE_SLACK_MM` on each side; it never turns one. Whether a spot is free is read
+from a map of the printable area less the margin in squares `ARRANGE_CELL_MM` across, each marked
+when a grown outline touches it, so two instances whose grown outlines share no square are at least
+the spacing apart and an arranged plate always passes the placement check, with up to about a
+millimetre more room than the spacing. Two packers run and the better result is kept: a shelf
+packer (largest first, each at the first free spot on a `PILE_GRID_MM` grid scanning from the
+front-left corner, slid towards that corner a square at a time, the group then centred) and a pile
+packer (largest first, every free spot on a `PILE_GRID_MM` grid near the pile, the whole plate when
+none is free there, scored by the pile's area, how square it stays and how near the middle, the
 best refined at `PILE_REFINE_MM`, the pile centred). Fewer instances left beside the plate wins;
-the smaller pile breaks a tie. A curved or L-shaped part takes up its hollow side too; packing
-true outlines is not planned. Under `ARRANGE_MS` for 150 instances.
+the smaller pile breaks a tie. An instance left beside the plate is put to its right, clear of it.
+A curved or L-shaped part takes up its hollow side too; packing true outlines is not planned. On
+the second trial's two plates of 150 instances the shelf packer won both times.
 
 **The placement check** uses the same outlines and the three rules of the slice service, with
 the footprint and its centre exactly as the plate configuration's
@@ -1149,11 +1185,48 @@ each 0.01 mm from its rule's figure except the two height plates, 0 and 1 mm fro
 the slice service's builder wrote the set first, before anything else of its phase 2. A
 plate the wizard shows green and the slice service refuses is a defect in one of them.
 
-Tests: on the fixed set of real exported parts kept in the repository, the expected faces,
-patches, orientations and placements written down and checked, without a browser window; the
-placement check against every shared plate, with the expected answer of each; Arrange never
-changes an orientation; a malformed STL ends in an error the main thread turns into a
-notification, with the panel never held past 250 ms.
+`checkPlate` in `geometry/placement.js` gives the problems in the slice service's order (every
+instance across the margin, then every one too tall, then every pair too close, `i < j`), each
+`{rule, instances}` with what the Layout step's messages need: the `edges` crossed (`left`,
+`right`, `front`, `back`) and the footprint's `size` for `off_plate`, the `height` for
+`too_tall`, the `distance` for `too_close`. Footprints are kept for each part and turn, keyed by
+the part's hull corners as read and never by the plate configuration's part key (which means
+nothing beyond one plate configuration: a key may come to point at another part read under
+another key, or at a part read again in other units), so a check never answers from the
+footprint of a part the key pointed at before; pairs are
+compared only when their bounds come within the spacing, and two outlines are measured exactly
+only when their 32-corner outlines are closer than the spacing. Instances are named as the slice
+service names them (`instanceLabels`).
+
+**The worker's messages** (`geometry/messages.js`, run by `geometry.worker.js`; the tests run the
+same messages in their own thread): `read` (`key`, `buffer`, `units`; answers the triangles, the
+box and the corners for drawing as a transferred `Float32Array`), `faces`, `orient` (with the
+contract's fields for the turn), `arrange` and `check` (`plateConfiguration`, `geometry` mapping
+each of its part keys to the key a part was read under, `printer` with `min`, `max` and `height`,
+and `supports`), and `forget`. Each answer is `{id, ok: true, result}` or `{id, ok: false, error}`,
+the error an error report of the wizard's own:
+
+| Code | When | `message`; `remedy` |
+|---|---|---|
+| `wizard.part_not_drawable` | A file the reader cannot read (shorter than the header, cut off or padded, no triangles, over `MAX_PART_BYTES` or `MAX_PART_TRIANGLES`, a coordinate not a number), or a part with no hull (flat, a line, a point) | "PenguinSlicer could not show this part, so it cannot be imported."; "Export the part again as a binary STL and add it again." Not retryable; `detail` says what was wrong |
+| `wizard.layout_failed` | A message about a part never read, a message the worker does not know, an `arrange` or `check` with an instance the slice service would refuse as `slice.bad_plate_configuration` (`x` or `y` not a finite number, `angle` not a whole number from 0 to 359, both or neither of `orientation` and `rotation`, an orientation not one of the six, a `rotation` not four finite numbers of length 1 within 1e-6, a `ref` naming no part of the plate configuration or a part missing from the message's `geometry`), or the geometry's own code failing | "PenguinSlicer could not work out the layout of this plate."; "Reload the page; your parts, layout and settings are kept in this browser." Retryable (the remedy holds once the page keeps the plate in the browser's storage, [What the browser keeps](#what-the-browser-keeps), built with the page); `detail` names the fault |
+
+Tests (`wizard/tests/geometry/`, on Node's runner): on the eight real exported parts kept in the
+repository and the two made parts, the faces, patches and the way auto-orient lays each, as the
+second trial recorded them, and that every flat face of a real part (a hull face of at least
+25 mm², at least half of it the part's own surface) has a hull patch; each step of finding faces
+on small solids made in the tests (a box, a cylinder, a hex prism, a wedge, chamfers, a stepped
+block, a round side with slivers between its facets, a strip a few thousandths of a millimetre
+off a face); the hull checked against every corner of a real part and of random spheres; the
+placement check against every shared plate, with the expected answer of each, and in the slice
+service's order, with each of the four edges of the margin reached on purpose, two instances too
+close front to back in either order, and a part key that comes to point at another part;
+laying an instance on a face keeps its turn about the vertical; the sentences of each error
+report are the guide's; Arrange never changes an orientation, keeps the spacing with supports on and
+off, centres the pile, and leaves beside the plate what does not fit; each of the reader's
+refusals and each error report through the worker's messages. To be built with the page (items 7
+and 10 of [By phase](#by-phase)): a malformed STL ends in a notification the main thread shows,
+with the panel never held past 250 ms.
 
 ## The Preview step
 
@@ -1892,7 +1965,10 @@ signed in drops its reports.
 **Failures in the browser,** `POST /api/reports/failure`: `what` one of `part_not_drawable`,
 `storage_refused`, `storage_cleared`, `drawing_context_lost`, `layout_failed` (the layout code failing
 on a part) or `page_failed` (the page's own code failing, caught by a handler for uncaught errors and
-rejected promises); `step` (`parts`, `settings`, `advanced`, `layout`, `preview`, `send` or `none`);
+rejected promises). A `wizard.layout_failed` answer from the worker is reported as `layout_failed`
+only when the geometry's code failed on a part; when the page asked for something wrong (a message
+the worker does not know, a part never read, a malformed instance), it is reported as `page_failed`,
+so the worker tells the two apart in its answer when the reports are built; `step` (`parts`, `settings`, `advanced`, `layout`, `preview`, `send` or `none`);
 `browser`, `browser_version`; `software_3d`; `part_sha256` when a part is concerned; `detail`, the
 error's message and where it arose, at most 1,000 characters, never a part's name, bytes or geometry,
 or anything from the storage.
@@ -1945,10 +2021,10 @@ or is not yet in a contract:
 | One part; different parts; instances | 7.5 MB (150,000 triangles); 25; 150 | The slice service's | One over each |
 | Storage in the browser | 25 parts of 7.5 MB for each tab's plate | Follows from the limits | A full plate stored and reloaded |
 | A stored plate | Dropped after 12 hours unused, once no tab holds it | Set | Fake clock |
-| Faces found | Patches within 100 ms of selecting | Set; 0.2 to 10 ms on generated parts of up to 1,744 corners; unmeasured on real ones | Timed on the real exported parts |
-| Auto-orient | Best way within 1 s of arriving | Set; about 0.1 s for 100,004 triangles outside a browser | The same |
-| Arrange | Under 2 s for 150 instances | Set; 0.2 to 1.5 s for up to 25, unoptimised | The same |
-| The placement check | Keeps up with a drag at 150 instances | Set; unmeasured | The same |
+| Faces found | Patches within 100 ms of selecting | Met: at most 4.1 ms for `hub-150k.stl` in the worker in Chromium on the machine without a graphics card, the faces having been found on arrival; found from nothing, 215 ms for it and at most 84 ms for a real part | The second trial, `make -C wizard trials-geometry` |
+| Auto-orient | Best way within 1 s of arriving | Met: at most 272 ms for `hub-150k.stl` from the file to its best way, faces included; at most 177 ms for a real part | The same |
+| Arrange | Under 2 s for 150 instances | Met: at most 30 ms for 150 of `hex-spacer.stl` (all placed) and 56 ms for a mix of 150 real parts (104 placed, the rest beside the plate) | The same |
+| The placement check | Keeps up with a drag at 150 instances | Met: at most 4.4 ms for each check of a drag at 150 instances, against one frame of 100 ms at 10 frames a second | The same |
 | The Layout view | 30 frames a second with a graphics card, 10 without, while dragging or turning, at 150 instances of parts up to 150,000 triangles | Set, no measurement | Timed in Chrome on both machines; reported in real use |
 | The layer preview | 30 with a graphics card, 10 without, while turning or dragging the layer bar, on a 14.1 MB sliced file and at 150 instances; a simpler look while moving | Without a graphics card, method C of the first trial: 15 to 20 typical on the three plates; with one, unmeasured | Timed in Chrome on both machines; reported in real use; test renders |
 | The first layer drawn | Within 5 s, print time and filament at once | The first trial: 0.8 to 2.1 s from fetching the sliced file (the look while moving; the full look 1.6 to 7.1 s) | The same |
@@ -1971,7 +2047,7 @@ the other components are: `wizard/` is a `uv` project of its own, with its own
 
 | Folder | What it holds |
 |---|---|
-| `wizard/src/` | The page: `index.html`, its modules, the workers' modules, the style sheets taken over from the mockup's `css/panel.css`, fonts and pictures. As built, `index.html` and `main.js`, which reads the version from the page's `<meta>` and marks the document started |
+| `wizard/src/` | The page: `index.html`, its modules, the workers' modules, the style sheets taken over from the mockup's `css/panel.css`, fonts and pictures. As built, `index.html` and `main.js`, which reads the version from the page's `<meta>` and marks the document started; the worker `geometry.worker.js` and the geometry in `geometry/` ([The geometry, in a worker](#the-geometry-in-a-worker)) |
 | `wizard/src/seams/` | The seams: the only modules that may call `setTimeout`, `setInterval`, `Date.now` or `fetch` (the clock and the transport; from the skeleton, item 2 of [By phase](#by-phase)) |
 | `wizard/vendor/` | Third-party code kept as files, each with its release, licence and SHA-256 in [wizard/vendor/README.md](vendor/README.md) |
 | `wizard/tests/` | The tests without a browser window on Node's runner (`*.test.js`), with their fakes in `wizard/tests/fakes/` (from the skeleton) |
@@ -2067,10 +2143,9 @@ imports, a style sheet's addresses) and building in `wizard/vendor/`.
 | `trials-serve` | Serves `wizard/trials/` at `/`, with `wizard/vendor/` at `/vendor/` and `contracts/examples/parts/real/` at `/parts/real/`, on `127.0.0.1:8610`, for the owner's timing on the Mac; `HOST=0.0.0.0` (or `PORT=`) to change the address |
 
 Each trial's entry point is its own file in its own folder, so the two trials are built at
-the same time without touching one file; until its builder replaces it, each is a
-placeholder that says so and fails (the first trial's is built: it exits 1 when no method
-reaches the builder's part of passing on all three plates, after writing its figures, renders
-and report). A trial's script starts the trials' server itself with
+the same time without touching one file. Both are built; the first trial's exits 1 when no
+method reaches the builder's part of passing on all three plates, after writing its figures,
+renders and report. A trial's script starts the trials' server itself with
 `trials/serve.py`'s `make_server("127.0.0.1", 0)`, on a port the system chooses.
 
 ## How it is tested
@@ -2187,6 +2262,22 @@ patches, or name the ones a person would not choose. Tuning the angles from that
 if no rule sorts real round sides well, the Layout step offering fewer patches comes back for a
 decision.
 
+As built, `make -C wizard trials-geometry` runs `wizard/trials/geometry/run.py`, which serves
+`wizard/src/` beside the trials (at `/src/`) so that `wizard/trials/geometry/index.html` drives
+the wizard's own worker in Playwright's Chromium, headless, and writes one JSON file for each part
+and for each arranged plate, `summary.json` (the machine's processors and memory as its cgroup gives
+them, the four times against their targets, each real part's flat faces without a hull patch, and
+the main thread's longest gap between beats of a 10 ms heartbeat during the timed steps), one
+picture of each part (as modelled and as laid, with its patches) and one of each arranged plate.
+It exits 1, naming each, when a time is missed or a flat face of a real part has no hull patch. The
+mix of real parts is 140 of Pulley v3 and one or two of each other real part. The round parts
+exported from Onshape at its coarse and fine settings have not arrived, so the round parts are
+`pulley-v3.stl` and `inner-spacer.stl`, and the summary says so. The builder's part passed on Fri
+2026-11-27: the four times met with a wide margin and every flat face of a real part given a hull
+patch, after three of the rules were tuned on the real parts ([Finding the faces a part can lie
+on](#finding-the-faces-a-part-can-lie-on)); what was found is in
+[wizard/trials/geometry/README.md](trials/geometry/README.md).
+
 **Whether the browser's storage holds a full plate.** In Chrome, on a tab and from phase 4 in
 Onshape's panel, store a full plate of 25 parts of 7.5 MB in each of several tabs and record when the
 browser refuses; after that, the `storage_refused` and `storage_cleared` reports from real use count
@@ -2209,12 +2300,11 @@ The page opened directly in a browser, with the development identity and no sign
 1. **The two trials,** before the rest, because a failure in either trial
    changes the design. Their project and inputs are built
    ([The project and its tools](#the-project-and-its-tools), and the inputs of
-   [How the trials and measurements are run](#how-the-trials-and-measurements-are-run)). The first
-   trial, [the layer preview's speed](README.md#the-risks-to-try-first-in-phase-2), is built and run
-   ([wizard/trials/preview/README.md](trials/preview/README.md)); the second is to be built in place
-   of its placeholder entry point:
-   [the geometry on real parts](README.md#the-risks-to-try-first-in-phase-2)
-   ([How the trials and measurements are run](#how-the-trials-and-measurements-are-run)).
+   [How the trials and measurements are run](#how-the-trials-and-measurements-are-run)), and so
+   are both trials: the first, [the layer preview's speed](README.md#the-risks-to-try-first-in-phase-2)
+   ([wizard/trials/preview/README.md](trials/preview/README.md)), and the second,
+   [the geometry on real parts](README.md#the-risks-to-try-first-in-phase-2), with the geometry it
+   tried ([The geometry, in a worker](#the-geometry-in-a-worker)).
 2. **The skeleton:** the build of `wizard/dist/` as
    [The wizard's built files](../contracts/wizard-front-server.md#the-wizards-built-files) fixes
    it (hashed asset names, the version placeholder, nothing the content security policy
@@ -2246,7 +2336,9 @@ The page opened directly in a browser, with the development identity and no sign
    changes' values of [The Settings step](#the-settings-step)
    ([The Settings step](README.md#the-settings-step); [the table of settings](../contracts/settings-table.md)).
 10. **The Layout step:** the view and its gestures, the rotation handle, laying on a face, auto-orient,
-    Arrange, the placement check and its messages, against the shared plates
+    Arrange, the placement check and its messages, against the shared plates (the geometry
+    behind the last four is built, in the worker: [The geometry, in a worker](#the-geometry-in-a-worker);
+    the step that shows them is to be built)
     ([The Layout step](README.md#the-layout-step);
     [Coordinates](../contracts/plate-configuration.md#coordinates),
     [An instance in phase 2](../contracts/plate-configuration.md#an-instance-in-phase-2),
@@ -2378,8 +2470,9 @@ above. Build what each line says is safe; do not build past it.
   meets the builder's part. Safe: everything, on method C; open is only the owner's part, the renders
   and the frame rate on the Mac.
 - **Laying on a face, auto-orient and Arrange on real exported parts**, the second trial
-  ([The risks to try first in phase 2](README.md#the-risks-to-try-first-in-phase-2)). Safe: the rules as
-  written, with their angles as constants.
+  ([The risks to try first in phase 2](README.md#the-risks-to-try-first-in-phase-2)). The builder's
+  part passed; open is the owner's look at each part's pictures and the round parts exported from
+  Onshape, which only the owner can supply. Safe: the rules as built, with their angles as constants.
 - **A quick change whose value is not on its menu**
   ([its item](README.md#a-quick-change-whose-value-is-not-on-its-menu)). Safe: its recommendation,
   the value as one more entry at the top of the menu.
