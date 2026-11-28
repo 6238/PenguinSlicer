@@ -1,0 +1,501 @@
+/* The panel: PenguinCAM's wizard look, since version 4 (this is version 8). Colours are PenguinCAM's light theme
+   (static/wizard.css :root[data-theme="light"]); fonts, font sizes, paddings, radii, the
+   step pills, chips, cards and the bottom buttons are its measurements, copied, not
+   judged by eye. Scoped to #wizard because here the panel is a block in the page.
+   The panel's width is fluid: container queries on #wizard (not media queries, since the
+   panel is dragged, not the window) use the extra width from 520 px and 680 px. */
+#wizard {
+  --bg: #f6f8fa; --panel: #ffffff; --panel-2: #eef1f4; --ink: #1f2328; --muted: #5a6570;
+  --accent: #2f81f7; --accent-ink: #ffffff; --danger: #d1242f; --ok: #1a7f37;
+  --warn: #9a6700; --warn-line: #d29922; --line: #d0d7de; --canvas-bg: #f2f4f7;
+  --hover: #e3e8ed;
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; min-width: 300px;
+  background: var(--bg); color: var(--ink);
+  font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  overflow: hidden;
+  container: wiz / inline-size;
+  color-scheme: light;
+}
+#wizard * { box-sizing: border-box; }
+#wizard [hidden] { display: none !important; }
+
+/* ---- header: name, config line, step pills (PenguinCAM #wiz-header, #stepbar) ---- */
+#wiz-header { padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--panel); flex: none; position: relative; z-index: 30; }
+.brand-row { display: flex; align-items: center; gap: 8px; }
+#wizard .brand { font-weight: 700; letter-spacing: 0.3px; flex: 1; min-width: 0; }
+#stepbar { display: flex; gap: 6px; list-style: none; margin: 8px 0 0; padding: 0; flex-wrap: wrap; }
+#stepbar li { font-size: 12px; color: var(--muted); padding: 3px 10px; border-radius: 999px; background: var(--panel-2); cursor: pointer; user-select: none; white-space: nowrap; transition: background 0.12s, color 0.12s; }
+#stepbar li::before { content: attr(data-num) ". "; opacity: 0.65; }
+#stepbar li:hover { background: var(--hover); color: var(--ink); }
+#stepbar li:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+#stepbar li.done { color: var(--ok); }
+#stepbar li.done::after { content: " \2713"; }
+#stepbar li.active { color: var(--accent-ink); background: var(--accent); }
+#stepbar li.active:hover { background: var(--accent); color: var(--accent-ink); }
+/* Version 7, below 480 px of panel: a compact stepper, as Material's: five small numbered
+   circles joined by a line, a check in each done step, the current one filled with its name
+   beside it. Every circle stays clickable, with its step's name as its tooltip. From 480 px
+   the pills above stay as they were. */
+#stepbar .sn { display: inline; }
+@container wiz (max-width: 479.98px) {
+  #stepbar { flex-wrap: nowrap; align-items: center; gap: 0; margin-top: 10px; }
+  #stepbar li { display: flex; align-items: center; flex: 1 1 0; min-width: 0; padding: 0; background: none; border-radius: 0; }
+  #stepbar li:last-child { flex: 0 0 auto; }
+  #stepbar li.active { flex: 1 0 auto; }
+  #stepbar li.active, #stepbar li:hover, #stepbar li.active:hover { background: none; }
+  #stepbar li::before { content: attr(data-num); opacity: 1; flex: none; box-sizing: border-box; width: 22px; height: 22px; border-radius: 50%;
+                        display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600;
+                        border: 1px solid var(--line); background: var(--panel); color: var(--muted); }
+  #stepbar li:hover::before { border-color: var(--muted); color: var(--ink); }
+  #stepbar li.done::before { content: "\2713"; background: #dafbe1; border-color: #aceebb; color: var(--ok); }
+  #stepbar li.active::before { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  /* the focus ring goes round the circle, not the circle and the line beside it */
+  #stepbar li:focus-visible { outline: none; }
+  #stepbar li:focus-visible::before { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #stepbar li .sn { display: none; }
+  #stepbar li.active .sn { display: inline; margin-left: 6px; font-weight: 600; color: var(--ink); white-space: nowrap; }
+  /* the line to the next circle */
+  #stepbar li::after { content: ""; flex: 1 1 auto; min-width: 8px; height: 1px; margin: 0 6px; background: var(--line); }
+  #stepbar li.done::after { content: ""; background: #aceebb; }
+  #stepbar li:last-child::after { display: none; }
+}
+#wizard .step-why { margin: 6px 0 0; font-size: 12px; line-height: 1.4; color: var(--danger); }
+
+/* config line, as PenguinCAM's */
+.config-info { margin-top: 6px; }
+.config-status { margin: 0; font-size: 12px; color: var(--muted); }
+.config-status a { color: var(--accent); text-decoration: none; }
+.config-status a:hover { text-decoration: underline; }
+.config-status a.config-refresh { color: var(--muted); opacity: 0.35; margin-left: 5px; font-size: 0.9em; }
+
+/* ---- the printer-status icon in the header, and its details ---- */
+.pstat { display: inline-flex; align-items: center; gap: 5px; flex: none; font: inherit; font-size: 12px; line-height: 16px; color: var(--muted);
+         background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px 2px 6px; cursor: pointer; white-space: nowrap; }
+.pstat:hover { background: var(--hover); color: var(--ink); }
+.pstat svg { width: 16px; height: 16px; flex: none; }
+.pstat .pdot { width: 7px; height: 7px; border-radius: 50%; background: #8c959f; flex: none; }
+.pstat.s-idle .pdot, .pstat.s-finished .pdot { background: var(--ok); }
+.pstat.s-sending .pdot, .pstat.s-printing .pdot { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+.pstat.s-waiting .pdot { background: var(--warn-line); animation: pulse 1.2s ease-in-out infinite; }
+.pstat.s-failed .pdot { background: var(--danger); }
+.pstat.s-offline .pdot { background: #8c959f; }
+.pstat.s-waiting { color: var(--warn); border-color: var(--warn-line); }
+.pstat.s-failed { color: var(--danger); }
+/* open: the icon and its details read as one tab. The icon turns white, loses its bottom
+   border and rounded bottom, and sits above the details' top edge, whose top-right corner is
+   square under it (wizard.js placePrinterPop puts the details there). */
+.pstat[aria-expanded="true"] { position: relative; z-index: 41; background: var(--panel); color: var(--ink); border-color: var(--line); border-bottom-color: var(--panel);
+                               border-radius: 10px 10px 0 0; padding-bottom: 6px; margin-bottom: -4px; }
+.pstat-pop { position: absolute; z-index: 40; background: var(--panel); border: 1px solid var(--line); border-radius: 8px 0 8px 8px;
+             box-shadow: 0 6px 18px rgba(31, 35, 40, 0.14); padding: 8px 12px 10px; font-size: 13px; }
+.pp-note a { color: var(--accent); text-decoration: none; }
+.pp-note a:hover { text-decoration: underline; }
+.pp-head { display: flex; align-items: center; gap: 8px; }
+.pp-title { font-weight: 600; flex: 1; min-width: 0; }
+.pp-close { background: none; border: 0; color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer; padding: 0; width: 24px; height: 24px; margin: -4px -6px -4px 0; flex: none; }
+.pp-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.pp-grid { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin-top: 8px; font-size: 13px; }
+.pp-grid dt { color: var(--muted); font-size: 12px; padding-top: 1px; }
+.pp-grid dd { margin: 0; min-width: 0; }
+.pp-note { margin-top: 8px; font-size: 12px; color: var(--muted); }
+.pp-late { color: var(--warn); font-weight: 600; }
+.pp-bar { height: 6px; background: var(--panel-2); border-radius: 3px; margin-top: 8px; overflow: hidden; }
+.pp-bar div { height: 100%; background: var(--accent); }
+
+/* ---- body, chips, step title (PenguinCAM #wiz-body, #wiz-summary, .step h2) ---- */
+#wiz-body { flex: 1; overflow-y: auto; padding: 14px; min-height: 0; }
+.summary-wrap { position: relative; }
+/* version 7: the plate summary is two lines of text; only "+2 changes" is a pill */
+#wiz-summary { display: flex; flex-direction: column; gap: 2px; margin-bottom: 14px; font-size: 12px; line-height: 1.45; color: var(--muted); }
+#wiz-summary .sum-line { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* as tall as the "+2 changes" pill always, so nothing moves when the pill comes or goes */
+#wiz-summary .sum-set { display: flex; align-items: center; gap: 8px; overflow: visible; min-height: calc(12px * 1.45 + 4px); }
+#wiz-summary .sum-text { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#wiz-summary .sum-set .chip { flex: none; padding: 1px 8px; }
+#wiz-summary .chip { font-size: 12px; line-height: 1.45; color: var(--muted); background: var(--panel-2); border: 1px solid var(--line); padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+#wiz-summary .chip.adv { color: var(--warn); border-color: var(--warn-line); }
+#wiz-summary button.chip { font-family: inherit; cursor: pointer; }
+#wiz-summary button.chip:hover { background: #fff8c5; }
+#wiz-summary button.chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* the "+1 change" chip, open: joined to the change details below it, as the printer icon is to its details */
+#wiz-summary .chg-chip.open { position: relative; z-index: 21; background: #fff8c5; border-bottom-color: #fff8c5; border-radius: 12px 12px 0 0; padding-bottom: 7px; margin-bottom: -4px; }
+.chg-pop { position: absolute; z-index: 20; background: #fff8c5; border: 1px solid var(--warn-line); border-radius: 0 8px 8px 8px; padding: 8px 10px;
+           font-size: 12px; color: #4d3800; box-shadow: 0 6px 18px rgba(31, 35, 40, 0.14); }
+.chg-pop.shifted { border-radius: 8px; }
+.chg-pop ul { margin: 0; padding-left: 16px; }
+.chg-pop li + li { margin-top: 2px; }
+#wizard .step h2 { margin: 0 0 12px; font-size: 18px; }
+#wizard .step > .lead { margin: -4px 0 14px; color: var(--muted); font-size: 13px; }
+
+#wizard .field { display: block; margin: 0 0 14px; }
+#wizard .field > span, #wizard .field > legend { display: block; color: var(--muted); margin-bottom: 4px; font-size: 12px; }
+#wizard input[type="number"], #wizard input[type="text"], #wizard select {
+  width: 100%; padding: 8px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; color: var(--ink); font: inherit;
+}
+#wizard input.invalid { border-color: var(--danger); }
+#wizard .hint { color: var(--muted); font-size: 12px; }
+#wizard p.hint { margin: 0 0 8px; }
+#wizard .btn { appearance: none; border: 1px solid var(--line); background: var(--panel-2); color: var(--ink); padding: 8px 14px; border-radius: 6px; font: inherit; cursor: pointer; white-space: nowrap; }
+#wizard .btn:hover:not(:disabled) { background: var(--hover); }
+#wizard .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+#wizard .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+#wizard .btn.primary:hover:not(:disabled) { background: #1f6fe0; }
+#wizard .btn.small { padding: 4px 8px; font-size: 12px; }
+#wizard .btn.icon { min-width: 28px; }
+#wizard .btn.danger-outline { border-color: #e6a5a9; color: var(--danger); background: var(--panel); }
+#wizard .linkish { background: none; border: 0; color: var(--accent); cursor: pointer; font: inherit; padding: 0; text-decoration: none; }
+#wizard .linkish:hover { text-decoration: underline; }
+#wizard .spacer { flex: 1; }
+
+/* the user's own last print, one line (version 7): "Your print finished at 11:25 am." */
+#wizard .last-print { margin: 0 0 12px; font-size: 13px; color: var(--ok); }
+#wizard .last-print::before { content: "\2713  "; }
+
+/* ---- notifications: what happened to a part that did not arrive, and the like ---- */
+#notices:empty { display: none; }
+#notices { margin: 0 0 12px; }
+.notice { display: flex; gap: 8px; align-items: flex-start; border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 6px; background: var(--panel);
+          padding: 8px 8px 8px 10px; margin-bottom: 8px; font-size: 13px; box-shadow: 0 1px 3px rgba(31, 35, 40, 0.08); }
+.notice.error { border-left-color: var(--danger); }
+.notice.warn { border-left-color: var(--warn-line); }
+.notice.ok { border-left-color: var(--ok); }
+.notice .n-body { flex: 1; min-width: 0; }
+.notice .n-what { font-weight: 600; }
+.notice .n-todo { margin-top: 2px; color: var(--ink); }
+.notice .n-x { background: none; border: 0; color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer; padding: 0; width: 24px; height: 24px; margin: -4px -4px 0 0; flex: none; }
+.notice .n-x:hover { color: var(--ink); }
+
+/* ---- Settings ---- */
+.pstate { font-size: 12px; padding: 1px 8px; border-radius: 999px; background: #dafbe1; color: var(--ok); border: 1px solid #aceebb; }
+.pstate.busy { background: #ddf4ff; color: #0969da; border-color: #b6e3ff; }
+.pstate.wait { background: #fff8c5; color: var(--warn); border-color: #eedc82; }
+.pstate.off { background: var(--panel-2); color: var(--muted); border-color: var(--line); }
+.pstate.bad { background: #ffebe9; color: var(--danger); border-color: #ffcecb; }
+/* the caution under the Profile menu, from the first change until the changes are cleared */
+#wizard .caution { display: flex; gap: 6px; align-items: baseline; margin: -6px 0 14px; color: var(--warn); font-size: 12px; }
+#wizard .caution .caution-icon { flex: none; }
+/* the quick changes: one per row below 480 px (too cramped two abreast at 320 px), two from 480 px */
+#wizard .print-overrides { display: grid; grid-template-columns: 1fr; gap: 10px 12px; border: 0; padding: 0; margin: 0 0 14px; min-width: 0; }
+.print-overrides label { display: block; font-size: 12px; color: var(--muted); }
+.print-overrides label > span { display: block; margin-bottom: 4px; }
+#wizard .print-overrides select.changed { border-color: var(--warn-line); }
+.adv-entry { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+/* the changes box: in the Advanced mode button's place once a setting is changed */
+.adv-effect { border: 1px solid #eedc82; background: #fff8c5; border-radius: 6px; padding: 8px 10px; font-size: 12px; color: #4d3800; margin-bottom: 10px; }
+.adv-effect ul { list-style: none; margin: 4px 0 8px; padding: 0; }
+.adv-effect li + li { margin-top: 3px; }
+#wizard .adv-effect .linkish { display: block; font-size: 12px; text-align: left; line-height: 1.45; color: #0b5cd5; }
+.setup-grid { display: block; }
+.upload-units { margin: 6px 0 0; }
+
+/* ---- Parts (PenguinCAM .select-status, #parts-list, .part-item) ---- */
+.select-status { padding: 12px; border: 1px dashed var(--line); border-radius: 8px; text-align: center; color: var(--ink); background: var(--panel); font-size: 13px; margin-bottom: 8px; }
+.select-status.busy { border-color: var(--accent); }
+#dropzone { border: 2px dashed var(--line); border-radius: 8px; padding: 24px; text-align: center; color: var(--muted); cursor: pointer; background: var(--panel); }
+#dropzone.drag { border-color: var(--accent); color: var(--ink); }
+#dropzone p { margin: 0; }
+#parts-list { list-style: none; margin: 14px 0 0; padding: 0; }
+.part-item { border: 1px solid var(--line); border-radius: 6px; margin-bottom: 8px; background: var(--panel); }
+.part-item .row { display: flex; align-items: center; gap: 10px; padding: 8px; }
+.part-item img, .part-item .thumb { width: 44px; height: 44px; background: var(--bg); border-radius: 4px; flex: 0 0 auto; }
+.part-item .meta { flex: 1; min-width: 0; }
+/* a name wraps to a second line rather than being cut short beside ↻, the quantity and × */
+.part-item .name { font-weight: 600; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+/* a size is never cut: it wraps, as PenguinCAM's own .part-item .dims does */
+.part-item .dims { color: var(--muted); font-size: 12px; }
+.part-item .dims.slow { color: var(--warn); }
+.part-item .remove { color: var(--danger); background: none; border: none; cursor: pointer; font-size: 18px; padding: 0; width: 24px; height: 24px; flex: none; }
+#wizard .part-item .part-qty { width: 50px; flex: 0 0 auto; padding: 4px 4px 4px 6px; font-size: 13px; }
+.part-item .row { gap: 8px; }
+.part-item.arriving { border-style: dashed; }
+.part-item.arriving img { opacity: 0.55; }
+.arrive-bar { height: 3px; background: var(--panel-2); border-radius: 2px; margin-top: 4px; overflow: hidden; }
+.arrive-bar div { height: 100%; background: var(--accent); transition: width 0.25s linear; }
+.part-item.flash { animation: flash 0.9s; }
+@keyframes flash { 0%, 60% { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(47, 129, 247, 0.35); background: #ddf4ff; } }
+.part-item .sub { padding: 0 8px 8px; font-size: 12px; }
+.part-item .sub .msg { margin: 0; }
+.spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: -2px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* messages: what happened, what to do, the remedy */
+.msg { border: 1px solid var(--line); border-left-width: 4px; border-radius: 6px; padding: 8px 10px; margin: 6px 0; font-size: 13px; line-height: 1.4; background: var(--panel); }
+.msg.error { border-color: #ffcecb; border-left-color: var(--danger); }
+.msg.warn { border-color: #eedc82; border-left-color: var(--warn-line); }
+.msg.info { border-left-color: var(--accent); }
+.msg.ok { border-left-color: var(--ok); }
+.msg .what { font-weight: 600; color: var(--ink); }
+.msg.error .what { color: var(--danger); }
+.msg.warn .what { color: var(--warn); }
+.msg .todo { color: var(--ink); margin-top: 3px; }
+.msg .todo a { color: var(--accent); text-decoration: none; }
+.msg .todo a:hover { text-decoration: underline; }
+.msg .acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.msg details { margin-top: 6px; color: var(--muted); font-size: 12px; }
+.msg details summary { cursor: pointer; }
+.msg details div { margin-top: 4px; color: var(--ink); }
+.fix-first { margin: 6px 0 0; }
+.fix-first + .msg { margin-top: 3px; }
+.msg.clickable { cursor: pointer; }
+.msg.clickable:hover { background: var(--panel-2); }
+
+/* ---- Layout ---- */
+#layout-info { margin: 8px 0 0; }
+#layout-toolbar { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.layout-selrow { display: flex; align-items: center; gap: 6px; margin: 6px 0 0; min-height: 24px; }
+.layout-selrow #layout-selection { flex: 1; min-width: 0; margin: 0; }
+.layout-selrow #layout-selection strong { color: var(--ink); }
+.view-btns { position: absolute; right: 6px; bottom: 6px; z-index: 3; display: flex; gap: 4px; }
+.view-btns button { font: inherit; font-size: 11px; color: var(--muted); background: rgba(255, 255, 255, 0.92); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; cursor: pointer; }
+.view-btns button:hover { color: var(--ink); border-color: var(--muted); }
+/* the Layout step's help: a "?" icon at the right of the toolbar opens how to move and look */
+#layout-toolbar { position: relative; }
+#wizard .icon-btn.help-btn { width: 24px; height: 24px; border-color: var(--line); border-radius: 50%; font-weight: 700; font-size: 13px; }
+#wizard .icon-btn.help-btn[aria-expanded="true"] { background: var(--panel-2); color: var(--ink); }
+.help-pop { position: absolute; top: calc(100% + 4px); right: 0; z-index: 25; width: min(340px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+            box-shadow: 0 6px 18px rgba(31, 35, 40, 0.14); padding: 8px 12px 10px; font-size: 12px; line-height: 1.45; color: var(--ink); }
+.help-pop p { margin: 0; }
+.help-pop ul { margin: 6px 0 0; padding-left: 18px; color: var(--muted); }
+.help-pop li { margin: 2px 0; }
+.gl-view { position: relative; width: 100%; aspect-ratio: 1 / 1; max-height: 380px; background: var(--canvas-bg); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
+/* The Layout step's view fills the panel's width and grows with it (the owner, M8): no cap. */
+#wizard #layout-view.gl-view { max-height: none; }
+.gl-view .gl-canvas { display: block; width: 100%; height: 100%; outline: none; }
+.gl-view .gl-canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.gl-tip { position: absolute; left: 6px; bottom: 30px; max-width: calc(100% - 12px); font-size: 11px; background: rgba(255, 255, 255, 0.95); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; pointer-events: none; z-index: 4; }
+.gl-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.face-dot { position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 4px; background: #f2cc60; color: #1d1600; border: 1px solid #fff;
+            font-size: 11px; line-height: 14px; text-align: center; font-weight: 700; box-shadow: 0 0 0 2px rgba(31, 35, 40, 0.35); }
+.face-dot.best { background: #2da44e; color: #fff; }
+.face-dot.hover { transform: scale(1.3); background: #fff; }
+.tip-handle { position: absolute; width: 20px; height: 20px; margin: -10px 0 0 -10px; border-radius: 50%; background: #fff; color: #0b2a5c; border: 2px solid var(--accent);
+              font-size: 13px; line-height: 16px; text-align: center; font-weight: 700; box-shadow: 0 0 0 2px rgba(31, 35, 40, 0.25); }
+/* the angle readout beside the rotation handle while it is dragged (version 7) */
+.turn-readout { position: absolute; font-size: 11px; line-height: 16px; padding: 0 5px; white-space: nowrap; background: rgba(255, 255, 255, 0.95);
+                border: 1px solid var(--accent); border-radius: 4px; color: #0b2a5c; font-variant-numeric: tabular-nums; }
+.tip-handle.hover { background: var(--accent); color: #fff; }
+.layout-orient { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; margin: 2px 0 0; }
+.layout-orient .auto-chip { color: var(--ok); }
+.layout-orient .linkish { font-size: 12px; }
+.rest-strip { margin: 6px 0 2px; padding: 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
+.rest-strip .rs-head { font-size: 12px; color: var(--muted); margin: 0 0 4px; }
+.rs-row { display: flex; flex-wrap: wrap; gap: 4px; }
+.rs-item { position: relative; width: 56px; padding: 1px 1px 3px; display: flex; flex-direction: column; align-items: center; background: var(--panel-2); border: 1px solid var(--line); border-radius: 5px; cursor: pointer; color: var(--muted); font: inherit; }
+.rs-item:hover { border-color: var(--muted); }
+.rs-item.on { border: 2px solid var(--accent); padding: 0 0 2px; color: var(--ink); }
+.rs-item img { width: 52px; height: 52px; display: block; border-radius: 3px; background: var(--canvas-bg); }
+.rs-item .rs-line { font-size: 10px; line-height: 1.2; white-space: nowrap; }
+.rs-item .rs-line.warn { color: var(--warn); }
+.rs-item .rs-line.bad { color: var(--danger); }
+.rs-item .rs-best { position: absolute; top: 2px; left: 2px; font-size: 9px; font-weight: 700; padding: 0 3px; border-radius: 3px; background: #2da44e; color: #fff; }
+.layout-alert { display: flex; gap: 6px; width: 100%; height: 26px; margin: 0 0 6px; font: inherit; font-size: 12px; line-height: 18px; text-align: left;
+                background: #ffebe9; border: 1px solid #ffcecb; border-radius: 6px; padding: 3px 8px; color: var(--danger); cursor: pointer; }
+.layout-alert .first { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.layout-alert .more { white-space: nowrap; flex: none; font-weight: 600; }
+.layout-alert.ok { background: transparent; border-color: transparent; color: var(--ok); cursor: default; padding-left: 0; }
+
+/* ---- Preview: slicing progress (kept from version 3, in light colours) ---- */
+.slice-card { border: 1px solid var(--accent); border-radius: 8px; padding: 12px; background: var(--panel); margin-bottom: 12px; }
+.slice-top { display: flex; align-items: center; gap: 12px; }
+.g-track { fill: none; stroke: var(--panel-2); stroke-width: 6; }
+.g-fill { fill: none; stroke: var(--accent); stroke-width: 6; stroke-linecap: round; transform: rotate(-90deg); transform-origin: 32px 32px; transition: stroke-dashoffset 0.25s linear; }
+.g-layers rect { fill: #c7cfd8; }
+.g-layers rect.on { fill: var(--accent); }
+.slice-card.stalled .g-fill { stroke: var(--warn-line); }
+.slice-text { flex: 1; min-width: 0; }
+.slice-title { font-size: 15px; font-weight: 600; }
+#slice-pct { font-variant-numeric: tabular-nums; }
+#slice-stage { font-weight: 400; color: var(--ink); }
+.slice-times { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; margin-top: 2px; }
+.slice-times .late { color: var(--warn); }
+.slice-bar { height: 4px; background: var(--panel-2); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+#slice-bar-fill { height: 100%; width: 0; background: var(--accent); transition: width 0.25s linear; }
+.slice-stages { list-style: none; margin: 10px 0 0; padding: 0; font-size: 12px; color: var(--muted); }
+.slice-stages li { padding: 1px 0 1px 20px; position: relative; }
+.slice-stages li::before { content: ""; position: absolute; left: 3px; top: 6px; width: 8px; height: 8px; border-radius: 50%; border: 1px solid var(--line); }
+.slice-stages li.done { color: var(--ok); }
+.slice-stages li.done::before { content: "\2713"; border: 0; top: 0; left: 2px; width: auto; height: auto; }
+.slice-stages li.now { color: var(--ink); font-weight: 600; }
+.slice-stages li.now::before { border: 2px solid var(--line); border-top-color: var(--accent); animation: spin 0.8s linear infinite; top: 4px; width: 10px; height: 10px; left: 2px; }
+.slice-stages li.skip { opacity: 0.5; text-decoration: line-through; }
+.slice-actions { margin-top: 10px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.slice-actions .hint { margin: 0; }
+.conn { margin-top: 10px; font-size: 12px; border-radius: 6px; padding: 6px 8px; }
+.conn.lost { background: #fff8c5; border: 1px solid #eedc82; color: #4d3800; }
+.conn.back { background: #dafbe1; border: 1px solid #aceebb; color: var(--ok); }
+
+/* ---- Preview: result and layer preview ---- */
+.stats { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+.stats .stat { flex: 1; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font-size: 12px; color: var(--muted); }
+.stats .stat strong { display: block; color: var(--ink); font-size: 15px; }
+.stats .stat-line { flex-basis: 100%; font-size: 12px; color: var(--muted); }
+.preview-cols { display: block; }
+.layer-slider { position: absolute; right: 6px; top: 10px; bottom: 10px; width: 26px; z-index: 2; touch-action: none; cursor: ns-resize; outline: none; }
+.ls-track { position: absolute; left: 11px; top: 0; bottom: 0; width: 4px; background: #c7cfd8; border-radius: 2px; }
+.ls-fill { position: absolute; left: 0; right: 0; bottom: 0; background: var(--accent); border-radius: 2px; }
+.ls-thumb { position: absolute; left: 3px; width: 20px; height: 14px; margin-top: -7px; background: var(--accent); border: 2px solid #fff; border-radius: 4px; box-shadow: 0 0 0 1px rgba(31, 35, 40, 0.2); }
+.ls-thumb span { position: absolute; right: 26px; top: -5px; white-space: nowrap; font-size: 11px; background: rgba(255, 255, 255, 0.95); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.layer-slider:focus-visible .ls-thumb { box-shadow: 0 0 0 2px var(--accent); }
+.layer-row { display: flex; align-items: center; gap: 6px; margin-top: 8px; position: relative; }
+.help-pop.up { top: auto; bottom: calc(100% + 4px); }
+#layer-readout { font-variant-numeric: tabular-nums; }
+/* version 8: the key of the layer preview's four colours, behind a small icon at the view's
+   top left, closed by default; it opens joined to the icon, as the printer details do */
+#wizard .icon-btn.key-btn { position: absolute; left: 6px; top: 6px; z-index: 3; width: 26px; height: 26px; background: rgba(255, 255, 255, 0.92); border: 1px solid var(--line); border-radius: 6px; }
+#wizard .icon-btn.key-btn svg { width: 16px; height: 16px; }
+#wizard .icon-btn.key-btn[aria-expanded="true"] { background: var(--panel); border-bottom-color: var(--panel); border-radius: 6px 6px 0 0; z-index: 5; }
+.pv-key { position: absolute; left: 6px; top: 31px; z-index: 4; list-style: none; margin: 0; padding: 6px 10px 8px; background: var(--panel); border: 1px solid var(--line);
+          border-radius: 0 8px 8px 8px; box-shadow: 0 6px 18px rgba(31, 35, 40, 0.14); font-size: 12px; line-height: 1.45; color: var(--ink); max-width: calc(100% - 50px); }
+.pv-key li { display: flex; gap: 8px; align-items: center; padding: 1px 0; }
+.pv-key i { flex: none; width: 16px; height: 5px; border-radius: 2px; display: inline-block; }
+
+/* ---- version 8: the panel's own tooltip (the step circles and every control with one),
+   in place of the browser's: shown after 150 ms on hover and at once on keyboard focus,
+   styled like the printer details and kept inside the panel ---- */
+.wiz-tip { position: absolute; z-index: 60; max-width: min(300px, calc(100% - 12px)); padding: 5px 10px; background: var(--panel); color: var(--ink);
+           border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 18px rgba(31, 35, 40, 0.14); font-size: 14px; line-height: 1.45;
+           pointer-events: none; white-space: normal; overflow-wrap: anywhere; }
+.toast { margin: 10px 0; font-size: 12px; color: var(--ink); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+
+/* ---- Send: the summary card, the plate reminder, the busy printer, the progress ---- */
+.card { border: 1px solid var(--line); border-radius: 6px; background: var(--panel); padding: 10px 12px; margin-bottom: 12px; }
+.send-sum { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 0; font-size: 14px; }
+.send-sum dt { color: var(--muted); font-size: 12px; padding-top: 2px; }
+.send-sum dd { margin: 0; min-width: 0; }
+.send-sum dd .big { font-weight: 600; }
+.send-sum ul { margin: 0; padding-left: 16px; }
+.clear-plate { display: flex; gap: 8px; align-items: flex-start; border: 1px solid #eedc82; background: #fff8c5; border-radius: 6px; padding: 8px 10px; margin-bottom: 12px; font-size: 13px; color: #4d3800; }
+.clear-plate strong { color: #3b2300; }
+.busy-card { border-left: 4px solid var(--warn-line); }
+.busy-card .bc-title { font-weight: 600; }
+.busy-card .bc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; margin-top: 8px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.busy-card .bc-grid strong { display: block; color: var(--ink); font-size: 14px; }
+.busy-card .bc-note { margin-top: 8px; font-size: 13px; }
+.print-card { border: 1px solid var(--line); border-radius: 8px; padding: 12px; background: var(--panel); margin-bottom: 12px; }
+.print-card .pc-head { display: flex; align-items: center; gap: 8px; }
+.print-card .pc-state { font-weight: 600; }
+.print-card .pc-file { font-size: 12px; color: var(--muted); word-break: break-all; margin-top: 2px; }
+.print-card .pc-bar { height: 8px; background: var(--panel-2); border-radius: 4px; margin: 8px 0 6px; overflow: hidden; }
+.print-card .pc-bar div { height: 100%; background: var(--ok); width: 0; transition: width 0.3s linear; }
+.print-card.uploading .pc-bar div { background: var(--accent); }
+.print-card.waiting .pc-bar div { background: var(--warn-line); }
+.print-card.failed .pc-bar div { background: var(--danger); }
+.print-card .pc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.print-card .pc-grid strong { color: var(--ink); font-size: 14px; display: block; }
+.print-card .pc-grid .late strong { color: var(--warn); }
+.print-card .pc-pct { margin-left: auto; font-weight: 600; font-size: 18px; font-variant-numeric: tabular-nums; }
+.print-card .pc-note { font-size: 12px; color: var(--muted); margin-top: 8px; }
+.print-card .pc-acts { display: flex; justify-content: flex-end; margin-top: 8px; }
+.pc-track { list-style: none; display: flex; gap: 3px; margin: 10px 0 0; padding: 0; font-size: 11px; color: var(--muted); }
+.pc-track li { flex: 1; text-align: center; padding-top: 7px; border-top: 3px solid var(--panel-2); white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pc-track li.done { border-top-color: var(--ok); color: var(--ok); }
+.pc-track li.now { border-top-color: var(--accent); color: var(--ink); font-weight: 600; }
+.pc-track li.wait { border-top-color: var(--warn-line); color: var(--warn); font-weight: 600; }
+.pc-track li.bad { border-top-color: var(--danger); color: var(--danger); font-weight: 600; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); display: inline-block; flex: none; }
+.dot.pulse { animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.3; } }
+
+/* ---- footer: Back and Next, wide, pinned to the bottom (PenguinCAM #wiz-nav) ---- */
+#wiz-nav { display: flex; justify-content: space-between; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--line); background: var(--panel); flex: none; position: relative; }
+#wiz-nav > .btn { flex: 1; }
+.split-btn { position: relative; display: flex; flex: 1; }
+/* the Send step: Back keeps its own width whatever the Send button says, so nothing jumps
+   as the label changes ("Send to Shop H2S", "Printing…", "Download the sliced file") */
+#wiz-nav.on-send > #btn-back { flex: 0 0 auto; }
+.split-btn #btn-do { flex: 1; border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.split-caret { flex: 0 0 auto; padding: 8px 16px !important; font-size: 16px; line-height: 1; border-top-left-radius: 0 !important; border-bottom-left-radius: 0 !important; border-left: 1px solid rgba(0, 0, 0, 0.25) !important; }
+.do-menu { position: absolute; bottom: 100%; right: 0; margin: 0 0 4px; padding: 4px; list-style: none; min-width: 200px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 6px 18px rgba(31, 35, 40, 0.2); z-index: 200; }
+.do-menu button { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 8px 10px; border-radius: 4px; font: inherit; font-size: 13px; color: var(--ink); cursor: pointer; white-space: nowrap; }
+.do-menu button:hover, .do-menu button:focus-visible { background: var(--panel-2); outline: none; }
+
+/* ---- the reload curtain: a refresh or a reopen, imitated ---- */
+.curtain { position: absolute; inset: 0; z-index: 80; background: var(--bg); display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; flex-direction: column; gap: 8px; }
+.curtain.closed { background: #fff; }
+
+/* ---- advanced mode: fills the whole panel ---- */
+.advanced { position: absolute; inset: 0; z-index: 50; background: var(--bg); display: flex; flex-direction: column; }
+/* the header's name line, with the printer-status icon, stays at the top in advanced mode */
+.adv-brand { padding: 10px 14px 8px; background: var(--panel); position: relative; z-index: 2; flex: none; }
+.adv-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.adv-title { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
+.adv-title span { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.adv-body { flex: 1; min-height: 0; display: flex; }
+.adv-list { flex: 1; min-width: 0; overflow-y: auto; padding: 4px 14px 14px; }
+/* chevrons: point right (towards the name) when closed, down when open */
+.chev { display: inline-flex; flex: none; color: var(--muted); }
+.chev svg { width: 16px; height: 16px; transition: transform 0.12s; }
+.chev.open svg { transform: rotate(90deg); }
+/* the Expand all / Collapse all icon button */
+#wizard .icon-btn { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 28px; height: 28px; padding: 0; background: none;
+                    border: 1px solid transparent; border-radius: 6px; color: var(--muted); cursor: pointer; }
+#wizard .icon-btn:hover { background: var(--panel-2); border-color: var(--line); color: var(--ink); }
+#wizard .icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.icon-btn svg { width: 18px; height: 18px; }
+/* below 480 px: the accordion of sections, each opened and closed by itself (version 8). Version 7: each section is a
+   bordered card like PenguinCAM's .card (#ffffff, 1px #d0d7de, radius 6px): its heading is
+   the card's title, its groups are rows inside it; a closed section is a slim card. */
+.adv-accordion { padding-top: 10px; }
+.adv-sec { border: 1px solid var(--line); border-radius: 6px; background: var(--panel); margin-bottom: 8px; }
+.adv-sec-head { display: flex; align-items: center; gap: 6px; padding: 0 8px 0 10px; }
+.adv-sec.open .adv-sec-head { border-bottom: 1px solid var(--line); }
+#wizard .adv-sec-btn { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; background: none; border: 0; padding: 8px 0; cursor: pointer; text-align: left;
+                       font: inherit; font-size: 14px; font-weight: 700; color: var(--ink); }
+.adv-sec-btn .chev { color: var(--ink); }
+.adv-sec-btn .ct, .adv-rail .ct { font-weight: 400; font-size: 12px; color: var(--warn); }
+.adv-sec-body { padding: 0 10px 6px; }   /* the groups: rows inside the card */
+.adv-sec-body .adv-grp:last-child .adv-sub { border-bottom: 0; }
+.adv-sec-body .adv-grp.open:last-child .adv-sub { border-bottom: 1px solid var(--line); }
+.adv-sec-body .adv-rows { padding-left: 8px; }
+/* from 480 px: the rail of section names down the left, the open section's groups beside it */
+.adv-rail { width: 132px; flex: none; display: flex; flex-direction: column; gap: 4px; padding: 8px; border-right: 1px solid var(--line); overflow-y: auto; }
+.adv-rail button { display: flex; align-items: center; gap: 4px; background: var(--panel-2); border: 0; color: var(--muted); border-radius: 6px; text-align: left; padding: 5px 8px;
+                   font: inherit; font-size: 13px; cursor: pointer; }
+.adv-rail button:hover { background: var(--hover); color: var(--ink); }
+.adv-rail button.on { background: var(--accent); color: #fff; }
+.adv-rail button .n { margin-left: auto; min-width: 16px; padding: 0 4px; border-radius: 8px; background: var(--warn-line); color: #fff; font-size: 10px; font-weight: 700; text-align: center; }
+.advanced.wide .adv-list { padding: 4px 16px 16px; }
+.adv-col { max-width: 480px; }   /* always one column, capped so each value stays near its name */
+.adv-col-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0 0; }
+.adv-col-name { font-weight: 700; font-size: 14px; }
+/* a group's heading: chevron, name, and "· 1 changed" only when a setting in it is changed */
+#wizard .adv-sub { display: flex; align-items: center; gap: 6px; width: 100%; background: none; border: 0; border-bottom: 1px solid var(--line); padding: 8px 0 4px; margin: 2px 0 0; cursor: pointer; text-align: left;
+                   font: inherit; font-size: 13px; font-weight: 600; color: var(--ink); }
+#wizard .adv-sub:hover { color: var(--accent); }
+.adv-sub .nm { min-width: 0; }
+.adv-sub .ct { font-weight: 400; font-size: 12px; color: var(--warn); }
+.adv-rows { padding-left: 14px; }
+.adv-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; align-items: center; padding: 5px 0 5px 8px; border-left: 3px solid transparent; border-bottom: 1px solid var(--panel-2); }
+.adv-row label { font-size: 13px; color: var(--ink); min-width: 0; }
+.adv-row .ctl { display: flex; align-items: center; gap: 4px; justify-self: end; }
+#wizard .adv-row .ctl input[type="number"] { width: 78px; padding: 4px 6px; font-size: 13px; text-align: right; }
+#wizard .adv-row .ctl select { width: auto; max-width: 150px; padding: 4px 6px; font-size: 13px; }
+.adv-row .unit { font-size: 11px; color: var(--muted); min-width: 30px; }
+/* a changed setting: tinted, a bar on its left, a dot after its name, "Profile 0.012 mm Reset" under it */
+.adv-row.changed { border-left-color: var(--warn-line); background: #fffbe6; }
+.adv-row.changed label::after { content: " \25CF"; color: var(--warn-line); font-size: 10px; }
+.adv-row .was { grid-column: 1 / -1; font-size: 11px; color: var(--warn); }
+#wizard .adv-row .was .reset { font-size: 11px; margin: -4px 0 -4px 0; padding: 4px 6px; }   /* a larger target, same line height */
+.adv-row .bad { grid-column: 1 / -1; font-size: 11px; color: var(--danger); }
+.adv-row.flash { animation: flash 1.4s; }
+.adv-foot { padding: 10px 14px; border-top: 1px solid var(--line); background: var(--panel); display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+.adv-foot .btn { flex: none !important; }
+
+/* ---- a wider panel: the extra width is used, nothing is only stretched ---- */
+@container wiz (min-width: 480px) {
+  .setup-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+  #wizard .print-overrides { grid-template-columns: 1fr 1fr; }
+}
+@container wiz (min-width: 520px) {
+  .print-card .pc-grid, .busy-card .bc-grid { grid-template-columns: repeat(4, 1fr); }
+  .gl-view { max-height: 460px; aspect-ratio: 4 / 3; }
+  .rs-item { width: 68px; }
+  .rs-item img { width: 64px; height: 64px; }
+}
+@container wiz (min-width: 680px) {
+  #parts-list { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
+  .gl-view { max-height: 560px; }
+  .send-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 14px; align-items: start; }
+  .send-cols #send-summary { order: -1; }   /* narrow: the printer's word first; wide: what is printed on the left */
+}
