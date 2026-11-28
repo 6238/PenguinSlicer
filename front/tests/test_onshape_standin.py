@@ -7,6 +7,7 @@ from urllib.parse import parse_qs, urlsplit
 import httpx
 import pytest
 
+from front_fakes import loopback_client
 from onshape_standin import OnshapeStandIn
 
 REDIRECT = "http://127.0.0.1:1/signin/callback"
@@ -22,7 +23,7 @@ def onshape():
 
 @pytest.fixture
 def http(onshape):
-    with httpx.Client(base_url=onshape.url, timeout=10) as client:
+    with loopback_client(onshape.url) as client:
         yield client
 
 
