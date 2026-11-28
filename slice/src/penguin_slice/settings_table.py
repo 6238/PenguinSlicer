@@ -137,7 +137,8 @@ def _bound(entry, value):
 def _problem(name, value, table):
     """(sentence, detail) of why `name` = `value` is refused, or None when it is accepted."""
     entry = table.entries.get(name)
-    shown_name = _shown(name) if not isinstance(name, str) or len(name) > SHOWN_CHARS else name
+    plain = isinstance(name, str) and len(name) <= SHOWN_CHARS and name.isprintable()
+    shown_name = name if plain else _shown(name)
     if entry is None:
         classification = _classification()
         for group in ("programmatic", "not_offered"):

@@ -116,6 +116,26 @@ def test_a_member_outside_the_top_folder_is_never_written(tmp_path):
     assert not (tmp_path / "escape.txt").exists()
 
 
+@pytest.mark.parametrize("kind", [tarfile.SYMTYPE, tarfile.DIRTYPE])
+def test_a_wanted_name_that_is_not_a_file_is_explained(tmp_path, kind):
+    """Tab.cpp as a link or a folder: the fetch says the file is missing and writes nothing."""
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w:gz") as tar:
+        for rel in SOURCE_FILES.values():
+            info = tarfile.TarInfo(f"OrcaSlicer-9.9.9/{rel}")
+            if rel == "src/slic3r/GUI/Tab.cpp":
+                info.type, info.linkname = kind, "/etc/passwd" if kind == tarfile.SYMTYPE else ""
+                tar.addfile(info)
+                continue
+            data = (SOURCE / rel).read_bytes()
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+    data = buffer.getvalue()
+    with pytest.raises(FetchError, match="lacks src/slic3r/GUI/Tab.cpp"):
+        fetch("9.9.9", digest(data), tmp_path / "s", opener=opener_for(data, []))
+    assert not (tmp_path / "s").exists()
+
+
 def test_a_failed_download_is_explained(tmp_path):
     with pytest.raises(FetchError, match=r"download of .*v9.9.9.tar.gz failed: OSError: no network"):
         fetch("9.9.9", "0" * 64, tmp_path / "s", opener=opener_for(OSError("no network"), []))

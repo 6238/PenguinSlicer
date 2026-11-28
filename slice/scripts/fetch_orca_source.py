@@ -76,9 +76,9 @@ def _extract(archive, version, into):
     try:
         with tarfile.open(archive, mode="r:gz") as tar:
             for member in tar:
-                rel = wanted.pop(member.name, None)
-                if rel is None or not member.isfile():
+                if member.name not in wanted or not member.isfile():     # a link or a folder is no source file
                     continue
+                rel = wanted.pop(member.name)
                 target = into / rel
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with tar.extractfile(member) as src, open(target, "wb") as out:

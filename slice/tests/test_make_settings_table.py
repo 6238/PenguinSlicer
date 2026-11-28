@@ -90,6 +90,17 @@ class TestReadingTheSource:
             ("Speed", "Other layers speed", "outer_speed"), ("Speed", "Other layers speed", "variant_speed"),
             ("Support", "Support", "support_on"), ("Others", "End G-code", "end_gcode")]
 
+    def test_an_option_listed_twice_keeps_its_first_place(self):
+        text = ('void TabPrint::build()\n{\n'
+                '    auto page = add_options_page(L("Quality"), "q");\n'
+                '    auto optgroup = page->new_optgroup(L("Layer height"), L"l");\n'
+                '    optgroup->append_single_option_line("layer_height");\n'
+                '    page = add_options_page(L("Others"), "o");\n'
+                '    optgroup = page->new_optgroup(L("Again"), L"a");\n'
+                '    optgroup->append_single_option_line("layer_height");\n'
+                '}\n')
+        assert read_pages(text) == [("Quality", "Layer height", "layer_height")]
+
 
 class TestTheTable:
     def test_its_head_and_order(self):
@@ -112,6 +123,17 @@ class TestTheTable:
         assert entry("infill_density")["number_form"] == "percent" and entry("infill_density")["unit"] == "%"
         assert entry("first_line_width")["number_form"] == "decimal_or_percent"
         assert "max" not in entry("first_line_width")
+
+    def test_the_label_wins_over_the_full_label(self):
+        # outer_speed has both: "Outer wall" and the full label "Outer wall speed".
+        assert entry("outer_speed")["label"] == "Outer wall"
+
+    def test_the_full_label_stands_in_for_a_missing_label(self, tmp_path):
+        source = tmp_path / "source"
+        shutil.copytree(SOURCE, source)
+        config = source / "src/libslic3r/PrintConfig.cpp"
+        config.write_text(config.read_text().replace('    def->label = L("Outer wall");\n', ""))
+        assert entry("outer_speed", table(source=source))["label"] == "Outer wall speed"
 
     def test_a_choice_and_an_on_and_off(self):
         assert entry("infill_pattern")["choices"] == [{"value": "lines", "label": "Lines"},

@@ -232,6 +232,12 @@ class TestRefused:
         assert "a whole number" in refused({"wall_loops": "-99999999999"}).message
         assert "a whole number" in refused({"wall_loops": str(-2 ** 31 - 1)}).message
 
+    def test_a_whole_number_at_the_edges_of_what_orca_holds(self):
+        # top_shell_layers has a minimum and no maximum: only Orca's C++ int bounds it above.
+        top = str(2 ** 31 - 1)
+        assert validate_overrides({"top_shell_layers": top}) == {"top_shell_layers": top}
+        assert "a whole number" in refused({"top_shell_layers": str(2 ** 31)}).message
+
     def test_a_text_one_character_over_its_length(self):
         entry = load().entries["extra_solid_infills"]
         error = refused({"extra_solid_infills": "5" * (entry["max_length"] + 1)})
@@ -240,6 +246,14 @@ class TestRefused:
 
     def test_a_text_with_a_control_character(self):
         assert "line break" in refused({"extra_solid_infills": "\n"}).message
+
+    def test_delete_is_a_control_character(self):
+        assert "line break" in refused({"extra_solid_infills": "\x7f"}).message
+
+    @pytest.mark.parametrize("name", ["a\nb", "a\x00b", "a b", "a\x85b"])
+    def test_a_name_the_table_does_not_hold_is_shown_escaped(self, name):
+        message = refused({name: "1"}).message
+        assert name not in message and repr(name) in message
 
     def test_a_value_that_is_not_a_string(self):
         error = refused({"wall_loops": 3})
@@ -331,5 +345,20 @@ class TestUnreadable:
         try:
             with pytest.raises(TableUnreadable):
                 load()
+        finally:
+            settings_table.load.cache_clear()
+
+    @pytest.mark.parametrize("missing", ["process_values", "catalog"])
+    def test_a_table_without_its_process_values_or_catalog(self, monkeypatch, tmp_path, missing):
+        whole = {"format": 1, "settings": [], "process_values": {}, "catalog": {}}
+        del whole[missing]
+        bad = tmp_path / "bad.json"
+        bad.write_text(json.dumps(whole))
+        monkeypatch.setattr(settings_table, "TABLE_PATH", bad)
+        settings_table.load.cache_clear()
+        try:
+            with pytest.raises(TableUnreadable) as caught:
+                load()
+            assert missing in caught.value.details
         finally:
             settings_table.load.cache_clear()

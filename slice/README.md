@@ -416,8 +416,11 @@ profile. A choice is checked against its setting's list, a number against its fo
 whole number, a decimal, a percentage with its sign) and its range, and a text against a
 greatest length, which is set from the longest text value in the profile catalog. A value
 that does not fit is refused with the setting named by Orca's own label, page and group
-("Wall loops (Strength, Walls) must be at most 1000, not 1001."), so a bad value fails at
-once and not minutes later inside Orca. A setting that is programmatic, not offered, of
+("Wall loops (Strength, Walls) must be at most 1000, not 1001."), so a value outside
+those limits fails at once and not minutes later inside Orca. The limits are only the ones
+Orca gives each setting on its own: Orca weighs some settings against others only while it
+slices, so a value inside them can still fail there (a layer height of 50 mm, for one),
+and that failure then carries Orca's own reason. A setting that is programmatic, not offered, of
 the filament or printer profile, or simply not one of Orca's, is refused in the same way,
 named and with the reason. Every value each catalog profile itself gives passes the checks.
 

@@ -143,6 +143,40 @@ What was built is described in
     for the batch that rewords the remedies. To overrule: reword all of them in one change.
 18. **Review finding declined: text settings take one character.** The contract's rule
     gives that; changing the rule is the owner's decision (see "Targets missed").
+19. **Second review: the log line of an unreadable table is now tested.** The route
+    already logged it; `test_errors.py::test_a_table_of_settings_that_cannot_be_read` now
+    asserts the last log line is `slice_http_error` with `slice.profile_unreadable` and a
+    detail naming the file. Seen to fail with the `log(...)` call removed.
+20. **Second review: a link or a folder in Orca's source archive.** The `isfile` guard of
+    `fetch_orca_source._extract` ran after the name was taken off the wanted list, so a
+    link or folder under one of the three names was skipped and the fetch went on with
+    that file missing, with no error. Fixed: such a member is skipped before the name is
+    taken, so the fetch fails "the archive of v<version> lacks <file>". To overrule: refuse
+    such an archive with a sentence of its own.
+21. **Second review: a name the table does not hold is shown escaped when it does not
+    print.** The documents say only that a value shown is cut to 120 characters. Chosen: a
+    name that is longer than that or not `str.isprintable()` (a line break, `\x00`, `\x85`,
+    ` `) is shown by its quoted repr in the sentence, so no raw line break reaches a
+    sentence or the log. To overrule: `_problem` in `settings_table.py`.
+22. **Second review: `\x85` and ` ` in a text value are accepted.** Decision 8 refuses
+    the C0 controls and `\x7f` (now tested); Orca reads and writes a profile's lines split
+    on `\n`, so these two cannot break the G-code header and are left accepted. To
+    overrule: widen `_CONTROL`.
+23. **Second review: tests added for checks no test held.** The upper end of a C++ int
+    (`top_shell_layers` `2147483647` taken, `2147483648` refused), `\x7f` refused, a table
+    without `process_values` or `catalog`, an option listed twice on Orca's pages, `label`
+    over `full_label` and `full_label` standing in. Each seen to fail under its mutation.
+24. **Second review: a value inside the table's bounds that Orca refuses.** The guide said a
+    bad value "fails at once, not inside Orca", which holds only for the table's own
+    bounds: the reviewer's real-Orca run ended `layer_height` `"50"` as `slice.orca_failed`
+    with Orca's reason only in the detail. Chosen: say so in the guide and the details, and
+    do not repeat Orca's checks of one setting against another (they are Orca's code, and
+    copying them would follow it version by version). To overrule: add cross-setting checks
+    to `settings_table._problem`.
+25. **Second review: the wizard's list of what other components still owe** no longer
+    lists every parameter setting and the table of settings; this batch built them.
+26. **Second review finding 10 (the "Ask a mentor" remedy)** agrees with decision 17;
+    nothing changed.
 
 ## Targets missed
 
@@ -159,6 +193,9 @@ What was built is described in
    labels and groups ("Sparse infill" in the example, "Infill" in Orca). The example is
    written by hand "of the kind Orca gives"; the test holds it to the real table's kinds,
    forms, fields and names only.
+4. **"Fails at once, not inside Orca" holds only for the table's own bounds.** A value Orca
+   refuses against another setting (`layer_height` `"50"`) is refused only by Orca, as
+   `slice.orca_failed` with the generic sentence; see decision 24.
 
 ## Not done
 

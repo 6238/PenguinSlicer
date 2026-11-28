@@ -694,10 +694,16 @@ def test_a_table_of_settings_that_cannot_be_read(tmp_path, monkeypatch):
         assert (report["code"], report["message"]) == ("slice.profile_unreadable",
                                                        "The slicer could not read its table of settings.")
         assert "JSONDecodeError" in report["detail"] and report["where"] == {"stage": "checking"}
-        client, _pool = scene.web()
+        from penguin_slice.web import create_app, slice_worker
+        logs = []
+        pool = JobPool(slice_worker, executor=mock.Mock(), error_report=error_report)
+        client = create_app(tmp_path / "work", pool, start_sweeper=False, log=logs.append).test_client()
         answer = client.get("/settings-table")
         assert answer.status_code == 500
         assert answer.get_json()["code"] == "slice.profile_unreadable"
+        assert logs[-1]["event"] == "slice_http_error" and logs[-1]["path"] == "/settings-table"
+        assert logs[-1]["error_code"] == "slice.profile_unreadable"
+        assert str(broken) in logs[-1]["error_detail"] and "JSONDecodeError" in logs[-1]["error_detail"]
     finally:
         settings_table.load.cache_clear()
 

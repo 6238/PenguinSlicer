@@ -1166,8 +1166,16 @@ by its label, page and group, "Wall loops (Strength, Walls) must be at most 1000
 changed: it runs a program (the post-processing scripts Orca runs on the finished file).",
 "The setting nozzle_temperature belongs to the filament or printer profile, which a plate
 cannot change." (the names of the default set's filament and printer profiles), "The
-setting wall_lops is not a print setting the slicer knows.". The remedy: "Change that
+setting wall_lops is not a print setting the slicer knows."; a name longer than 120
+characters, or holding a character that does not print (a line break, `\x85`, ` `),
+is shown as its quoted, escaped form. The remedy: "Change that
 setting to a value it takes, or back to the profile's, and slice again."
+
+The checks hold a value to the bounds Orca's definitions give and no further. Orca checks
+some values against others only while it slices, so a value inside the table's bounds can
+still fail there: with the pinned Orca, `layer_height` `"50"` ends as `slice.orca_failed`,
+with Orca's own reason in the `detail`. Repeating Orca's checks of one setting against
+another is not part of the table.
 
 Only the process profile's values are replaced
 (`print_config.write_process_with_overrides`): each value is written as it was sent, and a
