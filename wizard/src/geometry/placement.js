@@ -61,17 +61,24 @@ export function footprint(points, m) {
 
 // Each instance's outline on the plate, turned by its angle and moved to its place, with its
 // height; footprints are worked out once for each part and turn.
+// An instance's footprint as it lies and as it is turned, about its centre: `hull`, `coarse`
+// (at most 32 corners, holding `hull`), `height` and `bounds`.
+export function turnedFootprint(instance, pointsByPart, cache = new Map()) {
+  const turn = instance.rotation ? `r${instance.rotation.join(',')}` : `o${instance.orientation}`;
+  const key = `${instance.ref}|${turn}|${instance.angle}`;
+  let fp = cache.get(key);
+  if (!fp) {
+    const base = footprint(pointsByPart[instance.ref], instanceMatrix(instance));
+    const hull = turnedOutline(base.hull, instance.angle);
+    fp = { hull, coarse: simplified(hull), height: base.height, bounds: bounds(hull) };
+    cache.set(key, fp);
+  }
+  return fp;
+}
+
 export function placedOutlines(plateConfiguration, pointsByPart, cache = new Map()) {
   return plateConfiguration.instances.map((instance) => {
-    const turn = instance.rotation ? `r${instance.rotation.join(',')}` : `o${instance.orientation}`;
-    const key = `${instance.ref}|${turn}|${instance.angle}`;
-    let fp = cache.get(key);
-    if (!fp) {
-      const base = footprint(pointsByPart[instance.ref], instanceMatrix(instance));
-      const hull = turnedOutline(base.hull, instance.angle);
-      fp = { hull, coarse: simplified(hull), height: base.height, bounds: bounds(hull) };
-      cache.set(key, fp);
-    }
+    const fp = turnedFootprint(instance, pointsByPart, cache);
     const move = ([x, y]) => [x + instance.x, y + instance.y];
     const [bx0, by0, bx1, by1] = fp.bounds;
     return {

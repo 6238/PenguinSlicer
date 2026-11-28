@@ -121,14 +121,19 @@ export function bounds(outline) {
 // instances closer than the true outlines are, only (by at most a few hundredths of the
 // part's size) farther.
 export function simplified(outline, directions = 32) {
-  if (outline.length <= directions) return outline;
+  return outline.length <= directions ? outline : grown(outline, 0, directions);
+}
+
+// An outline of `directions` corners holding every point within `r` of `outline`: its
+// supporting half-planes in that many directions, each moved out by `r`.
+export function grown(outline, r, directions = 32) {
   const lines = [];
   for (let k = 0; k < directions; k++) {
     const t = (2 * Math.PI * k) / directions;
     const nx = Math.cos(t), ny = Math.sin(t);
     let h = -Infinity;
     for (const [x, y] of outline) h = Math.max(h, x * nx + y * ny);
-    lines.push([nx, ny, h]);
+    lines.push([nx, ny, h + r]);
   }
   const out = [];
   for (let k = 0; k < directions; k++) {
