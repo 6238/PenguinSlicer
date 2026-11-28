@@ -123,11 +123,14 @@ test('an instance the slice service would refuse as malformed is the page\'s fau
     'a rotation of three elements': { ...bare, rotation: [1, 0, 0] },
     'a rotation not of unit length': { ...bare, rotation: [1.00001, 0, 0, 0] },
     'a rotation with NaN': { ...bare, rotation: [NaN, 0, 0, 0] },
+    'a ref to no part': { ...good, ref: 'washer' },
+    'a ref to a part the worker was not told of': { ...good, ref: 'pulley' },
+    'a ref inherited by every object': { ...good, ref: 'toString' },
   };
   const geometry = { spacer: 'spacer-key' };
   let id = 2;
   for (const [what, instance] of Object.entries(bad)) {
-    const plateConfiguration = { parts: { spacer: { name: 'Spacer' } }, instances: [good, instance] };
+    const plateConfiguration = { parts: { spacer: { name: 'Spacer' }, pulley: { name: 'Pulley' } }, instances: [good, instance] };
     for (const op of ['check', 'arrange']) {
       const { reply } = ask(g, { id: id++, op, plateConfiguration, geometry, printer: H2S, supports: false });
       assert.equal(reply.ok, false, `${op}: ${what}`);

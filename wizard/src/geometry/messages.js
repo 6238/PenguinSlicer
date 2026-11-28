@@ -42,9 +42,18 @@ function instanceFault(instance) {
   return null;
 }
 
-function checkInstances(plateConfiguration) {
+// An instance whose ref names no part of the plate configuration, or a part the worker was not
+// told where to find, is the page's fault too.
+function refFault(instance, plateConfiguration, geometry) {
+  const { ref } = instance;
+  if (typeof ref !== 'string' || !Object.hasOwn(plateConfiguration.parts || {}, ref)) return `ref ${JSON.stringify(ref)} names no part of the plate configuration`;
+  if (!Object.hasOwn(geometry || {}, ref)) return `ref ${JSON.stringify(ref)} names a part the worker was not given`;
+  return null;
+}
+
+function checkInstances(plateConfiguration, geometry) {
   plateConfiguration.instances.forEach((instance, i) => {
-    const fault = instanceFault(instance);
+    const fault = instanceFault(instance) || refFault(instance, plateConfiguration, geometry);
     if (fault) throw new PageFault(`instance ${i}: ${fault}`);
   });
 }
@@ -99,12 +108,12 @@ export function createGeometry() {
       return [{ computed, ...choice, turn: instanceTurn(choice.lay, 0) }, []];
     },
     arrange(m) {
-      checkInstances(m.plateConfiguration);
+      checkInstances(m.plateConfiguration, m.geometry);
       const result = arrangePlate(m.plateConfiguration, pointsFor(m.geometry), plateFor(m));
       return [result, []];
     },
     check(m) {
-      checkInstances(m.plateConfiguration);
+      checkInstances(m.plateConfiguration, m.geometry);
       return [{ problems: checkPlate(m.plateConfiguration, pointsFor(m.geometry), plateFor(m), footprints) }, []];
     },
     forget(m) {

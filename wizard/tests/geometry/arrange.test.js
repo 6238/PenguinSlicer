@@ -81,6 +81,14 @@ test('what does not fit waits beside the plate, and what fits passes the check',
   result.plateConfiguration.instances.forEach((instance, i) => {
     if (!result.placed[i]) assert.ok(instance.x - 50 > 340, `instance ${i} at x ${instance.x}`);
   });
+  // They wait in a column, each at least the spacing from the next: off the plate, never too close.
+  for (const supports of [false, true]) {
+    const r = arrangePlate(plateOfMany('slab', 12), points, plain(supports));
+    const waiting = { ...r.plateConfiguration, instances: r.plateConfiguration.instances.filter((_, i) => !r.placed[i]) };
+    assert.ok(waiting.instances.length >= 2);
+    const rules = checkPlate(waiting, points, plain(supports)).map((p) => p.rule);
+    assert.deepEqual([...new Set(rules)], ['off_plate'], `supports ${supports}`);
+  }
 });
 
 test('an instance too long for the plate as it is turned is left beside it', () => {

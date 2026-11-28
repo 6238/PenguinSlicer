@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { analysePart } from '../../src/geometry/part.js';
 import { autoOrient } from '../../src/geometry/orient.js';
 import { rotateVector } from '../../src/geometry/turn.js';
-import { box, meshOf, moved, prism, turned, union, rotationX } from './shapes.js';
+import { box, leaning, meshOf, moved, prism, turned, union, rotationX } from './shapes.js';
 
 const down = (choice, normal) => rotateVector(choice.lay, normal);
 const close = (a, b, tol = 1e-9) => a.every((v, i) => Math.abs(v - b[i]) <= tol);
@@ -46,6 +46,33 @@ test('a face it would tip over from is never chosen, and is marked as unstable',
   const standing = choice.candidates.find((c) => c.modelled);
   assert.equal(standing.stable, false);
   assert.ok(choice.stable);
+});
+
+test('the cheapest way to rest is passed over when the part would tip over from it', () => {
+  // A round post 12 across and 20 tall, leaning 16 along x (39 degrees from upright, so its
+  // underside hangs over nothing), with a flat cut along its upper side. Standing on either
+  // end it touches over 111 mm², nothing overhangs and it is low, but its centre of mass is
+  // 8 mm out from the middle of a 6 mm radius: it would fall over. Lying on the flat it is
+  // stable and costs five times as much, its round underside hanging over air.
+  const cut = (25 * Math.PI) / 180;
+  const outline = Array.from({ length: 64 }, (_, i) => {
+    const t = Math.PI + cut + ((2 * Math.PI - 2 * cut) * i) / 63;
+    return [6 * Math.cos(t), 6 * Math.sin(t)];
+  });
+  const part = analysePart(leaning(outline, 16, 20));
+  const choice = autoOrient(part);
+  const modelled = choice.candidates.find((c) => c.modelled);
+  assert.equal(modelled.stable, false);
+  assert.equal(modelled.overhang, 0);
+  assert.ok(modelled.contact >= 25);
+  const cheapest = Math.min(...choice.candidates.map((c) => c.cost));
+  assert.equal(modelled.cost, cheapest);
+  assert.equal(choice.modelled, false);
+  assert.ok(choice.stable);
+  assert.ok(choice.cost > modelled.cost, `chosen ${choice.cost}, standing ${modelled.cost}`);
+  // The flat cut, facing up and away from the lean, is the one stable way.
+  assert.ok(close(choice.normal, [-20 / Math.hypot(16, 20), 0, 16 / Math.hypot(16, 20)], 1e-6));
+  assert.equal(choice.counted, choice.candidates.filter((c) => c.stable && c.contact >= 25).length);
 });
 
 test('a part lying as modelled within 5% of its best cost is left as modelled, not turned for nothing', () => {

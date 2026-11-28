@@ -10,7 +10,8 @@ import { join } from 'node:path';
 import { checkPlate, expectedAnswer, footprint, instanceLabels, plateOf, supportsOn } from '../../src/geometry/placement.js';
 import { convexHull } from '../../src/geometry/hull.js';
 import { CONTRACT_PARTS, PLACEMENT_PLATES, readContractPart } from './helpers.js';
-import { box } from './shapes.js';
+import { containsPoint, simplified } from '../../src/geometry/outline.js';
+import { box, prism, regularPolygon } from './shapes.js';
 
 // The H2S of the default set of profiles, which every shared plate is over.
 const H2S = { min: [0, 0], max: [340, 320], height: 340 };
@@ -165,6 +166,43 @@ test('two instances too close front to back are found, in either order and eithe
       assert.deepEqual(pair(...(reversed ? apart.reverse() : apart)), [], `x ${front}/${back}, reversed ${reversed}, 5 mm`);
     }
   }
+});
+
+test('two round parts too close are found in every direction, between the coarse outline\'s corners too', () => {
+  // Two discs of radius 20 with 64 sides, more than the coarse outline's 32 corners. Each is
+  // set beside the other along one of its corners, so that the facing corners are 4.99 mm
+  // apart, then 5 mm. The odd directions fall midway between two corners of the coarse outline,
+  // where an outline that dropped hull corners would cut inside the disc.
+  const points = { disc: convexHull(prism(regularPolygon(64, 20), 0, 5).positions).points };
+  const pair = (t, gap) => checkPlate(
+    {
+      parts: { disc: { name: 'Disc' } },
+      instances: [[100, 100], [100 + (40 + gap) * Math.cos(t), 100 + (40 + gap) * Math.sin(t)]]
+        .map(([x, y]) => ({ ref: 'disc', orientation: '+z', angle: 0, x, y })),
+    },
+    points, plateOf(H2S, false),
+  );
+  for (let k = 0; k < 8; k++) {
+    const t = (2 * Math.PI * k) / 64;
+    const near = pair(t, 4.99);
+    assert.deepEqual(near.map((p) => p.rule), ['too_close'], `direction ${k}, 4.99 mm`);
+    assert.ok(Math.abs(near[0].distance - 4.99) < 1e-6, `direction ${k}: ${near[0].distance}`);
+    assert.deepEqual(pair(t, 5), [], `direction ${k}, 5 mm`);
+  }
+});
+
+test('the coarse outline holds every corner of the footprint it stands for', () => {
+  for (const sides of [33, 64, 200]) {
+    for (const phase of [0, 0.01, 0.3]) {
+      const hull = regularPolygon(sides, 20, phase);
+      const coarse = simplified(hull);
+      assert.ok(coarse.length <= 32, `${sides} sides: ${coarse.length} corners`);
+      for (const [x, y] of hull) assert.ok(containsPoint(coarse, x, y, 1e-9), `${sides} sides, phase ${phase}: (${x}, ${y}) outside`);
+    }
+  }
+  // An outline of 32 corners or fewer is its own coarse outline.
+  const small = regularPolygon(32, 20);
+  assert.deepEqual(simplified(small), small);
 });
 
 test('a footprint is the turned part\'s outline seen from above, centred on its bounding box', () => {

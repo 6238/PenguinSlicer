@@ -54,6 +54,27 @@ export function moved(mesh, [dx, dy, dz]) {
   return { triangles: mesh.triangles, positions: out, ...boxOf(out) };
 }
 
+// An oblique prism: the polygon `outline` at z = 0 and the same polygon moved by (dx, 0, h) at
+// the top, so that the solid leans along x.
+export function leaning(outline, dx, h) {
+  const tris = [];
+  const n = outline.length;
+  const top = (p) => [p[0] + dx, p[1], h];
+  const bottom = (p) => [p[0], p[1], 0];
+  for (let i = 1; i < n - 1; i++) {
+    const [a, b, c] = [outline[0], outline[i], outline[i + 1]];
+    tris.push([top(a), top(b), top(c)]);
+    tris.push([bottom(a), bottom(c), bottom(b)]);
+  }
+  for (let i = 0; i < n; i++) {
+    const p = outline[i];
+    const q = outline[(i + 1) % n];
+    tris.push([bottom(p), bottom(q), top(q)]);
+    tris.push([bottom(p), top(q), top(p)]);
+  }
+  return meshOf(tris);
+}
+
 export const box = (x, y, z) => prism([[0, 0], [x, 0], [x, y], [0, y]], 0, z);
 
 export function regularPolygon(sides, radius, phase = 0) {

@@ -186,8 +186,8 @@ answer on all thirteen.
     within 1e-6)) and answers `wizard.layout_failed` naming the instance, since only the page
     builds instances. A test sends twelve malformed instances to both messages, and one rotation
     as the page sends it, which passes. The details' table of the worker's error reports says
-    so. Not checked: fields the contract does not list, and `ref`, which an unread part already
-    refuses. To overrule: drop `checkInstances` in `geometry/messages.js` and the row's words.
+    so. Not checked: fields the contract does not list (`ref` is checked since the third review,
+    decision 29). To overrule: drop `checkInstances` in `geometry/messages.js` and the row's words.
 25. **After the second review: `layout_failed` and `page_failed` are told apart when the reports
     are built.** The reviewer pointed out that the contract's report `what` list has `page_failed`
     for the page's own faults, while the worker answers `wizard.layout_failed` for those too. The
@@ -203,10 +203,60 @@ answer on all thirteen.
     within `MAIN_THREAD_HOLD_MS` (250 ms), and the long task is the Open line of decision 17, so
     nothing changes; the trial's figures stay as recorded. To overrule: rerun the trial on an
     idle machine and replace the details' "about 15 ms" with a range.
+27. **After the third review: auto-orient's stability rule has a test of its own.** The reviewer
+    found that removing `c.stable &&` from the filter of counted candidates left every test
+    passing, because the one test of an unstable face (the post with an arm) also loses that
+    face on cost. Confirmed by that mutation. The new test in `tests/geometry/orient.test.js`
+    uses a round post 12 mm across and 20 mm tall leaning 16 mm along x (39 degrees from
+    upright, so its underside, steeper than 45 degrees from horizontal, counts as no overhang),
+    with a flat cut 25 degrees in from its upper side (the shape `leaning` in
+    `tests/geometry/shapes.js`). Standing on either end it is the cheapest candidate (cost 0.200,
+    111 mm² touching, no overhang) and would tip over, its centre of mass 8.1 mm out over a 6 mm
+    radius; the flat cut is the one stable way (cost 1.028). With the mutation the test fails
+    (the part is left standing as modelled); without it, it passes. The documents fix the rule;
+    only the test is new. To overrule: nothing to overrule short of changing the rule.
+28. **After the third review: the coarse outline is tested to hold the hull.** The reviewer
+    found that `simplified` could return a subset of the hull's corners with every test passing,
+    though the placement check skips a pair whose coarse outlines are the spacing apart and
+    Arrange marks its map from the grown coarse outline. Confirmed with the reviewer's mutation
+    (every fourth corner), under which two 64-sided discs of radius 20 set 4.9 mm apart pass the
+    check. Two tests in `tests/geometry/placement.test.js` now fail under that mutation: two such
+    discs 4.99 mm apart along eight directions, four of them midway between corners of the
+    coarse outline, are too close (4.99 mm) and 5 mm apart pass; and every corner of regular
+    outlines of 33, 64 and 200 corners at three phases lies inside its coarse outline of at most
+    32 corners (within 1e-9 mm). No code changed. To overrule: nothing; the details fix the rule.
+29. **After the third review: an instance's `ref` is checked before `arrange` and `check`.** The
+    reviewer found that an instance whose `ref` the worker was not given ended in
+    `wizard.layout_failed` with the bare detail 'TypeError: Invalid value used as weak map key'.
+    The documents are silent on this detail. I chose to treat it as a malformed instance like
+    those of decision 24: a `ref` that is not an own key of the plate configuration's `parts`, or
+    not an own key of the message's `geometry`, gives `wizard.layout_failed` whose detail names
+    the instance and the ref (`instance 1: ref "washer" names no part of the plate
+    configuration`). The test of decision 24 gains three such instances, `toString` among them
+    so that an inherited key is refused too; it failed for the reviewer's reason before the
+    change. The details' table of the worker's error reports names the two cases. To overrule:
+    drop `refFault` in `geometry/messages.js` and the row's words.
+30. **After the third review: the column of instances waiting beside the plate is tested for
+    its spacing.** The reviewer found that dropping `+ plate.spacing` from the column's step left
+    the tests passing. Confirmed. The test "what does not fit waits beside the plate" now checks
+    the waiting instances, with supports off and on, against the placement check and asserts
+    they are only off the plate, never too close; with the mutation it fails with `too_close`.
+    No code changed. To overrule: nothing.
+31. **After the third review: Arrange's rounding of x and y to a thousandth is kept (minor
+    finding 2 declined).** The reviewer noted that rounding can move an instance by up to
+    0.0005 mm, more than the check's 1e-6 mm, and that it could matter only where a pile exactly
+    fills the frame. Between instances it cannot matter: Arrange leaves `ARRANGE_SLACK_MM`
+    (0.05 mm) beyond the spacing, a hundred times the rounding. At the edges, the pile is
+    centred on the plate, so a pile that fills the frame's width sits symmetrically in it. I
+    tried 3,000 plates of one block between 333.9988 and 334 mm wide (filling the 334 mm frame)
+    with two others of random sizes, and the placement check passed every one. Rounding keeps the
+    plate configuration's numbers short and reproducible. To overrule: inset Arrange's frame by
+    0.0005 mm on each side in `frame` of `geometry/arrange.js`, or drop `round3`.
 
 ## Targets missed
 
-None.
+- The fixes of the third and last review (decisions 27 to 31) were merged without a further
+  review.
 
 ## Not done
 
@@ -228,6 +278,8 @@ None.
 - After the second review, the trial was not run again either: the fixes add tests, a check of
   each instance's form before `arrange` and `check` (a loop over at most 150 instances), and the
   `u` flag on the naming pattern; none changes the geometry the trial times.
+- After the third review, the trial was not run again: the fixes add tests and a check of each
+  instance's `ref` before `arrange` and `check`; none changes the geometry the trial times.
 
 ## For the owner to look at
 
