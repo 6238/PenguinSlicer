@@ -58,6 +58,11 @@ FRONT_REPORTS = {
                    "sliced files.",
         "remedy": "Your work is kept; try again in a moment.",
     },
+    "front.too_many_requests": {
+        "status": 429, "retryable": True,
+        "message": "This browser sent parts or plates faster than the server takes them.",
+        "remedy": "Your work is kept; it is sent again by itself in a moment.",
+    },
 }
 
 
@@ -81,11 +86,13 @@ class FrontError(Exception):
     """A failure the front server answers with its own error report. Raised anywhere a
     request is being answered; the application turns it into the answer."""
 
-    def __init__(self, code, detail, where=None, action=None, message=None):
+    def __init__(self, code, detail, where=None, action=None, message=None, headers=None):
         super().__init__(f"{code}: {detail}")
         self.code = code
         self.status = FRONT_REPORTS[code]["status"]
         self.report = error_report(code, detail, where, action, message)
+        #: Headers the answer carries beside the report, such as `Retry-After`.
+        self.headers = dict(headers or {})
 
 
 class PassedReport(Exception):

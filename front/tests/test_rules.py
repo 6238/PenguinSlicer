@@ -24,7 +24,7 @@ REQUIRED = {"code": str, "message": str, "remedy": str, "retryable": bool, "deta
 #: phase 2 this is every phase 2 row of the contract's table.
 BUILT = {("GET", "/signin"), ("GET", "/api/me"), ("GET", "/"), ("GET", "/assets/<file>"),
          ("GET", "/api/configuration"), ("PUT", "/api/configuration"),
-         ("GET", "/api/settings-table")}
+         ("GET", "/api/settings-table"), ("POST", "/api/parts")}
 #: The requests whose answers are page files, marked to be kept, not `no-store`.
 PAGE_FILES = {("GET", "/"), ("GET", "/assets/<file>")}
 
