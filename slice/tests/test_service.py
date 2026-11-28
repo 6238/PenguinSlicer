@@ -691,6 +691,38 @@ class TestSlice:
         assert sorted(p.name for p in out.iterdir()) == [sliced.path.name]
         assert sliced.peak_rss_kb > 0
 
+    def test_a_sliced_file_at_the_limit_is_delivered_and_one_byte_over_fails(self, base, tmp_path, monkeypatch):
+        """Item 12, the third guard: the limit lowered to the fake Orca's own file."""
+        install_fake_orca(tmp_path, monkeypatch, "ok")
+        size = slice_plate_configuration(sliced_by(base), tmp_path / "measure").path.stat().st_size
+        monkeypatch.setattr(limits, "MAX_SLICED_FILE_BYTES", size)
+        assert slice_plate_configuration(sliced_by(base), tmp_path / "at").path.stat().st_size == size
+        monkeypatch.setattr(limits, "MAX_SLICED_FILE_BYTES", size - 1)
+        out = tmp_path / "over"
+        with pytest.raises(SliceError) as caught:
+            slice_plate_configuration(sliced_by(base), out)
+        report = error_report(caught.value)
+        assert (report["code"], report["where"], report["retryable"]) == ("slice.output_too_large",
+                                                                          {"stage": "saving"}, False)
+        assert report["message"] == "The sliced file of this plate is larger than the 50 MB a sliced file may be."
+        assert report["remedy"] == "Remove some instances, or move some of them to a new plate, and slice again."
+        assert "action" not in report
+        assert f"{size:,} bytes, over the limit of {size - 1:,} bytes" in report["detail"]
+        assert list(out.iterdir()) == []                  # the sliced file and the scratch are gone
+
+    def test_the_limit_on_a_sliced_file_is_50_mb(self):
+        assert limits.MAX_SLICED_FILE_BYTES == 52_428_800 == 50 * 1024 * 1024
+
+    def test_a_sliced_file_too_large_from_one_instance_asks_for_a_smaller_part(self, base, tmp_path, monkeypatch):
+        install_fake_orca(tmp_path, monkeypatch, "ok")
+        monkeypatch.setattr(limits, "MAX_SLICED_FILE_BYTES", 1)
+        one = plate_configuration(instances=[plate_configuration()["instances"][0]])
+        with pytest.raises(SliceError) as caught:
+            slice_plate_configuration(sliced_by(base, one), tmp_path / "out")
+        report = error_report(caught.value)
+        assert report["code"] == "slice.output_too_large"
+        assert report["remedy"] == "Split the part in CAD into smaller pieces, or simplify it, and slice again."
+
     def test_the_output_folder_is_made(self, base, tmp_path, monkeypatch):
         install_fake_orca(tmp_path, monkeypatch, "ok")
         sliced = slice_plate_configuration(sliced_by(base), tmp_path / "a" / "b")

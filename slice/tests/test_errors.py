@@ -180,6 +180,13 @@ def output_is_a_file(scene):
     scene.slice()
 
 
+def output_too_large(scene):
+    """A sliced file over the limit, which the test lowers to 1 byte: the third guard."""
+    install_fake_orca(scene.tmp, scene.monkeypatch, "ok")
+    scene.monkeypatch.setattr(limits, "MAX_SLICED_FILE_BYTES", 1)
+    scene.slice(plate_configuration(instances=SPACED))
+
+
 def disk_full(scene):
     def full(*args, **kwargs):
         raise OSError(28, "No space left on device")
@@ -404,6 +411,10 @@ EXPECTED = {
         output_is_a_file, "The print server could not save the sliced file.", "saving", False, None,
         "Ask a mentor to check that the print server can write to its output folder, then slice again.",
         "File exists"),
+    "slice.output_too_large": Expected(
+        output_too_large, "The sliced file of this plate is larger than the 50 MB a sliced file may be.", "saving",
+        False, None, "Remove some instances, or move some of them to a new plate, and slice again.",
+        "bytes, over the limit of 1 bytes"),
     "slice.unknown_job": Expected(
         through_the_web("progress"), "The print server does not know this slice; it may have expired.", "fetching",
         False, None, "Send the slice again.", "job 'j0000'"),

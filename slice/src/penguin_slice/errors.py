@@ -108,6 +108,8 @@ CODES = {
     "slice.output_unwritable": ("saving", False, None,
                                 "Ask a mentor to check that the print server can write to its output folder, "
                                 "then slice again."),
+    "slice.output_too_large": ("saving", False, None,
+                               "Remove some instances, or move some of them to a new plate, and slice again."),
     "slice.unknown_job": ("fetching", False, None,
                           "Send the slice again."),
     "slice.not_ready": ("fetching", True, None,

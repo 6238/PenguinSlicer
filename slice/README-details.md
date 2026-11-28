@@ -1955,9 +1955,10 @@ sentence, remedy, action, retryable flag and evidence its report must carry.
 | `slice.no_gcode` | slicing | The sliced file has no `Metadata/plate_1.gcode`. |
 | `slice.left_off_plate` | slicing | Orca left an instance out of the sliced file. |
 | `slice.output_unwritable` | saving | The slice job's folder for its sliced file (`out/` in its folder under the work folder) cannot be made or written, or a folder there already has the sliced file's name. |
+| `slice.output_too_large` | saving | The sliced file is over `limits.MAX_SLICED_FILE_BYTES` (50 MB, 52,428,800 bytes), the third guard after a good slice: a `failed` report, retryable false, no action, the slice service's own sentence ("The sliced file of this plate is larger than the 50 MB a sliced file may be."), the remedy fewer instances or a new plate (on a plate of one instance, to split or simplify the part); the detail holds the file's size and the limit. |
 | `slice.unknown_job` | fetching | The HTTP interface does not know the slice job (never, or expired, or accepted by another slice service process), or it is another user key's (answered exactly alike, and logged as a refusal). |
-| `slice.not_ready` | fetching | The sliced file or summary of a slice job that has not finished. |
-| `slice.file_gone` | fetching | The sliced file of a done slice job is no longer on the disk (HTTP 410), for the file and the summary alike. |
+| `slice.not_ready` | fetching | The sliced file or summary of a slice job that has not finished, or `DELETE /slices/<job>/file` on one (HTTP 409). |
+| `slice.file_gone` | fetching | The sliced file of a done slice job is no longer on the disk, or was deleted by `DELETE /slices/<job>/file` once the front server stored it (HTTP 410), for the file and the summary alike. |
 | `slice.bad_request` | fetching | The HTTP interface does not offer that path (404) or that method on it (405), or an upload has no Content-Length (400), or an upload's body ends before its Content-Length (400, "This part did not arrive whole."). The upload's report has its own sentence (`web.NO_LENGTH_MESSAGE`) and remedy (add the part again, or the server needs fixing), a fault of the front server's. |
 | `slice.unexpected` | slicing | Anything else: a bug in the slice service; the detail keeps the traceback. |
 
