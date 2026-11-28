@@ -799,6 +799,94 @@ class TestJobs:
         assert client.get(f"/slices/{job_id}", headers=HEADERS).status_code == 404
 
 
+class TestTheSlicedFileOnceStored:
+    """Item 10 through the HTTP interface: DELETE /slices/<job>/file, the record remembered
+    for two hours after the slice job ended."""
+
+    def done_job(self, tmp_path, monkeypatch, work, **kwargs):
+        install_fake_orca(tmp_path, monkeypatch, "ok")
+        client, pool, logs = app_with(work, **kwargs)
+        job_id = submit(client, plate_configuration()).get_json()["job"]
+        assert pool.get(job_id)["state"] == "done"
+        return client, pool, logs, job_id
+
+    def test_the_delete_removes_the_file_and_keeps_the_record(self, tmp_path, monkeypatch, work):
+        client, pool, logs, job_id = self.done_job(tmp_path, monkeypatch, work)
+        path = Path(pool.result(job_id)["path"])
+        assert path.is_file()
+        answer = client.delete(f"/slices/{job_id}/file", headers=HEADERS)
+        assert answer.status_code == 200 and answer.headers["Cache-Control"] == "no-store"
+        example = json.loads((EXAMPLES / "slice-http" / "file-deleted.json").read_text())
+        assert answer.get_json() == dict(example, job=job_id)
+        assert not path.exists()
+        assert any(e.get("state") == "file_deleted" and e["job"] == job_id for e in logs)
+        for route in ("file", "summary"):
+            gone = client.get(f"/slices/{job_id}/{route}", headers=HEADERS)
+            assert gone.status_code == 410, route
+            assert_error_report(gone.get_json(), "slice.file_gone")
+            assert "deleted" in gone.get_json()["detail"]
+        assert client.get(f"/slices/{job_id}", headers=HEADERS).get_json()["state"] == "done"
+
+    def test_a_second_delete_answers_as_the_first(self, tmp_path, monkeypatch, work):
+        client, _pool, _logs, job_id = self.done_job(tmp_path, monkeypatch, work)
+        first = client.delete(f"/slices/{job_id}/file", headers=HEADERS)
+        second = client.delete(f"/slices/{job_id}/file", headers=HEADERS)
+        assert (second.status_code, second.get_json()) == (first.status_code, first.get_json())
+
+    def test_a_delete_before_the_slice_ends_is_refused(self, work):
+        client, _pool, _logs = app_with(work, executor=HeldExecutor())
+        job_id = submit(client, plate_configuration()).get_json()["job"]
+        answer = client.delete(f"/slices/{job_id}/file", headers=HEADERS)
+        assert answer.status_code == 409
+        assert_error_report(answer.get_json(), "slice.not_ready")
+        assert "which has not ended" in answer.get_json()["detail"]
+
+    def test_a_delete_of_a_job_that_ended_without_a_file_answers_deleted(self, tmp_path, monkeypatch, work):
+        install_fake_orca(tmp_path, monkeypatch, "refuse")
+        client, _pool, _logs = app_with(work)
+        job_id = submit(client, plate_configuration()).get_json()["job"]
+        answer = client.delete(f"/slices/{job_id}/file", headers=HEADERS)
+        assert (answer.status_code, answer.get_json()) == (200, {"job": job_id, "file": "deleted"})
+
+    def test_a_delete_of_an_unknown_or_anothers_job_is_unknown(self, tmp_path, monkeypatch, work):
+        client, _pool, _logs, job_id = self.done_job(tmp_path, monkeypatch, work)
+        for path, key in (("/slices/jnope/file", USER_KEY), (f"/slices/{job_id}/file", "user-b")):
+            answer = client.delete(path, headers={USER_KEY_HEADER: key})
+            assert answer.status_code == 404
+            assert_error_report(answer.get_json(), "slice.unknown_job")
+        assert client.delete(f"/slices/{job_id}/file").status_code == 400
+        assert client.get(f"/slices/{job_id}/file", headers=HEADERS).status_code == 200      # untouched
+
+    def test_a_job_gone_between_the_check_and_the_delete_is_unknown(self, tmp_path, monkeypatch, work):
+        client, pool, _logs, job_id = self.done_job(tmp_path, monkeypatch, work)
+        monkeypatch.setattr(pool, "delete_file", lambda job_id: ("unknown", None))
+        assert client.delete(f"/slices/{job_id}/file", headers=HEADERS).status_code == 404
+
+    def test_a_file_that_cannot_be_removed_is_logged_and_the_delete_still_answers(self, tmp_path, monkeypatch, work):
+        client, pool, logs, job_id = self.done_job(tmp_path, monkeypatch, work)
+
+        def refuse(self, missing_ok=False):
+            raise PermissionError(13, "Permission denied")
+        monkeypatch.setattr(Path, "unlink", refuse)
+        answer = client.delete(f"/slices/{job_id}/file", headers=HEADERS)
+        monkeypatch.undo()
+        assert answer.get_json() == {"job": job_id, "file": "deleted"}
+        assert logs[-1]["event"] == "slice_file_delete_error" and "PermissionError" in logs[-1]["error"]
+        assert client.get(f"/slices/{job_id}/file", headers=HEADERS).status_code == 410
+
+    def test_the_record_lasts_two_hours_after_the_slice_ended(self, tmp_path, monkeypatch, work):
+        clock = [1000.0]
+        client, pool, _logs, job_id = self.done_job(tmp_path, monkeypatch, work, clock=lambda: clock[0])
+        client.delete(f"/slices/{job_id}/file", headers=HEADERS)
+        clock[0] += 7199
+        pool.sweep()
+        assert client.get(f"/slices/{job_id}", headers=HEADERS).status_code == 200
+        clock[0] += 1
+        pool.sweep()
+        assert client.get(f"/slices/{job_id}", headers=HEADERS).status_code == 404
+        assert job_folders(work) == []
+
+
 class FirstAtOnce:
     """Runs the first slice job submitted at once, on the calling thread, and holds the rest."""
 

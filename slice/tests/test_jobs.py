@@ -898,6 +898,77 @@ class TestExpiry:
         assert pool.wait(job_id, 99, timeout=None) is None
 
 
+class TestRememberedForTwoHours:
+    """Item 10: a slice job's record is kept for two hours after it ends, and its sliced file
+    is given up as soon as the front server says it has stored it."""
+
+    def test_a_record_is_there_at_7199_s_and_gone_at_7200_s(self):
+        clock = FakeClock()
+        pool, logs = make_pool(clock=clock)
+        job_id = pool.submit()
+        clock.now += 7199
+        assert pool.sweep() == 0 and pool.get(job_id)["state"] == "done"
+        assert pool.remembered(None, None) is None
+        clock.now += 1
+        assert pool.sweep() == 1 and pool.get(job_id) is None
+        assert logs[-1]["state"] == "expired"
+
+    def test_a_repeat_is_recognised_for_the_two_hours(self):
+        clock = FakeClock()
+        pool, _ = make_pool(clock=clock)
+        job_id = pool.submit(user_key="u", submission_id="s")
+        clock.now += 7199
+        pool.sweep()
+        assert pool.remembered("u", "s") == job_id
+        clock.now += 1
+        pool.sweep()
+        assert pool.remembered("u", "s") is None
+
+    def test_deleting_a_done_jobs_file_hands_over_its_result_once(self):
+        pool, logs = make_pool()
+        job_id = pool.submit()
+        assert pool.file_deleted(job_id) is False
+        answer, result = pool.delete_file(job_id)
+        assert answer == "deleted" and result["file"] == "Box-20261009-1432.gcode.3mf"
+        assert pool.file_deleted(job_id) is True
+        assert logs[-1]["state"] == "file_deleted" and logs[-1]["job"] == job_id
+        assert pool.delete_file(job_id) == ("deleted", None)            # a repeat answers as the first
+        assert len([e for e in logs if e["state"] == "file_deleted"]) == 1
+        assert pool.get(job_id)["state"] == "done"                      # the record stays
+
+    def test_a_deleted_file_is_not_discarded_again_when_the_record_expires(self):
+        clock, discarded, cleaned = FakeClock(), [], []
+        pool, _ = make_pool(clock=clock, on_discard=discarded.append, cleanup=cleaned.append)
+        job_id = pool.submit("files")
+        pool.delete_file(job_id)
+        clock.now += jobs.RECORD_TTL_S
+        assert pool.sweep() == 1
+        assert discarded == [] and cleaned == ["files"]
+
+    def test_a_job_that_ended_without_a_file_answers_deleted(self):
+        def worker(job_id, payload, context):
+            raise ValueError("x")
+        pool, _ = make_pool(worker)
+        failed = pool.submit()
+        held, _ = make_pool(executor=HeldExecutor())
+        cancelled = held.submit()
+        held.cancel(cancelled)
+        assert pool.delete_file(failed) == ("deleted", None)
+        assert held.delete_file(cancelled) == ("deleted", None)
+
+    def test_a_job_not_ended_is_not_ready_and_an_unknown_one_is_unknown(self):
+        worker = Blocking(cancellable=False)
+        pool, _logs, executor = threaded_pool(worker)
+        running, queued = pool.submit(), pool.submit()
+        assert worker.started.wait(FAILSAFE_S)
+        assert pool.delete_file(running) == ("not_ready", None)
+        assert pool.delete_file(queued) == ("not_ready", None)
+        assert pool.delete_file("jnope") == ("unknown", None)
+        assert pool.file_deleted("jnope") is False
+        worker.release.set()
+        executor.shutdown(wait=True)
+
+
 class TestSweeperAndShutdown:
     """The sweeper on its own thread, its intervals passed by the test (ManualTicks): it
     waits on events, never on a duration."""
@@ -1099,5 +1170,5 @@ class TestEdges:
 
 
 def test_constants_are_the_documented_defaults():
-    assert (jobs.MAX_RUNNING, jobs.MAX_QUEUED, jobs.RECORD_TTL_S) == (1, 2, 3600)
+    assert (jobs.MAX_RUNNING, jobs.MAX_QUEUED, jobs.RECORD_TTL_S) == (1, 2, 7200)
     assert jobs.CANCEL_REASONS == ("replaced", "shutdown", "requested")

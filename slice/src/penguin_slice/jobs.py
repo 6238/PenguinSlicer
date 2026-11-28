@@ -38,7 +38,9 @@ Every cancelled report carries `cancel_reason`.
 
 A job goes on whether or not anything follows it: nothing ends a job on account of its
 followers. A final job's record, and its sliced file through `on_discard`, go RECORD_TTL_S
-after its final report (sweep). shutdown() cancels every job and waits for every worker.
+(two hours) after its final report (sweep). delete_file() gives up a done job's sliced file
+once the front server has stored it: the record stays until it expires, and says the file
+is no longer held (file_deleted). shutdown() cancels every job and waits for every worker.
 
 One structured log line (a dict passed to `log`) per job transition: the job id, the
 state, the plate configuration's description (profiles, overrides, parts, instances), the outcome, the
@@ -60,7 +62,7 @@ from .slicer import SliceCancelled, Stop
 
 MAX_RUNNING = 1          # Orca processes at once
 MAX_QUEUED = 2           # jobs waiting beyond the running ones
-RECORD_TTL_S = 3600      # a final record expires this long after its final report
+RECORD_TTL_S = 7200      # a final record expires this long after its final report: two hours
 WAIT_S = 15.0            # a follower's wait when nothing changes (a keep-alive cadence)
 SWEEP_INTERVAL_S = 10    # the sweeper's cadence
 # Why a slice job ended early (contracts/progress-report.md, cancel_reason): the same plate's
@@ -206,6 +208,7 @@ class JobPool:
                                   "state": "queued", "submitted": self._clock(), "started": None, "finished": None,
                                   "stop": Stop(), "result": None, "describe": describe or {},
                                   "expected_s": expected_s, "cancel_asked": None, "payload": payload,
+                                  "file_deleted": False,
                                   "user_key": user_key, "plate_id": plate_id, "submission_id": submission_id}
             if expected_s is not None:
                 self._jobs[job_id]["report"]["expected_s"] = expected_s
@@ -243,6 +246,30 @@ class JobPool:
         with self._lock:
             record = self._jobs.get(job_id)
             return record["result"] if record and record["state"] == "done" else None
+
+    def delete_file(self, job_id):
+        """The front server has stored the job's sliced file: (answer, result). The answer is
+        "deleted" for a job that has ended (done, failed or cancelled, the first time and
+        every time after), "not_ready" for one waiting or running, "unknown" for one the pool
+        does not know. `result` is the done job's result the first time only, whose sliced
+        file the caller removes; None otherwise. The record stays until it expires."""
+        with self._lock:
+            record = self._jobs.get(job_id)
+            if record is None:
+                return "unknown", None
+            if record["state"] not in FINAL:
+                return "not_ready", None
+            if record["file_deleted"] or record["result"] is None:
+                return "deleted", None
+            record["file_deleted"] = True
+            self._log_transition(job_id, "file_deleted")
+            return "deleted", record["result"]
+
+    def file_deleted(self, job_id):
+        """Whether delete_file() gave up the job's sliced file."""
+        with self._lock:
+            record = self._jobs.get(job_id)
+            return record is not None and record["file_deleted"]
 
     def wait(self, job_id, after_sequence, timeout=WAIT_S):
         """The latest report once its sequence is past `after_sequence`, or the latest when
@@ -292,7 +319,7 @@ class JobPool:
             discards = []
             for job_id in expired:
                 record = self._jobs.pop(job_id)
-                discards.append((record["result"], record["payload"]))
+                discards.append((None if record["file_deleted"] else record["result"], record["payload"]))
                 self._log_transition(job_id, "expired", record=record)
             self._changed.notify_all()
         for result, payload in discards:

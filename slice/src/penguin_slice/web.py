@@ -11,7 +11,10 @@
     DELETE /slices/<job>          cancel the slice job: {"cancel": cancelled|cancelling|finished}
     GET    /slices/<job>/file     the sliced file of a done slice job, and nothing else
     GET    /slices/<job>/summary  the sliced file's summary (contracts/sliced-file.md), as JSON
-    GET    /settings-table        the table of settings (contracts/settings-table.md) whole,
+    DELETE /slices/<job>/file     the front server has stored the sliced file: this copy is
+                                  deleted at once, the record kept until it expires; then the
+                                  file and the summary answer slice.file_gone
+    GET    /settings-table       the table of settings (contracts/settings-table.md) whole,
                                   gzip-encoded when the request accepts it
 
 Every one of these requests but the table of settings, which answers for the whole slice
@@ -424,6 +427,9 @@ def create_app(work_dir=None, pool=None, *, log=None, start_sweeper=True, enviro
         result = pool.result(job_id)
         if report["state"] not in FINAL or result is None:
             return None, _report("slice.not_ready", NOT_READY_MESSAGE, f"job {job_id} is {report['state']}", 409)
+        if pool.file_deleted(job_id):
+            return None, _report("slice.file_gone", FILE_GONE_MESSAGE,
+                                 f"job {job_id}: the sliced file was deleted once the front server had stored it", 410)
         return result, None
 
     def gone(job_id, exc):
@@ -490,6 +496,27 @@ def create_app(work_dir=None, pool=None, *, log=None, start_sweeper=True, enviro
                              download_name=result["file"])
         except OSError as exc:
             return gone(job_id, exc)
+
+    @app.delete("/slices/<job_id>/file")
+    def delete_sliced_file(job_id):
+        """The front server has stored the sliced file: the slice service deletes its own copy
+        at once and keeps the slice job's record until it expires."""
+        refusal = not_theirs(job_id)
+        if refusal:
+            return refusal
+        answer, result = pool.delete_file(job_id)
+        if answer == "unknown":
+            return unknown(job_id)
+        if answer == "not_ready":
+            return _report("slice.not_ready", NOT_READY_MESSAGE,
+                           f"DELETE of the sliced file of job {job_id}, which has not ended", 409)
+        if result is not None:
+            try:
+                Path(result["path"]).unlink(missing_ok=True)
+            except OSError as exc:      # it goes with the slice job's folder when the record expires
+                log({"event": "slice_file_delete_error", "job": job_id, "user_key": _logged(asked_key()),
+                     "error": exception_text(exc)})
+        return jsonify({"job": job_id, "file": "deleted"})
 
     @app.get("/slices/<job_id>/summary")
     def summary(job_id):
