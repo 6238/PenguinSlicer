@@ -2,6 +2,7 @@
 submit a plate configuration, follow its progress reports, cancel it, fetch the sliced file;
 the user key on every request; every error answer is an error report."""
 import io
+import itertools
 import json
 import os
 import tempfile
@@ -14,7 +15,7 @@ from helpers import (CONTRACTS, PLATE_ID, SUBMISSION_ID, USER_KEY, box_stl, inst
                      submit, upload)
 from penguin_slice import limits
 from penguin_slice.errors import error_report
-from penguin_slice.jobs import FINAL, JobPool
+from penguin_slice.jobs import FINAL, JobPool, RepeatedSubmission
 from penguin_slice.part_store import PartStore, user_folder
 from penguin_slice.web import USER_KEY_HEADER, create_app, remove_job_files, slice_worker
 
@@ -41,8 +42,14 @@ class HeldExecutor:
         fn(*args)
 
 
+SUBMISSIONS = itertools.count(1)
+
+
 def plate_configuration(**changes):
-    job = {"plate_id": PLATE_ID, "submission_id": SUBMISSION_ID, "parts": {"box": part_entry("Box", BOX)},
+    """A plate configuration of the box on PLATE_ID, each one a new submission (its own
+    submission_id) unless `changes` names one."""
+    job = {"plate_id": PLATE_ID, "submission_id": f"submission-{next(SUBMISSIONS)}",
+           "parts": {"box": part_entry("Box", BOX)},
            "instances": [{"ref": "box", "orientation": "+z", "angle": 0, "x": 50.0, "y": 50.0}],
            "local_time": "20261009-1432"}
     job.update(changes)
@@ -290,7 +297,7 @@ class TestSubmit:
     def test_a_plate_configuration_is_sliced_and_its_file_fetched(self, tmp_path, monkeypatch, work):
         install_fake_orca(tmp_path, monkeypatch, "ok")
         client, _pool, logs = app_with(work)
-        answer = submit(client, plate_configuration())
+        answer = submit(client, plate_configuration(submission_id=SUBMISSION_ID))
         assert answer.status_code == 202 and answer.headers["Cache-Control"] == "no-store"
         body = answer.get_json()
         assert (body["plate_id"], body["submission_id"]) == (PLATE_ID, SUBMISSION_ID)
@@ -328,13 +335,14 @@ class TestSubmit:
         assert set(body) == set(expected)
         assert {k: body[k] for k in ("plate_id", "submission_id", "part_warnings")} == \
             {k: expected[k] for k in ("plate_id", "submission_id", "part_warnings")}
-        assert (body["progress"]["state"], body["progress"]["sequence"]) == ("queued", 1)
+        assert (body["progress"]["state"], body["progress"]["sequence"], body["progress"]["ahead"]) == ("queued", 1, 0)
+        assert set(body["progress"]) == set(expected["progress"])
 
     def test_slicing_again_uploads_nothing(self, tmp_path, monkeypatch, work):
         install_fake_orca(tmp_path, monkeypatch, "ok")
         client, _pool, _logs = app_with(work)
         first = submit(client, plate_configuration()).get_json()
-        second = submit(client, plate_configuration(submission_id="submission-2")).get_json()
+        second = submit(client, plate_configuration()).get_json()      # a new submission_id of its own
         assert first["progress"]["state"] == second["progress"]["state"] == "done" and first["job"] != second["job"]
 
     def test_a_slice_job_holds_its_parts_so_their_removal_does_not_touch_it(self, tmp_path, monkeypatch, work):
@@ -444,7 +452,7 @@ class TestSubmit:
         assert stream.mimetype == "text/event-stream" and stream.headers["Cache-Control"] == "no-store"
         events = [json.loads(line[6:]) for line in stream.get_data(as_text=True).splitlines()
                   if line.startswith("data: ")]
-        assert [e["state"] for e in events] == ["done"]          # a late subscriber: the latest at once
+        assert [e["state"] for e in events] == ["done"]          # a late follower: the latest at once
 
     def test_the_stream_follows_a_running_job_to_its_end(self, tmp_path, monkeypatch, work):
         install_fake_orca(tmp_path, monkeypatch, "hang")
@@ -458,7 +466,7 @@ class TestSubmit:
             text = chunk.decode() if isinstance(chunk, bytes) else chunk
             report = json.loads(text.split("data: ", 1)[1])
             reports.append(report)
-            if report.get("stage") == "slicing_mesh":
+            if report["state"] == "running" and report.get("stage") == "slicing_mesh":
                 assert client.delete(f"/slices/{job_id}", headers=HEADERS).get_json()["cancel"] == "cancelling"
             if report["state"] in FINAL:
                 break
@@ -494,6 +502,7 @@ class TestSubmit:
         inches = plate_configuration(parts={"box": part_entry("Box", small, "in")})
         assert submit(client, inches).status_code == 202
         inches["instances"][0]["x"] = 26.0                          # 50.8 mm wide: its edge at 0.6 mm
+        inches["submission_id"] = "submission-moved"                # a new submission, not a repeat
         assert submit(client, inches).get_json()["code"] == "slice.placement_off_plate"
         millimetres = plate_configuration(parts={"box": part_entry("Box", small, "mm")})
         assert submit(client, millimetres).get_json()["code"] == "slice.part_missing"   # uploaded under in only
@@ -552,11 +561,12 @@ class TestRefusals:
 
     def test_queue_full_is_503(self, work):
         client, _pool, _logs = app_with(work, executor=HeldExecutor(), max_queued=1)
-        assert submit(client, plate_configuration()).status_code == 202
-        answer = submit(client, plate_configuration())
+        for plate in ("plate-1", "plate-2"):            # the two places: one to run, one to wait
+            assert submit(client, plate_configuration(plate_id=plate)).status_code == 202
+        answer = submit(client, plate_configuration(plate_id="plate-3"))
         assert answer.status_code == 503
         assert_error_report(answer.get_json(), "slice.busy")
-        assert len(job_folders(work)) == 1
+        assert len(job_folders(work)) == 2
 
     def test_the_most_bytes_are_accepted_and_one_more_refused_before_it_is_read(self, work):
         client, _pool, _logs = app_with(work, executor=HeldExecutor())
@@ -626,9 +636,9 @@ class TestEveryPlateConfigurationIsLogged:
         assert line["parts"] is None and line["bytes"] == 9
 
     def test_the_queue_full(self, work, monkeypatch):
-        client, _pool, logs = app_with(work, executor=HeldExecutor(), max_queued=1)
-        assert submit(client, plate_configuration()).status_code == 202
-        assert submit(client, plate_configuration()).status_code == 503
+        client, _pool, logs = app_with(work, executor=HeldExecutor(), max_queued=0)
+        assert submit(client, plate_configuration(plate_id="plate-1")).status_code == 202
+        assert submit(client, plate_configuration(plate_id="plate-2")).status_code == 503
         assert [e["state"] for e in logs] == ["queued", "refused"]
         assert logs[-1]["error_code"] == "slice.busy"
 
@@ -789,14 +799,29 @@ class TestJobs:
         assert client.get(f"/slices/{job_id}", headers=HEADERS).status_code == 404
 
 
+class FirstAtOnce:
+    """Runs the first slice job submitted at once, on the calling thread, and holds the rest."""
+
+    def __init__(self):
+        self.held = []
+
+    def submit(self, fn, *args):
+        if self.held is None or self.held:
+            self.held.append((fn, args))
+        else:
+            self.held.append(None)            # the first: run now, and hold every later one
+            fn(*args)
+
+
 class TestStopDuringThePlateWrite:
-    """A cancel, an abandonment and a shutdown that come while the plate is being written:
+    """A cancel, a replacement and a shutdown that come while the plate is being written:
     the write ends at the next object, Orca is never started, every file is removed. The
     stop is set from inside the write, after the first part's mesh, so nothing waits."""
 
     def run(self, tmp_path, monkeypatch, work, stop_with):
         """Submit three parts, interleaved; `stop_with(pool, job_id, clock)` runs during the
-        write. (the POST's answer, the meshes built, the Orca runs, the log lines)"""
+        write (self.client is the app's client by then). (the POST's answer, the meshes
+        built, the Orca runs, the log lines)"""
         from penguin_slice import plate_3mf, slicer
         install_fake_orca(tmp_path, monkeypatch, "ok")
         clock, seen, built, orca_runs, logs = [1000.0], [], [], [], []
@@ -814,26 +839,28 @@ class TestStopDuringThePlateWrite:
 
         monkeypatch.setattr(plate_3mf, "_mesh_xml", mesh_xml)
         monkeypatch.setattr(slicer, "run_process", lambda *args, **kwargs: orca_runs.append(args))
-        pool = JobPool(worker, executor=ImmediateExecutor(), error_report=error_report, cleanup=remove_job_files,
-                       log=logs.append, clock=lambda: clock[0], abandon_grace_s=120)
-        client = create_app(work, pool, start_sweeper=False, log=logs.append).test_client()
+        pool = JobPool(worker, executor=FirstAtOnce(), error_report=error_report, cleanup=remove_job_files,
+                       log=logs.append, clock=lambda: clock[0])
+        client = self.client = create_app(work, pool, start_sweeper=False, log=logs.append).test_client()
         stls = {ref: box_stl(10, 10, 5 + n) for n, ref in enumerate("abc")}
         for data in stls.values():
             upload(client, data)
         parts = {ref: part_entry(name, stls[ref]) for ref, name in (("a", "Arm"), ("b", "Bolt"), ("c", "Cap"))}
         instances = [{"ref": ref, "orientation": "+z", "angle": 0, "x": 30.0 + 30 * n, "y": 50.0}
                      for n, ref in enumerate("abcabc")]
+        self.later = plate_configuration(parts=parts, instances=instances)
         answer = submit(client, plate_configuration(parts=parts, instances=instances))
         return client, answer, built, orca_runs, logs
 
-    def assert_stopped_in_the_write(self, client, answer, built, orca_runs, logs, work, reason):
+    def assert_stopped_in_the_write(self, client, answer, built, orca_runs, logs, work, reason, folders=0):
         assert answer.status_code == 202
         job_id = answer.get_json()["job"]
         assert answer.get_json()["progress"]["state"] == "cancelled"
+        assert answer.get_json()["progress"]["cancel_reason"] == reason
         assert built == ["Arm"]                      # the write ended before the next part's mesh
         assert orca_runs == []                       # Orca was never started
-        assert job_folders(work) == []               # every file removed
-        last = logs[-1]
+        assert len(job_folders(work)) == folders     # every file of the stopped one removed
+        last = [e for e in logs if e.get("job") == job_id][-1]
         assert (last["state"], last["cancel_reason"]) == ("cancelled", reason)
         assert_error_report(client.get(f"/slices/{job_id}/file", headers=HEADERS).get_json(), "slice.cancelled")
 
@@ -842,17 +869,211 @@ class TestStopDuringThePlateWrite:
         outcome = self.run(tmp_path, monkeypatch, work,
                            lambda pool, job_id, clock: answers.append(pool.cancel(job_id)))
         assert answers == ["cancelling"]
-        self.assert_stopped_in_the_write(*outcome, work, "cancel")
+        self.assert_stopped_in_the_write(*outcome, work, "requested")
 
-    def test_an_abandonment_during_the_write(self, tmp_path, monkeypatch, work):
-        def abandon(pool, job_id, clock):
-            clock[0] += 120                          # nobody has followed the slice job for the grace time
-            assert pool.sweep() == (1, 0)
-        self.assert_stopped_in_the_write(*self.run(tmp_path, monkeypatch, work, abandon), work, "abandoned")
+    def test_a_replacement_during_the_write(self, tmp_path, monkeypatch, work):
+        later = []
+
+        def replace(pool, job_id, clock):
+            later.append(submit(self.client, self.later))
+        outcome = self.run(tmp_path, monkeypatch, work, replace)
+        self.assert_stopped_in_the_write(*outcome, work, "replaced", folders=1)    # the later one's
+        assert later[0].status_code == 202
+        assert later[0].get_json()["progress"] == {**later[0].get_json()["progress"], "state": "queued", "ahead": 1}
 
     def test_a_shutdown_during_the_write(self, tmp_path, monkeypatch, work):
         outcome = self.run(tmp_path, monkeypatch, work, lambda pool, job_id, clock: pool.shutdown())
         self.assert_stopped_in_the_write(*outcome, work, "shutdown")
+
+
+def wait_for_report(pool, job_id, predicate):
+    """The slice job's first report for which predicate(report) holds, waiting on its reports."""
+    report = pool.get(job_id)
+    while not predicate(report):
+        assert report["state"] not in FINAL, report
+        report = pool.wait(job_id, report["sequence"], timeout=FAILSAFE_S)
+    return report
+
+
+class TestReplacementAndRepeat:
+    """Item 7 through the HTTP interface: a plate's later slice replaces its earlier one, and
+    a repeated submission is answered with its first attempt's slice job."""
+
+    def test_a_later_plate_configuration_ends_the_earlier_one_while_it_waits(self, work):
+        client, pool, logs = app_with(work, executor=HeldExecutor())
+        earlier = submit(client, plate_configuration()).get_json()["job"]
+        later = submit(client, plate_configuration())
+        assert later.status_code == 202 and later.get_json()["job"] != earlier
+        report = client.get(f"/slices/{earlier}", headers=HEADERS).get_json()
+        assert (report["state"], report["cancel_reason"]) == ("cancelled", "replaced")
+        assert later.get_json()["progress"]["ahead"] == 0
+        assert len(job_folders(work)) == 1                         # the earlier one's files are gone
+        assert [(e["job"] == earlier, e["state"]) for e in logs] == \
+            [(True, "queued"), (True, "cancelled"), (False, "queued")]
+
+    def test_a_later_plate_configuration_ends_the_earlier_one_while_a_hanging_orca_runs(self, tmp_path,
+                                                                                       monkeypatch, work):
+        install_fake_orca(tmp_path, monkeypatch, "hang")
+        client, pool, _logs = app_with(work, executor=HeldExecutor())
+        earlier = submit(client, plate_configuration()).get_json()["job"]
+        runner = threading.Thread(target=pool._executor.run_next)
+        runner.start()
+        wait_for_report(pool, earlier, lambda r: r.get("stage") == "slicing_mesh")     # Orca has spoken
+        pids = [int(p.read_text()) for p in work.rglob("fake-orca.pid")]
+        assert len(pids) == 1
+        later = submit(client, plate_configuration()).get_json()
+        assert later["progress"]["ahead"] == 1                     # the earlier one still holds Orca
+        final = wait_for_report(pool, earlier, lambda r: r["state"] in FINAL)
+        runner.join(FAILSAFE_S)
+        assert (final["state"], final["cancel_reason"]) == ("cancelled", "replaced")
+        with pytest.raises(ProcessLookupError):                    # Orca was gone before the report
+            os.kill(pids[0], 0)
+        assert pool.get(later["job"])["ahead"] == 0
+        assert len(job_folders(work)) == 1
+
+    def test_another_plate_and_another_user_keys_same_plate_are_untouched(self, work):
+        client, pool, _logs = app_with(work, executor=HeldExecutor())
+        assert upload(client, BOX, user_key="user-b").status_code == 201
+        mine = submit(client, plate_configuration()).get_json()["job"]
+        other_plate = submit(client, plate_configuration(plate_id="plate-2")).get_json()["job"]
+        theirs = submit(client, plate_configuration(), user_key="user-b").get_json()["job"]
+        assert [pool.get(j)["state"] for j in (mine, other_plate, theirs)] == ["queued"] * 3
+
+    def test_with_every_place_taken_by_one_user_key_a_changed_plate_is_accepted_and_another_refused(self, work):
+        client, pool, _logs = app_with(work, executor=HeldExecutor())
+        jobs = [submit(client, plate_configuration(plate_id=f"plate-{n}")).get_json()["job"] for n in (1, 2, 3)]
+        refused = submit(client, plate_configuration(plate_id="plate-4"))
+        assert (refused.status_code, refused.get_json()["code"]) == (503, "slice.busy")
+        changed = submit(client, plate_configuration(plate_id="plate-2"))
+        assert changed.status_code == 202
+        assert pool.get(jobs[1])["cancel_reason"] == "replaced"
+        assert [pool.get(j)["state"] for j in (jobs[0], jobs[2])] == ["queued", "queued"]
+        assert changed.get_json()["progress"]["ahead"] == 2
+
+    def test_a_refused_change_leaves_the_earlier_slice_job_as_it_was(self, work):
+        client, pool, _logs = app_with(work, executor=HeldExecutor())
+        earlier = submit(client, plate_configuration()).get_json()["job"]
+        off_plate = plate_configuration(instances=[{"ref": "box", "orientation": "+z", "angle": 0, "x": 1.0,
+                                                    "y": 50.0}])
+        assert submit(client, off_plate).status_code == 422
+        assert submit(client, plate_configuration(parts={})).status_code == 422
+        assert pool.get(earlier)["state"] == "queued" and pool.get(earlier)["sequence"] == 1
+
+    def test_a_repeat_answers_the_first_attempts_slice_job(self, tmp_path, monkeypatch, work):
+        install_fake_orca(tmp_path, monkeypatch, "ok")
+        client, pool, logs = app_with(work, executor=HeldExecutor())
+        small = box_stl(2, 1, 0.5)
+        upload(client, small)
+        data = plate_configuration(parts={"box": part_entry("Box", small)})
+        first = submit(client, data).get_json()
+        logs.clear()
+        again = submit(client, data)
+        assert again.status_code == 202 and again.get_json() == first
+        assert len(job_folders(work)) == 1 and pool.counts()["queued"] == 1
+        assert [(e["event"], e["job"], e["submission_id"]) for e in logs] == \
+            [("slice_repeat", first["job"], data["submission_id"])]
+        pool._executor.run_next()
+        later = submit(client, data).get_json()                    # after it ended: still that slice job
+        assert later["job"] == first["job"] and later["progress"]["state"] == "done"
+        assert later["part_warnings"] == first["part_warnings"] != []
+        stream = client.get(f"/slices/{first['job']}/events", headers=HEADERS).get_data(as_text=True)
+        reports = [json.loads(line[6:]) for line in stream.splitlines() if line.startswith("data: ")]
+        assert reports[-1]["sequence"] == later["progress"]["sequence"]       # the sequence unbroken
+        assert client.get(f"/slices/{first['job']}/file", headers=HEADERS).status_code == 200
+
+    def test_a_repeat_is_answered_before_any_check(self, work):
+        client, pool, _logs = app_with(work, executor=HeldExecutor(), max_queued=0)
+        data = plate_configuration()
+        first = submit(client, data).get_json()
+        for changed in ({**data, "instances": []}, {**data, "unknown": 1}, {**data, "parts": {}}):
+            answer = submit(client, changed)
+            assert (answer.status_code, answer.get_json()["job"]) == (202, first["job"])
+        assert pool.counts()["queued"] == 1                         # every place taken, and still answered
+
+    def test_a_repeat_after_the_first_was_refused_is_checked_afresh(self, work):
+        client, pool, _logs = app_with(work, executor=HeldExecutor(), upload_box=False)
+        data = plate_configuration()
+        refused = submit(client, data)
+        assert refused.get_json()["code"] == "slice.part_missing"
+        assert upload(client, BOX).status_code == 201
+        accepted = submit(client, data)                             # the same submission_id, again
+        assert accepted.status_code == 202 and pool.get(accepted.get_json()["job"])["state"] == "queued"
+
+    def test_one_submission_value_under_two_user_keys_is_two_submissions(self, work):
+        client, pool, _logs = app_with(work, executor=HeldExecutor())
+        assert upload(client, BOX, user_key="user-b").status_code == 201
+        data = plate_configuration()
+        mine = submit(client, data).get_json()["job"]
+        theirs = submit(client, data, user_key="user-b").get_json()["job"]
+        assert mine != theirs and [pool.get(j)["state"] for j in (mine, theirs)] == ["queued", "queued"]
+
+    def test_a_repeat_that_arrives_while_the_first_is_being_checked(self, work, monkeypatch):
+        # Both attempts pass the first look; the pool, which decides under its lock, answers
+        # the second with the first's slice job, and the second's folder is removed.
+        client, pool, _logs = app_with(work, executor=HeldExecutor())
+        data = plate_configuration()
+        first = submit(client, data).get_json()
+        monkeypatch.setattr(pool, "remembered", lambda user_key, submission_id: None)
+        again = submit(client, data)
+        assert (again.status_code, again.get_json()) == (202, first)
+        assert len(job_folders(work)) == 1 and pool.counts()["queued"] == 1
+
+    def test_a_repeat_whose_slice_job_expires_as_it_is_looked_up_is_checked_afresh(self, work, monkeypatch):
+        client, pool, _logs = app_with(work, executor=HeldExecutor())
+        data = plate_configuration()
+        first = submit(client, data).get_json()["job"]
+        real = pool.payload
+        gone = iter([True])
+        # Its record is dropped between the look for it and the answer: a new submission after all.
+        monkeypatch.setattr(pool, "payload", lambda job_id: None if next(gone, False) else real(job_id))
+        monkeypatch.setattr(pool, "remembered", lambda user_key, submission_id: first)
+        answer = submit(client, data)
+        assert answer.status_code == 202, answer.get_json()
+
+    def test_a_repeat_found_by_the_pool_whose_job_then_expires_is_tried_again(self, work, monkeypatch):
+        # The pool refuses a repeat whose job is gone before its answer is made: the plate
+        # configuration goes through again, and the pool's own look decides once more.
+        client, pool, _logs = app_with(work, executor=HeldExecutor())
+        data = plate_configuration()
+        first = submit(client, data).get_json()["job"]
+        real_submit, real_payload = pool.submit, pool.payload
+        calls = []
+
+        def submit_once_as_repeat(*args, **kwargs):
+            calls.append(1)
+            if len(calls) == 1:
+                raise RepeatedSubmission(first)
+            return real_submit(*args, **kwargs)
+        monkeypatch.setattr(pool, "remembered", lambda user_key, submission_id: None)
+        monkeypatch.setattr(pool, "submit", submit_once_as_repeat)
+        monkeypatch.setattr(pool, "payload", lambda job_id: None if len(calls) == 1 else real_payload(job_id))
+        answer = submit(client, data)
+        assert (answer.status_code, answer.get_json()["job"], len(calls)) == (202, first, 2)
+        assert len(job_folders(work)) == 1
+
+    def test_a_repeat_of_a_body_that_is_not_an_object_is_no_repeat(self, work):
+        client, _pool, _logs = app_with(work)
+        for raw in ("[]", '{"submission_id": 7}'):
+            answer = client.post("/slices", data=raw, headers=HEADERS, content_type="application/json")
+            assert answer.get_json()["code"] == "slice.bad_plate_configuration"
+
+
+class TestGoesOnWithoutItsPage:
+    """Item 9 through the HTTP interface: nothing follows the slice job, and it ends done."""
+
+    def test_a_slice_job_nobody_follows_past_120_s_ends_done_and_its_file_is_there(self, tmp_path, monkeypatch,
+                                                                                  work):
+        install_fake_orca(tmp_path, monkeypatch, "ok")
+        clock = [1000.0]
+        client, pool, _logs = app_with(work, executor=HeldExecutor(), clock=lambda: clock[0])
+        job_id = submit(client, plate_configuration()).get_json()["job"]
+        clock[0] += 121
+        pool.sweep()
+        pool._executor.run_next()
+        clock[0] += 121
+        pool.sweep()
+        assert client.get(f"/slices/{job_id}", headers=HEADERS).get_json()["state"] == "done"
+        assert client.get(f"/slices/{job_id}/file", headers=HEADERS).status_code == 200
 
 
 class TestEveryAnswerIsAnErrorReport:

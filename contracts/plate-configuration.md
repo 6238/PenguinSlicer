@@ -26,11 +26,11 @@ design under To be built wins.
 *Partly built in phase 2.* Built in the slice service: parts named by hash with their
 units, no files sent, `plate_id` and `submission_id` required and logged, an instance's
 `rotation`, the parts missing from the part store listed in one report, the limits of
-[Limits in phase 2](#limits-in-phase-2), and every setting of the table of settings under
-Orca's own name ([Settings in phase 2](#settings-in-phase-2)); the slice service no longer
-reads the form of [Fields](#fields), [Part](#part), [Instance](#instance) and
-[Overrides](#overrides) below. To be built: the repeat and the replacement of
-[The plate and the submission](#the-plate-and-the-submission).
+[Limits in phase 2](#limits-in-phase-2), every setting of the table of settings under
+Orca's own name ([Settings in phase 2](#settings-in-phase-2)), and the repeat and the
+replacement of [The plate and the submission](#the-plate-and-the-submission); the slice
+service no longer reads the form of [Fields](#fields), [Part](#part),
+[Instance](#instance) and [Overrides](#overrides) below.
 
 What changes, in short:
 

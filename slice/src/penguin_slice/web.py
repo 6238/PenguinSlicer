@@ -31,7 +31,12 @@ refused; 500 for the slice service's own failure (its work folder or part store 
 writable, a bug); 503 when the queue is full.
 
 Each part is checked when it arrives, and each plate configuration when it arrives, before
-a slice job is queued for it, so a refusal comes back at once. A slice job's files live under
+a slice job is queued for it, so a refusal comes back at once. Before any check, a plate
+configuration whose user key and submission_id are those of a slice job the pool remembers
+is answered 202 with that slice job and starts nothing (a repeat, logged as
+`slice_repeat`). One that passes its checks ends the same user key's earlier unfinished
+slice job of the same plate_id (jobs.JobPool, the replacement); a refused one ends nothing.
+A slice job, once accepted, runs to its end whether or not anything follows its progress. A slice job's files live under
 `work_dir/<job folder>/`: its hold on each of its parts' files (`parts/`), the scratch folder
 of the slice, and the sliced file, all removed when the slice job ends without a file or
 when its record expires. The part store is a folder of its own under `work_dir`, new in each
@@ -55,7 +60,7 @@ from werkzeug.exceptions import HTTPException
 
 from . import limits, part_store, settings_table
 from .errors import error_report, report_for_code
-from .jobs import FINAL, JobPool, QueueFull, SafeLog, exception_text
+from .jobs import FINAL, JobPool, QueueFull, RepeatedSubmission, SafeLog, exception_text
 from .mesh import MeshError
 from .service import (BAD_CONFIGURATION_MESSAGE, UPLOAD_REMEDIES, clean_stale_scratch, make_scratch, parts_missing,
                       read_plate_configuration, slice_plate_configuration, upload_part)
@@ -306,13 +311,42 @@ def create_app(work_dir=None, pool=None, *, log=None, start_sweeper=True, enviro
                                                    BAD_CONFIGURATION_MESSAGE.format(problem=problem),
                                                    f"{type(exc).__name__}: {exc}"[:300]), 400
                 else:
-                    body, status = _queue(data, asked_key())
+                    body, status = _repeat(data, asked_key()) or _queue(data, asked_key())
         if status != 202:
             log_refusal(body, status, data)
         return jsonify(body), status
 
+    def _accepted(job_id):
+        """The 202 answer about a slice job the pool knows, or None when it has just expired."""
+        configuration, report = pool.payload(job_id), pool.get(job_id)
+        if configuration is None or report is None:
+            return None
+        return {"job": job_id, "plate_id": configuration.plate_id, "submission_id": configuration.submission_id,
+                "progress": report, "part_warnings": configuration.part_warnings()}
+
+    def _answer_repeat(job_id, user_key):
+        """(the first attempt's answer, 202) for a repeated submission, logged; None when its
+        slice job has just expired."""
+        answer = _accepted(job_id)
+        if answer is not None:
+            log({"event": "slice_repeat", "job": job_id, "user_key": _logged(user_key), "http_status": 202,
+                 "plate_id": answer["plate_id"], "submission_id": answer["submission_id"],
+                 "state": answer["progress"]["state"]})
+            return answer, 202
+        return None
+
+    def _repeat(data, user_key):
+        """Before any check: the answer to a submission the pool remembers under this user
+        key, or None (contracts/plate-configuration.md, "The plate and the submission")."""
+        submission_id = data.get("submission_id") if isinstance(data, dict) else None
+        if not isinstance(submission_id, str):
+            return None
+        job_id = pool.remembered(user_key, submission_id)
+        return None if job_id is None else _answer_repeat(job_id, user_key)
+
     def _queue(data, user_key):
-        """Check the plate configuration, hold its parts and queue its slice job: (answer, status)."""
+        """Check the plate configuration, hold its parts and queue its slice job: (answer,
+        status). Queueing it replaces the same plate's earlier unfinished slice job."""
         try:
             configuration = read_plate_configuration(data, lambda sha256, units: store.get(user_key, sha256, units),
                                                      environ=environ)
@@ -335,7 +369,11 @@ def create_app(work_dir=None, pool=None, *, log=None, start_sweeper=True, enviro
             configuration.work_dir = job_dir
             describe = {"user_key": _logged(user_key), **configuration.describe()}
             job_id = pool.submit(configuration, describe=describe, expected_s=configuration.expected_s,
-                                 user_key=user_key)
+                                 user_key=user_key, plate_id=configuration.plate_id,
+                                 submission_id=configuration.submission_id)
+        except RepeatedSubmission as exc:          # the same submission, accepted while this one was checked
+            shutil.rmtree(job_dir, ignore_errors=True)
+            return _answer_repeat(exc.job_id, user_key) or _queue(data, user_key)
         except part_store.PartsGone as exc:
             shutil.rmtree(job_dir, ignore_errors=True)
             gone = {(e.sha256, e.units) for e in exc.entries}

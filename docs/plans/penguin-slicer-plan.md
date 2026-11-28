@@ -235,8 +235,7 @@ stated time in case the client returns, then stops the work and removes its file
 Nothing is left running and nothing accumulates on disk. A restart leaves no job in an
 unknown state. From phase 2, a slice job is the exception: it goes on when its page goes
 away, bounded by the slice service's time limit, so that a user who refreshes, loses the
-network or closes a laptop lid finds it done. As built, the slice service still cancels a
-slice job nobody follows after a short wait
+network or closes a laptop lid finds it done; the slice service is built so
 ([the slice service's guide](../../slice/README.md#go-on-without-the-page)).
 
 **Deploys.** The project is deployed continuously, so a deploy at any moment interrupts no

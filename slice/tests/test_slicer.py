@@ -201,7 +201,7 @@ class TestSliceStl:
                                         "still slicing")
         assert fake.calls[0][1]["timeout_s"] == 7
 
-    @pytest.mark.parametrize("reason", ["cancel", "abandoned", "shutdown"])
+    @pytest.mark.parametrize("reason", ["cancel", "replaced", "shutdown", "requested"])
     def test_a_stop_that_is_not_the_timeout_is_a_cancel(self, out, executable_orca, reason):
         with patched(fake_run_factory(write_archive=False, stopped=reason)), pytest.raises(SliceCancelled) as caught:
             slice_stl(slicer.SAMPLE_STL, out)
@@ -489,7 +489,7 @@ class TestPlateSlice:
         assert result.output_path == out / "plate.gcode.3mf"
         assert result.layer_count == 50
 
-    @pytest.mark.parametrize("reason", ["cancel", "abandoned", "shutdown"])
+    @pytest.mark.parametrize("reason", ["cancel", "replaced", "shutdown", "requested"])
     def test_a_stop_set_before_orca_starts_never_starts_it(self, out, model, executable_orca, reason):
         fake, stop = fake_run_factory(), slicer.Stop()
         stop.set(reason)
