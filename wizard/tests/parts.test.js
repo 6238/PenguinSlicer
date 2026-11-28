@@ -63,7 +63,14 @@ async function openPage(b = browser(), { uploadUnits = 'in', hash } = {}) {
 }
 
 const uploads = (server) => server.made('POST', '/api/parts');
-const file = (name, bytes = boxFile(name)) => ({ name, bytes });
+// A file as the browser hands it over (a File): its name, its size and its bytes read on demand.
+const file = (name, bytes = boxFile(name)) => ({ name, size: bytes.byteLength, arrayBuffer: async () => bytes });
+// A file the browser cannot read (moved, deleted or locked after it was chosen): its read fails
+// as Chromium's File.arrayBuffer does.
+const unreadable = (name, size = 684) => ({
+  name, size, reads: 0,
+  arrayBuffer() { this.reads += 1; return Promise.reject(Object.assign(new Error('A requested file or directory could not be found.'), { name: 'NotReadableError' })); },
+});
 const rowsOf = (parts) => parts.rows().map((r) => ({ name: r.name, units: r.units, quantity: r.quantity, arriving: r.arriving }));
 
 // ---- the part set a file upload makes
@@ -183,6 +190,50 @@ test('a part over the limit on an empty plate does not say the other parts are f
   assert.equal(page.panel.notices[0].what, 'big.stl is 9.1 MB. PenguinSlicer takes parts up to 7.5 MB (150,000 triangles), so it was not added.');
 });
 
+test('a file over the size limit is refused by its size alone, before its bytes are read', async () => {
+  const page = await openPage();
+  const big = unreadable('bracket.stl', MAX_PART_BYTES + 1);
+  await page.parts.addFiles([big]);
+  assert.equal(big.reads, 0);
+  assert.deepEqual(page.panel.notices.map(({ kind, what }) => ({ kind, what })), [{
+    kind: 'error', what: 'bracket.stl is 7.6 MB. PenguinSlicer takes parts up to 7.5 MB (150,000 triangles), so it was not added.',
+  }]);
+  assert.equal(uploads(page.server).length, 0);
+});
+
+test('a file the browser cannot read is the wizard\'s notification naming it, and the other files of the drop are added', async () => {
+  const page = await openPage();
+  const gone = unreadable('gone.stl');
+  await page.parts.addFiles([file('good.stl'), gone, file('other.stl')]);
+  await page.parts.idle();
+  assert.equal(gone.reads, 1);
+  assert.deepEqual(rowsOf(page.parts).map((r) => [r.name, r.arriving]), [['good', false], ['other', false]]);
+  assert.equal(uploads(page.server).length, 2);
+  assert.deepEqual(page.panel.notices.map(({ kind, what, todo }) => ({ kind, what, todo })), [{
+    kind: 'error',
+    what: 'gone.stl could not be read, so it was not added.',
+    todo: 'Your other parts are fine. Check that the file is still there, then add it again.',
+  }]);
+  assert.deepEqual(page.reports, []);
+  await page.storage.written();
+  assert.deepEqual(page.storage.plate().parts.map((p) => p.name), ['good', 'other']);
+});
+
+test('a file the browser cannot read on an empty plate does not say the other parts are fine', async () => {
+  const page = await openPage();
+  await page.parts.addFiles([unreadable('gone.stl')]);
+  assert.deepEqual(page.panel.notices.map((n) => n.todo), ['Check that the file is still there, then add it again.']);
+  assert.deepEqual(page.parts.rows(), []);
+});
+
+test('the wizard\'s sentence for a file it cannot read is an error report of its own', () => {
+  const report = sentences.fileUnreadable('gone.stl', 'NotReadableError: gone');
+  assert.equal(report.code, 'wizard.file_unreadable');
+  assert.equal(report.retryable, false);
+  assert.equal(report.message, 'gone.stl could not be read, so it was not added.');
+  assert.equal(report.detail, 'NotReadableError: gone');
+});
+
 test('the twenty-sixth different part is refused with the wizard\'s sentence, and a listed part\'s quantity still rises', async () => {
   const page = await openPage();
   await page.parts.addFiles(Array.from({ length: 25 }, (_, i) => file(`p${i}.stl`)));
@@ -215,6 +266,25 @@ test('parts that together pass 150 instances give the wizard\'s red message, and
   page.parts.setQuantity(b.key, 1);
   assert.equal(page.store.get().plate.instances, 151);
   assert.equal(page.parts.instanceProblem().message, 'This plate would hold 151 instances.');
+});
+
+test('a part still arriving that takes the plate past 150 instances gives the red message while it arrives', async () => {
+  const page = await openPage();
+  await page.parts.addFiles([file('a.stl')]);
+  await page.parts.idle();
+  page.parts.setQuantity(page.parts.rows()[0].key, 150);
+  assert.equal(page.parts.instanceProblem(), null);
+  page.server.script('POST', '/api/parts', steps.hold());
+  const before = page.server.requests.length;
+  await page.parts.addFiles([file('b.stl')]);
+  const request = await page.server.arrived(before + 1);
+  assert.deepEqual(rowsOf(page.parts).map((r) => r.arriving), [false, true]);
+  assert.deepEqual(page.store.get().plate, { ...page.store.get().plate, instances: 150, arrivingInstances: 1 });
+  const problem = page.parts.instanceProblem();
+  assert.equal(problem.code, 'wizard.too_many_instances');
+  assert.equal(problem.message, 'This plate would hold 151 instances.');
+  request.held.release();
+  await page.parts.idle();
 });
 
 // ---- the refusals of POST /api/parts
@@ -270,13 +340,24 @@ test('a second failure of the same part replaces its notification', async () => 
   assert.deepEqual(page.panel.notices.map((n) => n.what), ['twice: Second.']);
 });
 
-test('a file refused as too large is followed by the reminder in the switch\'s current units', async () => {
+test('a file refused as too large is followed by the reminder of the units it was read in', async () => {
   const page = await openPage(browser(), { uploadUnits: 'in' });
   page.parts.setUnits('mm');
   page.server.script('POST', '/api/parts', steps.report(errorReport('slice.part_too_large')));
   await page.parts.addFiles([file('big.stl')]);
   await page.parts.idle();
   assert.ok(page.panel.notices[0].todo.endsWith(' STL files are being read in millimetres.'));
+});
+
+test('the reminder says how the file was read even when the switch is turned during its upload', async () => {
+  const page = await openPage(browser(), { uploadUnits: 'in' });
+  page.server.script('POST', '/api/parts', steps.hold());
+  await page.parts.addFiles([file('big.stl')]);
+  const request = await page.server.arrived(1);
+  page.parts.setUnits('mm');
+  request.held.release(steps.report(errorReport('slice.part_too_large')));
+  await page.parts.idle();
+  assert.ok(page.panel.notices[0].todo.endsWith(' STL files are being read in inches.'), page.panel.notices[0].todo);
 });
 
 for (const [report, status] of [[errorReport('slice.bad_units'), 400], [errorReport('front.bad_request'), 400]]) {
@@ -363,6 +444,24 @@ test('a stored part whose bytes are gone is dropped from the plate when the page
   assert.deepEqual(again.storage.plate().parts.map((p) => p.name), ['kept']);
 });
 
+test('a stored part whose record the page cannot use is uploaded again when the page opens, and never drawn from that record', async () => {
+  const b = browser();
+  const first = await openPage(b);
+  await first.parts.addFiles([file('damaged.stl')]);
+  await first.parts.idle();
+  await first.storage.update({ parts: first.storage.plate().parts.map((p) => ({ ...p, record: { ...p.record, measurements: null } })) });
+  await first.storage.written();
+  b.locks.closeTab('A');
+  const made = uploads(b.server).length;
+  const again = await openPage(b);
+  assert.deepEqual(rowsOf(again.parts), [{ name: 'damaged', units: 'in', quantity: 1, arriving: true }]);
+  assert.equal(again.parts.rows()[0].record, null);
+  await again.parts.idle();
+  assert.equal(uploads(b.server).length, made + 1);
+  assert.equal(again.parts.rows()[0].arriving, false);
+  assert.equal(again.parts.rows()[0].record.measurements.size_mm.length, 3);
+});
+
 // ---- the hash
 
 test('a record naming another hash is uploaded once more; a second difference is a page_failed report and the part is not added', async () => {
@@ -376,6 +475,22 @@ test('a record naming another hash is uploaded once more; a second difference is
   assert.deepEqual(page.parts.rows(), []);
   assert.deepEqual(page.reports.map((r) => [r.what, r.part_sha256]), [['page_failed', hex(bytes)]]);
   assert.equal(page.panel.notices[0].what, 'h: The server gave an answer this page cannot read.');
+});
+
+test('a record with the right hash and the other units is uploaded once more; a second difference is a page_failed report and the part is not added', async () => {
+  const page = await openPage();
+  const bytes = boxFile('u');
+  const otherUnits = { ...partRecordOf('/api/parts?units=in', bytes), units: 'mm' };
+  assert.equal(otherUnits.sha256, hex(bytes));
+  page.server.script('POST', '/api/parts', steps.answer(201, otherUnits), steps.answer(201, otherUnits));
+  await page.parts.addFiles([file('u.stl', bytes)]);
+  await page.parts.idle();
+  assert.equal(uploads(page.server).length, 2);
+  assert.deepEqual(page.parts.rows(), []);
+  assert.deepEqual(page.reports.map((r) => [r.what, r.part_sha256]), [['page_failed', hex(bytes)]]);
+  assert.equal(page.panel.notices[0].what, 'u: The server gave an answer this page cannot read.');
+  await page.storage.written();
+  assert.deepEqual(page.storage.plate().parts, []);
 });
 
 test('a record naming another hash once, then the right one, adds the part', async () => {
@@ -559,6 +674,26 @@ test('a part still being added when New plate is pressed does not land on the ne
   await adding;
   await renewing;
   await page.parts.idle();
+  assert.deepEqual(page.parts.rows(), []);
+  assert.deepEqual(page.storage.plate().parts, []);
+});
+
+test('a part still being kept in the browser\'s storage when New plate is pressed is never uploaded', async () => {
+  const page = await openPage();
+  let release = null;
+  let reached = null;
+  const kept = new Promise((r) => { release = r; });
+  const writing = new Promise((r) => { reached = r; });
+  const addPart = page.storage.addPart;
+  page.storage.addPart = async (...args) => { const out = await addPart(...args); reached(); await kept; return out; };
+  const adding = page.parts.addFiles([file('late.stl')]);
+  await writing;
+  const renewing = page.parts.newPlate();
+  release();
+  await adding;
+  await renewing;
+  await page.parts.idle();
+  assert.equal(uploads(page.server).length, 0);
   assert.deepEqual(page.parts.rows(), []);
   assert.deepEqual(page.storage.plate().parts, []);
 });

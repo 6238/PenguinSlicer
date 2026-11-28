@@ -5,7 +5,9 @@
 // on the plate or refused.
 //
 // For each part of a part set, in order:
-//   1. the page's own check of its size, before anything is done with it;
+//   1. the page's own check of its size, before anything is done with it (for a file, by the
+//      file's own size, before its bytes are read; a file the browser cannot read is refused
+//      alone);
 //   2. its hash (SHA-256, by the browser's own digest), by which, with its units, the page knows
 //      it: a part already on the plate raises that part's quantity and adds no row;
 //   3. the page's own check of the number of different parts;
@@ -21,7 +23,7 @@ import { MAX_INSTANCES, MAX_PART_BYTES, MAX_PARTS } from './geometry/constants.j
 import { PART_NOT_DRAWABLE } from './geometry/errors.js';
 import {
   ARRIVED_LATE, JOINS_LATER, NAMED, OTHER_PARTS_FINE, READ_IN_REMINDER,
-  badAnswer, partOverSize, tooManyInstances, tooManyParts,
+  badAnswer, fileUnreadable, partOverSize, tooManyInstances, tooManyParts,
 } from './sentences.js';
 import { megabytes } from './units.js';
 
@@ -41,7 +43,8 @@ export function partName(fileName) {
 }
 
 // The part set a file upload makes: one part for each file, quantity 1, the switch's units, the
-// file's bytes unchanged.
+// file's bytes unchanged. Each file here is {name, bytes}, already read; addFiles reads each one
+// in its turn and makes its part the same way.
 export function partSetOf(files, units) {
   return { format: 1, source: 'file', parts: files.map((f) => ({ name: partName(f.name), quantity: 1, units, stl_bytes: f.bytes })) };
 }
@@ -141,7 +144,8 @@ export function createParts({ api, storage, geometry, store, panel, report, hash
     const todo = [
       rows.length ? OTHER_PARTS_FINE : null,
       failure.remedy,
-      failure.code === 'slice.part_too_large' && row.source === 'file' ? READ_IN_REMINDER(units()) : null,
+      // how this file was read, which the switch may since have changed
+      failure.code === 'slice.part_too_large' && row.source === 'file' ? READ_IN_REMINDER(row.units) : null,
     ].filter(Boolean).join(' ');
     panel.notify({ kind: 'error', what: NAMED(row.name, failure.message), todo, key: `part:${row.key}` });
   }
@@ -211,12 +215,19 @@ export function createParts({ api, storage, geometry, store, panel, report, hash
     ...fields, key: `${fields.sha256}.${fields.units}`, stop: new AbortController(),
   });
 
+  // A part or file refused before anything was done with it: the page's own sentences, with
+  // "Your other parts are fine." while the list holds parts.
+  function tellRefused(failure, key) {
+    panel.notify({ kind: 'error', what: failure.message, todo: [rows.length ? OTHER_PARTS_FINE : null, failure.remedy].filter(Boolean).join(' '), key });
+  }
+
+  const overSize = (label, size) => partOverSize(label, megabytes(size), size, MAX_PART_BYTES);
+
   async function addOne(part, label, source, gen) {
     const bytes = part.stl_bytes;
     if (!UNITS.includes(part.units)) throw new Error(`units must be "mm" or "in", not ${JSON.stringify(part.units)}`);
     if (bytes.byteLength > MAX_PART_BYTES) {
-      const failure = partOverSize(label, megabytes(bytes.byteLength), bytes.byteLength, MAX_PART_BYTES);
-      panel.notify({ kind: 'error', what: failure.message, todo: [rows.length ? OTHER_PARTS_FINE : null, failure.remedy].filter(Boolean).join(' '), key: `size:${label}` });
+      tellRefused(overSize(label, bytes.byteLength), `size:${label}`);
       return;
     }
     const sha256 = await hash(bytes);
@@ -243,13 +254,39 @@ export function createParts({ api, storage, geometry, store, panel, report, hash
     track(bring(row, bytes));
   }
 
-  function addPartSet(partSet, labels = []) {
-    const gen = generation;
-    const run = adding.then(async () => {
-      for (const [i, part] of partSet.parts.entries()) await addOne(part, labels[i] ?? part.name, partSet.source, gen);
-    });
+  // Runs `body` after every part set handed over before it, so that parts are taken in order.
+  function inTurn(body) {
+    const run = adding.then(body);
     adding = run.catch(() => {});
     return track(run);
+  }
+
+  function addPartSet(partSet) {
+    const gen = generation;
+    return inTurn(async () => {
+      for (const part of partSet.parts) await addOne(part, part.name, partSet.source, gen);
+    });
+  }
+
+  // A file's part, read in its turn: its size is checked first, by the file's own size, before
+  // its bytes are read; a file the browser cannot read is refused alone, and the others go on.
+  // `units` is the switch's at the moment the files were handed over.
+  async function addFile(f, units, gen) {
+    if (f.size > MAX_PART_BYTES) {
+      tellRefused(overSize(f.name, f.size), `size:${f.name}`);
+      return;
+    }
+    let bytes;
+    try {
+      bytes = await f.arrayBuffer();
+    } catch (error) {
+      if (gen !== generation) return;
+      tellRefused(fileUnreadable(f.name, `${error?.name ?? 'Error'}: ${error?.message ?? error}`), `unreadable:${f.name}`);
+      return;
+    }
+    if (gen !== generation) return;
+    const [part] = partSetOf([{ name: f.name, bytes }], units).parts;
+    await addOne(part, f.name, 'file', gen);
   }
 
   return {
@@ -266,10 +303,16 @@ export function createParts({ api, storage, geometry, store, panel, report, hash
       for (const listener of listeners) listener(rows);
     },
 
-    // Files the user dropped or chose, each {name, bytes}: one part set, read in the switch's
-    // units at this moment. Resolves when each part is added or refused, not when its upload ends.
+    // Files the user dropped or chose, as the browser hands them over (File: name, size,
+    // arrayBuffer()): one part set, read in the switch's units at this moment, each file read in
+    // its turn. Resolves when each part is added or refused, not when its upload ends.
     addFiles(files) {
-      return addPartSet(partSetOf(files, units()), files.map((f) => f.name));
+      const chosen = Array.from(files);
+      const readIn = units();
+      const gen = generation;
+      return inTurn(async () => {
+        for (const f of chosen) await addFile(f, readIn, gen);
+      });
     },
     addPartSet: (partSet) => addPartSet(partSet),
 

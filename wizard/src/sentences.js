@@ -82,6 +82,19 @@ export const NAMED = (name, sentence) => `${name}: ${sentence}`;
 export const ARRIVED_LATE = (name) => `${name} arrived after you left the Parts step.`;
 export const JOINS_LATER = 'It joins the plate when you go back to the Layout step.';
 
+// A chosen or dropped file whose bytes the browser could not read (moved, deleted or locked
+// after it was chosen): the page's own failure, since nothing was sent. `detail` is the browser's
+// reason.
+export function fileUnreadable(fileName, detail) {
+  return {
+    code: 'wizard.file_unreadable',
+    message: `${fileName} could not be read, so it was not added.`,
+    remedy: 'Check that the file is still there, then add it again.',
+    retryable: false,
+    detail,
+  };
+}
+
 // The page's own checks before sending, each an error report of the wizard's own: the slice
 // service's three limits on a plate (contracts/plate-configuration.md, "Limits").
 export function partOverSize(fileName, megabytes, bytes, cap) {

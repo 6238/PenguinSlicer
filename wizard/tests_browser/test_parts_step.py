@@ -184,6 +184,34 @@ def test_a_file_over_the_size_limit_is_refused_by_the_page_with_nothing_sent(wiz
     assert w.page.locator("#parts-list .part-item").count() == 0
 
 
+def test_a_file_the_browser_cannot_read_is_a_notification_and_the_others_are_added_and_an_over_size_file_is_never_read(wizard):
+    w = wizard(320)
+    # Chromium's own failure of a file moved or deleted after it was chosen, for two of the files;
+    # the over-size one must be refused by its size before anything reads it.
+    w.page.evaluate("""() => {
+        const read = File.prototype.arrayBuffer;
+        File.prototype.arrayBuffer = function () {
+            if (this.name === 'gone.stl' || this.name === 'huge.stl') {
+                window.unreadable = (window.unreadable || 0) + 1;
+                return Promise.reject(new DOMException('A requested file or directory could not be found.', 'NotReadableError'));
+            }
+            return read.call(this);
+        };
+    }""")
+    choose(w, ("good.stl", box_stl(b"good")), ("gone.stl", box_stl(b"gone")))
+    rows_settled(w, 1)
+    assert w.page.locator("#parts-list .name").all_inner_texts() == ["good"]
+    notice = w.page.locator("#notices .notice.error")
+    assert notice.locator(".n-what").inner_text() == "gone.stl could not be read, so it was not added."
+    assert notice.locator(".n-todo").inner_text() == "Your other parts are fine. Check that the file is still there, then add it again."
+    assert w.run("return window.unreadable;") == 1
+    choose(w, ("huge.stl", b"\x00" * 7_500_085))
+    w.page.wait_for_selector("#notices .n-what:text-is('huge.stl is 7.6 MB. PenguinSlicer takes parts up to 7.5 MB (150,000 triangles), so it was not added.')")
+    assert w.run("return window.unreadable;") == 1
+    assert [p for p, _ in uploads(w.server)] == ["/api/parts?units=in"]
+    assert w.problems == []
+
+
 def test_a_part_the_slice_service_refuses_is_a_notification_naming_it_and_no_row(wizard):
     w = wizard(320)
     choose(w, ("kept.stl", box_stl(b"kept")))

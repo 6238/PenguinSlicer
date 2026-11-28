@@ -20,9 +20,10 @@ import { formatSize } from '../units.js';
 import { el, message } from './telling.js';
 
 // A warning's sentences as a message's two lines: the first sentence, and the rest, the words
-// unchanged.
+// unchanged. A sentence ends at a full stop, question or exclamation mark followed by a space and
+// a capital letter, so that "e.g. on" or "i.e. 0.2 in" does not end one.
 export function firstSentence(text) {
-  const match = /^(.+?[.!?])\s+(\S[\s\S]*)$/.exec(text);
+  const match = /^(.+?[.!?])\s+(\p{Lu}[\s\S]*)$/u.exec(text);
   return match ? [match[1], match[2]] : [text, null];
 }
 
@@ -58,12 +59,11 @@ export function createPartsStep(section, { parts, geometry, panel, window: win =
     radios[value] = radio;
   });
 
-  // ---- adding files
-  async function add(files) {
+  // ---- adding files: handed over as the browser gives them; parts.js checks each one's size and
+  // reads it in its turn, refusing alone a file it cannot read
+  function add(files) {
     const chosen = Array.from(files);
-    if (!chosen.length) return;
-    const read = await Promise.all(chosen.map(async (f) => ({ name: f.name, bytes: await f.arrayBuffer() })));
-    await parts.addFiles(read);
+    if (chosen.length) parts.addFiles(chosen);
   }
   dropzone.addEventListener('click', () => input.click());
   dropzone.addEventListener('keydown', (event) => {

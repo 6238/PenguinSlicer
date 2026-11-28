@@ -665,6 +665,7 @@ failure of the same part replaces its notification.
 | The file is a text STL | The slice service's | That a binary STL is needed, naming the file: an STL file can be written as text or as binary, and the slice service reads only the binary kind, whose length it can check exactly. The remedy is to export the part again as a binary STL | The same |
 | The slice service's check refuses the part: too small or flat, nothing to print, or too large for the printer | The slice service's | Which part and what is wrong with it. For an uploaded file refused as too large, the notification is followed by the wizard's own reminder of how the file was read ("STL files are being read in inches."), since a file in millimetres read as inches is the likeliest cause, and the switch is beside the upload area | The same |
 | The part is over the size limit | The wizard's, since the page checks before sending | See [The limits on a plate](#the-limits-on-a-plate) | The same |
+| The browser cannot read the chosen file at all: it was moved, deleted or locked after it was chosen | The wizard's, since nothing was sent | That the file could not be read, naming it as it was chosen, so it was not added, and to check that the file is still there and add it again. The other files dropped or chosen with it are added as usual | The same |
 
 A part the slice service copes with but warns about is added, and the warning stays on its
 row, in amber, without holding Next. The warning's sentences are the slice service's. The
@@ -697,9 +698,9 @@ sentence is shown.
 
 | Limit | What it protects | What the user sees |
 |---|---|---|
-| A part is at most 7.5 MB, which is 150,000 triangles | The slice service's memory and time for one part, and the size of one upload | A notification, and the part is not added: "bracket.stl is 9.1 MB. PenguinSlicer takes parts up to 7.5 MB (150,000 triangles), so it was not added. Export it again from your CAD program at a coarser resolution." The page checks the size before uploading, so nothing is sent |
+| A part is at most 7.5 MB, which is 150,000 triangles | The slice service's memory and time for one part, and the size of one upload | A notification, and the part is not added: "bracket.stl is 9.1 MB. PenguinSlicer takes parts up to 7.5 MB (150,000 triangles), so it was not added. Export it again from your CAD program at a coarser resolution." The page checks the file's size before it even reads the file, so nothing is read or sent |
 | A plate uses at most 25 different parts | The slice service's disk, which no one plate may fill | The twenty-sixth is not added, and a notification says "A plate takes up to 25 different parts, so Gusset Plate was not added. Remove a part, or print it on a new plate." Raising the quantity of a part already in the list still works |
-| A plate holds at most 150 instances | The slice service's limit on placements | One part's quantity cannot be typed or clicked past 150. When the parts together pass it, a red message under the list says "This plate would hold 163 instances. Up to 150 instances per plate; print the rest on a new plate.", and Next is off |
+| A plate holds at most 150 instances | The slice service's limit on placements | One part's quantity cannot be typed or clicked past 150. When the parts together pass it, those still arriving counted, a red message under the list says "This plate would hold 163 instances. Up to 150 instances per plate; print the rest on a new plate.", and Next is off |
 
 For a part picked in Onshape that comes out over 7.5 MB, the notification names the part
 and says it is too detailed to slice here. Whether the Onshape integration then exports it

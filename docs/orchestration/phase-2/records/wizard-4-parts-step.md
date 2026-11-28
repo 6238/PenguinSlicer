@@ -52,9 +52,11 @@ and, in plain words, in the guide's [What is to be built, by phase](../../../../
    value". Inches is the default configuration's value. To overrule: `units` in
    `wizard/src/parts.js`.
 10. **A warning on a row is drawn as the mockup's amber message: its first sentence bold, the
-    rest beneath**, the slice service's words unchanged, split at the first full stop followed
-    by a space. The contract gives a warning one `message`; the mockup draws two lines. To
-    overrule: `firstSentence` in `wizard/src/panel/parts-step.js`.
+    rest beneath**, the slice service's words unchanged, split at the first full stop, question
+    or exclamation mark followed by a space and a capital letter (since the review: "e.g. on"
+    and "i.e. 0.2 in" no longer end the first line). The contract gives a warning one
+    `message`; the mockup draws two lines. To overrule: `firstSentence` in
+    `wizard/src/panel/parts-step.js`.
 11. **A row's size is the record's `size_mm`, the slice service's measure, in the part's own
     units**, with the tooltip "Size as modelled, in inches (this file was read in inches)". The
     mockup's tooltip said "STL files are read in inches", which the switch can make untrue for
@@ -80,8 +82,10 @@ and, in plain words, in the guide's [What is to be built, by phase](../../../../
     with its record arrives at once and is read for drawing; one without is uploaded again (its
     bytes are kept); one whose bytes are gone is dropped. The opening waits only for the
     storage, never for an upload. The full-plate storage test in Chromium now stores real STL
-    files with their records, since the page reads every stored part on opening (3.4 s for the
-    test, was 1.35 s).
+    files with their records, since the page reads every stored part on opening (1.76 s and
+    1.86 s for the test in two runs after the review, on an aarch64 Linux machine of 8
+    processors shared with other work; 3.4 s once while it was busier; 1.35 s before this
+    batch).
 17. **A stored part carries its `quantity`**, beside `sha256`, `units`, `name`, `record` and
     `saved`; the record is null until the upload is answered. The details listed the fields
     without a quantity.
@@ -115,6 +119,36 @@ and, in plain words, in the guide's [What is to be built, by phase](../../../../
     given to the fake front server, in seven states the mockup shows and four it never drew;
     the parts are boxes, not the mockup's generated parts.
 
+### Decided while fixing the review's findings
+
+26. **A file the browser cannot read is refused alone, with a notification of the wizard's
+    own, `wizard.file_unreadable`**: "gone.stl could not be read, so it was not added." and
+    "Check that the file is still there, then add it again.", with "Your other parts are fine."
+    before it while the list holds parts; the browser's reason (`NotReadableError: …`) in its
+    `detail`; no report sent, since the fault is the file's, not the page's. The guide listed
+    "a file the page itself cannot read" among the wizard's own failures and gave no sentence
+    or code. Each file is now read in its turn (`addFiles` in `wizard/src/parts.js` takes the
+    browser's File objects), after its size is checked by `File.size`, so a file over the
+    limit is never read into memory and only one file's bytes are being read at a time. The
+    guide and the details now say so. To overrule: `fileUnreadable` in
+    `wizard/src/sentences.js` and `addFile` in `wizard/src/parts.js`.
+27. **The reminder after a part refused as too large names the units the file was read in**,
+    not the switch's setting at the moment of the refusal; the two differ only when the switch
+    is turned during an upload. The guide says "how the file was read"; the details' test
+    sentence said "the switch's current units" and now says the former. To overrule:
+    `tellNotAdded` in `wizard/src/parts.js`.
+28. **The figure measured for the full-plate storage test** replaces the one written while the
+    machine was busy (decision 16).
+
+The review's findings declined:
+
+- **Minor finding 4, decision 7 (New plate hidden on an empty plate), is kept, not reverted.**
+  The reviewer is right that it overrules the guide's sentence ("When the plate holds parts
+  it asks first") rather than settling something the guide left open. It is kept because
+  reverting would put back a button that, on an empty plate, does nothing a user can see, and
+  the guide now says what is built; it is listed under "For the owner to look at" so that the
+  owner decides.
+
 ## Targets missed
 
 Differences between the mockup's Parts step and the built one, seen in the pairs of
@@ -137,7 +171,12 @@ Differences between the mockup's Parts step and the built one, seen in the pairs
   name in plain text, the header 2 px shorter without the icon, so everything below sits 2 px
   higher; the built panel is 760 px tall in the pictures and the mockup's 750 px.
 
-No figure of the documents was measured in this batch.
+- **A warning's first line can still end early** at an abbreviation followed by a capital
+  letter ("e.g. PLA"): the split (decision 10) knows no list of abbreviations. None of the
+  slice service's warning sentences has one today.
+
+No target figure of the documents was measured in this batch. The one figure measured is the
+time of the full-plate storage test (decision 16), which has no target.
 
 ## Not done
 
@@ -154,13 +193,18 @@ No figure of the documents was measured in this batch.
 
 ## For the owner to look at
 
+- **Decision 7 overrules the guide.** The guide said New plate "asks first when the plate holds
+  parts", which implies a button also on an empty plate; the batch hides it there and changed
+  the guide's sentence to match. If the button should show on an empty plate too, it acts
+  there at once, without asking (`.new-plate` in `wizard/src/panel/parts-step.js`).
+
 - The pairs, mockup beside the built page, at 320, 480, 520 and 680 px, in each state of the
   Parts step the mockup shows and in New plate's confirmation, a part over the size limit, the
   twenty-sixth part and a part the page cannot draw:
   [docs/orchestration/phase-2/look/wizard-4/index.html](../../look/wizard-4/index.html), made
   again with `make -C wizard look-parts-step`.
 - `make -C wizard test` and `make -C wizard test-browser`; the new tests are
-  `wizard/tests/parts.test.js`, `wizard/tests/units.test.js`, the stopped requests in
+  `wizard/tests/parts.test.js`, `wizard/tests/parts-step.test.js`, `wizard/tests/units.test.js`, the stopped requests in
   `wizard/tests/retry.test.js` and `wizard/tests_browser/test_parts_step.py`.
 - With the three components started as
   [Running phase 2 on one machine](../../../../front/README-details.md#running-phase-2-on-one-machine)

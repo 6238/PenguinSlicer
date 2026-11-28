@@ -492,7 +492,7 @@ Settings). The page acts on a report's `code` and `retryable`, never on the stat
 | Printer delivery's, from phase 5: a send refused, a print that failed or waits for a person, a wrong pairing code, a limit passed | `delivery.*` | Printer delivery | Shows them as they are |
 | The front server's own: a sign-in that could not be made, a group the user is not in, a sliced file that has expired or would be too large | `front.*` ([its list](../contracts/wizard-front-server.md#the-front-servers-error-reports)) | The front server | Shows them as they are |
 | The Onshape integration's, from phase 4: a part Onshape cannot export | Named in phase 4 | The Onshape integration | Shows them as they are |
-| In the browser: no answer from the front server, an answer of the front server the page cannot read, the page's own checks before sending (a file over the size limit, a twenty-sixth part, a plate over 150 instances), every placement problem on the Layout step, a file the page itself cannot read, a 3D view that is lost, storage that fails | `wizard.*` (`wizard.bad_answer`, `wizard.layout_failed`, `wizard.part_not_drawable`, `wizard.part_over_size`, `wizard.too_many_parts`, `wizard.too_many_instances`, …): the wizard's own, gathered in `wizard/src/sentences.js` and, for the geometry, `wizard/src/geometry/errors.js` (not `messages.js`, a name the worker's module has) | The wizard | Writes them |
+| In the browser: no answer from the front server, an answer of the front server the page cannot read, the page's own checks before sending (a file over the size limit, a twenty-sixth part, a plate over 150 instances), every placement problem on the Layout step, a file the page itself cannot read, a 3D view that is lost, storage that fails | `wizard.*` (`wizard.bad_answer`, `wizard.layout_failed`, `wizard.part_not_drawable`, `wizard.part_over_size`, `wizard.file_unreadable`, `wizard.too_many_parts`, `wizard.too_many_instances`, …): the wizard's own, gathered in `wizard/src/sentences.js` and, for the geometry, `wizard/src/geometry/errors.js` (not `messages.js`, a name the worker's module has) | The wizard | Writes them |
 
 States that are not failures are the wizard's to put into words, from the figures it is
 sent: a slice waiting behind others or waiting while the slicer restarts, a busy printer, a
@@ -918,7 +918,14 @@ the switch's setting at that moment, `stl_bytes` the file's bytes unchanged; fro
 Onshape integration hands one over. For each part of a part set, in order:
 
 1. **The size,** checked first, before the bytes are hashed or anything is sent: a part over
-   `MAX_PART_BYTES` is not added (notification below).
+   `MAX_PART_BYTES` is not added (notification below). For a file this is the file's own size
+   (`File.size`), before its bytes are read; each file is then read in its turn, on its own, so
+   that a file the browser cannot read (moved, deleted or locked after it was chosen: its
+   `arrayBuffer()` rejects, in Chromium with `NotReadableError`) is refused alone with the
+   notification `wizard.file_unreadable` of `wizard/src/sentences.js`, "gone.stl could not be
+   read, so it was not added." and "Check that the file is still there, then add it again."
+   ("Your other parts are fine." before it while the list holds parts), the browser's reason in
+   its `detail`, no report sent, and the other files of the drop go on.
 2. **One part, one row.** The page hashes the bytes (SHA-256, by the browser's own digest,
    off the main thread). A part whose hash and units are those of a part already on the
    plate, arrived or still arriving, raises that part's quantity by the part set's `quantity`
@@ -952,7 +959,7 @@ its own drawing and measuring.
 
 | Answer | The page |
 |---|---|
-| `201` with the part's record: `sha256`, `units`, `measurements` (`triangles`, `size_mm`, `volume_mm3`), `warnings` | Compares `sha256` and `units` with its own and uploads once more if they differ (a second difference is a `page_failed` report, and the part is not added, with the notification of `wizard.bad_answer`). Keeps the record beside the part; the row's size is the record's `size_mm` in the part's own units (`formatSize`). Shows each warning's `message` on the row in amber, as a message whose first line is the sentence's first sentence and whose second is the rest, the words unchanged, without holding Next. A record the page cannot use (not an object; `sha256` not 64 lowercase hexadecimal characters; `units` neither `in` nor `mm`; `size_mm` not three numbers; `warnings` not a list of objects each with a `message`) is `wizard.bad_answer`, and the part is not added |
+| `201` with the part's record: `sha256`, `units`, `measurements` (`triangles`, `size_mm`, `volume_mm3`), `warnings` | Compares `sha256` and `units` with its own and uploads once more if they differ (a second difference is a `page_failed` report, and the part is not added, with the notification of `wizard.bad_answer`). Keeps the record beside the part; the row's size is the record's `size_mm` in the part's own units (`formatSize`). Shows each warning's `message` on the row in amber, as a message whose first line is the sentence's first sentence and whose second is the rest, the words unchanged, without holding Next; a sentence ends at a full stop, question or exclamation mark followed by a space and a capital letter, so that "e.g. on" or "i.e. 0.2 in" does not end one (`firstSentence` in `wizard/src/panel/parts-step.js`). A record the page cannot use (not an object; `sha256` not 64 lowercase hexadecimal characters; `units` neither `in` nor `mm`; `size_mm` not three numbers; `warnings` not a list of objects each with a `message`) is `wizard.bad_answer`, and the part is not added |
 | `413` `slice.part_too_detailed` | The notification of [A part that cannot be used](#a-part-that-cannot-be-used), with the slice service's sentences |
 | `422` `slice.part_unreadable`, `slice.part_not_binary`, `slice.part_too_small`, `slice.part_no_volume`, `slice.part_too_large` | The notification of [A part that cannot be used](#a-part-that-cannot-be-used); the part is not added |
 | `400` `slice.bad_units` or `front.bad_request` | A fault of the page: shown as a notification, reported as `page_failed` with the part's hash; the part is not added |
@@ -981,6 +988,7 @@ its notification. Next stays as it was, and there is no Try again
 | A text STL | `slice.part_not_binary` | The slice service's: that a binary STL is needed; to export it again as a binary STL |
 | Too small or flat, nothing to print, too large for the printer | `slice.part_too_small`, `slice.part_no_volume`, `slice.part_too_large` | The slice service's. For an uploaded file refused as too large, followed by the wizard's own reminder of how the file was read ("STL files are being read in inches." or "…in millimetres."), since a file in millimetres read as inches is the likeliest cause |
 | Over the size limit | The page's own check; `slice.part_too_detailed` should the slice service refuse all the same | See [The limits on a plate](#the-limits-on-a-plate) |
+| The browser cannot read the chosen file at all | `wizard.file_unreadable`, the page's own: nothing was sent | The wizard's: that the file, named as the user chose it, could not be read, so it was not added; to check that the file is still there and add it again ([Adding a part](#adding-a-part), step 1) |
 
 The part's record carries no `where`, so a warning's sentence from an upload does not name
 the part; the row it stands on does. The warnings expected are `slice.part_not_watertight`,
@@ -1020,7 +1028,14 @@ same file added twice is one row with quantity 2, and the same file under the ot
 two rows; each failure row of the table, from the fake front server's error report, shows
 its sentences and adds no row; "Your other parts are fine." shows only with other parts
 listed; a second failure of one part replaces its notification; an upload refused as too
-large is followed by the reminder in the switch's current units; a warning stays on its row
+large is followed by the reminder of the units the file was read in, even when the switch was
+turned during its upload; a file over the size limit is refused by its size before it is read;
+a file the browser cannot read is refused alone with its notification and the other files of
+the drop are added; a part still arriving that takes the plate past 150 instances shows the
+red message while it arrives; a record with the right hash and the other units is uploaded
+once more and, a second time, is a `page_failed` report and `wizard.bad_answer`; a part still
+being written to the browser's storage when New plate is confirmed is never uploaded; a stored
+part whose record the page cannot use is uploaded again when the page opens; a warning stays on its row
 and Next stays on; a part the worker cannot read, accepted by the fake front server, is not
 added and sends one `part_not_drawable` report; a part arriving after the user left joins
 the Layout step and shows the notification; New plate with parts asks first and, confirmed,
@@ -1046,9 +1061,12 @@ Every test above is built but a late part joining the Layout step, which comes w
 (its notification is built): `tests/parts.test.js` without a browser window, on the fake clock,
 the fake front server (which answers an upload with the record of the bytes sent, `sha256` and
 `units` included), the fakes of the storage and the real worker's code in the test's thread,
-each refusal and each way a record can be unusable on purpose; `tests/units.test.js` for the
+each refusal and each way a record can be unusable on purpose, its files handed over as the
+browser hands them (a name, a size and a read that can fail); `tests/parts-step.test.js` for
+how a warning is split into its two lines; `tests/units.test.js` for the
 sizes; and `tests_browser/test_parts_step.py` in Chromium for the upload area by a chosen
-file, a drop and the keyboard, the switch kept through a refresh, a row with its picture, the
+file, a drop and the keyboard, a file Chromium cannot read (its read made to fail as
+Chromium's does) beside one it can, an over-size file never read, the switch kept through a refresh, a row with its picture, the
 quantity held at 150 as it is typed, the red message and Next, each kind of notification, a
 warning on its row, the amber line of a part the browser could not save (its write refused on
 purpose), a row slow at 4 s and not at 3.9 s, a part the page cannot draw with its one report,
@@ -2167,8 +2185,9 @@ browser, a refresh, a closed tab's plate taken up, `owner` stored from the start
 by the browser reported once, and the full plate of 25 parts of 7,500,084 bytes stored and read back
 after a refresh (1.35 s for the test in headless Chromium on the machine without a graphics card,
 none refused; since the Parts step, each a binary STL of 150,000 triangles stored with its record,
-which the page opening again takes up as 25 rows with their pictures and uploads nothing, 3.4 s for
-the test). The 12 hours are the fast suite's alone, on its fake clock. That the locks seam never
+which the page opening again takes up as 25 rows with their pictures and uploads nothing, 1.76 s and
+1.86 s for the test in two runs on an aarch64 Linux machine of 8 processors shared with other
+work, and 3.4 s once while that machine was busier). The 12 hours are the fast suite's alone, on its fake clock. That the locks seam never
 waits for a held lock is proved on an event by `tests/locks.test.js`, over a fake of
 `navigator.locks` that queues a request without `ifAvailable` as the standard does and says so; the
 duplicated tab in Chromium shows the same with the real locks. The page's entry point (`main.js`)
