@@ -419,21 +419,21 @@ def test_the_retry_messages_on_the_panel_line(wizard):
     assert not visible(w.page, "#step-why")
     w.page.clock.run_for(1)                                  # 20 s
     line = w.page.locator("#step-why")
-    assert line.evaluate("e => e.firstChild.textContent") == "The server is being slow. Your browser is retrying in 11 s. "
+    assert line.evaluate("e => e.firstChild.textContent") == "The server is being slow. Your browser is retrying in 11 s. "
     assert line.locator("button").inner_text() == "Retry now"
     assert line.evaluate("e => getComputedStyle(e).color") == "rgb(154, 103, 0)"       # amber, #9a6700
     w.page.clock.run_for(1000)
-    assert "retrying in 10 s." in line.inner_text()
+    assert "retrying in 10 s." in line.inner_text()
     with w.page.expect_event("requestfailed"):
         line.locator("button").click()                     # Retry now, at 21 s: at once
     w.until("return wizard.api.waiting() === 1;")
-    assert "retrying in 30 s." in line.inner_text()
+    assert "retrying in 30 s." in line.inner_text()
     for _ in range(9):                                       # attempts at 51, 81 … 291 s
         attempt(w, "/api/me", 30000)
     w.until("return wizard.api.waiting() === 1;")
-    assert "retrying in 9 s." in line.inner_text()           # 291 s: counting down to the last attempt, at 300 s
+    assert "retrying in 9 s." in line.inner_text()           # 291 s: counting down to the last attempt, at 300 s
     w.page.clock.run_for(8000)                               # 299 s
-    assert "retrying in 1 s." in line.inner_text()
+    assert "retrying in 1 s." in line.inner_text()
     with w.page.expect_event("requestfailed"):
         w.page.clock.run_for(1000)                           # 300 s: the last attempt
     w.until("return wizard.api.waiting() === 1;")

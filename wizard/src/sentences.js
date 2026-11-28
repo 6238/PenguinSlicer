@@ -5,8 +5,9 @@
 // geometry/errors.js.
 
 // The panel line's lasting use (the guide, "When the server is slow or cannot be reached").
+// A no-break space joins the figure to its unit, so a narrow panel never wraps between them.
 export const SERVER_SLOW = (seconds) => (seconds > 0
-  ? `The server is being slow. Your browser is retrying in ${seconds} s.`
+  ? `The server is being slow. Your browser is retrying in ${seconds} s.`
   : 'The server is being slow. Your browser is retrying now.');
 export const RETRY_NOW = 'Retry now';
 export const SERVER_UNREACHABLE = 'The server could not be reached.';

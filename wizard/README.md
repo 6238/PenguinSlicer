@@ -376,14 +376,24 @@ every request it makes, and a user sees a pause, not an error.
 |---|---|
 | Up to 20 seconds | Nothing, except on the thing that is waiting: a part's row says "Taking longer than usual; still trying…" after 4 seconds |
 | 20 to 300 seconds | The panel line, in amber: "The server is being slow. Your browser is retrying in 28 s.", counting down to the next attempt, with a link, "Retry now"; while an attempt is being made, "The server is being slow. Your browser is retrying now." |
-| After 300 seconds | The panel line, in red: "The server could not be reached.", with one button, **Try again**, which starts the 300 seconds afresh. The last attempt is made at 300 seconds, so the countdown always runs to a real attempt. When the server itself asks the browser to wait past the 300 seconds, no attempt is left to count down to, and the red line shows from 20 seconds |
+| After 300 seconds | The panel line, in red: "The server could not be reached.", with one button, **Try again**, which starts the 300 seconds afresh. The last attempt is made at 300 seconds, so the countdown always runs to a real attempt |
+
+One case shows the red line early. When the server itself asks the browser to wait past
+the 300 seconds, no attempt is left to count down to, so the red line with Try again shows
+from 20 seconds, in place of the amber one.
 
 These sentences are the wizard's own, since no component answered to write one, and "the
 server" in them is the front server, the only server a user's browser knows. The waits
 between attempts grow, doubling from one second to thirty, so there is something to count
-down and a struggling front server is not hammered. Each attempt has a time limit that
-covers the whole answer, not only its start, so an answer that stops halfway, as one does
-when the server restarts mid-answer, is simply tried again. "Retry now" lets a user who has just
+down and a struggling front server is not hammered. Each attempt has a time limit of 15
+seconds (60 for adding a part) for the answer to begin, and the same limit on any silence
+while the rest of the answer arrives: an answer that stops halfway, as one does when the
+server restarts mid-answer, is simply tried again, while a large answer that keeps arriving,
+such as a sliced file of up to 50 MB over a slow connection, is read to its end however
+long it takes. Sending a part has no such allowance, because a browser does not tell the
+page how much of an upload has gone: the whole part must be sent within the 60 seconds,
+which for the largest part allowed, 7.5 MB, needs an upload speed of about 1 Mbit/s;
+below that the largest parts cannot be added. "Retry now" lets a user who has just
 mended their own network skip the countdown. The message is on the panel line and not a
 notification because it concerns the whole panel and must stay as the user moves between
 steps; it goes the moment a request is answered, and since the server has then answered,
@@ -1866,6 +1876,8 @@ card are confirmed.
 | Tooltip delay | 150 ms; printer details close 300 ms after the pointer leaves | Help that arrives while the user still wants it, without flicker | Accepted in the mockup. Met for the tooltip; the printer details come in phase 5 | A test with a clock the test moves |
 | Quiet retrying | 20 seconds | A deploy's gap passing unseen | The architecture. Met | The same |
 | Retrying in all | 300 seconds, waits doubling from 1 to 30 seconds | A long outage ending in a clear answer rather than a frozen panel | The architecture; the waits set here. Met | The same |
+| One attempt of a request | 15 seconds for the answer to begin (60 for adding a part), and the same for any silence while the rest arrives; an answer that keeps arriving has no limit on its length | A stalled answer being tried again, while a sliced file of up to 50 MB still downloads on a slow connection | Set here. Met | A test with a clock the test moves, the answer arriving in parts |
+| Sending a part | The whole part within 60 seconds: about 1 Mbit/s of upload speed for a part of 7.5 MB | Adding a part not hanging on a lost connection | Set here. Not met below that speed: the largest parts cannot be added, since a browser does not tell the page how much of an upload has gone | Arithmetic from the two figures; unmeasured on a real connection |
 | A progress stream treated as failed | After 20 seconds of failing to reopen, or after 45 seconds open with nothing carried | A card never looking current when the server is lost | Set here; 45 seconds is three times the fifteen at which the front server keeps a stream alive | The same |
 | The main thread held | Never for more than 250 milliseconds, on any step, with any plate up to the limits, on the machine without a graphics card | A panel that never reads as frozen | Set here; unmeasured | Measured by the page itself in tests and in real use ([What the wizard reports about itself](#what-the-wizard-reports-about-itself)) |
 | A part's row says it is slow | After 4 seconds | Knowing the click registered | Accepted in the mockup. The moment is met by the code that makes every request; the row comes with the Parts step | The same |

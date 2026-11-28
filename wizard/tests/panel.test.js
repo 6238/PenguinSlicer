@@ -86,7 +86,7 @@ test('the panel line shows nothing, the passing use, or the lasting use', () => 
   assert.deepEqual(lineContent({ kind: 'none' }, 'Layout first: there are no instances.'),
     { kind: 'passing', text: 'Layout first: there are no instances.' });
   assert.deepEqual(lineContent({ kind: 'slow', seconds: 28 }, null),
-    { kind: 'slow', text: 'The server is being slow. Your browser is retrying in 28 s.', action: 'Retry now' });
+    { kind: 'slow', text: 'The server is being slow. Your browser is retrying in 28 s.', action: 'Retry now' });
   assert.deepEqual(lineContent({ kind: 'slow', seconds: 0 }, null),
     { kind: 'slow', text: 'The server is being slow. Your browser is retrying now.', action: 'Retry now' });
   assert.deepEqual(lineContent({ kind: 'unreachable' }, null),
@@ -148,7 +148,7 @@ test('the lasting use follows the retry board as it changes', () => {
   board.set({ kind: 'slow', seconds: 10 });
   board.set({ kind: 'none' });
   assert.deepEqual(shown.map((c) => c.text ?? c.kind),
-    ['The server is being slow. Your browser is retrying in 11 s.', 'The server is being slow. Your browser is retrying in 10 s.', 'none']);
+    ['The server is being slow. Your browser is retrying in 11 s.', 'The server is being slow. Your browser is retrying in 10 s.', 'none']);
   line.dispose();
 });
 

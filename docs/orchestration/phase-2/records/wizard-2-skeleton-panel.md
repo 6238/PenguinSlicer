@@ -19,9 +19,8 @@ of the built panel beside the mockup's are in
    constant in `wizard/src/page-constants.js` and its two tests.
 2. **The spread and the attempt times.** The details file proposed a spread of 0.1 and
    attempt times of 15 s and 60 s (upload). I settled them as proposed, the spread applied
-   either way (each wait times a factor between 0.9 and 1.1), and the attempt time covering
-   the body as well as the headers, so a body that stalls counts as a failed attempt. To
-   overrule: the constants in `page-constants.js`.
+   either way (each wait times a factor between 0.9 and 1.1). How the attempt time treats
+   the body is decision 29. To overrule: the constants in `page-constants.js`.
 3. **Module names that would collide in the flat `assets/`.** The details file proposed a
    module `messages` for the wizard's own sentences; `geometry/messages.js` already exists,
    and the build refuses two files of one built name. I named it `sentences.js`, and the
@@ -94,9 +93,10 @@ of the built panel beside the mockup's are in
     group. I drew it in the line's own grey, and the reload glyph as the mockup's `<a>` with the
     role of a button. To overrule: one rule in `css/wizard.css`.
 16. **Why a step holds a click, before the steps exist.** The steps' own rules come with the
-    steps. Until then the panel uses the mockup's own reasons ("add a part.", "a plate holds up
-    to 150 instances.", "there are no instances." and the Layout step's first problem, "the
-    plate is not sliced yet."), with Next following the same rules. To overrule: each step
+    steps. Until then the panel uses the mockup's own reasons: for the Parts step "add a
+    part." and "a plate holds up to 150 instances."; for the Layout step "there are no
+    instances.", then the layout's first problem when one is set; for the Preview step "the
+    plate is not sliced yet.". Next follows the same rules. To overrule: each step
     brings its rules in `whyNotLeave` in `wizard/src/panel/panel.js`.
 17. **The user's "next move".** The passing line goes at the next pointer press or key in the
     panel, or at a move to another step; a pointer merely moving does not end it. To overrule:
@@ -148,8 +148,8 @@ Decided while fixing the review's findings:
     wait then holds). Before the review a date was read as 0. To overrule: `retryAfterS` in
     `wizard/src/api.js`.
 27. **The body is read as text and parsed by the page.** So that `wizard.bad_answer` can carry
-    the start of the body, and so that a body that fails while it is being read (stalled past
-    the attempt time, or cut off by a restart) is told apart from a whole body that is not
+    the start of the body, and so that a body that fails while it is being read (silent past
+    the attempt time, decision 29, or cut off by a restart) is told apart from a whole body that is not
     JSON: the first is a quiet retry, the second the wizard's report. The fake front server
     has two steps for it, `stallBody` and `cutBody`. To overrule: `attemptOnce` in `api.js`.
 28. **The build and two kinds of name it could not handle.** A name inside a style sheet's
@@ -157,6 +157,34 @@ Decided while fixing the review's findings:
     name is not one quoted string (a template literal, an expression) is refused with a
     sentence naming the line, since the build cannot rewrite it and the page would fail only
     when it runs. To overrule: `css_code_only` and `DYNAMIC_IMPORT` in `wizard/build.py`.
+
+Decided while fixing the second review's findings:
+
+29. **The attempt time limits the body's silence, not its length** (blocking finding 1).
+    The contract leaves the attempt time to the builder; the details file said it covered
+    the whole body, which made a sliced file of up to 50 MB (14.1 MB the largest measured)
+    need about 27 Mbit/s (7.5 Mbit/s for 14.1 MB) to load at all: below that each attempt was
+    aborted at 15 s, retried for ever, and the panel line blamed the server. Now the 15 s
+    (60 s for an upload) run from sending until the headers arrive and then start afresh
+    each time bytes of the body arrive: the transport seam's `text(onProgress)` and
+    `bytes(onProgress)` read the body through its stream and tell `attemptOnce` of each part.
+    A body silent for 15 s is still a quiet retry, so the restart case the old rule served is
+    kept. I chose this over a longer time for the sliced file alone because any fixed time
+    sets a slowest connection, and this rule sets none. The fake front server has a step
+    `trickle` whose body arrives in parts the test releases; four tests cover a stalled
+    sliced file, one arriving a part every 14 s for 168 s, one that stops after its first
+    part (failed 15 s after it) and a JSON body arriving in parts. To overrule: `arm` in
+    `attemptOnce` in `wizard/src/api.js`.
+30. **The figure and its unit on the amber line are joined by a no-break space** (minor
+    finding 2), so at 320 px the line no longer wraps between "11" and "s.". The guide's
+    sentence reads the same. To overrule: `SERVER_SLOW` in `wizard/src/sentences.js`.
+31. **A dynamic import with a second argument is refused, and the documents say so** (minor
+    finding 5): the details file's and `build.py`'s lists of refusals name it, and a test
+    produces it. The page has no use for import attributes. To overrule:
+    `QUOTED_DYNAMIC_IMPORT` in `wizard/build.py`.
+32. **Try again leaves alone a request still within its 300 s** (minor finding 1): the rule
+    was built and untested; a test now presses Try again at 100 s and checks the request
+    still makes its last attempt at 300 s and then shows the red line, not a silent restart.
 
 Findings of the review declined, with the reason:
 
@@ -200,6 +228,16 @@ Findings of the review declined, with the reason:
    leaving one part row and one slice job followed.
 8. **"A panel resized across 480 px keeps advanced mode's open and closed sections"** is not
    tested: advanced mode is item 9.
+9. **Sending a part needs about 1 Mbit/s of upload speed for the largest part.** The 60 s of
+   an upload attempt cover sending the whole part, because the browser's `fetch` tells the
+   page nothing of a request body's progress, so the rule of decision 29 cannot apply to
+   it. A part of 7.5 MB in 60 s needs 7.5 × 8 / 60 = 1.0 Mbit/s; a 2 MB part about
+   0.27 Mbit/s. Below that speed each attempt of such a part is aborted at 60 s and retried,
+   and the part's row stays "Taking longer than usual; still trying…". The guide's limits
+   table and its section on a slow server now state the figure. Meeting it on any
+   connection would need a request whose sending can be followed (`XMLHttpRequest`'s upload
+   progress, through the transport seam) or a longer time; that is for the Parts step
+   (item 7) to decide with its row.
 
 ## Not done
 

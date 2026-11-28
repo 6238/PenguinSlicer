@@ -251,6 +251,7 @@ def test_a_name_in_a_style_sheets_comment_is_not_rewritten(tmp_path):
     "const m = await import(`./late.js`);\n",
     "const m = await import(name);\n",
     "const m = await import('./' + name);\n",
+    "const m = await import('./late.js', { with: { type: 'json' } });\n",
 ])
 def test_a_dynamic_import_the_build_cannot_rewrite_is_refused(tmp_path, text):
     src = page(tmp_path, {"main.js": text, "late.js": "export {};\n"})

@@ -160,7 +160,7 @@ retrying (`PANEL_MIN_PX` to `PANEL_LINE_PASSING_S`, `ROW_SLOW_S` to `ATTEMPT_TIM
 | `RETRY_TOTAL_S` | 300 | Retrying in all, before "could not be reached"; also the resubmitting while the slice service stops | The guide |
 | `RETRY_FIRST_WAIT_S`, `RETRY_MAX_WAIT_S` | 1, 30 | The waits between attempts, doubling from the first to the cap | The guide |
 | `RETRY_SPREAD` | 0.1 | A random spread on each wait, up to a tenth either way, so that many pages do not retry in step after a restart | This file |
-| `ATTEMPT_TIMEOUT_S`, `UPLOAD_ATTEMPT_TIMEOUT_S` | 15, 60 | An attempt with no answer in this time, its body included, counts as failed ("the time the builder sets" in the contract) | This file |
+| `ATTEMPT_TIMEOUT_S`, `UPLOAD_ATTEMPT_TIMEOUT_S` | 15, 60 | An attempt whose headers do not arrive in this time from sending, or whose body then brings no bytes for this time, counts as failed ("the time the builder sets" in the contract) | This file |
 | `STREAM_REOPEN_FAIL_S` | 20 | A progress stream failing to reopen this long counts as a failed request | The guide |
 | `STREAM_SILENT_S` | 45 | An open progress stream carrying nothing, not even a comment line, this long counts as failed | The guide; three times the front server's 15 seconds |
 | `POLL_S` | *proposed* 2 | Asking for the latest progress report in place of a stream ("every second or two") | The guide |
@@ -558,10 +558,19 @@ reports about itself are never retried, and a progress stream is reopened, not r
   moment the answer arrived; one the page cannot read is ignored. When it holds the next
   attempt past the 300 seconds, no attempt is left to count down to: the request waits for
   Try again at once, and from `RETRY_QUIET_S` the line is the red one.
-- **The attempt time covers the body:** `ATTEMPT_TIMEOUT_S` (`UPLOAD_ATTEMPT_TIMEOUT_S`) runs
-  from sending until the whole body is read. A body that stalls after the headers is aborted
-  then, and one cut off partway (a restart) fails at once; both are quiet retries, never
-  `wizard.bad_answer`, which is for a whole body the page cannot read.
+- **The attempt time covers the body by its silence, not its length:** `ATTEMPT_TIMEOUT_S`
+  (`UPLOAD_ATTEMPT_TIMEOUT_S`) runs from sending until the headers arrive, and then starts
+  afresh each time bytes of the body arrive (the transport seam's `text(onProgress)` and
+  `bytes(onProgress)` tell `attemptOnce` of each part). A body that brings no bytes for that
+  time is aborted, and one cut off partway (a restart) fails at once; both are quiet retries,
+  never `wizard.bad_answer`, which is for a whole body the page cannot read. A body that keeps
+  arriving is read to its end however long it takes, so a sliced file of up to 50 MB loads
+  on any connection that delivers some of it every 15 seconds.
+- **An upload's sending has no such allowance:** the browser's `fetch` tells nothing of a
+  request body's progress, so the 60 s of `POST /api/parts` cover sending the whole part.
+  A part of 7.5 MB (the most allowed) needs about 1 Mbit/s of upload speed
+  (7.5 MB × 8 / 60 s); below that every attempt of the largest parts fails and is retried
+  quietly ([Targets missed](../docs/orchestration/phase-2/records/wizard-2-skeleton-panel.md#targets-missed)).
 - **Retry now** makes the next attempt of every waiting request at once and does not restart
   the 300 seconds; the countdown then runs to the following wait. It never wakes a request
   that waits for Try again. **Try again** makes an
@@ -615,13 +624,16 @@ row and one slice job):
   at 299 s), and Retry now at 280 s or 299 s makes an attempt at once.
 - At 300 s the red line and Try again; Try again attempts at once and restarts the count (a
   further 20 s of failures shows the amber line again). Retry now attempts at once and does
-  not restart the count, and never wakes a request past its 300 s. Try again pressed while
+  not restart the count, and never wakes a request past its 300 s. Try again pressed while a
+  request is still within its 300 s leaves that request's count alone. Try again pressed while
   the attempt at 300 s is still being made sends the request again when that attempt fails.
 - `Retry-After: 7` holds the next attempt for 7 s; a `Retry-After` given as an HTTP date
   holds it until that moment; one that cannot be read is ignored; `Retry-After: 400` gives
   no line before 20 s and the red line with Try again from 20 s.
-- A body that stalls after the headers counts as failed at 15 s (an upload's at 60 s); a
-  body cut off partway is retried quietly, a JSON body and a sliced file's bytes alike.
+- A body that stalls after the headers counts as failed at 15 s (an upload's at 60 s), a
+  JSON body and a sliced file's bytes alike; one that stops after some bytes counts as
+  failed 15 s after its last bytes; a body that keeps arriving, a part every 14 s for
+  168 s, is read to its end in one attempt; a body cut off partway is retried quietly.
 - An answer without `X-PenguinSlicer-Version` is retried; each quiet-retry code is retried;
   `slice.busy`, a `delivery.*` refusal and an unknown code are shown at once.
 - A part's row says "Taking longer than usual; still trying…" at 4 s and not at 3.9 s; after
@@ -2252,7 +2264,8 @@ its bytes. It refuses, with a sentence that says why: no `index.html`; no versio
 placeholder, or more than one; a reference to another site; a reference to a file not in
 `wizard/src/` (or, from a module, `wizard/vendor/`); an absolute address; a bare module name
 other than `three`; a dynamic import whose name is not one quoted string (a template literal
-or an expression, which the build cannot rewrite); modules that import each other in a circle (no name could carry the hash
+or an expression, which the build cannot rewrite), or that has a second argument
+(`import('./a.js', { with: ... })`, which the page has no use for); modules that import each other in a circle (no name could carry the hash
 of what it imports); two files that would get the same built name. Only `src` and `href` are
 read in `index.html`: an address in another attribute (`srcset`, `poster`, `data`) is neither
 rewritten nor refused, and the content security policy is what stops it loading.

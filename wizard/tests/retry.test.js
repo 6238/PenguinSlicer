@@ -134,6 +134,19 @@ test('Try again while the attempt at 300 s is still being made sends the request
   assert.deepEqual(moments(server, clock, 'GET', '/api/me').slice(-2), [300, 315]);
 });
 
+test('Try again pressed while a request is still within its 300 s leaves that request\'s count alone', async () => {
+  const { clock, server, api } = setUp();
+  recordMoments(server, clock);
+  dropAll(server, 'GET', '/api/me', 100);
+  api.get('/api/me');
+  await clock.advanceTo(100 * S);
+  api.board.tryAgain();
+  await clock.advanceTo(400 * S);
+  assert.equal(server.made('GET', '/api/me').length, 15);
+  assert.equal(moments(server, clock, 'GET', '/api/me').at(-1), 300);
+  assert.deepEqual(api.board.state(), { kind: 'unreachable' });
+});
+
 test('with the spread, the waits stay within a tenth of 1, 2, 4 … 30 s', async () => {
   let n = 0;
   const { clock, server, api } = setUp({ random: () => [0, 1][(n += 1) % 2] });
@@ -310,6 +323,68 @@ test('an upload\'s 60 s cover its body too', async () => {
   await clock.advanceTo(61 * S);
   assert.equal((await result).ok, true);
   assert.deepEqual(moments(server, clock, 'POST', '/api/parts'), [0, 61]);
+});
+
+test('a sliced file whose bytes stall after the headers counts as failed at 15 s', async () => {
+  const { clock, server, api } = setUp();
+  recordMoments(server, clock);
+  server.script('GET', '/api/slices/3f9a1c2b/file', steps.stallBody(),
+    { kind: 'answer', status: 200, body: 'G1 X0', headers: { 'Content-Type': 'application/octet-stream' } });
+  const result = api.get('/api/slices/3f9a1c2b/file', { expect: 'bytes' });
+  await clock.advanceTo(15.9 * S);
+  assert.deepEqual(moments(server, clock, 'GET', '/api/slices/3f9a1c2b/file'), [0]);
+  await clock.advanceTo(16 * S);
+  assert.deepEqual(moments(server, clock, 'GET', '/api/slices/3f9a1c2b/file'), [0, 16]);
+  assert.equal((await result).ok, true);
+});
+
+test('a large sliced file that keeps arriving is read to its end, however long it takes', async () => {
+  const { clock, server, api } = setUp();
+  const chunks = Array.from({ length: 12 }, (_, i) => `G1 X${i}\n`);
+  const body = steps.trickle(200, chunks);
+  server.script('GET', '/api/slices/3f9a1c2b/file', body);
+  const result = api.get('/api/slices/3f9a1c2b/file', { expect: 'bytes' });
+  for (let i = 0; i < chunks.length; i += 1) {   // a part every 14 s: 168 s for the whole body
+    await clock.advance(14 * S);
+    body.trickle.next();
+  }
+  await clock.advance(0);
+  const answer = await result;
+  assert.equal(answer.ok, true);
+  assert.equal(new TextDecoder().decode(answer.body), chunks.join(''));
+  assert.equal(server.requests.length, 1);
+  assert.deepEqual(api.board.state(), { kind: 'none' });
+});
+
+test('a body that stops arriving counts as failed 15 s after its last bytes, not after its first', async () => {
+  const { clock, server, api } = setUp();
+  recordMoments(server, clock);
+  const body = steps.trickle(200, ['G1 X0\n', 'G1 X1\n']);
+  server.script('GET', '/api/slices/3f9a1c2b/file', body,
+    { kind: 'answer', status: 200, body: 'G1 X0', headers: { 'Content-Type': 'application/octet-stream' } });
+  const result = api.get('/api/slices/3f9a1c2b/file', { expect: 'bytes' });
+  await clock.advanceTo(10 * S);
+  body.trickle.next();                             // bytes at 10 s, then nothing more
+  await clock.advanceTo(24.9 * S);
+  assert.deepEqual(moments(server, clock, 'GET', '/api/slices/3f9a1c2b/file'), [0]);
+  await clock.advanceTo(26 * S);
+  assert.deepEqual(moments(server, clock, 'GET', '/api/slices/3f9a1c2b/file'), [0, 26]);
+  assert.equal((await result).ok, true);
+});
+
+test('a JSON body that keeps arriving is read to its end too', async () => {
+  const { clock, server, api } = setUp();
+  const text = JSON.stringify(example('wizard-front/me.json'));
+  const body = steps.trickle(200, [text.slice(0, 10), text.slice(10)], 'application/json');
+  server.script('GET', '/api/me', body);
+  const result = api.get('/api/me');
+  await clock.advance(14 * S);
+  body.trickle.next();
+  await clock.advance(14 * S);
+  body.trickle.next();
+  await clock.advance(0);
+  assert.deepEqual(await result, { ok: true, status: 200, body: example('wizard-front/me.json') });
+  assert.equal(server.requests.length, 1);
 });
 
 test('a body cut off partway, as by a restart, is a quiet retry and not the wizard\'s bad answer', async () => {

@@ -21,7 +21,7 @@ The build refuses, saying why: no index.html; a page with no version placeholder
 than one; a reference to another site; a reference to a file that is not in `wizard/src/` or,
 for a module, `wizard/vendor/`; an absolute address; a bare module name other than `three`;
 a dynamic import whose name is not one quoted string (a template literal or an expression,
-which the build cannot rewrite); modules that import each other in a circle; two files that would get the same built name.
+which the build cannot rewrite) or that has a second argument; modules that import each other in a circle; two files that would get the same built name.
 
 Usage: build.py [--src FOLDER] [--dist FOLDER] [--vendor FOLDER]
 """

@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createApi } from '../src/api.js';
+import { readBody } from '../src/seams/transport.js';
 import { FakeClock } from './fakes/clock.js';
 import { FakeFrontServer, errorReport, errorReportProblems, example, steps } from './fakes/front_server.js';
 
@@ -136,6 +137,16 @@ test('the sliced file comes back as bytes', async () => {
   server.script('GET', '/api/slices/3f9a1c2b/file', { kind: 'answer', status: 200, body: 'G1 X0', headers: { 'Content-Type': 'application/octet-stream' } });
   const result = await api.get('/api/slices/3f9a1c2b/file', { expect: 'bytes' });
   assert.equal(new TextDecoder().decode(result.body), 'G1 X0');
+});
+
+test('the browser\'s transport reads a body whole and tells of each part as it arrives', async () => {
+  const parts = ['G1 X0\n', 'G1 X1\n', 'G1 X22\n'].map((p) => new TextEncoder().encode(p));
+  const stream = new ReadableStream({ start(c) { for (const p of parts) c.enqueue(p); c.close(); } });
+  const told = [];
+  const whole = await readBody(new Response(stream), (n) => told.push(n));
+  assert.equal(new TextDecoder().decode(whole), 'G1 X0\nG1 X1\nG1 X22\n');
+  assert.deepEqual(told, [6, 6, 7]);
+  assert.equal((await readBody(new Response(null))).byteLength, 0);
 });
 
 test('a request counts as pending from its sending until its answer', async () => {

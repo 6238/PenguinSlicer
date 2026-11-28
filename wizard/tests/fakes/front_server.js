@@ -93,6 +93,23 @@ export const steps = {
   // The front server's headers arrive and its body is cut off partway (a restart): reading it
   // fails as the browser's fetch fails, with a TypeError.
   cutBody: (status = 200) => ({ kind: 'answer', status, body: '{"user": {"id"', headers: { 'Content-Type': 'application/json' }, bodyFails: 'cut' }),
+  // The front server's headers arrive and its body follows in parts, each when the test calls
+  // `step.trickle.next()`, as a large sliced file arrives over a slow connection; between two
+  // parts the body stalls.
+  trickle: (status, chunks, contentType = 'application/octet-stream') => {
+    const feed = {
+      given: 0,
+      reading: null,
+      next() {
+        if (!feed.reading) throw new Error('the page is not reading the body');
+        const chunk = chunks[feed.given];
+        feed.given += 1;
+        if (feed.reading.onProgress) feed.reading.onProgress(new TextEncoder().encode(chunk).length);
+        if (feed.given === chunks.length) feed.reading.resolve();
+      },
+    };
+    return { kind: 'answer', status, body: chunks.join(''), headers: { 'Content-Type': contentType }, trickle: feed };
+  },
 };
 
 // The default answer to each request of the contract that phase 2 makes, from its examples.
@@ -167,8 +184,17 @@ export class FakeFrontServer {
     if (!step.noVersion) headers['X-PenguinSlicer-Version'] = this.version;
     headers['Cache-Control'] = 'no-store';
     const lower = Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]));
-    const read = (parse) => {
+    const read = (parse, onProgress) => {
       if (step.bodyFails === 'cut') return Promise.reject(new TypeError('network error'));
+      if (step.trickle) {
+        return new Promise((resolve, reject) => {
+          if (signal && signal.aborted) { reject(abortError()); return; }
+          step.trickle.reading = { onProgress, resolve: () => resolve(parse(step.body)) };
+          if (signal) {
+            signal.addEventListener('abort', () => { step.trickle.reading = null; reject(abortError()); }, { once: true });
+          }
+        });
+      }
       if (step.bodyFails === 'stall') {
         return new Promise((resolve, reject) => {
           if (!signal) return;
@@ -182,8 +208,8 @@ export class FakeFrontServer {
       status: step.status,
       header: (name) => lower[name.toLowerCase()] ?? null,
       json: () => read((body) => JSON.parse(body)),
-      text: () => read((body) => body),
-      bytes: () => read((body) => new TextEncoder().encode(body).buffer),
+      text: (onProgress) => read((body) => body, onProgress),
+      bytes: (onProgress) => read((body) => new TextEncoder().encode(body).buffer, onProgress),
     });
   }
 }

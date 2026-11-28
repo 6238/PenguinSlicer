@@ -33,9 +33,17 @@ export function retryAfterS(value, nowMs) {
 
 // What one attempt gave: {answer: result} when the front server answered for good, or
 // {retry: true, retryAfterS} when the attempt counts as failed and is made again.
+// The attempt's time runs from sending until the headers arrive; then, while the body is read,
+// the attempt fails only when no bytes arrive for that same time. So a body that stalls fails
+// quietly, and a large one (a sliced file of up to 50 MB) arriving slowly is read to its end.
 async function attemptOnce({ transport, clock, method, path, headers, body, timeoutS, expect, tellVersion }) {
   const controller = new AbortController();
-  const timer = clock.after(timeoutS * 1000, () => controller.abort());
+  let timer = null;
+  const arm = () => {
+    if (timer !== null) clock.cancel(timer);
+    timer = clock.after(timeoutS * 1000, () => controller.abort());
+  };
+  arm();
   try {
     let answer;
     try {
@@ -47,14 +55,16 @@ async function attemptOnce({ transport, clock, method, path, headers, body, time
     if (!version) return { retry: true };           // not the front server's answer
     tellVersion(version);
     const success = answer.status >= 200 && answer.status < 300;
-    // The body is read within the attempt's time too: a body that stalls is aborted by the
-    // timer above and, like one cut off partway by a restart, makes the attempt fail quietly.
+    // While the body is read, each arrival of bytes gives the attempt its time afresh: a body
+    // that stalls is aborted by the timer and, like one cut off partway by a restart, makes the
+    // attempt fail quietly.
     let content = null;
     let text = '';
     if (answer.status !== 204) {
+      arm();
       try {
-        if (success && expect === 'bytes') content = await answer.bytes();
-        else text = await answer.text();
+        if (success && expect === 'bytes') content = await answer.bytes(arm);
+        else text = await answer.text(arm);
       } catch {
         return { retry: true };                     // the body stalled or was cut off
       }
@@ -75,7 +85,7 @@ async function attemptOnce({ transport, clock, method, path, headers, body, time
     }
     return { answer: { ok: false, status: answer.status, report: content } };
   } finally {
-    clock.cancel(timer);
+    if (timer !== null) clock.cancel(timer);
   }
 }
 
