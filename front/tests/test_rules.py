@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from flask import abort
 
-from front_helpers import environ
+from front_helpers import Lines, environ
 from penguin_front.app import create_app, json_body, page_file
 from penguin_front.errors import FRONT_REPORTS, FrontError, error_report
 from penguin_front.settings import Settings
@@ -31,16 +31,6 @@ BUILT = {("GET", "/signin"), ("GET", "/api/me"), ("GET", "/"), ("GET", "/assets/
          ("POST", "/api/reports/drawing")}
 #: The requests whose answers are page files, marked to be kept, not `no-store`.
 PAGE_FILES = {("GET", "/"), ("GET", "/assets/<file>")}
-
-
-class Lines:
-    """A stand-in for the log: the lines written, in order."""
-
-    def __init__(self):
-        self.lines = []
-
-    def write(self, event, **fields):
-        self.lines.append({"event": event, **fields})
 
 
 def contract_requests():

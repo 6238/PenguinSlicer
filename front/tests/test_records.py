@@ -5,17 +5,10 @@ import json
 
 import pytest
 
+from front_helpers import Lines
 from penguin_front import records
 from penguin_front.buckets import FolderBucket, NotFound
 from penguin_front.records import UnreadableRecord, read_record, write_record
-
-
-class Lines:
-    def __init__(self):
-        self.lines = []
-
-    def write(self, event, **fields):
-        self.lines.append({"event": event, **fields})
 
 
 @pytest.fixture

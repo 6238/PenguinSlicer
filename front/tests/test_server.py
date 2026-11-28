@@ -327,14 +327,12 @@ def served(tmp_path, clock):
     from penguin_front.app import create_app
     from penguin_front.settings import Settings
 
-    lines = []
+    from front_helpers import Lines
 
-    class Lines:
-        def write(self, event, **fields):
-            lines.append({"event": event, **fields})
-
+    log = Lines()
+    lines = log.lines
     app = create_app(Settings.from_environ(environ(tmp_path)), clock=clock,
-                     log=Lines(), version=VERSION)
+                     log=log, version=VERSION)
 
     @app.get("/t/x")
     def planted():
