@@ -1717,7 +1717,9 @@ Every record the front server writes to the state bucket carries its format numb
 server reads every format up to its own and refuses one it does not know, saying so in the
 log. As built (`penguin_front.records`): `write_record(bucket, name, kind, record)` is the
 one way a record is written, and always writes the front server's format for its kind
-(`FORMATS`: `configuration` 1, `sliced_file` 1), whatever `format` the record held;
+(`FORMATS`: `configuration` 1, `sliced_file` 1, `log_cursor` 1, the last being where the
+log's gathering of the slice service's lines stopped, [The log](#the-log)), whatever
+`format` the record held;
 `read_record(bucket, name, kind, log)` gives the record and its marker when its `format` is a
 whole number from 1 to the front server's, and otherwise raises `UnreadableRecord` and writes
 one line, `record_unreadable`, with the record's name, its kind, the format found and the
@@ -1791,6 +1793,39 @@ the slice service's lines the group, which the slice service never knows, from t
 noted beside the slice job ([Submitting](#submitting-a-plate-configuration)); a line whose
 slice job it cannot place keeps no group.
 
+**The gathering as built** (`penguin_front.gathering.Gatherer`, started by the running
+server; `gather_once()` for the tests):
+
+- every `LOG_GATHER_S` (60) on the front server's clock, and once at start, it asks
+  `GET /log?after=<n>` and asks again at once while `more` is true and the answer held
+  lines, at most `MAX_ASKS` (100) times in one gathering (*proposed*: ten times the 10,000
+  lines the slice service keeps), the rest waiting for the next minute;
+- a line whose `n` is not a whole number past the last one received, or that is not an
+  object, is dropped and counted in one line `slice_log_lines_unreadable` (`process`,
+  `count`), so no line is gathered twice;
+- a `process` other than the last one's writes `slice_log_process_changed` (`previous`,
+  `process`, `after`) and asks again from `0`, unless it had asked from `0` already;
+- `dropped` not 0 writes `slice_log_lines_dropped` (`process`, `after`, `dropped`);
+- the group is the one the following notes beside the slice job while it is followed
+  (`Follower.group_of`), or else the `group` of the slice job's record in the state bucket,
+  read once and remembered for the most recent `GROUPS_KEPT` (10,000) slice jobs
+  (*proposed*); a slice job whose record is missing or cannot be read is looked for once in
+  a gathering, and a line with no `job` or `user_key`, or with ones that cannot name a
+  record, keeps no group; a `group` a line carried from the slice service is removed;
+- **where it stopped** is a record in the state bucket, `log-cursor/slice.json` (kind
+  `log_cursor`: `process` and `after`), read at the first gathering and written after each
+  gathering that moved it, so that a front server started later goes on from there and
+  gathers no line twice; a cursor of another form, or of a format it does not read, is no
+  cursor. A cursor that cannot be read writes `slice_log_cursor_unreadable` and that minute
+  gathers nothing, so that lines are not gathered again; one that cannot be written writes
+  `slice_log_cursor_unwritten` and is kept in memory. The lines gathered reach the log
+  bucket within the minute, so a crash between the cursor and the file loses that minute's
+  lines, which stay in the slice service's own output;
+- a slice service that does not answer, or answers with what is not the log (a slice service
+  of a version without `GET /log` answers `404`), writes `slice_log_unavailable` (`why`,
+  `after`) once, and again only after an answer that was the log; nothing is gathered
+  meanwhile.
+
 **One file each minute holds the lines of all components.** About once a minute
 (`LOG_FLUSH_S`, 60) the front server writes everything gathered since the
 last file as one new file of newline-separated JSON, written once and never rewritten, since
@@ -1850,11 +1885,20 @@ request is not designed.
   dropped oldest first and counted; a failing standard output changes nothing (built).
 - The stand-in slice service's lines gain the group of their slice job, are fetched in order
   with the last number passed back, and none is fetched twice; a `more` answer is followed at
-  once; a changed `process` starts again from `0`; a `dropped` count is written as a line.
+  once; a changed `process` starts again from `0`; a `dropped` count is written as a line
+  (built: `tests/test_gathering.py`, with the cursor across a restart, a slice service that
+  does not answer and every answer of another form; and in `tests/test_server.py`, the
+  running server's gathered line in the log folder's file with its group).
 - A stop writes the gathered lines before the process ends (phase 3).
 - No line written during the whole fast suite contains the cookie, an Onshape token, a cookie
   key, the relay's secret key, a daemon's token or a pairing code; the test searches every
-  line for the values the suite used.
+  line for the values the suite used (built for what phase 2 holds: after every test,
+  `tests/conftest.py` with `tests/secret_watch.py` searches every line the log writes,
+  prints or gathers, every line given to a test's stand-in for the log, and every answer of
+  the front server, its headers but `Set-Cookie` and its body when held whole, for every
+  cookie key given or made, every cookie sealed and every token the stand-in for Onshape
+  issued; `tests/test_no_secrets.py` shows it finds one in each place. The relay's secret
+  key, a daemon's token and a pairing code join it in phase 5).
 - The log folder failing to be written leaves every answer unchanged (built).
 
 ## The page's reports about itself
@@ -1886,15 +1930,36 @@ few reports a minute, counted for the signed-in user and the report's `page`; pa
 sent and never a reason to refuse. A report never holds a part's bytes or geometry, a part's
 name in a drawing summary, or the browser's storage.
 
+**As built** (`penguin_front.reports`): the lines are `failure_report` and `drawing_report`,
+component `wizard`, carrying `user_key`, `group` when the page names one of the user's own,
+`page_version` when `X-PenguinSlicer-Page` has the version's form, then the report's fields
+in the contract's order. A required field missing, of the wrong kind or off its list is
+refused `400` `front.bad_request` naming the field, and nothing is written; an optional
+field of the wrong kind is dropped (a `part_sha256` that is not 64 lowercase hexadecimal
+characters among them, so that the field can never carry a part's name); a drawing summary
+of `layout` drops the fields that go `with preview`, and one of `preview` without them is
+refused. Numbers are any JSON number; `page` is cut at `PAGE_CHARS` (64, *proposed*: the
+contract gives no length, and the page's id is a UUID of 36). A body over `MAX_REPORT_BYTES`
+(16,384, *proposed*; a whole report is under 2 KB) is refused `400` `front.bad_request`
+before it is read, and one sent without `Content-Length` is read no further than one byte
+past it. The limit counts the signed-in user and the report's `page` together on a sliding
+minute (`penguin_front.ratelimit.RateLimit`); a refused report is not counted. A group the
+cookie does not list is left out of the line and writes no `refused` line, since the report
+is not refused.
+
 ### Tests
+
+Built: `tests/test_reports.py`.
 
 - Each kind of report is written as one line with exactly the contract's fields; a field
   not listed is dropped; a string over its length is cut; an enumerated value off its list
-  is dropped or refused (*proposed*: refused `400` `front.bad_request`).
+  is refused `400` `front.bad_request`.
 - A seventh report from one page in a minute (fake clock) is refused `429`
-  `front.too_many_reports`; another page of the same user is not.
+  `front.too_many_reports`; another page of the same user is not, nor the same page of
+  another user.
 - A report without a sign-in is refused `401`; one naming a group not the user's is still
   written, without the group.
+- A report over its size is refused before it is read, with or without `Content-Length`.
 
 ## The version, and old and new versions together
 
@@ -1934,10 +1999,12 @@ Three rules hold across a deploy:
 - Every answer of every request carries `X-PenguinSlicer-Version` in the contract's form,
   including a `404`, an error report and a `500` (built); a progress stream's first event is
   `version`.
-- The previous release's page (its built files) is run against the new front server.
+- The previous release's page (its built files) is run against the new front server (from
+  the second release on: before it there is no previous release).
 - The new front server reads a record of each kind and a cookie written by the previous one.
 - The new front server runs against the previous release's stand-in for the slice service,
-  kept from its example requests and answers, and the new one.
+  kept from its example requests and answers, and the new one (from the second release on;
+  the new one is `tests/slice_standin.py`).
 
 ## Starting, and what a restart does
 
@@ -1956,6 +2023,35 @@ record), taking each one's group from its record and its `slice_ended_at` from t
 `ended_at`, from which the two hours are counted. So a slice that ended while the
 front server was down is stored a moment after it comes back. It answers requests meanwhile.
 A secret it needs and lacks stops the start ([Secrets and settings](#secrets-and-settings)).
+
+**Collecting as built** (`penguin_front.collecting.Collector`, on a thread of its own, started
+by the running server after the `start` line; `collected` is set when it has ended):
+
+- the waits are the following's (`FIRST_WAIT_S` 1 doubling to `LONGEST_WAIT_S` 30), each
+  with a line `slices_list_retry` (`why`, `wait_s`); an answer other than `200` with a list
+  of slice jobs, and a state bucket that does not answer while the records are read, are
+  waited on and asked again like a slice service that does not answer, since following a
+  slice job without its record's group would store it without one;
+- a waiting or running slice job is followed (`Follower.follow`) with its record's `group`,
+  or none when it has no record;
+- a `done` one with `file_on_disk` true is followed, and so stored as every followed slice
+  job is, with its record's group and with the list's `ended_at` given to the following
+  (`follow(..., ended_at=)`) as the moment the slice ended, when its record is missing or
+  `submitted`. An `ended_at` not of the form RFC 3339 in UTC to the second counts the two
+  hours from when the following hears the slice is done. When its record is `stored` or
+  `failed` already (a front server stopped between writing the record and telling the slice
+  service), it is followed too: the following finds the record, fetches nothing and tells
+  the slice service to delete its copy;
+- every other slice job is left alone: one that ended `failed` or `cancelled`, a `done` one
+  whose sliced file the slice service no longer holds, and one whose record is `expired`,
+  which is never stored again;
+- an entry of another form (not an object; a `job` not of the id's form; a `user_key` empty,
+  holding a slash or otherwise unable to name a folder; a `progress` without a `state`)
+  writes `slices_entry_unreadable` with the entry cut to 300 characters, and is skipped;
+- the end writes `slices_collected`: `listed`, `followed`, `collecting`, `already_stored`,
+  `left` and `unreadable`. A slice job already followed (a page asked about it first) is
+  not followed twice;
+- asked to stop while it waits, it ends at once.
 
 | What the user did | Where it is | After a restart of the front server |
 |---|---|---|
@@ -1976,13 +2072,20 @@ repeated submission is answered with the first attempt's slice job. For a repeat
 ### Tests
 
 - Each row of the table is a test: the front server is stopped at that moment and started
-  again on the same folders and the same stand-ins, and the result is checked.
+  again on the same folders and the same stand-ins, and the result is checked (built for the
+  five rows of phase 2: `tests/test_restarts.py`; the browser's storage row as the page's
+  repeats after the restart answered as the first attempts were; with the architecture's
+  row of an open page, whose stream is closed at the stop and carries on when opened again;
+  and a slice that ended while the front server was down, stored on its return with the
+  slice service's end time. The three rows of phase 5 come with the relay).
 - A front server started while the stand-in holds one unfinished slice job and one
   finished, unstored one follows the first and stores the second, with the group its record
-  holds.
-- A finished slice job whose sliced file is already stored is not fetched again at start.
+  holds (built: `tests/test_collecting.py`, which holds the rest of this section's rules).
+- A finished slice job whose sliced file is already stored is not fetched again at start
+  (built).
 - A front server started while the stand-in does not answer keeps asking (fake clock),
-  answers other requests meanwhile, and follows the slice jobs once the stand-in answers.
+  answers other requests meanwhile, and follows the slice jobs once the stand-in answers
+  (built).
 
 ## Stopping
 
@@ -2059,9 +2162,15 @@ forty and four; build the four as a constant and the test below against fifty an
   which must give `threads_in_use` 2: the stream's request thread, counted from waitress's
   busy threads, and the following's).
 - With every thread held by the tests' streams, a further request waits and is served when
-  one closes (event-ordered, no sleep).
+  one closes (event-ordered, no sleep) (built: `tests/test_users_at_once.py`, three threads,
+  one the following's, two streams, the request seen waiting in waitress's queue and served
+  when the slice job's final report ends the streams).
 - Forty progress streams and three followings held open against the stand-ins, with short
-  requests still answered; from phase 5, with fifty held syncs beside them.
+  requests still answered; from phase 5, with fifty held syncs beside them (built:
+  `tests/test_users_at_once.py`, on the running server over HTTP. Since one user holds at
+  most four streams, the forty are ten users' four each, each user on a slice job of their
+  own, so ten followings rather than three; the threads are 40 + 10 + 7 = 57, and twenty
+  short requests are answered while the forty are open).
 - While slice jobs are followed, the running server serves with that many fewer threads,
   never fewer than one, and with all of them again once the followings end (built:
   `tests/test_server.py`).
@@ -2430,7 +2539,12 @@ outside the fast suite, from phase 3, `test-r2` and `test-hosted`, the short scr
 run against the hosted service after each deploy. Each target runs pytest from the project's
 environment, bounded on pytest's own process by `timeout` (`RUN_LIMIT_S`, 600) and by
 `prlimit` on its address space (`RUN_MEMORY`, 4G); each test is bounded to 30 seconds by
-pytest-timeout.
+pytest-timeout. The targets set `MALLOC_ARENA_MAX=2`: glibc reserves 64 MB of address
+space for each thread's own allocation arena, up to eight for each processor, and the test
+of forty progress streams holds about seventy threads, which with an arena each passed the
+4G limit and failed to start threads (seen on an aarch64 Linux machine, Fri 2026-11-27,
+Pacific time); the
+memory used is unchanged.
 
 The fast suite uses no real network, no real waiting and no fixed ports, and passes in any
 order, any number of times. A test that fails once is fixed at its cause, never retried.
@@ -2477,16 +2591,21 @@ order, any number of times. A test that fails once is fixed at its cause, never 
 - `onshape_standin.py`: `OnshapeStandIn`, Onshape's approval page and token exchange and the
   two calls of a sign-in, counting each call (`calls`); `refuse_approval`, `refuse_codes`,
   `unreachable`.
+- `secret_watch.py`: the `Watch` that `conftest.py` gives every test, holding the secrets the
+  test used and every log line and answer it wrote, searched after the test
+  ([The log](#the-log), its tests).
 - `conftest.py` gives every test a `standin` fixture on the test's clock, and
-  `front_helpers.shut(app, standin)` ends what an application started: its pages' progress
-  streams and its followings, then the stand-in's streams, then it waits for the
-  followings' threads.
+  `front_helpers.shut(app, standin)` ends what an application started: its collection at
+  start and its gathering, its pages' progress streams and its followings, then the
+  stand-in's streams, then it waits for the followings' threads.
 - **What makes the suite take seconds:** every test builds the application on fresh
   folders, so what an application costs to build is paid about 900 times. Each client for
   the slice service once made its own TLS context, reading the system's certificates (about
   8 ms); one context now serves them all. With that and the stand-ins' faster stop, the
   suite went from about 10 s on one worker (6 s on two) to about 3.8 s (2.7 s on two), Fri
-  2026-11-27, Pacific time, on 776 tests. What remains of an application's cost is mostly the web
+  2026-11-27, Pacific time, on 776 tests; on 1,028 tests, with the search for secrets after
+  each, it was about 7 s on one worker and 5 to 6 s on two, Fri 2026-11-27, Pacific time,
+  on a machine shared with three other builds. What remains of an application's cost is mostly the web
   framework compiling its routes, about 2.5 ms. A test of the following
   waits for its next wait on the fake clock by a clock that notes each wait
   (`Recording.next_wait` in `tests/test_following.py`), never by counting sleepers, which
@@ -2501,8 +2620,10 @@ Rules the suite is held to:
   front server's requests by themselves, so a request added later cannot be forgotten.
 - Each row of the restart table is a test.
 - The previous release's page is run against the new front server, and the previous
-  release's stand-in for the slice service against the new front server.
-- No log line of the whole run holds the cookie, a token or a key.
+  release's stand-in for the slice service against the new front server (from the second
+  release on).
+- No log line or answer of the whole run holds the cookie, a token or a key (built: checked
+  after every test).
 - The folder form and the R2 form of the buckets pass the same tests.
 - From phase 5, the front server's store passes the relay's own tests of a store.
 
@@ -2555,7 +2676,8 @@ From [the guide](README.md#what-is-built-in-which-phase).
 
 The front server runs beside one slice service process on one machine, with the development
 identity and a folder for each bucket. Build in this order; each item rests on those before
-it, and each is done with its tests. Items 1 to 16 are built.
+it, and each is done with its tests. Items 1 to 19 are built, except in item 19 the previous
+release's page and the previous slice service's stand-in, which wait for a second release.
 
 1. **The project and its fakes** (built). `front/` as a `uv` project with its make targets; the
    fake clock; the stand-in for the slice service on the requests of
@@ -2614,14 +2736,14 @@ it, and each is done with its tests. Items 1 to 16 are built.
     how full the server is (built)
     ([Two hours](#two-hours-the-sweep-and-the-backstop), [The log](#the-log); guide:
     [The rule](README.md#the-rule)).
-17. **Collecting at start** ([Starting](#starting-and-what-a-restart-does)).
+17. **Collecting at start** (built) ([Starting](#starting-and-what-a-restart-does)).
 18. **The log's gathering of the slice service's lines, and the page's reports about
-    itself** ([The log](#the-log), [The page's reports](#the-pages-reports-about-itself);
+    itself** (built) ([The log](#the-log), [The page's reports](#the-pages-reports-about-itself);
     contract: [The page's reports about itself](../contracts/wizard-front-server.md#the-pages-reports-about-itself)).
-19. **The tests across the whole:** each row of the restart table; the previous release's
-    page and the previous slice service's stand-in against the new front server (from the
-    second release on); forty progress streams with short requests still answered; no
-    secret in any log line or answer.
+19. **The tests across the whole:** each row of the restart table (built); the previous
+    release's page and the previous slice service's stand-in against the new front server
+    (from the second release on, not yet built); forty progress streams with short requests
+    still answered (built); no secret in any log line or answer (built).
 20. **The joined suite,** `together/`, once the wizard and the slice service's phase 2
     exist ([Running phase 2 on one machine](#running-phase-2-on-one-machine)).
 

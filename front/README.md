@@ -1050,7 +1050,9 @@ A report never holds a part's bytes or geometry, and never the contents of the
 browser's storage; the front server writes only the fields above and drops anything
 else a report carries, since a report comes from a browser like any other request. The
 page sends at most a few reports a minute, and the front server holds one page to the
-same limit itself, so that a broken or hostile page cannot fill the log.
+same limit itself, six a minute, so that a broken or hostile page cannot fill the log; it
+reads no report larger than 16 KB, many times an honest one. A report that breaks the
+contract (a field missing, or a value off its list) is refused and not written.
 
 ### Where it goes, and who reads it
 
@@ -1065,7 +1067,10 @@ can write to the log bucket, so it gathers for the others. It fetches the slice
 service's lines over the private network, and it adds the group to each of them, since
 the slice service knows only the user key and the front server knows which group each
 slice was submitted for. A file is written once and never rewritten, because an object
-store has no way to add to a file.
+store has no way to add to a file. The front server keeps in the state bucket how far it
+has gathered, so one started after a restart goes on from there and gathers no line
+twice; when the slice service has restarted, it starts again from the new one's first
+line. A slice service that does not answer is said once in the log, not once a minute.
 
 **Every line carries the component that wrote it.** Picking out one component's lines
 is the reader's job, not the store's.
@@ -1116,7 +1121,7 @@ the page keeps retrying is in
 | R2's backstop on sliced files | Three days from last stored | A file the front server failed to delete | The design's choice | Set at R2 |
 | Log lines in the log bucket | Ninety days | A problem reported weeks later | The design's choice | Set at R2 |
 | Gathering the log | About once a minute | Lines lost in a crash | The design's choice | |
-| The page's reports about itself | A few a minute from one page | The log not filling from one page | The design's choice | A test that reports faster than the limit |
+| The page's reports about itself | Six a minute from one page, at most 16 KB each | The log not filling from one page | The design's choice; the figures are the builder's | A test that reports faster than the limit, and one that sends too large a report |
 
 A sentence more on each row that needs one.
 
@@ -1437,7 +1442,21 @@ The phases are the plan's.
 - the two-hour rule: a sliced file served until two hours after its slice ended and
   refused as expired from that second, when it is deleted; the sweep, at start and every
   ten minutes, which deletes every sliced file due and the records nobody can use any more;
-  and the once-a-minute line in the log on how full the front server is.
+  and the once-a-minute line in the log on how full the front server is;
+- collecting at start: the front server asks the slice service for its slice jobs until it
+  answers, answering requests meanwhile, follows the unfinished ones again with the group
+  each was submitted for, and stores every finished one whose sliced file it had not yet
+  stored, counting its two hours from when the slice service says it ended; a finished one
+  already stored is not fetched again, and one whose sliced file has expired is never
+  stored again;
+- the log's gathering of the slice service's lines once a minute, each with the group its
+  slice was submitted for added, none gathered twice, even across a restart of either
+  component; and the page's reports about itself, one line each with only the fields the
+  contract lists, at most six a minute from one page and at most 16 KB each;
+- the tests across the whole: each row of the table of what a restart does, as far as phase
+  2 has them; forty progress streams held open with short requests still answered, and a
+  request that finds every thread busy served as soon as one is free; and no secret in any
+  log line or answer, searched after every everyday test.
 
 Measured while building: the cookie of a user in sixty groups with long names is about ten
 kilobytes, more than a browser keeps, so such a user could not sign in; whether real
@@ -1457,12 +1476,13 @@ is what the two hours count from.
 slice service on one machine, with the development identity and a folder for each
 bucket. Built here, beyond what is listed above as built so far:
 
-- collecting at start the slice jobs that ended while the front server was down;
-- the log, with the page's reports about itself and the slice service's lines, gathered
-  once a minute into the folder that stands for the log bucket, one file for all
-  components, in folders by day;
-- the version on every answer;
-- the format number on the configuration and on every record the front server writes.
+- the joined suite, which runs the front server and the slice service together and drives
+  the wizard in a browser, once the wizard's steps exist
+  ([How it is tested](#how-it-is-tested)).
+
+The tests that run the previous version's page and the previous slice service against the
+new front server start with the second release, since before it there is no previous
+version to run.
 
 **Phase 3: hosted.** First, before anything else of this phase,
 [what Railway does at a deploy](#what-railway-does-at-a-deploy) is tried. Then:
