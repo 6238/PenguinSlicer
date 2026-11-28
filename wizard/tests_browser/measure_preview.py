@@ -105,7 +105,8 @@ def machine():
 
 
 def process_memory(browser):
-    """The peak resident memory (VmHWM) of the renderer and graphics processes, in MB."""
+    """The peak resident memory (VmHWM) of the renderer and graphics processes, in MiB (the kernel's KiB over
+    1,024), the unit of PAGE_MEMORY_MB's 1,024; the fields keep the name `_mb`."""
     cdp = browser.new_browser_cdp_session()
     out = {}
     for info in cdp.send("SystemInfo.getProcessInfo")["processInfo"]:

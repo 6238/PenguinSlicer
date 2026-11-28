@@ -32,6 +32,7 @@ export function createPreviewReading({ parse = parseGcode } = {}) {
     const gcode = await readZipEntry(new Uint8Array(m.bytes), GCODE);
     const p = parse(gcode, { onProgress: (f) => progress('reading', f) });
     if (!p.layers) throw new PreviewError('The sliced file cannot be drawn: the G-code has no layers (no "; CHANGE_LAYER").');
+    if (!p.count) throw new PreviewError(`The sliced file cannot be drawn: the G-code has ${p.layers} layer${p.layers === 1 ? '' : 's'} but no extrusion to draw.`);
     progress('preparing', null);
     const full = boxVertices(p);
     const coarse = parse(gcode, COARSE);

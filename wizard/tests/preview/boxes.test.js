@@ -86,6 +86,30 @@ test('decimated, only every D-th layer is kept, as tall as the layers it stands 
   assert.equal(vertices[9], 20, 'two layers of 0.2 mm, in fiftieths');
 });
 
+test('decimated, every box of every kept layer reaches down to the top of the last kept layer, leaving no gap', () => {
+  // Six layers of uneven heights, kept every third: layers 3 and 6 stand for 1 to 3 and 4 to 6.
+  const heights = [0.2, 0.3, 0.25, 0.4, 0.15, 0.35];
+  const lines = ['M83'];
+  let z = 0;
+  heights.forEach((h, l) => {
+    z += h;
+    lines.push('; CHANGE_LAYER', `; Z_HEIGHT: ${z.toFixed(2)}`, `; LAYER_HEIGHT: ${h}`, `G1 Z${z.toFixed(2)}`,
+      '; FEATURE: Outer wall', `G1 X0 Y${l}`, `G1 X5 Y${l} E1`, `G1 X5 Y${l + 0.5} E1`);
+  });
+  const p = parseGcode(gcode(lines));
+  const { count, vertices } = boxVertices(p, { decimate: 3 });
+  assert.equal(count, 4);
+  const tallness = [];
+  for (let b = 0; b < count; b++) {
+    for (let v = 0; v < SEGMENT_VERTICES; v++) {
+      assert.equal(vertices[(b * SEGMENT_VERTICES + v) * VERTEX_BYTES + 9], vertices[b * SEGMENT_VERTICES * VERTEX_BYTES + 9]);
+    }
+    tallness.push(vertices[b * SEGMENT_VERTICES * VERTEX_BYTES + 9]);
+  }
+  // 0.75 mm and 0.9 mm in fiftieths: the second group from 0.75 to 1.65 mm, not one layer short.
+  assert.deepEqual(tallness, [38, 38, 45, 45]);
+});
+
 test('the look while moving drops the fewest layers that bring it within the budget', () => {
   // 8 layers of 10 segments: 80 in all, 40 at every 2nd layer, 20 at every 4th, 10 at every 8th.
   const p = { layerStart: Uint32Array.from({ length: 9 }, (_, l) => l * 10), layerZ: Float32Array.from({ length: 8 }, (_, l) => (l + 1) * 0.2) };

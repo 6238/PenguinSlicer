@@ -44,3 +44,10 @@ test('the bar tells a screen reader its layer and its height; the readout is in 
   assert.equal(readout(0, 13, 0.2), '1 / 13 · 0.2 mm');
   assert.equal(readout(171, 344, 41.34000015258789), '172 / 344 · 41.3 mm');
 });
+
+test('a whole millimetre drops its trailing zero, as the mockup\'s lengths do', () => {
+  assert.equal(readout(14, 15, 3.0), '15 / 15 · 3 mm');
+  assert.equal(readout(14, 15, 2.96), '15 / 15 · 3 mm');
+  assert.equal(valueText(14, 15, 3.0), 'Layer 15 of 15, 3 mm high');
+  assert.equal(readout(0, 15, 0.04), '1 / 15 · 0 mm');
+});

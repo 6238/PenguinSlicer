@@ -119,6 +119,33 @@ test('a sliced file that is not an archive, or whose G-code has no layers, is re
   assert.match(empty.reply.error.detail, /the G-code has no layers/);
 });
 
+test('a sliced file whose layers hold no extrusion has nothing to draw and is refused as unreadable', async () => {
+  const { reply } = await prepare({ bytes: slicedOf(['M83', '; CHANGE_LAYER', '; Z_HEIGHT: 0.2', '; LAYER_HEIGHT: 0.2', 'G1 Z.2', 'G1 X5 Y5']), plate: null });
+  assert.equal(reply.ok, false);
+  assert.equal(reply.error.code, PREVIEW_UNREADABLE);
+  assert.match(reply.error.detail, /1 layer but no extrusion to draw/);
+});
+
+test('a sliced file over the budget of the look while moving drops layers for it, every group standing for its layers', async () => {
+  // 40 layers of 6,000 zigzag segments, none of which the coarser reading can merge: 240,000 boxes,
+  // over the budget, so every second layer is kept while moving, each box two layers tall.
+  const lines = ['M83'];
+  for (let l = 1; l <= 40; l++) {
+    lines.push('; CHANGE_LAYER', `; Z_HEIGHT: ${(l * 0.2).toFixed(1)}`, '; LAYER_HEIGHT: 0.2', `G1 Z${(l * 0.2).toFixed(1)}`, '; FEATURE: Sparse infill', 'G1 X0 Y0');
+    for (let s = 1; s <= 6000; s++) lines.push(`G1 X${s % 2 ? 10 : 0} Y${(s * 0.04).toFixed(2)} E.1`);
+  }
+  const { reply } = await prepare({ bytes: slicedOf(lines), plate: null });
+  assert.equal(reply.ok, true, JSON.stringify(reply.error));
+  const r = reply.result;
+  assert.equal(r.full.count, 240000);
+  assert.equal(r.decimate, 2);
+  assert.equal(r.moving.count, 120000);
+  assert.ok(r.moving.count <= MOVING_BUDGET);
+  assert.equal(r.moving.layerStart[1], 0, 'the first layer is dropped while moving');
+  assert.equal(r.moving.layerStart[2], 6000);
+  assert.equal(r.moving.vertices[9], 20, 'each box two layers of 0.2 mm tall, in fiftieths');
+});
+
 test('a message the reading does not know, or without bytes, is the page\'s own fault', async () => {
   const reading = createPreviewReading();
   const unknown = await reading.handle({ id: 1, op: 'draw' }, () => {});

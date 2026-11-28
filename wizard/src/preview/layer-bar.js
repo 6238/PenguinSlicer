@@ -1,7 +1,8 @@
 // The layer bar's rules (wizard/README-details.md, "The result"; the mockup's js/wizard.js,
 // setLayer): the keys that move it, where a pointer on it puts the layer, and its words. A layer
 // is counted from 0 here and from 1 in every word a user reads. A layer's height is a printer's
-// figure, always in millimetres, to a tenth.
+// figure, always in millimetres, to a tenth, a trailing zero dropped as the mockup's lengths drop
+// it ("3 mm", "40.2 mm").
 
 export function clampLayer(k, layers) {
   return Math.max(0, Math.min(layers - 1, Math.round(k)));
@@ -23,7 +24,7 @@ export function barFraction(k, layers) {
   return layers > 1 ? k / (layers - 1) : 1;
 }
 
-const mm = (z) => `${(Math.round(z * 10) / 10).toFixed(1)} mm`;
+const mm = (z) => `${Math.round(z * 10) / 10} mm`;
 
 // What the bar tells a screen reader.
 export function valueText(k, layers, z) {

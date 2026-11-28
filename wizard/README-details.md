@@ -2073,15 +2073,19 @@ view.
 options)` in `wizard/src/panel/layer-preview.js`, which the Preview step's result places in the
 mockup's `#viewer-container` (a `.gl-view`); the result's card, the readout and its two buttons,
 **Reset view**, the "?" and the colour key are the Preview step's, around it. The view puts its
-canvas (`.gl-canvas`) first in the element and the mockup's layer bar (`.layer-slider` with its
-`.ls-track`, `.ls-fill` and `.ls-thumb`, `role="slider"`) after it, hidden until a file is drawn.
+canvas (`.gl-canvas`) first in the element and the mockup's layer bar (`#layer-slider.layer-slider`
+with its `.ls-track`, `#ls-fill.ls-fill` and `#ls-thumb.ls-thumb` holding `#ls-label`,
+`role="slider"`; the mockup's ids, so the page holds one view) after it, hidden until a file is
+drawn and again after a failure.
 Its options: `frames` (the frame seam), `clock` (the clock seam, for its own heartbeat of
 `hold-meter.js`), `startWorker` (`startPreviewWorker` of `wizard/src/seams/preview-worker.js`),
 `printer` (`{min: [x, y], max: [x, y]}`, the plate drawn under the toolpaths; 0 to 340 by 0 to 320
 when left out), `software` (whether the browser draws 3D in software: then a pixel ratio of 1, else
 the screen's up to 2), `report(what, {detail})` (the page's reports about itself:
 `drawing_context_lost` at each lost context, `page_failed` once for a file that cannot be read or
-drawn), `onProgress({stage, fraction})` (`unpacking`, `reading` with how far through the G-code,
+drawn), `onFailure(error)` (a failure after `show` has resolved to `{ok: true}`, as an error
+report: the drawing failing on a later frame, or when built again after a lost context; the view
+then draws nothing more and hides its bar until the next `show`), `onProgress({stage, fraction})` (`unpacking`, `reading` with how far through the G-code,
 `preparing`; `fraction` `null` where it cannot be known) and `onLayer({index, layers, z})` (each
 change of layer, for the readout: `readout(index, layers, z)` of `wizard/src/preview/layer-bar.js`
 gives "134 / 134 · 40.2 mm"). Its methods: `show(bytes, plate, {since})` draws the sliced file
@@ -2096,7 +2100,8 @@ z}`; `setLayer(index)` and `stepLayer(±1)` move the bar (the two small buttons)
 the camera back on the instances; `summary()` gives the fields of the drawing summary the view
 knows (`view`, `fps_typical`, `fps_worst`, `first_layer_ms`, `longest_hold_ms`, `instances`,
 `sliced_file_bytes`, `sliced_file_lines`), to which the caller adds the machine's and sends with item
-18; `destroy()` stops everything and removes the canvas and the bar. For the tests, the renders and
+18 (`fps_typical` and `fps_worst` are `null` while the view has not moved, and the front server
+refuses a summary without them, so item 18 sends none for such a use); `destroy()` stops everything and removes the canvas and the bar. For the tests, the renders and
 the measurements it also has `look({ghost})` (the pixels of the full look, read on the frame that
 puts it on the screen), `untilRest()`, `setView(name)` with the fixed angles of `views`,
 `showMoving()` and `stillAgain()`, `drive(kind, steps)` (the first trial's paths, `turn` and
@@ -2121,7 +2126,7 @@ the ghost included.
 
 | Code | When | Message | Remedy | Retryable |
 |---|---|---|---|---|
-| `wizard.preview_unreadable` | The sliced file is not a zip archive, has no `Metadata/plate_1.gcode`, cannot be inflated, has no layers, or has a layer taller than a box can be | PenguinSlicer could not read this plate's sliced file to draw its preview. | Slice the plate again; the sliced file can still be downloaded on the Send step. | no |
+| `wizard.preview_unreadable` | The sliced file is not a zip archive, has no `Metadata/plate_1.gcode`, cannot be inflated, has no layers, has layers but no extrusion to draw, or has a layer taller than a box can be | PenguinSlicer could not read this plate's sliced file to draw its preview. | Slice the plate again; the sliced file can still be downloaded on the Send step. | no |
 | `wizard.preview_failed` | The preview's worker fails as a whole, or the drawing code fails, or the page gives an instance no part's corners: a fault of the page's own | PenguinSlicer could not draw the layer preview of this plate. | Reload the page; your parts, layout and settings are kept in this browser. | yes |
 | `wizard.preview_not_drawable` | The browser gives no WebGL 2 context | This browser cannot draw the layer preview: its 3D drawing is turned off or missing. | Turn on hardware acceleration in the browser's settings, or use a current Chrome; the sliced file can still be downloaded on the Send step. | no |
 
@@ -2132,7 +2137,10 @@ service, with their plate configurations, listed with their hashes in
 on purpose, the progress, the worker stopped once it has answered or when no longer wanted; in
 Chromium (`tests_browser/test_layer_preview.py`), the coarse checks of the first trial on those
 files, the ghost, two lost contexts in one page each reported, the bar by keys and by a drag, the
-summary, and a file that is not a sliced file.
+summary, a file that is not a sliced file, the drawing made to fail on purpose while it is built
+and after the first layer (one `page_failed`, no bar, the second told through `onFailure`), a later
+`show` and `destroy` stopping the earlier one and its worker at once, and the walls' sides only
+ever darker than their blue.
 
 ## The Send step
 
@@ -2721,7 +2729,7 @@ or is not yet in a contract:
 | Tooltip delay; printer details close | 150 ms; 300 ms | The mockup | Fake clock |
 | Quiet retrying; retrying in all | 20 s; 300 s, waits doubling 1 to 30 s | The guide | Fake clock |
 | A progress stream counted as failed | 20 s failing to reopen, 45 s open and silent | The guide | Fake clock, fake front server |
-| The main thread held | Never over 250 ms, any step, any plate up to the limits, on the machine without a graphics card | Set; measured for reading a part and drawing its picture: at most 12 ms in Chromium on that machine, `hub-150k.stl` included; for a malformed file of the largest size, under 250 ms; while dragging at 150 instances (missed), 0.39 to 0.49 s for the real mix, 0.22 to 0.46 s for 150 spacers and 0.10 to 0.28 s for 150 of `hub-150k.stl` drawn coarse (`make -C wizard measure-layout`, six runs) | Measured by the page in tests and real use |
+| The main thread held | Never over 250 ms, any step, any plate up to the limits, on the machine without a graphics card | Set; measured for reading a part and drawing its picture: at most 12 ms in Chromium on that machine, `hub-150k.stl` included; for a malformed file of the largest size, under 250 ms; while dragging at 150 instances (missed), 0.39 to 0.49 s for the real mix, 0.22 to 0.46 s for 150 spacers and 0.10 to 0.28 s for 150 of `hub-150k.stl` drawn coarse (`make -C wizard measure-layout`, six runs); the layer preview on `blocks-12-supports` (`make -C wizard measure-preview`, five runs on Sat 2026-11-28), the longest hold by the heartbeat over loading, turning and dragging the bar was 205, 251 (loading), 340 (turning), 235 (loading) and 155 ms (loading), so missed in two runs of five | Measured by the page in tests and real use |
 | A part's row says it is slow | 4 s | The mockup | Fake clock |
 | One part; different parts; instances | 7.5 MB (150,000 triangles); 25; 150 | The slice service's | One over each |
 | Storage in the browser | 25 parts of 7.5 MB for each tab's plate | Met for one tab in headless Chromium on the machine without a graphics card: stored and read back after a refresh, none refused; several tabs' full plates, and Chrome on the Mac, unmeasured | A full plate stored and reloaded |
@@ -2731,9 +2739,9 @@ or is not yet in a contract:
 | Arrange | Under 2 s for 150 instances | Met: at most 30 ms for 150 of `hex-spacer.stl` (all placed) and 44 ms for a mix of 150 real parts (104 placed, the rest beside the plate) | The same |
 | The placement check | Keeps up with a drag at 150 instances | Met: at most 4.1 ms for each check of a drag at 150 instances, against one frame of 100 ms at 10 frames a second | The same |
 | The Layout view | 30 frames a second with a graphics card, 10 without, while dragging or turning, at 150 instances of parts up to 150,000 triangles | Met without a graphics card, with the coarse copies while moving: 150 instances of the real mix dragged at 16 to 19 and turned at 17 to 20, 150 of `hub-150k.stl` dragged at 14 to 42, 150 of `hex-spacer.stl` at 34 to 47, over seven runs on a shared machine; the main thread held 0.39 to 0.49 s during a drag on the real mix, 0.22 to 0.46 s on the spacers and 0.10 to 0.28 s on `hub-150k.stl` (missed). With a graphics card, unmeasured | `make -C wizard measure-layout`, in Chromium; on the Mac, Chrome; reported in real use |
-| The layer preview | 30 with a graphics card, 10 without, while turning or dragging the layer bar, on a 14.1 MB sliced file and at 150 instances; a simpler look while moving | Without a graphics card, method C of the first trial: 10 to 20 typical on the three plates (10.0 turning at `blocks-12-supports`); the view as built, in the page (`make -C wizard measure-preview`): 15 to 20 typical turning and dragging the bar on the three plates, 8.6 to 12 worst, the main thread held at most 205 ms (heartbeat) and 197 ms (longest task); with one, unmeasured | Timed in Chrome on both machines; reported in real use; test renders |
+| The layer preview | 30 with a graphics card, 10 without, while turning or dragging the layer bar, on a 14.1 MB sliced file and at 150 instances; a simpler look while moving | Without a graphics card, method C of the first trial: 10 to 20 typical on the three plates (10.0 turning at `blocks-12-supports`); the view as built, in the page (`make -C wizard measure-preview`): 15 to 20 typical turning and dragging the bar on the three plates, 8.6 to 12 worst, the main thread held at most 205 ms (heartbeat) and 197 ms (longest task) in the first run, and on `blocks-12-supports` up to 340 ms by the heartbeat over five runs (The main thread held, above); with one, unmeasured | Timed in Chrome on both machines; reported in real use; test renders |
 | The first layer drawn | Within 5 s, print time and filament at once | The first trial, method C: 1.5 to 2.7 s from fetching the sliced file to the first frame with toolpaths (the look while moving; the full look 2.4 to 8.5 s); the view as built: 0.8 to 1.7 s (the full look 1.5 to 6.5 s) | The same |
-| The page's memory | Under 1 GB at the largest plate with the preview of a 14.1 MB sliced file | The first trial, method C: 839 MB at that plate (the page's and the graphics process's peaks); the view as built, in the wizard's page: 994 MB, met by 6 MB | Measured in Chrome at that plate |
+| The page's memory | Under 1 GB at the largest plate with the preview of a 14.1 MB sliced file | The first trial, method C: 839 MiB at that plate (the page's and the graphics process's peaks, `VmHWM` in KiB divided by 1,024); the view as built, in the wizard's page: 992 to 1,016 MiB over five runs on Sat 2026-11-28, under `PAGE_MEMORY_MB`'s 1,024 MiB by 8 to 32 MiB, so met with almost no margin; counted in decimal megabytes the same runs are 1,040 to 1,065 MB, over a decimal gigabyte | Measured in Chrome at that plate |
 | Before a self-reload | 120 s since the user last interacted, or a step change | Set | Fake clock |
 | Reports about itself | A few a minute from one page | Set; the front server has its own limit | Fake clock |
 | A sliced file | At most 50 MB; 8.8 to 14.1 MB on the plates measured | The slice service's and the front server's | A slice whose file would be larger ends with the slice service's sentence |

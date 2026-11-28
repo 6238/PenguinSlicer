@@ -39,6 +39,7 @@ const view = createLayerPreview(document.getElementById('viewer-container'), {
   frames: realFrames, clock: realClock, startWorker: startPreviewWorker,
   printer: { min: [0, 0], max: [340, 320] }, software: softwareDrawing(),
   report: (what, fields) => reports.failure(what, fields),
+  onFailure: (error) => {},       // a failure after show() resolved ok: show `error` in place of the view
   onProgress: ({ stage, fraction }) => {},                    // unpacking, reading (0..1), preparing
   onLayer: ({ index, layers, z }) => { el.textContent = readout(index, layers, z); },
 });
@@ -62,7 +63,15 @@ view.destroy();
   configuration's `instances`. `null` in place of the plate draws without a ghost.
 - `since` is `realFrames.now()` taken when the Preview step opened, so that `first_layer_ms`
   counts the fetch too.
-- `error` is shown as it is; each failure has already been reported once as `page_failed`.
+- `error` is shown as it is; each failure has already been reported once as `page_failed`. A
+  failure after `show` has resolved `{ok: true}` (the drawing failing on a later frame, or when
+  built again after a lost context) comes through `onFailure`, once; the view has then hidden its
+  bar and draws nothing more until the next `show`.
+- The layer bar carries the mockup's ids (`#layer-slider`, `#ls-fill`, `#ls-thumb`, `#ls-label`),
+  so the page holds one view at a time; the readout (`#layer-readout`) is the next batch's.
+- `summary()` gives `fps_typical` and `fps_worst` as `null` until the view has moved. The contract
+  marks both required and the front server refuses a summary without them, so item 18 sends no
+  drawing summary for a use in which the view never moved (decision 22).
 
 ## Decisions made
 
@@ -142,6 +151,37 @@ view.destroy();
     for each notch, so each notch draws the look while moving and then the full look again. Left
     as it is: the full look returns in 0.2 to 1.1 s.
 
+Decided in answering the first review of pull request #45:
+
+20. **A failure of the view is reported, ends its drawing and is told to the caller.** The details
+    file says each failure is reported once as `page_failed`; it is silent on a failure after the
+    first layer. Chosen: every failure goes through one place, which reports it once (the
+    preparation's own failures are already reported by the page's side of the worker, so not
+    twice), hides the bar, stops the frame loop, and hands the error to the pending `show` or,
+    when none is pending, to a new option `onFailure`. A failure while the drawing is built never
+    shows the bar. The reason: a view that stops drawing must say so, and the caller is the one to
+    put the error report in its place. To overrule: `fail()` in `layer-preview.js`.
+21. **A sliced file with layers and no extrusion is `wizard.preview_unreadable`.** Silent; it
+    never answered before. "Nothing to draw" is the sliced file's fault, as "no layers" is. To
+    overrule: `reading.js`.
+22. **The frame rates stay `null` until the view has moved,** rather than an invented figure,
+    and the caller sends no summary then. The contract marks `fps_typical` and `fps_worst`
+    required and has no "not measured"; the front server refuses `null`. To overrule: the
+    contract (make both optional), or `summary()` in `layer-preview.js`.
+23. **Lengths of the bar and the readout drop a trailing zero** ("3 mm", "40.2 mm"), as the
+    mockup's `U.len` does and the Units section requires of millimetres. To overrule: `mm` in
+    `layer-bar.js`.
+24. **The bar carries the mockup's ids,** which means one view in a page at a time; the mockup has
+    one. To overrule: drop them in `layer-preview.js`.
+25. **The browser tests hold no measured duration to a target.** A first layer under 5 s and a
+    hold under 250 ms on the real clock of a busy shared machine fail by chance; the targets are
+    measured by `measure-preview` and recorded here. The tests keep checking that each figure is
+    measured. To overrule: put the two bounds back in `test_layer_preview.py`.
+26. **Memory is stated in MiB, against `PAGE_MEMORY_MB`'s 1,024 MiB.** The measure reads the
+    kernel's `VmHWM` in KiB and divides by 1,024; the documents had set it against a decimal
+    1,000 MB. To overrule: measure in decimal megabytes and set `PAGE_MEMORY_MB` to 1,000, which
+    every run on the heaviest plate misses.
+
 ## The figures, beside the trial's
 
 Measured by `make -C wizard measure-preview` on Sat 2026-11-28, in the wizard's own page, on the
@@ -201,9 +241,16 @@ Every render in `docs/orchestration/phase-2/look/wizard-7/<plate>/` was looked a
 - **The worst frame rate is under 10 on two paths:** 8.6 turning `four-each-b-supports` and 8.6
   dragging the bar on `blocks-12-supports` (the trial: 5.0 to 12). The target is the typical
   rate, 15 to 30 here; the worst is recorded.
-- **The page's memory at the heaviest plate is 994 MB, under the 1 GB target by 6 MB** (the trial:
-  839 MB). Met, with no margin. Dropping the kept copy of the boxes would save about 140 MB, at
-  the cost of reading the file again after a lost context.
+- **The page's memory at the heaviest plate is 992 to 1,016 MiB over five runs** (994 in the
+  first; 992 and 1,013 in the reviewer's two reruns; 1,016 and 994 in the fixer's two on Sat
+  2026-11-28), under `PAGE_MEMORY_MB`'s 1,024 MiB by 8 to 32 MiB (the trial: 839 MiB). Met, with
+  almost no margin; in decimal megabytes the same runs are 1,040 to 1,065 MB, over a decimal
+  gigabyte (decision 26). Dropping the kept copy of the boxes would save about 140 MiB, at the
+  cost of reading the file again after a lost context. (The table above says "MB" for MiB.)
+- **The main thread's longest hold by the heartbeat on `blocks-12-supports` is over 250 ms in two
+  runs of five:** 205 ms in the first, 251 ms (loading) and 340 ms (turning) in the reviewer's
+  reruns, 235 ms and 155 ms (loading) in the fixer's. The browser's longest task stayed under
+  200 ms where it was read. The margin is thin on a shared, busy machine, as the trial found.
 - **The full look at rest takes 6.5 s from opening on the heaviest plate** (1.1 s after a turn).
   No target names it; the first layer, which the target names, is drawn in 1.7 s.
 - **The first layer is timed from the fetch, not from opening the Preview step,** which is not
@@ -211,6 +258,16 @@ Every render in `docs/orchestration/phase-2/look/wizard-7/<plate>/` was looked a
 - **The machine with a graphics card** is not measured: the 30 frames a second on the Mac is the
   owner's.
 - **The look while moving** still shows infill on the sides of round parts, as the trial's did.
+
+## Findings of the first review declined
+
+- **The frame rates `null` in the summary (minor 1)** are kept, not filled in: no frame rate was
+  measured, and the record's interface section and the details file now tell the next batch to
+  send no summary then (decision 22).
+- **The main thread's hold over 250 ms (minor 6)** is recorded under Targets missed with the five
+  runs, not fixed: the hold is the software drawing of a frame on a busy shared machine, and
+  lowering it is a change of the drawing's budget (`PIECE`, `MOVING_BUDGET`) that wants the owner's
+  look at the Mac's figures first.
 
 ## Not done
 

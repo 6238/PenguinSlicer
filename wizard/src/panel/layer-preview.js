@@ -37,10 +37,13 @@ const NEAR_MM = 5, FAR_MM = 3000;
 //   printer      the printable area {min: [x, y], max: [x, y]} in millimetres
 //   software     whether the browser draws 3D in software: then at a pixel ratio of 1
 //   report(what, {detail})  a report about the page itself: drawing_context_lost, page_failed
+//   onFailure(error)  a failure after show() has resolved to {ok: true}, as an error report: the
+//                     drawing failing on a later frame or when built again after a lost context;
+//                     the view then draws nothing more and hides its bar until the next show()
 //   onProgress({stage, fraction}), onLayer({index, layers, z})
 export function createLayerPreview(element, {
   frames, clock = null, startWorker, printer = DEFAULT_PRINTER, software = false,
-  report = () => {}, onProgress = () => {}, onLayer = () => {},
+  report = () => {}, onFailure = () => {}, onProgress = () => {}, onLayer = () => {},
 } = {}) {
   const canvas = document.createElement('canvas');
   canvas.className = 'gl-canvas';
@@ -49,17 +52,18 @@ export function createLayerPreview(element, {
   element.prepend(canvas);
   const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, preserveDrawingBuffer: false });
 
-  // The layer bar: the mockup's markup, at the view's right.
+  // The layer bar: the mockup's markup with its ids, at the view's right (the page holds one view).
   const bar = document.createElement('div');
+  bar.id = 'layer-slider';
   bar.className = 'layer-slider';
   bar.tabIndex = 0;
   bar.setAttribute('role', 'slider');
   bar.setAttribute('aria-label', 'Layer');
   bar.hidden = true;
   const track = document.createElement('div'); track.className = 'ls-track';
-  const fill = document.createElement('div'); fill.className = 'ls-fill';
-  const thumb = document.createElement('div'); thumb.className = 'ls-thumb';
-  const label = document.createElement('span');
+  const fill = document.createElement('div'); fill.className = 'ls-fill'; fill.id = 'ls-fill';
+  const thumb = document.createElement('div'); thumb.className = 'ls-thumb'; thumb.id = 'ls-thumb';
+  const label = document.createElement('span'); label.id = 'ls-label';
   track.append(fill); thumb.append(label); bar.append(track, thumb);
   element.append(bar);
 
@@ -89,14 +93,16 @@ export function createLayerPreview(element, {
   const watchers = new Set();
   let driver = null;
   let destroyed = false;
+  let failed = false;       // the drawing failed: nothing more is drawn until the next show
 
   // ---- drawing, only when something changed or the drawing has more to do
   function invalidate() {
     dirty = true;
-    if (frame === null && !destroyed) frame = frames.next(loop);
+    if (frame === null && !destroyed && !failed) frame = frames.next(loop);
   }
   function loop(now) {
     frame = null;
+    if (failed) return;
     if (driver) driver();
     if (!dirty && !more) return;
     const fresh = dirty;
@@ -230,12 +236,15 @@ export function createLayerPreview(element, {
   }
 
   // ---- the drawing context
+  // Builds the drawing from the prepared data; false, after the failure is handled, when it fails.
   function build() {
     try {
       drawing = createDrawing(gl, data, { printer, width, height });
+      return true;
     } catch (error) {
       drawing = null;
       fail(errorReport(PREVIEW_FAILED, `the drawing could not be built: ${error && error.message ? error.message : error}`));
+      return false;
     }
   }
   canvas.addEventListener('webglcontextlost', (e) => {
@@ -246,14 +255,25 @@ export function createLayerPreview(element, {
   });
   canvas.addEventListener('webglcontextrestored', () => {
     lost = false;
-    if (data) build();
+    if (data && !failed && !build()) return;
     invalidate();
   });
 
   // ---- showing a sliced file
   let settle = null;        // resolves the show under way
-  function fail(error) {
+  // A failure of the view: reported once as page_failed (unless `reported`, as the preparation's
+  // own failures already are), the drawing and the bar given up, and the caller told, by the
+  // show under way or else by onFailure.
+  function fail(error, { reported = false } = {}) {
+    if (failed) return;
+    if (!reported) report('page_failed', { detail: error.code === PREVIEW_FAILED ? error.detail : `${error.code}: ${error.detail}` });
+    failed = true;
+    drawing = null; driver = null; moving = false;
+    bar.hidden = true;
+    if (frame !== null) frames.cancel(frame);
+    frame = null;
     if (settle) { const s = settle; settle = null; s({ ok: false, error }); }
+    else onFailure(error);
   }
 
   // show(bytes, plate, {since}): draws the sliced file `bytes` (an ArrayBuffer); `plate`
@@ -265,13 +285,12 @@ export function createLayerPreview(element, {
   function show(bytes, plate = null, { since: opened = frames.now() } = {}) {
     if (job) job.stop();
     if (settle) { const s = settle; settle = null; s({ ok: false, stopped: true }); }
-    data = null; drawing = null; bar.hidden = true; complete = false; firstLayerMs = null;
+    data = null; drawing = null; bar.hidden = true; complete = false; firstLayerMs = null; failed = false;
     since = opened;
     stats = createFrameStats();
     if (holds) holds.start();
     const answer = new Promise((resolve) => { settle = resolve; });
     if (!gl) {
-      report('page_failed', { detail: 'the layer preview has no WebGL 2 context' });
       fail(errorReport(PREVIEW_NOT_DRAWABLE, 'the browser gave no WebGL 2 context'));
       return answer;
     }
@@ -280,11 +299,11 @@ export function createLayerPreview(element, {
     mine.done.then((prepared) => {
       if (mine !== job) return;
       job = null;
-      if (!prepared.ok) { if (!prepared.stopped) fail(prepared.error); return; }
+      if (!prepared.ok) { if (!prepared.stopped) fail(prepared.error, { reported: true }); return; }
       data = prepared.result;
       k = data.layers - 1;
       resize();
-      if (!lost) build();
+      if (!lost && !build()) return;
       setView('default');
       bar.hidden = false;
       showLayer();

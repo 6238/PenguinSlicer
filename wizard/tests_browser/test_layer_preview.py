@@ -5,8 +5,9 @@ fills roughly the expected part of the view, shows the four colours, changes whe
 the view moves, shows the ghost of what is still to print, and draws again after its drawing
 context is lost, twice in one page. The page is left on the real clock, since drawing goes frame
 by frame; every wait is on an event of the page (the first layer drawn, the full look on the
-screen), never on a duration. Whether the view looks right is a person's judgement of the test
-renders (make -C wizard look-preview)."""
+screen), never on a duration, and no test holds a duration measured on that clock to a target:
+the figures against the targets are measure-preview's. Whether the view looks right is a person's
+judgement of the test renders (make -C wizard measure-preview)."""
 import json
 from pathlib import Path
 
@@ -18,7 +19,6 @@ WIZARD = Path(__file__).resolve().parent.parent
 SLICED = WIZARD / "tests" / "sliced"
 REAL = WIZARD.parent / "contracts" / "examples" / "parts" / "real"
 MADE = WIZARD / "trials" / "parts"
-MAIN_THREAD_HOLD_MS = 250
 # The coarse checks of the look, the first trial's (wizard/trials/preview/run.py).
 COVERED = 0.05
 GROUP_SHOWN = 0.0005
@@ -50,13 +50,21 @@ OPEN = """
     host.className = 'gl-view';
     host.id = 'test-preview';
     document.querySelector('section[data-step="preview"]').append(host);
-    const seen = window.__seen = { progress: [], layers: [], reports: [] };
+    const seen = window.__seen = { progress: [], layers: [], reports: [], failures: [], workers: [] };
+    // Each worker the view starts, kept to see when the view stops it.
+    const startWorker = () => {
+        const port = m['preview-worker'].startPreviewWorker(), kept = { terminated: false };
+        seen.workers.push(kept);
+        return { ...port, terminate: () => { kept.terminated = true; port.terminate(); } };
+    };
     const view = window.__preview = m['layer-preview'].createLayerPreview(host, {
-        frames: m.frames.realFrames, clock: m.clock.realClock, startWorker: m['preview-worker'].startPreviewWorker,
+        frames: m.frames.realFrames, clock: m.clock.realClock, startWorker,
         software: true,
         report: (what, fields) => { seen.reports.push([what, fields.detail]); wizard.reports.failure(what, fields); },
+        onFailure: (error) => seen.failures.push(error),
         onProgress: (p) => seen.progress.push(p.stage), onLayer: (l) => seen.layers.push(l.index) });
     window.__colours = m.drawing;
+    if (arg.sliced === null) return { created: true };
     const bytes = await (await fetch('/test-files/' + arg.sliced)).arrayBuffer();
     let plate = null;
     if (arg.plate) {
@@ -132,7 +140,6 @@ def changed(w, a, b):
 def test_a_sliced_file_with_supports_draws_its_four_colours_its_ghost_and_changes_with_the_bar(page, front_server):
     w, opened = open_view(page, front_server, "pair-supports")
     assert opened["answer"] == {"ok": True, "layers": 132}, opened
-    assert opened["held"] < MAIN_THREAD_HOLD_MS, opened
     top = look(w, "top")
     assert top["covered"] >= COVERED, top
     assert top["width"] > 300 and top["height"] > 200, top
@@ -194,6 +201,9 @@ def test_the_layer_bar_moves_by_keys_and_tells_a_screen_reader_its_layer(page, f
     page.keyboard.press("Home")
     assert bar.get_attribute("aria-valuenow") == "1"
     assert page.locator("#test-preview .ls-thumb span").text_content() == "Layer 1"
+    # the mockup's ids, for the Preview step around the view
+    assert page.locator("#test-preview #layer-slider #ls-thumb #ls-label").text_content() == "Layer 1"
+    assert page.locator("#test-preview #layer-slider #ls-fill").count() == 1
     page.keyboard.press("End")
     assert bar.get_attribute("aria-valuenow") == "13"
     assert w.run("return window.__seen.layers;")[-3:] == [11, 0, 12]
@@ -244,8 +254,10 @@ def test_the_sliced_file_is_read_off_the_main_thread_with_progress_and_a_drawing
     assert summary["instances"] == 2
     assert summary["sliced_file_bytes"] == (SLICED / "pair-supports.gcode.3mf").stat().st_size
     assert summary["sliced_file_lines"] > 200_000
-    assert 0 < summary["first_layer_ms"] < 5000
-    assert summary["longest_hold_ms"] < MAIN_THREAD_HOLD_MS
+    # Durations on the real clock: that they are measured, not how long they are (measure-preview's).
+    assert summary["first_layer_ms"] > 0
+    assert summary["longest_hold_ms"] >= 0
+    assert summary["fps_typical"] is None and summary["fps_worst"] is None, "no frame rate before the view has moved"
     moved = w.run("return await window.__preview.drive('turn', 12);")
     assert moved["frames"] >= 12
     after = w.run("return window.__preview.summary();")
@@ -282,4 +294,120 @@ def test_a_file_that_is_not_a_sliced_file_ends_in_the_wizards_report_and_one_rep
     assert body["what"] == "page_failed"
     assert "not a zip archive" in body["detail"]
     assert page.locator("#test-preview .layer-slider").is_hidden()
+    assert w.problems == []
+
+
+# The view's WebGL 2 made to fail on purpose: `window.__break` names the call that throws, only on
+# the layer preview's own canvas.
+BREAK = """
+    for (const name of ['createVertexArray', 'drawElements']) {
+        const real = WebGL2RenderingContext.prototype[name];
+        WebGL2RenderingContext.prototype[name] = function (...args) {
+            if (window.__break === name && this.canvas.closest && this.canvas.closest('#test-preview')) throw new Error('broken on purpose in ' + name);
+            return real.apply(this, args);
+        };
+    }
+"""
+
+
+def test_drawing_code_that_fails_while_building_ends_in_the_wizards_report_one_report_and_no_bar(page, front_server):
+    front_server.files["/test-files/spacer-1.gcode.3mf"] = (SLICED / "spacer-1.gcode.3mf").read_bytes()
+    page.add_init_script(BREAK)
+    w = Wizard(page, front_server, width=680, height=900, fake_clock=False)
+    w.run("window.__break = 'createVertexArray';")
+    with page.expect_request(lambda r: r.url.endswith("/api/reports/failure")) as sent:
+        opened = w.run(OPEN, {"modules": modules(), "sliced": "spacer-1.gcode.3mf", "plate": None})
+    error = opened["answer"]["error"]
+    assert error["code"] == "wizard.preview_failed"
+    assert error["message"] == "PenguinSlicer could not draw the layer preview of this plate."
+    body = json.loads(sent.value.post_data)
+    assert body["what"] == "page_failed"
+    assert "broken on purpose in createVertexArray" in body["detail"]
+    assert page.locator("#test-preview .layer-slider").is_hidden(), "a failed view shows no bar that moves nothing"
+    seen = w.run("return window.__seen;")
+    assert [what for what, _ in seen["reports"]] == ["page_failed"], "reported once"
+    assert seen["failures"] == [], "a failure before the first layer is the show's answer"
+    assert w.problems == []
+
+
+def test_drawing_code_that_fails_after_the_first_layer_is_told_to_the_caller_and_reported_once(page, front_server):
+    page.add_init_script(BREAK)
+    w, opened = open_view(page, front_server, "spacer-1")
+    assert opened["answer"]["ok"] is True
+    w.run("window.__break = 'drawElements';")
+    with page.expect_request(lambda r: r.url.endswith("/api/reports/failure")) as sent:
+        w.run("window.__preview.setLayer(3);")
+        w.until("return window.__seen.failures.length > 0;")
+    seen = w.run("return window.__seen;")
+    assert [f["code"] for f in seen["failures"]] == ["wizard.preview_failed"]
+    assert "broken on purpose in drawElements" in seen["failures"][0]["detail"]
+    assert json.loads(sent.value.post_data)["what"] == "page_failed"
+    assert [what for what, _ in seen["reports"]] == ["page_failed"]
+    assert page.locator("#test-preview .layer-slider").is_hidden()
+    assert w.run("return window.__preview.state().scheduled;") is False
+    # The caller may show the file again, which draws once the fault is gone.
+    again = w.run("""
+        window.__break = null;
+        const bytes = await (await fetch('/test-files/spacer-1.gcode.3mf')).arrayBuffer();
+        return await window.__preview.show(bytes, null);
+    """)
+    assert again == {"ok": True, "layers": 13}
+    assert page.locator("#test-preview .layer-slider").is_visible()
+    assert w.problems == []
+
+
+def test_a_later_show_or_destroy_stops_the_earlier_show_and_its_worker_at_once(page, front_server):
+    front_server.files["/test-files/pair-supports.gcode.3mf"] = (SLICED / "pair-supports.gcode.3mf").read_bytes()
+    w = Wizard(page, front_server, width=680, height=900, fake_clock=False)
+    w.run(OPEN, {"modules": modules(), "sliced": None, "plate": None})
+    r = w.run("""
+        const view = window.__preview, seen = window.__seen;
+        const bytes = await (await fetch('/test-files/pair-supports.gcode.3mf')).arrayBuffer();
+        const first = view.show(bytes, null);
+        const second = view.show(bytes, null);
+        const firstStopped = seen.workers[0].terminated, secondStopped = seen.workers[1].terminated;
+        const answers = [await first, await second];
+        const third = view.show(bytes, null);
+        view.destroy();
+        const thirdStopped = seen.workers[2].terminated;
+        return { answers, firstStopped, secondStopped, thirdStopped, third: await third, workers: seen.workers.length,
+                 left: document.querySelectorAll('#test-preview canvas, #test-preview .layer-slider').length };
+    """)
+    assert r["answers"][0] == {"ok": False, "stopped": True}
+    assert r["firstStopped"] is True and r["secondStopped"] is False, "the earlier worker is stopped at once"
+    assert r["answers"][1] == {"ok": True, "layers": 132}
+    assert r["third"] == {"ok": False, "stopped": True}
+    assert r["thirdStopped"] is True
+    assert r["workers"] == 3
+    assert r["left"] == 0
+    assert w.problems == []
+
+
+# The walls' pixels of the full look without the ghost: the share at the walls' blue darkened (any
+# shade under 0.95) and the share lightened (1.05 or over), each pixel's shade read from its blue.
+WALL_SHADES = """
+    const { COLOURS } = window.__colours;
+    const look = await window.__preview.look({ ghost: false });
+    const px = look.pixels, base = COLOURS[0].map((v) => v * 255);
+    let darker = 0, lighter = 0;
+    for (let i = 0; i < px.length; i += 4) {
+        const s = px[i + 2] / base[2];
+        if (Math.abs(px[i] - base[0] * s) + Math.abs(px[i + 1] - base[1] * s) > 10) continue;
+        if (s < 0.95 && s > 0.5) darker++;
+        else if (s >= 1.05 && s < 1.7) lighter++;
+    }
+    const all = px.length / 4;
+    return { darker: darker / all, lighter: lighter / all };
+"""
+
+
+def test_the_walls_are_shaded_by_darkening_only(page, front_server):
+    w, opened = open_view(page, front_server, "pair-supports")
+    assert opened["answer"]["ok"] is True
+    w.run("window.__preview.setLayer(100);")
+    for view in ("default", "edge-on", "edge-on-side"):
+        w.run(f"await window.__preview.setView('{view}');")
+        shades = w.run(WALL_SHADES)
+        assert shades["darker"] >= GROUP_SHOWN, (view, shades)
+        assert shades["lighter"] == 0, (view, shades)
     assert w.problems == []

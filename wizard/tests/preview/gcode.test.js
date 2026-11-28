@@ -91,6 +91,15 @@ test('straight runs of one type are merged, and a turn ends the run', () => {
   assert.equal(p.moves, 5);
 });
 
+test('a change of line width ends the run, so each part keeps its own width', () => {
+  const p = parseGcode(gcode(['M83', '; CHANGE_LAYER', '; Z_HEIGHT: 0.2', '; LAYER_HEIGHT: 0.2', 'G1 Z.2',
+    '; FEATURE: Outer wall', '; LINE_WIDTH: 0.4', 'G1 X0 Y0', 'G1 X1 Y0 E.1', 'G1 X2 Y0 E.1',
+    '; LINE_WIDTH: 0.6', 'G1 X3 Y0 E.1', 'G1 X4 Y0 E.1']));
+  assert.deepEqual([...p.x0], [0, 2]);
+  assert.deepEqual([...p.x1], [2, 4]);
+  assert.deepEqual([...p.width].map((w) => +w.toFixed(2)), [0.4, 0.6]);
+});
+
 test('an arc becomes chords within the tolerance, ending exactly at its end', () => {
   // A half circle of radius 10 about (10, 0), counterclockwise from (0, 0) to (20, 0) through (10, -10).
   const lines = ['M83', '; CHANGE_LAYER', '; Z_HEIGHT: 0.2', '; LAYER_HEIGHT: 0.2', 'G1 Z.2',
