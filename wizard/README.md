@@ -1,8 +1,11 @@
 # The wizard
 
-Nothing of the wizard that a user sees is built yet: only its project and its tools, and
-the inputs of the two trials that open phase 2
-([What is to be built, by phase](#what-is-to-be-built-by-phase)). This guide is its design: what a user sees and does at
+Of the wizard a user sees, only the panel as a whole is built: the header with its step
+tabs, the line under them that says why a step is held and that the server is slow, the
+plate summary, Back and Next, the six ways the panel tells the user something and its own
+tooltip, with the page retrying every request. None of the five steps' contents is built
+yet; their project, tools, the two trials that open phase 2 and the geometry of the Layout
+step are ([What is to be built, by phase](#what-is-to-be-built-by-phase)). This guide is its design: what a user sees and does at
 every step, what the code in the browser must do and how well, and what is still undecided.
 It is written for the person who decides whether the wizard is being built correctly.
 [README-details.md](README-details.md) holds what a builder needs beside it: the names in
@@ -372,7 +375,7 @@ every request it makes, and a user sees a pause, not an error.
 | Time since a request first failed | What the user sees |
 |---|---|
 | Up to 20 seconds | Nothing, except on the thing that is waiting: a part's row says "Taking longer than usual; still trying…" after 4 seconds |
-| 20 to 300 seconds | The panel line, in amber: "The server is being slow. Your browser is retrying in 28 s.", counting down to the next attempt, with a link, "Retry now" |
+| 20 to 300 seconds | The panel line, in amber: "The server is being slow. Your browser is retrying in 28 s.", counting down to the next attempt, with a link, "Retry now"; while an attempt is being made, "The server is being slow. Your browser is retrying now." |
 | After 300 seconds | The panel line, in red: "The server could not be reached.", with one button, **Try again**, which starts the 300 seconds afresh |
 
 These sentences are the wizard's own, since no component answered to write one, and "the
@@ -381,7 +384,8 @@ between attempts grow, doubling from one second to thirty, so there is something
 down and a struggling front server is not hammered. "Retry now" lets a user who has just
 mended their own network skip the countdown. The message is on the panel line and not a
 notification because it concerns the whole panel and must stay as the user moves between
-steps; it goes the moment a request is answered. Throughout,
+steps; it goes the moment a request is answered, and since the server has then answered,
+every request still waiting is tried again at once. Throughout,
 nothing of the user's work is dropped: the parts, the layout and the settings are in the
 browser's storage, a part whose upload stopped keeps its row, and everything that needs
 no server (laying out the plate, changing settings) goes on working. These times cover
@@ -1856,13 +1860,13 @@ card are confirmed.
 
 | Requirement | Figure | What it protects | From | Checked by |
 |---|---|---|---|---|
-| Narrowest panel | 320 px, with no sideways scrolling and nothing cut off | Use in Onshape's panel at its narrowest | The plan | Every screen rendered at 320 px and looked at |
-| Tooltip delay | 150 ms; printer details close 300 ms after the pointer leaves | Help that arrives while the user still wants it, without flicker | Accepted in the mockup | A test with a clock the test moves |
-| Quiet retrying | 20 seconds | A deploy's gap passing unseen | The architecture | The same |
-| Retrying in all | 300 seconds, waits doubling from 1 to 30 seconds | A long outage ending in a clear answer rather than a frozen panel | The architecture; the waits set here | The same |
+| Narrowest panel | 320 px, with no sideways scrolling and nothing cut off | Use in Onshape's panel at its narrowest | The plan. Met by the panel as a whole on every step, at 320 px and at one pixel either side of each width where the layout changes; the steps' contents are not built yet | Every screen rendered at 320 px and looked at |
+| Tooltip delay | 150 ms; printer details close 300 ms after the pointer leaves | Help that arrives while the user still wants it, without flicker | Accepted in the mockup. Met for the tooltip; the printer details come in phase 5 | A test with a clock the test moves |
+| Quiet retrying | 20 seconds | A deploy's gap passing unseen | The architecture. Met | The same |
+| Retrying in all | 300 seconds, waits doubling from 1 to 30 seconds | A long outage ending in a clear answer rather than a frozen panel | The architecture; the waits set here. Met | The same |
 | A progress stream treated as failed | After 20 seconds of failing to reopen, or after 45 seconds open with nothing carried | A card never looking current when the server is lost | Set here; 45 seconds is three times the fifteen at which the front server keeps a stream alive | The same |
 | The main thread held | Never for more than 250 milliseconds, on any step, with any plate up to the limits, on the machine without a graphics card | A panel that never reads as frozen | Set here; unmeasured | Measured by the page itself in tests and in real use ([What the wizard reports about itself](#what-the-wizard-reports-about-itself)) |
-| A part's row says it is slow | After 4 seconds | Knowing the click registered | Accepted in the mockup | The same |
+| A part's row says it is slow | After 4 seconds | Knowing the click registered | Accepted in the mockup. The moment is met by the code that makes every request; the row comes with the Parts step | The same |
 | One part | 7.5 MB, 150,000 triangles | The slice service | Someone else's | A file one byte over is refused with the sentence above |
 | Different parts on a plate | 25 | The slice service's disk | Someone else's | A twenty-sixth part |
 | Instances on a plate | 150 | The slice service | Someone else's | A hundred-and-fifty-first instance |
@@ -2181,9 +2185,10 @@ The screens designed here follow the decisions recorded in the body.
 
 ## What is to be built, by phase
 
-Nothing a user sees is built. The mockup is kept in the repository as the reference for the look,
-and its style sheets are taken over where that is the cheap way to match it; its scripts
-were faked, and the wizard's behaviour is built from this guide
+Of what a user sees, the panel as a whole is built, and none of the steps' contents. The
+mockup is kept in the repository as the reference for the look, and its style sheet for the
+panel is taken over whole, unchanged, as the cheap way to match it; its scripts were faked,
+and the wizard's behaviour is built from this guide
 ([The mockup, this guide and Orca](#the-mockup-this-guide-and-orca)).
 
 What is built is the ground the rest stands on. The wizard is a project of its own with
@@ -2191,11 +2196,25 @@ its commands: install its tools, run its fast tests, run its tests in a real bro
 build the page, and run and serve the two trials. The fast tests already hold the page to
 the rule that makes every later test fast and repeatable: no part of the page may read
 the clock, start a timer or reach the network except through the few places a test
-replaces, and a test fails naming the file and line that does. The page as built is
-still empty: it loads under the strict rules of what the browser may run and reads its
-version, and the build gives each of its files a name that changes with its contents.
-The 3D library is kept with the wizard's code, a newer release than the mockup's,
-published in the form the page loads as it is. For the two trials, the eight real parts
+replaces, and a test fails naming the file and line that does; that search covers every
+way a page can read the time or reach the network. The page loads under the strict rules
+of what the browser may run and reads its version, and the build gives each of its files,
+the 3D library's included, a name that changes with its contents and with the contents of
+every file it loads, so a browser that keeps a file for a year never mixes an old one with
+a new one. The 3D library is kept with the wizard's code, a newer release than the
+mockup's, published in the form the page loads as it is.
+
+On the page, the panel as a whole is built and matches the mockup at each width: the
+header with the configuration's name and its reload glyph, the step tabs as circles below
+480 px and named from 480 px, the rule that a click on a later tab goes there only when
+every step before it allows it (and the line under the tabs saying which step holds it and
+why), the plate summary with its pill and the change details, Back and Next, the six ways
+of telling, and the panel's own tooltip. Every request goes through one place, which adds
+what the front server needs to every request and retries as
+[When the server is slow](#when-the-server-is-slow-or-cannot-be-reached) says, with the
+line under the tabs counting down. What a step holds, and what fills the header (who the
+user is, the configuration), comes with the later items of phase 2. Pictures of the built
+panel beside the mockup's, at four widths, are kept with the build records. For the two trials, the eight real parts
 of the Popcorn Penguins' robot are kept beside the contracts, and two made parts beside
 the trials: a round hub at the largest size a part may have (150,000 triangles) and the
 slice service's reference spacer. Each trial has its own place and its own command, so

@@ -305,7 +305,13 @@ As of Fri 2026-11-27:
   which the owner has not yet read; it carries the decisions of the other reviews that
   bear on it. With their details files and the contracts they are enough to build
   phase 2.
-- **The wizard, the front server and the Onshape integration** have no code.
+- **The wizard** is being built in phase 2: its project and build, both opening trials, the
+  Layout step's geometry in its worker, the module that makes every request with retrying,
+  and the panel as a whole (header, step tabs, panel line, plate summary, Back and Next, the
+  six ways of telling, tooltips), matched to the mockup at each width; none of the five
+  steps' contents yet. Its state is in [its guide](../../wizard/README.md).
+- **The front server** is being built in phase 2 (its guide says how far), and **the Onshape
+  integration** has no code.
 
 **What is undecided.** The last part of each of the four guides, "What is undecided or
 unmeasured", holds what remains open in its component: what only a trial, the real host,
