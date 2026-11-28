@@ -122,7 +122,18 @@ def test_a_finished_slice_job_whose_record_has_expired_is_not_stored_again(app, 
                  dict(record, state="expired", expired_at=LISTED_END))
     bucket.delete(sliced.file_name(USER, "jold"))
     add_done(standin, "jold")
+    # Every following the collection starts is asked for on the collection's own thread,
+    # before `collected` is set: what it asks for is known once `collect` returns, without
+    # waiting for the absence of a request a following's thread might yet send.
+    follower = context(app)["follower"]
+    asked, follow = [], follower.follow
+    follower.follow = lambda user_key, job, *rest, **named: (
+        asked.append(job), follow(user_key, job, *rest, **named))[1]
     collect(app)
+    assert asked == []
+    assert follower.followed() == set()
+    [line] = log.events("slices_collected")
+    assert (line["left"], line["collecting"], line["already_stored"]) == (1, 0, 0)
     assert not [r for r in standin.requests if "jold" in r.path]
     assert read_state(bucket, "jold") == "expired"
 
@@ -134,6 +145,21 @@ def test_a_slice_job_followed_already_is_not_followed_twice(app, standin, log):
     assert len([line for line in log.events("slice_followed")
                 if line["slice"] == "jrun"]) == 1
     assert log.events("slices_collected")[0]["followed"] == 0
+
+
+@pytest.mark.parametrize("record", ["none", "stored"])
+def test_a_finished_slice_job_followed_already_is_counted_in_no_kind(app, standin, bucket,
+                                                                     log, record):
+    # Every count but `listed`, `left` and `unreadable` is of the followings the start began.
+    if record == "stored":
+        write_stored(bucket, "jdone")
+    add_done(standin, "jdone")
+    context(app)["follower"].follow(USER, "jdone", GROUP)
+    collect(app)
+    wait_for_delete(standin, "jdone")
+    [line] = log.events("slices_collected")
+    assert (line["listed"], line["followed"], line["collecting"], line["already_stored"],
+            line["left"]) == (1, 0, 0, 0, 0)
 
 
 @pytest.mark.parametrize("ended_at", ["yesterday", "2026-13-40T25:00:00Z", None])

@@ -107,8 +107,10 @@ class Collector:
             group = record.get("group") if record is not None else None
             ended_at = _ended_at(entry) if kind != "followed" else None
             started = self._follower.follow(user_key, job, group, ended_at=ended_at)
-            if not started and kind == "followed":
-                counts["followed"] -= 1
+            # A slice job followed already (a page asked about it first) is counted in no
+            # kind: `followed`, `collecting` and `already_stored` count followings begun.
+            if not started:
+                counts[kind] -= 1
         self._log.write("slices_collected", **counts)
 
     def _kind(self, entry, user_key, job, state):

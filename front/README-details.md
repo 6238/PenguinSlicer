@@ -1797,8 +1797,9 @@ slice job it cannot place keeps no group.
 server; `gather_once()` for the tests):
 
 - every `LOG_GATHER_S` (60) on the front server's clock, and once at start, it asks
-  `GET /log?after=<n>` and asks again at once while `more` is true and the answer held
-  lines, at most `MAX_ASKS` (100) times in one gathering (*proposed*: ten times the 10,000
+  `GET /log?after=<n>` and asks again at once while `more` is true and the answer held a
+  line it kept (an answer of only unreadable lines leaves `after` where it was, and asked
+  again would answer the same), at most `MAX_ASKS` (100) times in one gathering (*proposed*: ten times the 10,000
   lines the slice service keeps), the rest waiting for the next minute;
 - a line whose `n` is not a whole number past the last one received, or that is not an
   object, is dropped and counted in one line `slice_log_lines_unreadable` (`process`,
@@ -1945,14 +1946,19 @@ refused `400` `front.bad_request` naming the field, and nothing is written; an o
 field of the wrong kind is dropped (a `part_sha256` that is not 64 lowercase hexadecimal
 characters among them, so that the field can never carry a part's name); a drawing summary
 of `layout` drops the fields that go `with preview`, and one of `preview` without them is
-refused. Numbers are any JSON number, which is always finite (`json_body` refuses `NaN`,
-`Infinity` and a number too large for a float such as `1e999`); `page` is cut at
+refused. A number is a JSON number a float can hold: `json_body` refuses `NaN`, `Infinity`
+and a fraction too large for a float such as `1e999`, but JSON's whole numbers have no
+bound, so one past a float's range (`10**400`) is of the wrong kind, refused when the field
+is required and dropped when it is optional. `page` is cut at
 `PAGE_CHARS` (64, *proposed*: the contract gives no length, and the page's id is a UUID of
-36), and an empty `page` is refused. `front.too_many_reports` is not retryable, since the
-page drops a refused report. A body over `MAX_REPORT_BYTES`
+36), and a `page` that is empty or only spaces is refused. `front.too_many_reports` is not
+retryable, since the page drops a refused report. A body over `MAX_REPORT_BYTES`
 (16,384, *proposed*; a whole report is under 2 KB) is refused `400` `front.bad_request`
-before it is read, and one sent without `Content-Length` is read no further than one byte
-past it. The limit counts the signed-in user and the report's `page` together on a sliding
+before the front server's code reads it: a `Content-Length` over the limit is refused with
+nothing taken from the body, and one sent without `Content-Length` is read no further than
+one byte past it. As for every request, waitress has by then received the whole body
+(keeping one over 512 KB in a temporary file, as under "Uploading a part"); what the limit
+bounds is what the front server's code takes into its memory for a report. The limit counts the signed-in user and the report's `page` together on a sliding
 minute (`penguin_front.ratelimit.RateLimit`); a refused report is not counted. A group the
 cookie does not list is left out of the line and writes no `refused` line, since the report
 is not refused.
@@ -1969,9 +1975,12 @@ Built: `tests/test_reports.py`.
   another user.
 - A report without a sign-in is refused `401`; one naming a group not the user's is still
   written, without the group.
-- A report over its size is refused before it is read, with or without `Content-Length`;
-  without it, no more than one byte past the limit is taken from a body sixty-four times
-  the limit.
+- A report over its size is refused before the front server's code reads it, with or
+  without `Content-Length`: with it, nothing is taken from the body; without it, no more
+  than one byte past the limit is taken from a body sixty-four times the limit. A body of
+  exactly `MAX_REPORT_BYTES` is written and one byte more is refused, both ways.
+- A whole number too large for a float is refused in a required field and dropped in an
+  optional one; a `page` of only spaces is refused.
 
 ## The version, and old and new versions together
 
@@ -2064,7 +2073,8 @@ by the running server after the `start` line; `collected` is set when it has end
   writes `slices_entry_unreadable` with the entry cut to 300 characters, and is skipped;
 - the end writes `slices_collected`: `listed`, `followed`, `collecting`, `already_stored`,
   `left` and `unreadable`. A slice job already followed (a page asked about it first) is
-  not followed twice;
+  not followed twice, and is counted in none of `followed`, `collecting` and
+  `already_stored`, which count the followings the start began;
 - asked to stop while it waits, it ends at once.
 
 | What the user did | Where it is | After a restart of the front server |

@@ -69,10 +69,11 @@ batch's. Written Fri 2026-11-27, Pacific time.
     `front.bad_request` and nothing is written; an optional field of the wrong kind is
     dropped. A `part_sha256` that is not 64 lowercase hexadecimal characters is dropped, so
     the field cannot carry a part's name. A Layout summary drops the Preview's fields; a
-    Preview summary without them is refused. Numbers are any JSON number, which is always
-    finite, since `json_body` refuses `NaN`, `Infinity` and `1e999` (the details file's
-    wording). An empty `page` is refused like a missing one, since a report without a page
-    id cannot be held to its limit. `front.too_many_reports` is retryable false: the page
+    Preview summary without them is refused. A number is a JSON number a float can hold:
+    `json_body` refuses `NaN`, `Infinity` and a fraction such as `1e999`, but JSON's whole
+    numbers have no bound, so one past a float's range (`10**400`) is of the wrong kind
+    (decision 26). A `page` that is empty or only spaces is refused like a missing one,
+    since a report without a page id cannot be held to its limit. `front.too_many_reports` is retryable false: the page
     drops a refused report and never sends it again.
 13. **The report's lines** are `failure_report` and `drawing_report`, component `wizard`,
     with `user_key`, `group` (only when the cookie lists it) and `page_version` (only of the
@@ -81,10 +82,13 @@ batch's. Written Fri 2026-11-27, Pacific time.
 14. **`page`'s length** is 64 characters (`PAGE_CHARS`, *proposed*); the contract gives
     none.
 15. **A report's size.** The documents give none. Chosen: 16,384 bytes
-    (`MAX_REPORT_BYTES`, *proposed*), refused `400` `front.bad_request` before it is read,
-    and a body without `Content-Length` read no further than one byte past it. Reason: a
-    report is under 2 KB, and without a bound a hostile page could have any body read
-    whole. `json_body` now takes bytes already read.
+    (`MAX_REPORT_BYTES`, *proposed*), refused `400` `front.bad_request` before the front
+    server's code reads it: a `Content-Length` over the limit is refused with nothing taken
+    from the body, and a body without `Content-Length` is read no further than one byte past
+    it. Waitress has by then received the whole body, as for every request (keeping one over
+    512 KB in a temporary file). Reason: a report is under 2 KB, and without a bound a
+    hostile page could have the front server's code take any body whole into its memory.
+    `json_body` now takes bytes already read.
 16. **`front.too_many_reports`' sentences** are new: "This page sent more reports about
     itself than the server takes in a minute." and "Nothing needs doing: the page goes on
     without sending this one." No user sees them; the page drops the report.
@@ -141,6 +145,24 @@ batch's. Written Fri 2026-11-27, Pacific time.
     every field, listed in the examples' README and named under the route in the contract;
     `tests/test_reports.py` reads it rather than holding its own copy. It adds no field and
     changes no shape, so no wizard test changes with it.
+26. **A whole number too large for a float in a report** (second review, blocking 1). It
+    reached `math.isfinite`, which raised `OverflowError`, and answered `500`
+    `front.unexpected`. Chosen: of the wrong kind, as the rule of decision 12 has it,
+    so `400` `front.bad_request` in a required field and dropped in an optional one.
+    Reason: no honest figure of a drawing summary is past 1.8 × 10^308, and refusing
+    rather than writing the number keeps the log's readers from meeting a number they
+    cannot read as a float. To overrule: `_number` in `penguin_front.reports`.
+27. **An answer of `GET /log` saying `more` whose lines are all unreadable** (second review,
+    minor 3). Chosen: it ends the gathering, as one with no lines does, since `after` has
+    not moved and the slice service would answer the same; the rest waits for the next
+    minute, with one `slice_log_lines_unreadable` line a minute rather than up to 100.
+    To overrule: the `not kept` test in `Gatherer._gather`.
+28. **What `slices_collected` counts for a slice job followed already** (second review,
+    minor 4). Chosen: `followed`, `collecting` and `already_stored` count the followings
+    the start began, so a slice job a page had followed first is counted in none of them
+    (it is still in `listed`). Reason: one meaning for the three. To overrule: the
+    `if not started` line in `Collector._collect_once`.
+29. **A `page` of only spaces** (second review, minor 6): refused as an empty one is.
 
 ### The review's findings declined
 
@@ -151,6 +173,22 @@ batch's. Written Fri 2026-11-27, Pacific time.
   A second ceiling is a change to the contract's rule, the owner's to make. To add it: a
   second `RateLimit` keyed on the user alone in `penguin_front.reports._report`, with its
   figure in the contract.
+- **Second review, minor 2: an absurd `dropped` in a gathered answer raises `highest`.**
+  Declined. `dropped` is the count of lines the slice service gave up since the `after`
+  asked; it has no bound in the contract and can honestly be large (a front server down
+  for days beside a busy slice service), so any ceiling the front server set would be a
+  figure the documents do not give and could drop honest lines. It comes from the slice
+  service alone, a component on the private network, never from a browser; `highest`
+  guards against one line's absurd `n`, not against a slice service that lies about its
+  whole answer. To add a ceiling: a bound on `dropped` in `Gatherer._ask`, with its
+  figure in the slice service's HTTP interface contract.
+- **Second review, minor 5: the search for secrets skips streamed answers.** Declined for
+  this batch. The details file says so; the streamed answers are the progress streams,
+  whose events are the slice service's progress reports passed on field by field, and the
+  sliced file, whose bytes are the slice service's output. Neither is built from the
+  cookie key, a sealed cookie or an Onshape token. Searching them needs the search to wrap
+  each stream's generator, which the web framework consumes after the answer handler the
+  search patches; it is left as a gap, written here and in the details file.
 
 ### The review's findings fixed
 
@@ -163,6 +201,27 @@ ends the gathering (`tests/test_server.py`); an unreadable entry's line is cut t
 characters (`tests/test_collecting.py`); a gathering broken off still saves its cursor
 (`tests/test_gathering.py`). Decisions 22 to 25 above fix minors 4, 5 and 9; minors 7 and 8
 are folded into decisions 12 and 21 and into the details file.
+
+From the second review, each test seen to fail first, for the finding's reason:
+
+- **Blocking 1:** a drawing summary with `fps_worst` of `10**400` or `-10**400` is refused
+  `400` naming the field, and an optional `processors` of `10**400` is dropped
+  (`tests/test_reports.py`); both answered `500` before the fix (decision 26). The details
+  file and decision 12 no longer say every JSON number is finite.
+- **Blocking 2:** the test of an expired record at start no longer waits for the absence of
+  a request. It records every `follow` the collection asks for, which happens on the
+  collection's own thread before `collected` is set, and asserts that none was asked, that
+  nothing is followed, and that `slices_collected` counts the slice job `left` with
+  `collecting` and `already_stored` 0. Against `found in (None, "submitted", "expired")`
+  it fails on every run.
+- **Blocking 3:** a report whose `Content-Length` is over the limit is refused with nothing
+  taken from the counted input; a body of exactly `MAX_REPORT_BYTES` is written and one byte
+  more is refused with nothing taken, with and without `Content-Length`. Against
+  `length > limit * 2` the first fails, and against `length > limit + 1` the boundary test
+  fails.
+- **Minor 1:** the details file's reports section and decision 15 say "before the front
+  server's code reads it", with waitress's whole receipt of the body stated.
+- **Minors 3, 4 and 6:** decisions 27, 28 and 29, each with a test.
 
 ## Targets missed
 

@@ -401,6 +401,16 @@ def test_an_answer_saying_more_with_no_lines_ends_the_gathering(clock, client, s
     assert asked(standin) == ["after=0"]
 
 
+def test_an_answer_saying_more_whose_lines_are_all_unreadable_ends_the_gathering(
+        clock, client, state, log, standin):
+    # Asked again with the same `after`, it would answer the same: one line, not a hundred.
+    standin.answer_next("GET", "/log", 200, {"process": "p1", "lines": ["x", {"n": "y"}],
+                                             "dropped": 0, "more": True})
+    gatherer(clock, client, state, log).gather_once()
+    assert asked(standin) == ["after=0"]
+    assert len(log.own("slice_log_lines_unreadable")) == 1
+
+
 def test_one_gathering_asks_at_most_its_bound(clock, client, state, log, standin,
                                               monkeypatch):
     monkeypatch.setattr(gathering, "MAX_ASKS", 3)

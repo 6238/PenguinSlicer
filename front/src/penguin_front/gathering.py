@@ -3,7 +3,8 @@ contracts/slice-http-interface.md, "`GET /log?after=<n>`").
 
 The front server is the only thing that writes to the log bucket, so it gathers the slice
 service's lines for it: about once a minute (`LOG_GATHER_S`) it asks `GET /log?after=<n>`,
-passing back the last `n` it received, and asks again at once while the answer says `more`.
+passing back the last `n` it received, and asks again at once while the answer says `more`
+and held a line it kept.
 The lines it receives are kept by the log (`Log.gather`) for the minute's file, each with the
 group added: the group noted beside its slice job, by the following while the slice job is
 followed, or else in the slice job's record in the state bucket. A line whose slice job
@@ -118,7 +119,9 @@ class Gatherer:
                 self._log.write("slice_log_lines_unreadable", process=process,
                                 count=unreadable)
             self._log.gather(kept)
-            if not more or not lines:
+            # An answer that kept no line leaves `after` where it was: asked again, the slice
+            # service would answer the same, so the rest waits for the next minute.
+            if not more or not kept:
                 return
 
     def _ask(self, after):

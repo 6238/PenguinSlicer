@@ -112,7 +112,7 @@ def bad_request(answer, log, field):
 
 @pytest.mark.parametrize("field, value", [
     ("what", "everything_failed"), ("step", "checkout"), ("what", 3), ("browser", 7),
-    ("software_3d", "yes"), ("page", ""), ("page", None),
+    ("software_3d", "yes"), ("page", ""), ("page", None), ("page", "   "), ("page", "\t\n"),
 ])
 def test_a_failure_field_off_its_list_or_of_a_bad_form_is_refused(client, log, field, value):
     bad_request(send(client, "failure", EXAMPLE | {field: value}), log, field)
@@ -171,6 +171,25 @@ def test_a_report_over_its_size_is_refused_before_it_is_read(client, log):
     assert not written(log, "failure_report")
 
 
+@pytest.mark.parametrize("value", [10 ** 400, -(10 ** 400)], ids=["huge", "huge-negative"])
+def test_a_required_whole_number_too_large_for_a_float_is_refused(client, log, value):
+    # JSON's whole numbers have no bound: one too large for a float is no honest figure.
+    body = json.dumps(DRAWING).replace(f'"fps_worst": {json.dumps(DRAWING["fps_worst"])}',
+                                       f'"fps_worst": {value}')
+    assert str(value) in body
+    answer = client.post("/api/reports/drawing", data=body, headers=DEV_GROUP)
+    bad_request(answer, log, "fps_worst")
+
+
+def test_an_optional_whole_number_too_large_for_a_float_is_dropped(client, log):
+    body = json.dumps(DRAWING | {"processors": 1}).replace('"processors": 1',
+                                                           f'"processors": {10 ** 400}')
+    answer = client.post("/api/reports/drawing", data=body, headers=DEV_GROUP)
+    assert answer.status_code == 204
+    [line] = written(log, "drawing_report")
+    assert "processors" not in line
+
+
 class Counted(io.BytesIO):
     """A request body that counts the bytes the front server takes from it."""
 
@@ -215,6 +234,40 @@ def test_a_report_without_a_length_is_read_no_further_than_its_size(client, log)
     assert 0 < stream.taken <= reports.MAX_REPORT_BYTES + 1
     assert unmeasured(client, json.dumps(EXAMPLE).encode()).status_code == 204
     assert len(written(log, "failure_report")) == 1
+
+
+def measured(client, body):
+    """A report sent with a Content-Length that says its whole size."""
+    stream = body if isinstance(body, Counted) else Counted(body)
+    return client.post("/api/reports/failure", headers=DEV_GROUP, environ_overrides={
+        "wsgi.input": stream, "CONTENT_LENGTH": str(len(stream.getvalue()))})
+
+
+def test_a_report_whose_length_is_over_its_size_is_refused_before_any_of_it_is_taken(
+        client, log):
+    stream = Counted(json.dumps(EXAMPLE | {"detail": "x" * reports.MAX_REPORT_BYTES})
+                     .encode())
+    answer = measured(client, stream)
+    assert answer.status_code == 400 and answer.get_json()["code"] == "front.bad_request"
+    assert "without Content-Length" not in answer.get_json()["detail"]
+    assert stream.taken == 0
+    assert not written(log, "failure_report")
+
+
+def padded(size):
+    """The example as a body of exactly `size` bytes: JSON allows spaces after the object."""
+    body = json.dumps(EXAMPLE).encode()
+    return body + b" " * (size - len(body))
+
+
+def test_a_report_of_exactly_its_size_is_read_and_one_byte_more_is_refused(client, log):
+    limit = reports.MAX_REPORT_BYTES
+    assert measured(client, padded(limit)).status_code == 204
+    over = Counted(padded(limit + 1))
+    assert measured(client, over).status_code == 400 and over.taken == 0
+    assert unmeasured(client, padded(limit)).status_code == 204
+    assert unmeasured(client, padded(limit + 1)).status_code == 400
+    assert len(written(log, "failure_report")) == 2
 
 
 def too_many(answer):

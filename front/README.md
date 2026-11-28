@@ -1052,7 +1052,8 @@ else a report carries, since a report comes from a browser like any other reques
 page sends at most a few reports a minute, and the front server holds one page to the
 same limit itself, six a minute, so that a broken or hostile page cannot fill the log; it
 reads no report larger than 16 KB, many times an honest one. A report that breaks the
-contract (a field missing, or a value off its list) is refused and not written.
+contract (a field missing, a value off its list, or a number too large for any honest
+figure) is refused and not written.
 
 ### Where it goes, and who reads it
 

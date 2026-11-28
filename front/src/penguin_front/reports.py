@@ -54,7 +54,7 @@ def _text(length):
 
 
 def _page(value):
-    return value[:PAGE_CHARS] if isinstance(value, str) and value else _Bad
+    return value[:PAGE_CHARS] if isinstance(value, str) and value.strip() else _Bad
 
 
 def _one_of(allowed):
@@ -68,10 +68,16 @@ def _flag(value):
 
 
 def _number(value):
-    if isinstance(value, (int, float)) and not isinstance(value, bool) \
-            and math.isfinite(value):
-        return value
-    return _Bad
+    """A JSON number a float can hold. The reader refuses a fraction too large for a float
+    (`1e999`), but JSON's whole numbers have no bound: one past a float's range
+    (`10**400`) is of the wrong kind."""
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return _Bad
+    try:
+        finite = math.isfinite(value)
+    except OverflowError:
+        return _Bad
+    return value if finite else _Bad
 
 
 def _hash(value):
