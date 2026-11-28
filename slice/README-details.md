@@ -232,18 +232,17 @@ key (item 7) and the first progress report carries `ahead` (item 8), both built.
 Built: see
 [A plate's slice jobs: repeats, replacement and the places](#a-plates-slice-jobs-repeats-replacement-and-the-places).
 What it leaves to later items: a repeat is recognised for as long as the slice job's record
-lasts, two hours after it ends (item 10, built); a stopping slice service still
-answers `slice.busy` until item 14, which answers `slice.stopping`, the repeat already being
-looked for first. [D97, D98, D295]
+lasts, two hours after it ends (item 10, built); a stopping slice service answers
+`slice.stopping` (item 14, built), the repeat being looked for first. [D97, D98, D295]
 
 **8. Progress reports say how many are ahead, and why a slice job ended early**
 ([Report progress](README.md#report-progress), [End a slice job early](README.md#end-a-slice-job-early);
 [A slice job's reports](../contracts/progress-report.md#a-slice-jobs-reports)). Built: see
 "How many are ahead" and "Ending a slice job early" under
 [Progress, cancellation and cleanup](#progress-cancellation-and-cleanup) (tests:
-`tests/test_jobs.py` `TestAhead`, `TestCancelReason`). What it leaves to later items: the
-`shutdown` reason is given by the stop as built, which ends every slice job; item 14 keeps it
-for the waiting ones and a second stop only.
+`tests/test_jobs.py` `TestAhead`, `TestCancelReason`). What it leaves to later items:
+nothing; the `shutdown` reason is given to the waiting slice jobs at a stop and to the running
+one at a second stop (item 14, built).
 
 **9. A slice job goes on without its page** ([Go on without the page](README.md#go-on-without-the-page)).
 Built: see "Going on without its page" under
@@ -254,8 +253,8 @@ Built: see "Going on without its page" under
 **10. Slice jobs remembered for two hours; the sliced file deleted once stored.** Built:
 see "Remembered for two hours; the sliced file deleted once stored" under
 [Progress, cancellation and cleanup](#progress-cancellation-and-cleanup). What it leaves to
-later items: the stop of item 14 waits for the running slice job's sliced file to be
-deleted by it. [D90, D100, D298, D299]
+later items: nothing; the stop of item 14 (built) waits for the running slice job's sliced
+file to be deleted by it. [D90, D100, D298, D299]
 
 **11. A route lists the slice jobs.** Built: see "The list of slice jobs" under
 [Progress, cancellation and cleanup](#progress-cancellation-and-cleanup). What it leaves to
@@ -271,39 +270,7 @@ items: nothing.
 **14. Asked to stop, it finishes the running slice**
 ([What a user sees while the slice service stops](README.md#what-a-user-sees-while-the-slice-service-stops);
 the stopping answer of [Submitting a plate configuration](../contracts/wizard-front-server.md#submitting-a-plate-configuration)).
-When `serve` receives SIGTERM (what a container host sends) or Ctrl-C:
-
-1. The running slice job runs to its end, bounded by the time limit, and the HTTP
-   interface keeps answering until the front server has fetched that sliced file and
-   deleted it (item 10); then `serve` exits 0. A running slice that fails ends as any
-   failure, and `serve` exits once no done slice job still holds a sliced file. On one
-   machine with no front server running nothing collects a sliced file, and `serve` waits
-   for it until a second stop (step 4).
-2. Each waiting slice job is ended early with `cancel_reason` `shutdown`, so that its page
-   submits the plate again by itself.
-3. Each new plate configuration is answered `slice.stopping` (HTTP 503, retryable true;
-   [the contract's example](../contracts/examples/slice-http/stopping.json)), never
-   `slice.busy`, which a user is shown. A repeat of a remembered submission is still
-   answered with its slice job, and an upload of a part is answered as usual, as
-   [the contract](../contracts/slice-http-interface.md#rules-for-every-request) says.
-4. A second SIGTERM or Ctrl-C ends the running slice job early too, with `cancel_reason`
-   `shutdown`, and `serve` exits at once once Orca is gone, without waiting for any done
-   slice job's sliced file to be collected; such a file is lost with the process, and its
-   slice runs again when its page submits again.
-
-The front server holds no submission back: it passes `slice.stopping` to the page at once,
-and the wizard shows the slice as waiting and submits again by itself for up to 300
-seconds. Past the time Railway gives a stopping container, Railway kills the process and
-Orca dies with it (`PR_SET_PDEATHSIG`). Open: how long Railway gives a stopping
-container, whether it starts the new one first, and how long a new slice service takes to
-start ([Unmeasured](README.md#unmeasured)); build the stop as described. Replaces:
-`JobPool.shutdown`, which ends every slice job, and the end of `serve`, which waits only
-until every Orca is gone. Tests: a stop while a fake Orca runs ends that slice job `done`,
-and `serve` exits only after its sliced file is deleted; a waiting slice job ends
-`cancelled` with `shutdown`; a submission after the stop gets `slice.stopping`; a repeat
-after the stop gets its slice job; a second stop ends the running slice job with
-`shutdown` once Orca is gone; a second stop while a done slice job's sliced file is
-uncollected makes `serve` exit at once. [D230, D306]
+Built: see [Asked to stop](#asked-to-stop). What it leaves to later items: nothing. [D230, D306]
 
 **15. "A new plate" in the sentences.** Built: see "A new plate" under
 [Error codes](#error-codes). What it leaves to later items: nothing.
@@ -551,12 +518,16 @@ bracket touches the plate along two edges only: the checks accept it, and the pi
 fails the slice (`slice.orca_failed`, "floating regions" in its log). With the first three
 instances the plate slices.
 
-`serve` writes one JSON log line per slice job transition on stderr; stopping it with
-Ctrl-C or SIGTERM (what a container host sends) cancels every slice job, sends each
-follower its `cancelled` report (`cancel_reason` `shutdown`) and waits until every Orca is
-gone. A setting it refuses
-(see Settings) stops it before it listens, with a message naming the setting and exit
-status 2.
+`serve` writes one JSON log line per slice job transition, and one for each of its own
+(`slice_service_started` with the host, the port it listens on, which with `--port 0` the
+system chooses, and its process id; `slice_service_stopping`; `slice_service_stopped`), on
+stderr. Ctrl-C and SIGTERM (what a container host sends) ask it to stop, as
+[Asked to stop](#asked-to-stop) says: the first lets the running slice job finish and waits
+for its sliced file to be collected, the second ends it too. By hand, with no front server
+to collect a sliced file, a slice service that has sliced anything waits for the second
+Ctrl-C. A setting it refuses (see Settings) stops it before it listens, with a message
+naming the setting and exit status 2; an address it cannot listen on (one already taken),
+with "cannot listen on <host>:<port>: ..." and exit status 1.
 
 **One slice service process holds its slice jobs.** A running slice service is a slice
 service process: one process, whose slice jobs live in its memory (`jobs.JobPool`).
@@ -564,7 +535,62 @@ Several slice service processes may run, on one machine or several; a client mus
 talking to the slice service process that accepted its slice job, because no other
 process knows it. A server that starts several worker processes behind one address
 (several Gunicorn workers, for example) loses slice jobs: a request that reaches another
-worker gets `slice.unknown_job`. `serve` runs Flask's own threaded server in one process.
+worker gets `slice.unknown_job`. `serve` runs werkzeug's threaded server
+(`werkzeug.serving.make_server`, Flask's own) in one process, on a thread of its own, so
+that the main thread is free to take the stop signals.
+
+### Asked to stop
+
+Item 14 of [Phase 2](#phase-2-one-machine), built
+([What a user sees while the slice service stops](README.md#what-a-user-sees-while-the-slice-service-stops);
+the stopping answer of [Submitting a plate configuration](../contracts/wizard-front-server.md#submitting-a-plate-configuration)).
+[D230, D306] When `serve` receives SIGTERM or Ctrl-C (its handler only puts a stop into a
+`queue.SimpleQueue`, the one queue safe to put into from a signal handler, and
+`__main__.run_until_stopped` acts on it in the main thread):
+
+1. **The first stop** (`JobPool.stop`) ends each waiting slice job early with `cancel_reason`
+   `shutdown`, so that its page submits the plate again by itself, and lets the running slice
+   job run to its end, bounded by the time limit. The HTTP interface keeps answering every
+   request. `serve` exits 0 once the pool is drained (`JobPool.drained`,
+   `JobPool.wait_drained`): nothing waits or runs and no done slice job still holds a sliced
+   file the front server has not deleted with `DELETE /slices/<job>/file`. A running slice
+   that fails ends as any failure and holds nothing. A done slice job from before the stop
+   holds the stop as the running one does, until its file is collected or its record expires
+   (two hours). On one machine with no front server running nothing collects a sliced file,
+   and `serve` waits for it until a second stop.
+2. **While stopping,** each new plate configuration is answered `503` `slice.stopping`
+   (retryable, exactly [the contract's example](../contracts/examples/slice-http/stopping.json)),
+   never `slice.busy`, which a user is shown. `POST /slices` looks for a repeat first, so a
+   repeat of a remembered submission is still answered `202` with its slice job; the stop is
+   then answered before any check (a plate that the checks would refuse is answered
+   `slice.stopping` too, since the page will submit it again to the new slice service, which
+   checks it). A stop that arrives while a plate configuration is being checked is caught
+   under the pool's lock (`jobs.Stopping`), and its folder is removed. An upload of a part,
+   and every request about a slice job, the list, the table of settings and the log, are
+   answered as usual.
+3. **A second stop** shuts the pool down (`JobPool.shutdown`): the running slice job is ended
+   early with `cancel_reason` `shutdown`, reported only once Orca and every child are gone,
+   and `serve` exits 0 at once after, without waiting for any done slice job's sliced file to
+   be collected; such a file is lost with the process (`files_lost` in the last log line), and
+   its slice runs again when its page submits again. A third stop changes nothing.
+
+The log lines: `slice_service_stopping` with `stop` 1, the ids of the waiting slice jobs it
+ended (`waiting_ended`) and whether the pool was drained at once; `slice_service_stopping`
+with `stop` 2 at a second stop; and `slice_service_stopped` with `how` (`drained` or
+`second_stop`) and `files_lost`. Past the time Railway gives a stopping container, Railway
+kills the process and Orca dies with it (`PR_SET_PDEATHSIG`). Open: how long Railway gives a
+stopping container, whether it starts the new one first, and how long a new slice service
+takes to start ([Unmeasured](README.md#unmeasured)). Tests: `tests/test_jobs.py`
+`TestAskedToStop` (the pool, with a worker the test releases), `tests/test_web.py`
+`TestWhileStopping` (the HTTP interface), `tests/test_cli.py` `TestRunUntilStopped` (the
+order of the stops and the drain, with a fake pool) and `tests/test_serve_stop.py`, which runs
+`serve` itself on a loopback port the system chooses with the fake Orca in its mode `gate`
+(it waits until the test writes into its FIFO, `helpers.open_gate`) and sends the stops to
+its own process: a stop while Orca runs ends that slice job `done`, `serve` keeps answering
+and exits only after its sliced file is deleted; a waiting slice job ends `cancelled` with
+`shutdown`; a submission after the stop gets `slice.stopping`; a repeat gets its slice job; a
+second stop ends the running slice job with `shutdown` once Orca is gone; a second stop while
+a done slice job's sliced file is uncollected makes `serve` exit at once.
 
 ## The HTTP interface
 
@@ -1774,7 +1800,8 @@ two waiting, the waiting ones report 1 and 2; when the running one ends the firs
 **Ending a slice job early.** `JobPool.cancel(job, reason)` ends a slice job early with one
 of `jobs.CANCEL_REASONS`, which its `cancelled` report carries as `cancel_reason` and its
 `cancelling` and `cancelled` log lines as `cancel_reason` too: `replaced` (the same plate's
-later slice job, see below), `shutdown` (`JobPool.shutdown`) or `requested`
+later slice job, see below), `shutdown` (a waiting one at `JobPool.stop`, the running one at
+`JobPool.shutdown`) or `requested`
 (`DELETE /slices/<job>`, kept as built, which no component of PenguinSlicer sends). A slice
 job keeps the first reason it was given. A worker that ends with `SliceCancelled` without
 the pool having asked (which nothing does) is reported with `requested`, so a `cancelled`
@@ -1834,8 +1861,9 @@ the tests moves both the pool's clock and the sweeper's intervals (`helpers.Manu
 so no test waits a duration (tests: `tests/test_jobs.py` `TestRememberedForTwoHours`,
 `TestSweeperAndShutdown`; `tests/test_web.py` `TestTheSlicedFileOnceStored`).
 
-Shutdown (`JobPool.shutdown`, the end of `serve`) cancels every slice job and waits for
-every worker.
+A stop (`JobPool.stop`) ends every waiting slice job and refuses new ones; shutdown
+(`JobPool.shutdown`, a second stop and the end of `serve`) cancels every slice job and waits
+for every worker (see [Asked to stop](#asked-to-stop)).
 
 **The list of slice jobs.** Item 11 of [Phase 2](#phase-2-one-machine), built ([Go on without the page](README.md#go-on-without-the-page)).
 [`GET /slices`](../contracts/slice-http-interface.md#get-slices--every-slice-job) answers
@@ -1911,13 +1939,16 @@ minute.").
    replaces nothing, takes no place and adds no report to the slice job. A refused submission
    started no slice job, so its value is not remembered and is checked afresh when it comes
    again. One `submission_id` under two user keys is two submissions.
-2. **The checks**, as in [The plate configuration in its phase 2 form](#the-plate-configuration-in-its-phase-2-form).
-3. **The parts held** in a new folder for the slice job (`slice.scratch_unwritable`,
+2. **A stopping slice service** answers `503` `slice.stopping` before any check (see
+   [Asked to stop](#asked-to-stop)).
+3. **The checks**, as in [The plate configuration in its phase 2 form](#the-plate-configuration-in-its-phase-2-form).
+4. **The parts held** in a new folder for the slice job (`slice.scratch_unwritable`,
    `slice.part_missing` as there).
-4. **The pool decides, under its lock** (`JobPool.submit(..., plate_id, submission_id)`):
+5. **The pool decides, under its lock** (`JobPool.submit(..., plate_id, submission_id)`):
    first the repeat again, since two attempts of one submission can pass the first look
    together (`jobs.RepeatedSubmission`: the second's folder is removed and it is answered as
-   a repeat); then a stopping pool (`slice.busy` until item 14); then the places, counting
+   a repeat); then a stopping pool (`jobs.Stopping`, `slice.stopping`, see
+   [Asked to stop](#asked-to-stop)); then the places, counting
    as given up the place of every earlier slice job of the same user key and `plate_id` that
    is still waiting or running; then **the replacement**: each such earlier slice job is
    ended early with `cancel_reason` `replaced` (a waiting one at once, its files removed; a
@@ -1985,6 +2016,7 @@ sentence, remedy, action, retryable flag and evidence its report must carry.
 | `slice.placement_too_tall` | checking | An instance is taller than the printable height. |
 | `slice.placement_too_close` | checking | Two footprints are closer than `SPACING_MM` (5 mm), or `SPACING_SUPPORTS_MM` (12 mm) with supports on (see "Spacing"). The report names both instances (`where`: `instance`, `other_instance`); with supports on the sentence says supports need the room, and the remedy also offers turning supports off. The detail lists at most 20 such problems. |
 | `slice.busy` | queued | The job queue is full. |
+| `slice.stopping` | queued | A new plate configuration after the slice service was asked to stop (HTTP 503, retryable): "The slicer is restarting.", the remedy "Your plate will be sliced as soon as the slicer is back.", exactly [the contract's example](../contracts/examples/slice-http/stopping.json). Never `slice.busy`. |
 | `slice.scratch_unwritable` | building | The plate 3MF, the process file or Orca's folders cannot be written (a full disk, a folder where an earlier run's sliced file was), or the HTTP interface cannot make a slice job's folder in its work folder or hold its parts there, or the part store cannot keep an uploaded part (HTTP 500). The upload's report has its own sentence (`web.PART_STORE_UNWRITABLE_MESSAGE`) and remedy (add the part again in a few minutes, or the server needs more free disk space). |
 | `slice.orca_missing` | slicing | No Orca at `PENGUIN_SLICE_ORCA` or `tools/orca`. |
 | `slice.orca_unstartable` | slicing | Orca is there but will not start (not executable, another architecture), or exits 126 or 127 with no `result.json` (the loader could not load a library it needs). |

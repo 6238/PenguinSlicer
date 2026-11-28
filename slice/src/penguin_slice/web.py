@@ -33,7 +33,8 @@ body that is not a plate configuration; 404 for an unknown slice job or a path n
 (yet); 410 for a sliced file gone from the disk; 413 for a part or a plate configuration
 too large, refused before its body is read; 422 for a part or plate configuration a check
 refused; 500 for the slice service's own failure (its work folder or part store not
-writable, a bug); 503 when the queue is full.
+writable, a bug); 503 when the queue is full (slice.busy) or the slice service has been asked
+to stop (slice.stopping, answered after the repeat and before any check).
 
 Each part is checked when it arrives, and each plate configuration when it arrives, before
 a slice job is queued for it, so a refusal comes back at once. Before any check, a plate
@@ -66,7 +67,7 @@ from werkzeug.exceptions import HTTPException
 
 from . import limits, part_store, settings_table
 from .errors import error_report, report_for_code
-from .jobs import FINAL, JobPool, QueueFull, RepeatedSubmission, SafeLog, exception_text
+from .jobs import FINAL, JobPool, QueueFull, RepeatedSubmission, SafeLog, Stopping, exception_text
 from .mesh import MeshError
 from .service import (BAD_CONFIGURATION_MESSAGE, UPLOAD_REMEDIES, clean_stale_scratch, make_scratch, parts_missing,
                       read_plate_configuration, slice_plate_configuration, upload_part)
@@ -173,6 +174,7 @@ def create_app(work_dir=None, pool=None, *, log=None, start_sweeper=True, enviro
     app.config["MAX_CONTENT_LENGTH"] = MAX_BODY_BYTES
     app.extensions["penguin_slice_pool"] = pool
     app.extensions["penguin_slice_store"] = store
+    app.extensions["penguin_slice_log"] = log
 
     @app.after_request
     def no_store(answer):
@@ -320,7 +322,7 @@ def create_app(work_dir=None, pool=None, *, log=None, start_sweeper=True, enviro
                                                    BAD_CONFIGURATION_MESSAGE.format(problem=problem),
                                                    f"{type(exc).__name__}: {exc}"[:300]), 400
                 else:
-                    body, status = _repeat(data, asked_key()) or _queue(data, asked_key())
+                    body, status = _repeat(data, asked_key()) or _stopping() or _queue(data, asked_key())
         if status != 202:
             log_refusal(body, status, data)
         return jsonify(body), status
@@ -352,6 +354,11 @@ def create_app(work_dir=None, pool=None, *, log=None, start_sweeper=True, enviro
             return None
         job_id = pool.remembered(user_key, submission_id)
         return None if job_id is None else _answer_repeat(job_id, user_key)
+
+    def _stopping():
+        """After the repeat, before any check: (slice.stopping, 503) once the slice service has
+        been asked to stop, else None."""
+        return (error_report(Stopping()), 503) if pool.stopping() else None
 
     def _queue(data, user_key):
         """Check the plate configuration, hold its parts and queue its slice job: (answer,
@@ -389,7 +396,7 @@ def create_app(work_dir=None, pool=None, *, log=None, start_sweeper=True, enviro
             missing = [{"key": ref, "sha256": part.sha256, "units": part.units}
                        for ref, part in configuration.parts.items() if (part.sha256, part.units) in gone]
             return error_report(parts_missing(missing)), 422
-        except QueueFull as exc:
+        except (QueueFull, Stopping) as exc:       # every place taken, or asked to stop meanwhile
             shutil.rmtree(job_dir, ignore_errors=True)
             return error_report(exc), 503
         except OSError as exc:

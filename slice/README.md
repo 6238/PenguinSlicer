@@ -1158,13 +1158,10 @@ one loss is time: a slice that was cut off runs again from its start.
 
 ### What a user sees while the slice service stops
 
-*Built today: a stop that ends every slice job early. To be built in phase 2: everything else
-in this section.*
+*Built in phase 2, except what Railway itself does, which phase 3 measures.*
 
 **When asked to stop.** A deploy asks the slice service to stop, and the project is
-deployed continuously, so this happens while people are slicing. Today the slice service
-ends every slice job early, says so on each progress stream, waits until every Orca is gone,
-and exits. From phase 2 it does four things:
+deployed continuously, so this happens while people are slicing. It does four things:
 
 1. **It finishes the slice it is running,** bounded by the time limit, and keeps
    answering until the front server has fetched and stored that sliced file. Then it
@@ -1174,7 +1171,14 @@ and exits. From phase 2 it does four things:
 3. **It answers each new submission with an answer of its own,** different from "busy",
    which says the slice service is stopping.
 4. **On a second request to stop it stops the running slice too,** which is then ended
-   early for the same reason.
+   early for the same reason, and exits as soon as Orca is gone, without waiting for any
+   sliced file to be collected; a sliced file not yet collected is lost with it, and that
+   slice runs again when its page submits again.
+
+A slice that finished before the request to stop, and whose sliced file the front server
+has not yet collected, holds the stop just as the running slice does. Run by hand on one
+machine with no front server, nothing collects a sliced file, so a slice service that has
+sliced anything waits for the second request to stop.
 
 Nothing else holds a submission meanwhile. The front server keeps nothing back for
 later: it passes the slice service's answer to the page
@@ -1402,17 +1406,16 @@ hostile inputs are tried.
 - the limit of 50 MB on a sliced file;
 - Orca's own sentence in the error reports of the two failures about a gap with nothing
   under it;
-- "a new plate" in every sentence whose remedy is another plate.
-
-**Built today and replaced in phase 2:** the stop that ends every slice job early.
+- "a new plate" in every sentence whose remedy is another plate;
+- finishing the running slice when asked to stop, ending the waiting ones, answering new
+  submissions meanwhile with an answer of its own, and stopping the running slice too on a
+  second request to stop.
 
 **Built today and left as it is, unused:** the request that cancels a slice job. The
 front server never sends it.
 
 **Phase 2, on one machine, adds besides:**
 
-- finishing the running slice when asked to stop, and answering new submissions meanwhile
-  with an answer of its own;
 - the log lines collected by the front server, each carrying the component's name, the
   time and the user key;
 - a test for each row of the architecture's table of what a restart of the slice container

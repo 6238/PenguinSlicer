@@ -1196,6 +1196,77 @@ class TestReplacementAndRepeat:
             assert answer.get_json()["code"] == "slice.bad_plate_configuration"
 
 
+class TestWhileStopping:
+    """Item 14 through the HTTP interface: from the moment the slice service is asked to stop,
+    POST /slices answers 503 slice.stopping (a repeat still answered with its slice job), and
+    every other request is answered as usual."""
+
+    STOPPING = json.loads((EXAMPLES / "slice-http" / "stopping.json").read_text())
+
+    def test_a_new_plate_configuration_is_answered_the_contracts_stopping_report(self, work):
+        client, pool, logs = app_with(work, executor=HeldExecutor())
+        pool.stop()
+        answer = submit(client, plate_configuration())
+        assert (answer.status_code, answer.get_json()) == (503, self.STOPPING)
+        assert job_folders(work) == []
+        assert logs[-1]["state"] == "refused" and (logs[-1]["http_status"], logs[-1]["error_code"]) == \
+            (503, "slice.stopping")
+
+    def test_it_is_answered_before_any_check(self, work):
+        client, pool, _logs = app_with(work, executor=HeldExecutor())
+        pool.stop()
+        off_plate = plate_configuration(instances=[{"ref": "box", "orientation": "+z", "angle": 0, "x": 1.0,
+                                                    "y": 50.0}])
+        assert submit(client, off_plate).get_json()["code"] == "slice.stopping"
+        assert submit(client, plate_configuration(parts={})).get_json()["code"] == "slice.stopping"
+
+    def test_a_stop_while_the_plate_configuration_is_checked_answers_stopping(self, work, monkeypatch):
+        client, pool, _logs = app_with(work, executor=HeldExecutor())
+        real_submit = pool.submit
+
+        def stopped_first(*args, **kwargs):
+            pool.stop()
+            return real_submit(*args, **kwargs)
+        monkeypatch.setattr(pool, "submit", stopped_first)
+        answer = submit(client, plate_configuration())
+        assert (answer.status_code, answer.get_json()["code"]) == (503, "slice.stopping")
+        assert job_folders(work) == []
+
+    def test_a_repeat_is_answered_with_its_slice_job(self, work):
+        client, pool, _logs = app_with(work, executor=HeldExecutor())
+        data = plate_configuration()
+        first = submit(client, data).get_json()
+        pool._executor.run_next()                     # it runs (the fake worker fails: no Orca); it is remembered
+        pool.stop()
+        again = submit(client, data)
+        assert again.status_code == 202 and again.get_json()["job"] == first["job"]
+
+    def test_a_waiting_slice_job_ends_with_shutdown_and_says_so_on_its_routes(self, work):
+        client, pool, _logs = app_with(work, executor=HeldExecutor())
+        job_id = submit(client, plate_configuration()).get_json()["job"]
+        pool.stop()
+        report = client.get(f"/slices/{job_id}", headers=HEADERS).get_json()
+        assert (report["state"], report["cancel_reason"]) == ("cancelled", "shutdown")
+        assert job_folders(work) == []
+        events = client.get(f"/slices/{job_id}/events", headers=HEADERS).get_data(as_text=True)
+        assert '"cancel_reason": "shutdown"' in events
+
+    def test_every_other_request_is_answered_as_usual(self, tmp_path, monkeypatch, work):
+        install_fake_orca(tmp_path, monkeypatch, "ok")
+        client, pool, _logs = app_with(work)
+        job_id = submit(client, plate_configuration()).get_json()["job"]
+        pool.stop()
+        assert upload(client, box_stl(5, 5, 5)).status_code == 201
+        assert client.get(f"/slices/{job_id}/summary", headers=HEADERS).status_code == 200
+        assert client.get(f"/slices/{job_id}/file", headers=HEADERS).status_code == 200
+        assert client.get("/slices").get_json()["slices"][0]["file_on_disk"] is True
+        assert client.get("/settings-table").status_code == 200
+        assert not pool.drained()
+        assert client.delete(f"/slices/{job_id}/file", headers=HEADERS).get_json() == {"job": job_id,
+                                                                                       "file": "deleted"}
+        assert pool.drained()
+
+
 class TestGoesOnWithoutItsPage:
     """Item 9 through the HTTP interface: nothing follows the slice job, and it ends done."""
 

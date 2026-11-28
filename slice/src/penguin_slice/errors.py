@@ -9,7 +9,7 @@ known, the part, instance or height (`where`). The adapter adds the `remedy`, th
 (POST /parts) answers with service.UPLOAD_REMEDIES instead, and no action. Orca's return codes and their error codes are in
 slicer.ORCA_RETURN_CODES, the one table of them.
 """
-from .jobs import GENERIC_FAILURE, JobFailure, QueueFull, exception_text
+from .jobs import GENERIC_FAILURE, JobFailure, QueueFull, Stopping, exception_text
 from .mesh import MeshError
 from .plate import TOO_CLOSE_REMEDY
 from .print_config import ProfileError
@@ -19,6 +19,8 @@ from .slicer import UNSTARTABLE_MESSAGE, SliceCancelled, SliceError
 
 # The queue's refusal had no sentence of its own; this is the original route's.
 BUSY_MESSAGE = "The slicer is busy, try again in a minute."
+# A submission while the slice service stops (contracts/examples/slice-http/stopping.json).
+STOPPING_MESSAGE = "The slicer is restarting."
 SERVER_REMEDY = "Slice again; if it fails again, ask a mentor to check the print server."
 REEXPORT_REMEDY = "Export the part again and send a new slice."
 
@@ -66,6 +68,8 @@ CODES = {
     "slice.placement_too_close": ("checking", False, "arrange", TOO_CLOSE_REMEDY),
     "slice.busy": ("queued", True, None,
                    "Wait a minute and slice again."),
+    "slice.stopping": ("queued", True, None,
+                       "Your plate will be sliced as soon as the slicer is back."),
     "slice.scratch_unwritable": ("building", True, None,
                                  "Ask a mentor to check the print server's free disk space and its work folder, "
                                  "then slice again."),
@@ -162,6 +166,8 @@ def error_report(exc):
                        getattr(exc, "remedy", None), getattr(exc, "no_action", False))
     if isinstance(exc, QueueFull):
         return _report("slice.busy", BUSY_MESSAGE, "the job queue is full")
+    if isinstance(exc, Stopping):
+        return _report("slice.stopping", STOPPING_MESSAGE, exc.detail)
     if isinstance(exc, JobFailure) and exc.__cause__ is not None:
         return error_report(exc.__cause__)
     if isinstance(exc, JobFailure):

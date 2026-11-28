@@ -778,9 +778,18 @@ class TestReplacement:
         pool, _ = make_pool(executor=HeldExecutor())
         earlier = pool.submit(user_key="a", plate_id="p1", submission_id="s1")
         pool._closing.set()
-        with pytest.raises(QueueFull):
+        with pytest.raises(jobs.Stopping):
             pool.submit(user_key="a", plate_id="p1", submission_id="s2")
         assert pool.get(earlier)["state"] == "queued"
+
+    def test_while_stopping_nothing_is_replaced_but_the_waiting_one_has_ended(self):
+        pool, _ = make_pool(executor=HeldExecutor())
+        earlier = pool.submit(user_key="a", plate_id="p1", submission_id="s1")
+        pool._executor.run_next()            # done before the stop
+        pool.stop()
+        with pytest.raises(jobs.Stopping):
+            pool.submit(user_key="a", plate_id="p1", submission_id="s2")
+        assert pool.get(earlier)["state"] == "done"
 
     def test_jobs_without_a_plate_or_a_user_key_replace_nothing(self):
         pool, _ = make_pool(executor=HeldExecutor())
@@ -1098,7 +1107,7 @@ class TestSweeperAndShutdown:
         pool.shutdown()
         assert (pool.get(running)["state"], pool.get(queued)["state"]) == ("cancelled", "cancelled")
         assert {e["cancel_reason"] for e in logs if e["state"] == "cancelled"} == {"shutdown"}
-        with pytest.raises(QueueFull):
+        with pytest.raises(jobs.Stopping):          # never slice.busy, which a user is shown
             pool.submit()
 
 
@@ -1241,6 +1250,143 @@ class TestEdges:
         pool, logs = make_pool(worker, cleanup=cleanup)
         pool.submit()
         assert logs[-1]["event"] == "slice_cleanup_error" and "OSError: busy" in logs[-1]["traceback"]
+
+
+class TestAskedToStop:
+    """Item 14: asked to stop once (stop), the pool ends every waiting slice job early with
+    `shutdown`, lets the running one run to its end and refuses new ones with Stopping; it
+    is drained once nothing runs and no done slice job still holds a sliced file. A second
+    stop is shutdown(), which ends the running one early too."""
+
+    def test_the_running_slice_job_runs_to_its_end_and_the_waiting_ones_end_with_shutdown(self):
+        worker = Blocking(cancellable=True)
+        pool, logs, executor = threaded_pool(worker)
+        running, waiting = pool.submit(user_key="a"), pool.submit(user_key="b")
+        assert worker.started.wait(FAILSAFE_S)
+        assert pool.stop() == [waiting]
+        assert pool.stopping()
+        report = pool.get(waiting)
+        assert (report["state"], report["cancel_reason"]) == ("cancelled", "shutdown")
+        assert pool.get(running)["state"] == "running" and not pool.drained()
+        worker.release.set()
+        assert wait_final(pool, running)["state"] == "done"       # its stop was never set
+        assert not pool.drained()                                 # its sliced file is not yet collected
+        assert pool.delete_file(running)[0] == "deleted"
+        assert pool.drained()
+        assert [e["state"] for e in logs if e["job"] == running] == ["queued", "running", "done", "file_deleted"]
+        executor.shutdown(wait=True)
+
+    def test_a_submission_after_the_stop_is_refused_stopping_and_a_repeat_is_answered(self):
+        pool, _logs = make_pool(executor=HeldExecutor())
+        first = pool.submit(user_key="a", plate_id="p1", submission_id="s1")
+        pool._executor.run_next()
+        pool.stop()
+        with pytest.raises(jobs.Stopping):
+            pool.submit(user_key="a", plate_id="p2", submission_id="s2")
+        with pytest.raises(jobs.RepeatedSubmission) as caught:
+            pool.submit(user_key="a", plate_id="p1", submission_id="s1")
+        assert caught.value.job_id == first
+        assert pool.remembered("a", "s2") is None
+
+    def test_a_stopping_pool_never_answers_busy(self):
+        pool, _logs = make_pool(executor=HeldExecutor(), max_running=1, max_queued=0)
+        pool.submit()
+        pool.stop()
+        with pytest.raises(jobs.Stopping):
+            pool.submit()
+        assert error_report(jobs.Stopping())["code"] == "slice.stopping"
+
+    def test_a_shut_down_pool_answers_stopping_too(self):
+        pool, _logs = make_pool()
+        pool.shutdown()
+        with pytest.raises(jobs.Stopping):
+            pool.submit()
+
+    def test_the_contracts_example_is_the_report_of_a_stopping_pool(self):
+        example = json.loads((CONTRACTS / "examples" / "slice-http" / "stopping.json").read_text())
+        assert error_report(jobs.Stopping()) == example
+
+    def test_a_running_slice_that_fails_drains_the_pool_with_no_file(self):
+        release = threading.Event()
+
+        def worker(job_id, payload, context):
+            assert release.wait(FAILSAFE_S)
+            raise JobFailure("Orca failed", "detail")
+        pool, _logs, executor = threaded_pool(worker)
+        job_id = pool.submit()
+        pool.stop()
+        assert not pool.drained()
+        release.set()
+        assert wait_final(pool, job_id)["state"] == "failed"
+        assert pool.drained()
+        executor.shutdown(wait=True)
+
+    def test_a_done_slice_job_from_before_the_stop_holds_the_stop_until_its_file_is_collected(self):
+        clock = FakeClock()
+        pool, _logs = make_pool(clock=clock)
+        job_id = pool.submit()
+        assert pool.get(job_id)["state"] == "done"
+        assert pool.stop() == []
+        assert not pool.drained()
+        clock.now += jobs.RECORD_TTL_S
+        pool.sweep()                     # nothing collected it: it goes with its record
+        assert pool.drained()
+
+    def test_an_empty_pool_is_drained_at_once(self):
+        pool, _logs = make_pool()
+        assert pool.stop() == [] and pool.drained() and pool.wait_drained(timeout=FAILSAFE_S)
+
+    def test_the_wait_for_the_drain_ends_on_the_collection_of_the_file(self):
+        pool, _logs = make_pool()
+        job_id = pool.submit()
+        pool.stop()
+        drained = []
+        waiter = threading.Thread(target=lambda: drained.append(pool.wait_drained(timeout=FAILSAFE_S)))
+        waiter.start()
+        pool.delete_file(job_id)
+        waiter.join(FAILSAFE_S)
+        assert drained == [True]
+
+    def test_the_wait_for_the_drain_ends_on_a_shutdown(self):
+        worker = Blocking(cancellable=True)
+        pool, _logs, executor = threaded_pool(worker)
+        running = pool.submit()
+        assert worker.started.wait(FAILSAFE_S)
+        pool.stop()
+        ended = []
+        waiter = threading.Thread(target=lambda: ended.append(pool.wait_drained(timeout=FAILSAFE_S)))
+        waiter.start()
+        pool.shutdown()                  # the second stop: the running slice job is ended early too
+        waiter.join(FAILSAFE_S)
+        assert ended == [True]
+        report = pool.get(running)
+        assert (report["state"], report["cancel_reason"]) == ("cancelled", "shutdown")
+        executor.shutdown(wait=True)
+
+    def test_a_second_stop_ends_the_running_slice_job_with_shutdown_once_its_work_has_stopped(self):
+        worker = Blocking(cancellable=True)
+        pool, logs, _executor = threaded_pool(worker)
+        running = pool.submit()
+        assert worker.started.wait(FAILSAFE_S)
+        pool.stop()
+        pool.shutdown()                                           # returns once the worker has returned
+        report = pool.get(running)
+        assert (report["state"], report["cancel_reason"]) == ("cancelled", "shutdown")
+        assert [e["state"] for e in logs if e["job"] == running][-2:] == ["cancelling", "cancelled"]
+
+    def test_a_second_stop_with_an_uncollected_file_does_not_wait_for_it(self):
+        pool, _logs = make_pool()
+        job_id = pool.submit()
+        pool.stop()
+        pool.shutdown()                                           # nothing to wait for: it returns
+        assert pool.get(job_id)["state"] == "done" and pool.listing()[0]["file_on_disk"]
+
+    def test_stopping_twice_ends_nothing_more(self):
+        pool, _logs = make_pool(executor=HeldExecutor())
+        pool.submit()
+        pool._executor.run_next()
+        pool.submit()
+        assert len(pool.stop()) == 1 and pool.stop() == []
 
 
 def test_constants_are_the_documented_defaults():

@@ -182,6 +182,14 @@ def install_fake_orca(directory, monkeypatch, mode="ok"):
     return wrapper
 
 
+def open_gate(directory):
+    """Let the fake Orca of mode `gate` under `directory` go on and slice: write one byte into
+    its FIFO, which it made before its first progress message."""
+    (gate,) = Path(directory).rglob("fake-orca.gate")
+    with open(gate, "wb") as fh:
+        fh.write(b"g")
+
+
 class ManualTimer:
     """A stand-in for threading.Timer that fires only when a test calls fire()."""
 

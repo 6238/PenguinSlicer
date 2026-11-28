@@ -90,6 +90,15 @@ def busy(scene):
     pool.submit()
 
 
+def stopping(scene):
+    """A plate configuration submitted through the HTTP interface after the slice service was
+    asked to stop."""
+    client, pool = scene.web()
+    upload(client, BOX)
+    pool.stop()
+    return submit(client, plate_configuration()).get_json()
+
+
 def stl(scene, data):
     """`data` uploaded as a part (the checks on arrival)."""
     scene.upload(data)
@@ -338,6 +347,10 @@ EXPECTED = {
     "slice.busy": Expected(
         busy, "The slicer is busy, try again in a minute.", "queued", True, None, "Wait a minute and slice again.",
         "the job queue is full"),
+    "slice.stopping": Expected(
+        stopping, "The slicer is restarting.", "queued", True, None,
+        "Your plate will be sliced as soon as the slicer is back.",
+        "asked to stop; finishing the running slice job before exiting"),
     "slice.scratch_unwritable": Expected(
         disk_full, "The print server could not write the slicer's working files.", "building", True, None,
         "Ask a mentor to check the print server's free disk space and its work folder, then slice again.",

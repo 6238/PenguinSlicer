@@ -1,6 +1,6 @@
 """The slice service stands alone: its package and scripts import only the standard library,
-numpy, shapely and the package itself, and its HTTP interface (web.py, and only it) Flask and
-Flask's werkzeug;
+numpy, shapely and the package itself, and its HTTP interface (web.py) and the command that
+runs it (__main__.py), and only they, Flask and Flask's werkzeug;
 nothing of Onshape, a team configuration or another component."""
 import ast
 import sys
@@ -11,7 +11,8 @@ from helpers import SLICE_ROOT
 
 PACKAGE = SLICE_ROOT / "src" / "penguin_slice"
 ALLOWED = set(sys.stdlib_module_names) | {"numpy", "shapely", "penguin_slice"}
-WEB_ALLOWED = ALLOWED | {"flask", "werkzeug"}         # werkzeug: Flask's own HTTP layer (its errors)
+WEB_ALLOWED = ALLOWED | {"flask", "werkzeug"}         # werkzeug: Flask's own HTTP layer (its errors, its server)
+WEB_FILES = {PACKAGE / "web.py", PACKAGE / "__main__.py"}     # the HTTP interface, and serve, which runs it
 SCRIPTS = sorted((SLICE_ROOT / "scripts").glob("*.py"))
 SOURCES = sorted(PACKAGE.rglob("*.py")) + SCRIPTS
 SCRIPT_MODULES = {p.stem for p in SCRIPTS}          # a script may import another script beside it
@@ -27,7 +28,7 @@ def imported_roots(path):
 
 @pytest.mark.parametrize("path", SOURCES, ids=lambda p: p.relative_to(SLICE_ROOT).as_posix())
 def test_imports_stay_inside_the_slice_service(path):
-    allowed = WEB_ALLOWED if path == PACKAGE / "web.py" else ALLOWED | (SCRIPT_MODULES if path in SCRIPTS else set())
+    allowed = WEB_ALLOWED if path in WEB_FILES else ALLOWED | (SCRIPT_MODULES if path in SCRIPTS else set())
     outside = sorted(set(imported_roots(path)) - allowed)
     assert outside == [], f"{path.name} imports {outside}"
 
