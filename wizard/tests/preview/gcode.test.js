@@ -152,6 +152,25 @@ test('lines ending in a carriage return and a last line without its newline are 
   assert.equal(p.x1[0], 5);
 });
 
+// A layer's height comment that is not a number, or a layer height that is not above nothing, is
+// a damaged file, refused naming its line: never a layer at NaN on the bar or a box upside down.
+test('a damaged layer height or layer thickness comment is refused as unreadable, naming its line', () => {
+  const lines = (zh, lh) => gcode(['M83', '; CHANGE_LAYER', `; Z_HEIGHT: ${zh}`, `; LAYER_HEIGHT: ${lh}`, 'G1 Z.2',
+    '; FEATURE: Outer wall', 'G1 X0 Y0', 'G1 X5 Y0 E1']);
+  const refusedLine = (bytes, detail) => assert.throws(() => parseGcode(bytes), (error) => {
+    assert.ok(error instanceof PreviewError, String(error));
+    assert.equal(error.report.code, PREVIEW_UNREADABLE);
+    assert.match(error.report.detail, detail);
+    return true;
+  });
+  refusedLine(lines('abc', '0.2'), /line 3 .*"; Z_HEIGHT: abc"/);
+  refusedLine(lines('-0.2', '0.2'), /line 3 .*"; Z_HEIGHT: -0.2"/);
+  refusedLine(lines('0.2', '-0.2'), /line 4 .*"; LAYER_HEIGHT: -0.2"/);
+  refusedLine(lines('0.2', '0'), /line 4 .*"; LAYER_HEIGHT: 0"/);
+  refusedLine(lines('0.2', ''), /line 4 /);
+  assert.equal(parseGcode(lines('0', '0.2')).layerZ[0], 0, 'a layer at nothing high is a number, kept');
+});
+
 test('the reading says how far through the G-code it is, rising to the whole', () => {
   const lines = ['M83'];
   for (let l = 1; l <= 200; l++) lines.push('; CHANGE_LAYER', `; Z_HEIGHT: ${(l * 0.2).toFixed(1)}`, '; LAYER_HEIGHT: 0.2',

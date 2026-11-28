@@ -64,6 +64,7 @@ OPEN = """
         onFailure: (error) => seen.failures.push(error),
         onProgress: (p) => seen.progress.push(p.stage), onLayer: (l) => seen.layers.push(l.index) });
     window.__colours = m.drawing;
+    window.__frames = m.frames.realFrames;
     if (arg.sliced === null) return { created: true };
     const bytes = await (await fetch('/test-files/' + arg.sliced)).arrayBuffer();
     let plate = null;
@@ -79,7 +80,9 @@ OPEN = """
     }
     wizard.holdMeter.start();
     const answer = await view.show(bytes, plate);
-    return { answer, held: wizard.holdMeter.stop(), summary: view.summary(), groups: view.groups() };
+    // read before the next frame: what the frame that settled the show drew
+    const state = view.state();
+    return { answer, state, held: wizard.holdMeter.stop(), summary: view.summary(), groups: view.groups() };
 """
 
 # The share of the view that is not background, and in each group's colour (the walls at any of
@@ -140,9 +143,12 @@ def changed(w, a, b):
 def test_a_sliced_file_with_supports_draws_its_four_colours_its_ghost_and_changes_with_the_bar(page, front_server):
     w, opened = open_view(page, front_server, "pair-supports")
     assert opened["answer"] == {"ok": True, "layers": 132}, opened
+    assert opened["state"]["segments"] > 0, "the show is answered on the frame that drew the first layer"
     top = look(w, "top")
     assert top["covered"] >= COVERED, top
     assert top["width"] > 300 and top["height"] > 200, top
+    look(w, "top-bare", ghost=False)
+    assert changed(w, "top", "top-bare") == 0, "the ghost is gone when every layer is shown"
     layers = w.run("return window.__preview.layer();")
     assert layers["index"] == 131 and layers["layers"] == 132
     w.run("window.__preview.setLayer(65);")
@@ -239,9 +245,25 @@ def test_dragging_the_bar_goes_through_the_layers_with_the_look_while_moving(pag
     page.mouse.down()
     page.mouse.move(x, box["y"] + box["height"] / 2, steps=8)
     assert w.run("return window.__preview.atRest();") is False, "the bar held down is a move"
+    assert w.run("return window.__preview.state().moving;") is True, "each frame of the drag draws the look while moving"
     page.mouse.up()
+    assert w.run("return window.__preview.state().moving;") is False
     index = w.run("return window.__preview.layer().index;")
     assert 50 < index < 80, index
+    w.run("await window.__preview.untilRest();")
+    assert w.run("return window.__preview.atRest();") is True
+
+
+def test_the_bar_pressed_and_held_without_moving_is_a_move_until_released(page, front_server):
+    w, opened = open_view(page, front_server, "spacer-1")
+    assert opened["answer"]["ok"] is True
+    w.run("await window.__preview.untilRest();")
+    box = page.locator("#test-preview .layer-slider").bounding_box()
+    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    page.mouse.down()
+    assert w.run("return window.__preview.state().moving;") is True
+    assert w.run("return window.__preview.atRest();") is False
+    page.mouse.up()
     w.run("await window.__preview.untilRest();")
     assert w.run("return window.__preview.atRest();") is True
 
@@ -294,6 +316,99 @@ def test_a_file_that_is_not_a_sliced_file_ends_in_the_wizards_report_and_one_rep
     assert body["what"] == "page_failed"
     assert "not a zip archive" in body["detail"]
     assert page.locator("#test-preview .layer-slider").is_hidden()
+    assert [what for what, _ in w.run("return window.__seen.reports;")] == ["page_failed"], "reported once, not twice"
+    assert w.problems == []
+
+
+def test_the_first_layer_is_timed_from_the_moment_the_caller_gives(page, front_server):
+    front_server.files["/test-files/spacer-1.gcode.3mf"] = (SLICED / "spacer-1.gcode.3mf").read_bytes()
+    w = Wizard(page, front_server, width=680, height=900, fake_clock=False)
+    w.run(OPEN, {"modules": modules(), "sliced": None, "plate": None})
+    r = w.run("""
+        const view = window.__preview;
+        const bytes = await (await fetch('/test-files/spacer-1.gcode.3mf')).arrayBuffer();
+        const answer = await view.show(bytes, null, { since: window.__frames.now() - 100000 });
+        return { answer, first: view.summary().first_layer_ms };
+    """)
+    assert r["answer"] == {"ok": True, "layers": 13}
+    assert r["first"] >= 100000, r
+
+
+# Every buffer, vertex array, framebuffer, renderbuffer, program, shader and fence made on the
+# layer preview's own canvas, and every one deleted, counted by kind.
+COUNT_GL = """
+    window.__gl = { made: {}, deleted: {} };
+    const kinds = ['Buffer', 'VertexArray', 'Framebuffer', 'Renderbuffer', 'Program', 'Shader'];
+    const mine = (gl) => gl.canvas.closest && gl.canvas.closest('#test-preview');
+    const proto = WebGL2RenderingContext.prototype;
+    for (const kind of [...kinds, 'Sync']) {
+        const make = kind === 'Sync' ? 'fenceSync' : 'create' + kind, drop = 'delete' + kind;
+        const realMake = proto[make], realDrop = proto[drop];
+        proto[make] = function (...args) {
+            const o = realMake.apply(this, args);
+            if (o && mine(this)) { window.__gl.made[kind] = (window.__gl.made[kind] || new Set()).add(o); }
+            return o;
+        };
+        proto[drop] = function (o) {
+            if (o && mine(this) && window.__gl.made[kind] && window.__gl.made[kind].has(o)) window.__gl.made[kind].delete(o);
+            return realDrop.call(this, o);
+        };
+    }
+"""
+
+
+def test_a_new_show_and_destroy_give_back_every_object_of_the_earlier_drawing(page, front_server):
+    """Nothing of an earlier drawing waits for garbage collection: with little memory to spare
+    at the heaviest plate, a second show must not hold two drawings' worth."""
+    front_server.files["/test-files/spacer-1.gcode.3mf"] = (SLICED / "spacer-1.gcode.3mf").read_bytes()
+    page.add_init_script(COUNT_GL)
+    w = Wizard(page, front_server, width=680, height=900, fake_clock=False)
+    w.run(OPEN, {"modules": modules(), "sliced": None, "plate": None})
+    left = w.run("""
+        const view = window.__preview;
+        const bytes = await (await fetch('/test-files/spacer-1.gcode.3mf')).arrayBuffer();
+        const count = () => Object.fromEntries(Object.entries(window.__gl.made).map(([k, s]) => [k, s.size]));
+        await view.show(bytes, null);
+        await view.untilRest();
+        const one = count();
+        await view.show(bytes, null);
+        await view.untilRest();
+        const two = count();
+        view.destroy();
+        return { one, two, after: count() };
+    """)
+    assert left["one"].get("Buffer", 0) > 0, left
+    assert left["two"] == left["one"], "a second show holds one drawing, not two"
+    assert all(n == 0 for n in left["after"].values()), left
+    assert w.problems == []
+
+
+def test_drawing_code_that_fails_when_built_again_after_a_lost_context_is_told_to_the_caller(page, front_server):
+    page.add_init_script(BREAK)
+    w, opened = open_view(page, front_server, "spacer-1")
+    assert opened["answer"]["ok"] is True
+    w.run("window.__break = 'createVertexArray';")
+    with page.expect_request(lambda r: r.url.endswith("/api/reports/failure")) as lost:
+        w.run("""
+            const view = window.__preview, ext = view.canvas.getContext('webgl2').getExtension('WEBGL_lose_context');
+            await new Promise((resolve) => { view.canvas.addEventListener('webglcontextlost', resolve, { once: true }); ext.loseContext(); });
+            window.__ext = ext;
+        """)
+    assert json.loads(lost.value.post_data)["what"] == "drawing_context_lost"
+    with page.expect_request(lambda r: r.url.endswith("/api/reports/failure")) as sent:
+        w.run("""
+            await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            window.__ext.restoreContext();
+        """)
+        w.until("return window.__seen.failures.length > 0;")
+    seen = w.run("return window.__seen;")
+    assert [f["code"] for f in seen["failures"]] == ["wizard.preview_failed"]
+    assert "the drawing could not be built" in seen["failures"][0]["detail"]
+    assert "broken on purpose in createVertexArray" in seen["failures"][0]["detail"]
+    assert json.loads(sent.value.post_data)["what"] == "page_failed"
+    assert [what for what, _ in seen["reports"]] == ["drawing_context_lost", "page_failed"]
+    assert page.locator("#test-preview .layer-slider").is_hidden()
+    assert w.run("return window.__preview.state().scheduled;") is False
     assert w.problems == []
 
 

@@ -178,9 +178,11 @@ export function parseGcode(bytes, { arcTolerance = 0.02, mergeTolerance = 0.01, 
         layerStart.push(X0.n); layerZ.push(pendingZ); layerHeight.push(pendingH);
       } else if (startsWith(bytes, i, lineEnd, C_ZH)) {
         pendingZ = readNumber(bytes, i + C_ZH.length, lineEnd);
+        if (!(pendingZ >= 0)) damaged(bytes, i, lineEnd, lines, 'a layer\'s height is not a number of millimetres, zero or more');
         if (layer >= 0) layerZ[layer] = pendingZ;
       } else if (startsWith(bytes, i, lineEnd, C_LH)) {
         pendingH = readNumber(bytes, i + C_LH.length, lineEnd);
+        if (!(pendingH > 0)) damaged(bytes, i, lineEnd, lines, 'a layer\'s thickness is not a number of millimetres above zero');
         if (layer >= 0) layerHeight[layer] = pendingH;
       }
     } else if (c === 71 || c === 77) {           // G or M
@@ -236,6 +238,12 @@ export function parseGcode(bytes, { arcTolerance = 0.02, mergeTolerance = 0.01, 
     layers: layerZ.length, layerZ: Float32Array.from(layerZ), layerHeight: Float32Array.from(layerHeight),
     layerStart: Uint32Array.from(layerStart), lines, moves,
   };
+}
+
+// A layer comment of a damaged file: refused naming its line (from 1) and its text.
+function damaged(bytes, i, lineEnd, line, why) {
+  const text = new TextDecoder().decode(bytes.subarray(i, Math.min(lineEnd, i + 80)));
+  throw new PreviewError(`The G-code is damaged at line ${line} (${JSON.stringify(text)}): ${why}.`);
 }
 
 function heightsOf(layerStart, layerHeight, count) {

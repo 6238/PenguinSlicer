@@ -85,14 +85,17 @@ void main() {
   o = vec4(colour.rgb * shade, colour.a);
 }`;
 
-function program(gl, vs, fs) {
+// Every object a drawing makes on the graphics side is kept by `keep(kind, object)`, so that
+// dispose() gives each back at once rather than leaving it for garbage collection: a second
+// show would otherwise hold two drawings' worth of memory for a while.
+function program(gl, vs, fs, keep) {
   const compile = (type, src) => {
-    const s = gl.createShader(type);
+    const s = keep('Shader', gl.createShader(type));
     gl.shaderSource(s, src); gl.compileShader(s);
     if (!gl.getShaderParameter(s, gl.COMPILE_STATUS) && !gl.isContextLost()) throw new Error(`a shader did not compile: ${gl.getShaderInfoLog(s)}`);
     return s;
   };
-  const p = gl.createProgram();
+  const p = keep('Program', gl.createProgram());
   gl.attachShader(p, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
   gl.linkProgram(p);
   if (!gl.getProgramParameter(p, gl.LINK_STATUS) && !gl.isContextLost()) throw new Error(`a program did not link: ${gl.getProgramInfoLog(p)}`);
@@ -102,18 +105,18 @@ function program(gl, vs, fs) {
   return { p, u, a: (name) => gl.getAttribLocation(p, name) };
 }
 
-function buffer(gl, data, target = gl.ARRAY_BUFFER) {
-  const b = gl.createBuffer();
+function buffer(gl, keep, data, target = gl.ARRAY_BUFFER) {
+  const b = keep('Buffer', gl.createBuffer());
   gl.bindBuffer(target, b); gl.bufferData(target, data, gl.STATIC_DRAW);
   return b;
 }
 
 // Sends `bytes` into `buf` UPLOAD_BYTES at a time, each piece once a fence shows the one before
 // has arrived, so that no frame holds the browser for a whole plate. step() returns true once
-// every byte is on the graphics side.
+// every byte is on the graphics side; step.drop() gives back a fence still waited on.
 function uploader(gl, buf, bytes) {
   let sent = -1, fence = null;
-  return () => {
+  const step = () => {
     if (fence) {
       if (gl.getSyncParameter(fence, gl.SYNC_STATUS) !== gl.SIGNALED) return false;
       gl.deleteSync(fence); fence = null;
@@ -130,6 +133,8 @@ function uploader(gl, buf, bytes) {
     gl.flush();
     return false;
   };
+  step.drop = () => { if (fence) gl.deleteSync(fence); fence = null; };
+  return step;
 }
 
 function boxIndex() {
@@ -143,11 +148,11 @@ function boxIndex() {
 }
 
 // One set of boxes (boxes.js boxVertices) on the graphics side.
-function boxSet(gl, prog, index, set) {
-  const vao = gl.createVertexArray();
+function boxSet(gl, keep, prog, index, set) {
+  const vao = keep('VertexArray', gl.createVertexArray());
   gl.bindVertexArray(vao);
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, index);
-  const data = gl.createBuffer();
+  const data = keep('Buffer', gl.createBuffer());
   const upload = uploader(gl, data, set.vertices);
   gl.bindBuffer(gl.ARRAY_BUFFER, data);
   const at = { pos: prog.a('aPos'), nrm: prog.a('aNrm'), wh: prog.a('aWH'), flags: prog.a('aFlags') };
@@ -157,6 +162,7 @@ function boxSet(gl, prog, index, set) {
   return {
     layerStart: set.layerStart,
     upload,
+    drop: upload.drop,
     begin(f) {
       gl.useProgram(prog.p);
       gl.uniformMatrix4fv(prog.u.viewProj, false, f.viewProj);
@@ -186,19 +192,19 @@ function boxSet(gl, prog, index, set) {
 }
 
 // The plate, its grid and the ghost. `printer` is the printable area ({min: [x, y], max: [x, y]}).
-function scenery(gl, ghostCorners, printer) {
-  const flat = program(gl, FLAT_VS, FLAT_FS), ghost = program(gl, FLAT_VS, GHOST_FS);
+function scenery(gl, keep, ghostCorners, printer) {
+  const flat = program(gl, FLAT_VS, FLAT_FS, keep), ghost = program(gl, FLAT_VS, GHOST_FS, keep);
   const [x0, y0] = printer.min, [x1, y1] = printer.max;
-  const plate = buffer(gl, new Float32Array([x0, y0, -0.02, x1, y0, -0.02, x1, y1, -0.02, x0, y0, -0.02, x1, y1, -0.02, x0, y1, -0.02]));
+  const plate = buffer(gl, keep, new Float32Array([x0, y0, -0.02, x1, y0, -0.02, x1, y1, -0.02, x0, y0, -0.02, x1, y1, -0.02, x0, y1, -0.02]));
   const grid = [];
   for (let x = x0; x <= x1 + 1e-6; x += 10) grid.push(x, y0, -0.01, x, y1, -0.01);
   for (let y = y0; y <= y1 + 1e-6; y += 10) grid.push(x0, y, -0.01, x1, y, -0.01);
-  const gridBuf = buffer(gl, new Float32Array(grid));
-  const ghostBuf = gl.createBuffer();
+  const gridBuf = buffer(gl, keep, new Float32Array(grid));
+  const ghostBuf = keep('Buffer', gl.createBuffer());
   const ghostBytes = new Uint8Array(ghostCorners.buffer, ghostCorners.byteOffset, ghostCorners.byteLength);
   const ghostUpload = uploader(gl, ghostBuf, ghostBytes);
   let ghostReady = ghostBytes.length === 0;
-  const vao = gl.createVertexArray();
+  const vao = keep('VertexArray', gl.createVertexArray());
   const draw = (prog, buf, mode, count) => {
     gl.bindVertexArray(vao);
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
@@ -209,6 +215,7 @@ function scenery(gl, ghostCorners, printer) {
   return {
     // One more piece of the ghost's upload; true once it is all on the graphics side.
     upload() { if (!ghostReady) ghostReady = ghostUpload(); return ghostReady; },
+    drop: ghostUpload.drop,
     hasGhost: ghostBytes.length > 0,
     plate(viewProj) {
       gl.useProgram(flat.p); gl.uniformMatrix4fv(flat.u.viewProj, false, viewProj);
@@ -260,14 +267,32 @@ function drawMoving(gl, full, moving, decimate, f, scene, fullReady) {
 // view or the layer changed since the last frame. It returns {segments, complete, again}:
 // `segments` the toolpath boxes the frame drew (0 for a frame of the plate alone), `complete`
 // that the full look is on the screen, `again` that it wants another frame to go on drawing.
+// dispose() gives back every object of the drawing on the graphics side at once; the drawing
+// draws nothing after it.
 export function createDrawing(gl, prepared, { printer, width, height }) {
-  const boxes = program(gl, BOX_VS, BOX_FS);
-  const index = buffer(gl, boxIndex(), gl.ELEMENT_ARRAY_BUFFER);
-  const full = boxSet(gl, boxes, index, prepared.full), moving = boxSet(gl, boxes, index, prepared.moving);
-  const scene = scenery(gl, prepared.ghost.corners, printer);
+  const own = [];
+  const keep = (kind, o) => { if (o) own.push([kind, o]); return o; };
+  // Built in a try, so that a drawing that fails while being built leaves nothing behind either.
+  let boxes, index, full, moving, scene, fbo, colour, depth;
+  try {
+    boxes = program(gl, BOX_VS, BOX_FS, keep);
+    index = buffer(gl, keep, boxIndex(), gl.ELEMENT_ARRAY_BUFFER);
+    full = boxSet(gl, keep, boxes, index, prepared.full);
+    moving = boxSet(gl, keep, boxes, index, prepared.moving);
+    scene = scenery(gl, keep, prepared.ghost.corners, printer);
+    fbo = keep('Framebuffer', gl.createFramebuffer());
+    colour = keep('Renderbuffer', gl.createRenderbuffer());
+    depth = keep('Renderbuffer', gl.createRenderbuffer());
+  } catch (error) {
+    release();
+    throw error;
+  }
+  function release() {
+    for (const s of [full, moving, scene]) if (s) s.drop();
+    for (const [kind, o] of own.splice(0)) gl[`delete${kind}`](o);
+  }
   const decimate = prepared.decimate;
   let w = width, h = height;
-  const fbo = gl.createFramebuffer(), colour = gl.createRenderbuffer(), depth = gl.createRenderbuffer();
   function size() {
     gl.bindRenderbuffer(gl.RENDERBUFFER, colour); gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA8, w, h);
     gl.bindRenderbuffer(gl.RENDERBUFFER, depth); gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, w, h);
@@ -361,6 +386,11 @@ export function createDrawing(gl, prepared, { printer, width, height }) {
       w = width2; h = height2;
       size();
       work = null; shown = false;
+    },
+    dispose() {
+      if (fence) gl.deleteSync(fence);
+      fence = null; work = null;
+      release();
     },
     draw(f, fresh, ghostShown = true) {
       const r = frame(f, fresh, ghostShown);

@@ -181,6 +181,59 @@ Decided in answering the first review of pull request #45:
     kernel's `VmHWM` in KiB and divides by 1,024; the documents had set it against a decimal
     1,000 MB. To overrule: measure in decimal megabytes and set `PAGE_MEMORY_MB` to 1,000, which
     every run on the heaviest plate misses.
+27. **`state()` also gives `segments`, the toolpath boxes the last frame drew** (second review,
+    blocking 1a). The documents say `show` resolves once the first layer is drawn and are silent
+    on how a test sees which frame that was. A test reads `state().segments` in the same task as
+    the show's answer, before any later frame, and expects more than none: the first frame always
+    draws the plate alone (the first piece of the upload). It is for the tests only, like the rest
+    of `state()`; the next batch does not use it. To overrule: another way to see the frame, in
+    `layer-preview.js` and `test_layer_preview.py`.
+28. **A damaged layer comment is refused as unreadable, naming its line** (second review, minor
+    3). The documents list what makes a sliced file unreadable and are silent on a `; Z_HEIGHT:` or
+    `; LAYER_HEIGHT:` that is not a number. Chosen: a height that is not a number from 0 up, or a
+    thickness that is not a number above 0, is `wizard.preview_unreadable` with the line's number
+    and text, rather than drawn at NaN ("NaN mm" on the bar) or upside down. Orca 2.4.2 writes
+    neither; the committed sliced files and the trial's plates read as before. To overrule:
+    `damaged()` in `gcode.js` and its test in `gcode.test.js`.
+29. **A drawing gives its graphics objects back at once** (second review, minor 2):
+    `dispose()` of `drawing.js`, called by the view on a new `show`, on a failure and on
+    `destroy`, and by the drawing itself when it fails while being built. The documents are
+    silent. A lost context takes the objects with it, so the view only drops its drawing then. To
+    overrule: `letGo()` in `layer-preview.js`.
+
+## The second review
+
+Blocking findings, each checked against the code and fixed test first; each mutation the reviewer
+named was made again by hand after the fix and the suite failed on it:
+
+- **1a** (the show answered on a frame of the plate alone): the first browser test reads
+  `state().segments` with the answer (decision 27).
+- **1b** (`since` never checked): `test_the_first_layer_is_timed_from_the_moment_the_caller_gives`
+  shows with `since` 100,000 ms before the call and expects `first_layer_ms` of 100,000 or more.
+- **1c** (`moving = true` on the bar's press unguarded): the drag test reads `state().moving`
+  while the bar is held and after it is released, and a new test presses the bar and holds it
+  without moving.
+- **1d** (a preparation failure reported twice): the test of a file that is not a sliced file
+  counts the reports, one `page_failed`.
+- **2** (the guide misstated the hold): both sentences of `wizard/README.md` now say the hold was
+  missed on the heaviest plate in two runs of five, 0.25 and 0.34 s, against the trial's 0.20 s.
+
+Minor findings:
+
+- **1** (three look rules guarded only by the renders): the ghost at the top layer is now tested
+  (the look with and without the ghost the same there), and its mutation fails the suite.
+  **Declined** for the current layer's two-pixel width and its being unshaded: a coarse pixel
+  count in software drawing cannot tell a box of one pixel from two, or a current layer's sides
+  at shade 1.0 from walls facing the light at 0.92 to 1.0 on round parts, without a kept picture
+  at a tight tolerance, which the details file rules out ("any comparison with a kept picture with
+  a wide tolerance"). They stay guarded by the renders, as the details file now says.
+- **2** (graphics objects left to garbage collection): fixed (decision 29), with a test that counts
+  every object made and deleted on the view's canvas across two shows and a destroy.
+- **3** (damaged G-code accepted): fixed (decision 28).
+- **4** (the failure when built again after a lost context had no test): a test of its own, the
+  drawing broken while the context is lost, the failure told through `onFailure`, reported once
+  after the loss's own report, the bar hidden and no frame scheduled.
+- **5** (the memory column's header): it says MiB.
 
 ## The figures, beside the trial's
 
@@ -195,7 +248,7 @@ memory is the peak resident memory of the page's renderer and graphics processes
 trial's figures (method C, its own page at 640 by 480, load average 6.0 to 6.5, holds by long
 tasks) are in brackets.
 
-| Plate | Turning | Layer bar | Longest hold (ms) | First / full (s) | Memory (MB) | D | Look |
+| Plate | Turning | Layer bar | Longest hold (ms) | First / full (s) | Memory (MiB) | D | Look |
 |---|---|---|---|---|---|---|---|
 | four-each-b-supports | 15.0 / 8.6 (15.0 / 12.0) | 20.0 / 12.0 (20.0 / 10.0) | 179 / 138 (113) | 0.91 / 2.8 (1.5 / 3.3) | 693 (615) | 4 (4) | passes |
 | blocks-12-supports | 15.0 / 12.0 (10.0 / 5.0) | 15.0 / 8.6 (12.0 / 7.5) | 205 / 197 (198) | 1.72 / 6.5 (2.7 / 8.5) | 994 (839) | 8 (8) | passes |
@@ -246,7 +299,9 @@ Every render in `docs/orchestration/phase-2/look/wizard-7/<plate>/` was looked a
   2026-11-28), under `PAGE_MEMORY_MB`'s 1,024 MiB by 8 to 32 MiB (the trial: 839 MiB). Met, with
   almost no margin; in decimal megabytes the same runs are 1,040 to 1,065 MB, over a decimal
   gigabyte (decision 26). Dropping the kept copy of the boxes would save about 140 MiB, at the
-  cost of reading the file again after a lost context. (The table above says "MB" for MiB.)
+  cost of reading the file again after a lost context. A second show no longer holds the first
+  drawing's graphics objects until garbage collection (the second review, minor 2); the peak of a
+  second show itself was not measured.
 - **The main thread's longest hold by the heartbeat on `blocks-12-supports` is over 250 ms in two
   runs of five:** 205 ms in the first, 251 ms (loading) and 340 ms (turning) in the reviewer's
   reruns, 235 ms and 155 ms (loading) in the fixer's. The browser's longest task stayed under

@@ -86,6 +86,7 @@ export function createLayerPreview(element, {
   let moving = false, dirty = false, more = false, lost = false;
   let frame = null;
   let complete = false;
+  let segments = 0;         // the toolpath boxes the last frame drew
   let ghostShown = true;
   let firstLayerMs = null, since = 0;
   let stats = createFrameStats();
@@ -121,6 +122,7 @@ export function createLayerPreview(element, {
     }
     complete = r.complete;
     more = Boolean(r.again);
+    segments = r.segments;
     for (const w of [...watchers]) w(now, r);
     if ((more || driver) && frame === null && !destroyed) frame = frames.next(loop);
   }
@@ -261,6 +263,13 @@ export function createLayerPreview(element, {
 
   // ---- showing a sliced file
   let settle = null;        // resolves the show under way
+  // Gives back the drawing's objects on the graphics side at once (a lost context has already
+  // taken them, and the drawing is then null).
+  function letGo() {
+    const d = drawing;
+    drawing = null;
+    if (d) { try { d.dispose(); } catch { /* the context is going: nothing more to give back */ } }
+  }
   // A failure of the view: reported once as page_failed (unless `reported`, as the preparation's
   // own failures already are), the drawing and the bar given up, and the caller told, by the
   // show under way or else by onFailure.
@@ -268,7 +277,7 @@ export function createLayerPreview(element, {
     if (failed) return;
     if (!reported) report('page_failed', { detail: error.code === PREVIEW_FAILED ? error.detail : `${error.code}: ${error.detail}` });
     failed = true;
-    drawing = null; driver = null; moving = false;
+    letGo(); driver = null; moving = false;
     bar.hidden = true;
     if (frame !== null) frames.cancel(frame);
     frame = null;
@@ -285,7 +294,8 @@ export function createLayerPreview(element, {
   function show(bytes, plate = null, { since: opened = frames.now() } = {}) {
     if (job) job.stop();
     if (settle) { const s = settle; settle = null; s({ ok: false, stopped: true }); }
-    data = null; drawing = null; bar.hidden = true; complete = false; firstLayerMs = null; failed = false;
+    letGo();
+    data = null; bar.hidden = true; complete = false; firstLayerMs = null; failed = false;
     since = opened;
     stats = createFrameStats();
     if (holds) holds.start();
@@ -372,8 +382,9 @@ export function createLayerPreview(element, {
       if (holds) holds.stop();
       observer.disconnect();
       controls.dispose();
+      letGo();
       canvas.remove(); bar.remove();
-      data = null; drawing = null;
+      data = null;
     },
 
     // ---- for the tests, the renders and the measurements
@@ -437,7 +448,7 @@ export function createLayerPreview(element, {
     },
     decimate: () => (drawing ? drawing.decimate : null),
     // What the frame loop is doing, for a test that finds it stuck.
-    state: () => ({ complete, moving, dirty, more, scheduled: frame !== null, lost, drawing: Boolean(drawing), driving: Boolean(driver), watchers: watchers.size }),
+    state: () => ({ complete, segments, moving, dirty, more, scheduled: frame !== null, lost, drawing: Boolean(drawing), driving: Boolean(driver), watchers: watchers.size }),
     groups: () => (data ? [...data.groups] : null),
   };
 }

@@ -2225,13 +2225,16 @@ The bytes and the parts' corners are copied to the worker, never transferred. Th
 `preview/drawing.js` on WebGL 2 directly, three.js giving only the camera and its controls
 (`PIECE` 100,000 boxes, `UPLOAD_BYTES` 8 MB); the frame rate of the summary is
 `preview/frame-stats.js`. A lost drawing context draws again from the prepared data the view keeps,
-the ghost included.
+the ghost included. A drawing gives back every buffer, vertex array, framebuffer, renderbuffer,
+program, shader and fence it made at once (`dispose()`), when a new `show` starts, on a failure, on
+`destroy` and when it fails while being built, so that a second show never holds two drawings'
+graphics memory until garbage collection.
 
 **The preview's failures,** the wizard's own, in `wizard/src/preview/preview-errors.js`:
 
 | Code | When | Message | Remedy | Retryable |
 |---|---|---|---|---|
-| `wizard.preview_unreadable` | The sliced file is not a zip archive, has no `Metadata/plate_1.gcode`, cannot be inflated, has no layers, has layers but no extrusion to draw, or has a layer taller than a box can be | PenguinSlicer could not read this plate's sliced file to draw its preview. | Slice the plate again; the sliced file can still be downloaded on the Send step. | no |
+| `wizard.preview_unreadable` | The sliced file is not a zip archive, has no `Metadata/plate_1.gcode`, cannot be inflated, has no layers, has layers but no extrusion to draw, has a layer taller than a box can be, or has a `; Z_HEIGHT:` that is not a number of millimetres from 0 up or a `; LAYER_HEIGHT:` that is not one above 0 (the detail names the line) | PenguinSlicer could not read this plate's sliced file to draw its preview. | Slice the plate again; the sliced file can still be downloaded on the Send step. | no |
 | `wizard.preview_failed` | The preview's worker fails as a whole, or the drawing code fails, or the page gives an instance no part's corners: a fault of the page's own | PenguinSlicer could not draw the layer preview of this plate. | Reload the page; your parts, layout and settings are kept in this browser. | yes |
 | `wizard.preview_not_drawable` | The browser gives no WebGL 2 context | This browser cannot draw the layer preview: its 3D drawing is turned off or missing. | Turn on hardware acceleration in the browser's settings, or use a current Chrome; the sliced file can still be downloaded on the Send step. | no |
 
@@ -2241,11 +2244,16 @@ service, with their plate configurations, listed with their hashes in
 [their README](tests/sliced/README.md)) and on G-code made in the test, every code above produced
 on purpose, the progress, the worker stopped once it has answered or when no longer wanted; in
 Chromium (`tests_browser/test_layer_preview.py`), the coarse checks of the first trial on those
-files, the ghost, two lost contexts in one page each reported, the bar by keys and by a drag, the
-summary, a file that is not a sliced file, the drawing made to fail on purpose while it is built
-and after the first layer (one `page_failed`, no bar, the second told through `onFailure`), a later
-`show` and `destroy` stopping the earlier one and its worker at once, and the walls' sides only
-ever darker than their blue.
+files, the show answered on a frame that drew toolpaths, the ghost and its absence at the top
+layer, two lost contexts in one page each reported, the bar by keys and by a drag (the look while
+moving from the press until the release), the summary, the first layer timed from the caller's
+`since`, a file that is not a sliced file (reported once), the drawing made to fail on purpose
+while it is built, after the first layer and when built again after a lost context (one
+`page_failed`, no bar, the last two told through `onFailure`), a later `show` and `destroy`
+stopping the earlier one and its worker at once, every graphics object of a drawing given back by
+a new `show` and by `destroy`, and the walls' sides only ever darker than their blue. Two rules of
+the look are guarded by the test renders alone: the current layer at least two pixels wide and
+unshaded.
 
 ## The Send step
 

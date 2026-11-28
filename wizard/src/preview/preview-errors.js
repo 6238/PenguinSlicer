@@ -2,7 +2,8 @@
 // wizard's own, so that the view hands its caller a report to show as it is, never a bare
 // exception (wizard/README-details.md, "The layer preview"):
 //   wizard.preview_unreadable     the sliced file cannot be read for drawing: not an archive, no
-//                                 G-code, a G-code with no layers, a layer too tall to draw;
+//                                 G-code, a G-code with no layers, a layer too tall to draw, a
+//                                 layer's height or thickness that is not a number;
 //   wizard.preview_failed         the preview's own code failed, or its worker did: a fault of
 //                                 the page's own;
 //   wizard.preview_not_drawable   the browser has no 3D drawing (WebGL 2) to draw it with.
