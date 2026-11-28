@@ -35,6 +35,9 @@ REPORTS_PER_PAGE_PER_MINUTE = 6
 #: The longest `page` written (*proposed*: the contract gives no length; a page's random id
 #: is a UUID of 36 characters).
 PAGE_CHARS = 64
+#: The largest report read (*proposed*): a whole report with its longest strings is under
+#: 2 KB, so a body larger than this is no honest report and is refused before it is read.
+MAX_REPORT_BYTES = 16_384
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
 WHAT = ("part_not_drawable", "storage_refused", "storage_cleared", "drawing_context_lost",
@@ -117,7 +120,16 @@ def register(app):
 def _report(kind):
     ctx = context()
     identity = signed_in()
-    body = json_body()
+    limit, length = MAX_REPORT_BYTES, request.content_length
+    if length is not None and length > limit:
+        raise FrontError("front.bad_request", f"a {kind} report of {length:,} bytes, over "
+                                              f"the {limit:,} a report may hold")
+    # Read no further than one byte past the limit; the rest is never read.
+    raw = request.stream.read(limit + 1) if length is None else request.get_data()
+    if len(raw) > limit:
+        raise FrontError("front.bad_request", f"a {kind} report of more than {limit:,} "
+                                              "bytes, sent without Content-Length")
+    body = json_body(raw)
     if not isinstance(body, dict):
         raise FrontError("front.bad_request", f"a {kind} report that is not a JSON object")
     fields = _fields(kind, body)

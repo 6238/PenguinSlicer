@@ -1,6 +1,7 @@
 """The page's reports about itself (README-details.md, "The page's reports about itself";
 contracts/wizard-front-server.md, "The page's reports about itself")."""
 
+import io
 import json
 from pathlib import Path
 
@@ -166,6 +167,30 @@ def test_an_optional_drawing_field_of_a_bad_form_is_dropped(client, log, field, 
 def test_a_body_that_is_not_an_object_is_refused(client, log, body):
     answer = client.post("/api/reports/failure", data=body, headers=DEV_GROUP)
     assert answer.status_code == 400 and answer.get_json()["code"] == "front.bad_request"
+
+
+def test_a_report_over_its_size_is_refused_before_it_is_read(client, log):
+    body = EXAMPLE | {"detail": "x" * reports.MAX_REPORT_BYTES}
+    answer = send(client, "failure", body)
+    assert answer.status_code == 400 and answer.get_json()["code"] == "front.bad_request"
+    assert str(reports.MAX_REPORT_BYTES) in answer.get_json()["detail"].replace(",", "")
+    assert not written(log, "failure_report")
+
+
+def unmeasured(client, body):
+    """A report sent without Content-Length, its body ended by the stream."""
+    return client.post("/api/reports/failure", headers=DEV_GROUP, environ_overrides={
+        "wsgi.input": io.BytesIO(body), "CONTENT_LENGTH": None,
+        "wsgi.input_terminated": True})
+
+
+def test_a_report_without_a_length_is_read_no_further_than_its_size(client, log):
+    answer = unmeasured(client, json.dumps(
+        EXAMPLE | {"detail": "x" * reports.MAX_REPORT_BYTES}).encode())
+    assert answer.status_code == 400 and answer.get_json()["code"] == "front.bad_request"
+    assert "without Content-Length" in answer.get_json()["detail"]
+    assert unmeasured(client, json.dumps(EXAMPLE).encode()).status_code == 204
+    assert len(written(log, "failure_report")) == 1
 
 
 def too_many(answer):
