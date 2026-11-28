@@ -109,10 +109,16 @@ class PartStore:
         """Keep `data` (whose hash is `sha256`) under the three; the new entry. The bytes are
         written under a temporary name and renamed, so a part's file is always whole. Past the
         limit on disk, the least recently used parts of any user key are removed. Raises
-        OSError when the folder cannot be written (a full disk)."""
+        OSError when the folder cannot be written (a full disk). An entry already under the
+        three (two first uploads of the same bytes at once) is kept, as a use, so a slice job
+        that found it can still hold it."""
         folder = self.root / user_folder(user_key)
         path = folder / f"{sha256}-{units}.stl"
         with self._lock:
+            existing = self._entries.get((user_key, sha256, units))
+            if existing is not None:
+                existing.last_used = self._clock()
+                return existing
             folder.mkdir(exist_ok=True)
             handle, temporary = tempfile.mkstemp(dir=folder, prefix=".upload-")
             try:

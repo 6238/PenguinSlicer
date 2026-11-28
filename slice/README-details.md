@@ -688,7 +688,11 @@ curl -s -OJ -H "$K" http://127.0.0.1:8640/slices/<job>/file        # the sliced 
 `plate.json` is [the phase 2 example](../contracts/examples/plate-configuration-phase-2.json)
 with its `overrides` in the four as built (`{"infill": 20, "walls": 3, "supports": "off",
 "brim": "auto"}`) until every setting under Orca's own name is built (item 6 of
-[Phase 2](#phase-2-one-machine)).
+[Phase 2](#phase-2-one-machine)), and without its fourth instance. That instance lays the
+bracket by a `rotation` on a face of its convex hull that is no face of the part, so the
+bracket touches the plate along two edges only: the checks accept it, and the pinned Orca
+fails the slice (`slice.orca_failed`, "floating regions" in its log). With the first three
+instances the plate slices.
 
 `serve` writes one JSON log line per slice job transition on stderr; stopping it with
 Ctrl-C or SIGTERM (what a container host sends) cancels every slice job, sends each
@@ -808,13 +812,16 @@ units answer the same record, are not checked again, and count as a use.
 The part store's rules (`part_store.PartStore`):
 
 - **Where.** One folder per user key, named `part_store.user_folder(user_key)`: the SHA-256
-  hash of the user key's UTF-8 bytes, 64 lowercase hexadecimal characters. A user key is an
+  hash of all the user key's UTF-8 bytes, 64 lowercase hexadecimal characters. A user key is an
   arbitrary string from outside, so it never names a path itself: a hash holds no `/` or
   `..`, is never empty or too long, two different user keys never share a folder (that would
   take a collision of SHA-256), and the same user key gets the same folder in every process
   with no table to lose at a restart. Each part is `<sha256>-<units>.stl` in its user key's
   folder, its bytes exactly as they arrived, written under a temporary name and renamed so a
-  part's file is always whole.
+  part's file is always whole. The whole user key is hashed, however long (a lone surrogate
+  as `surrogatepass` writes it). Two first uploads of the same bytes under one user key at
+  once both run the checks; the second finds the first's entry and keeps it, as a use, so a
+  slice job that found the first can still hold it.
 - **Found only under all three.** A part is found only under its user key, its hash and its
   units together, so two users who upload the same file each have their own entry, nobody
   can learn whether someone else uploaded a given file, and one file under `mm` and `in` is
@@ -1754,7 +1761,7 @@ sentence, remedy, action, retryable flag and evidence its report must carry.
 | `slice.placement_too_tall` | checking | An instance is taller than the printable height. |
 | `slice.placement_too_close` | checking | Two footprints are closer than `SPACING_MM` (5 mm), or `SPACING_SUPPORTS_MM` (12 mm) with supports on (see "Spacing"). The report names both instances (`where`: `instance`, `other_instance`); with supports on the sentence says supports need the room, and the remedy also offers turning supports off. The detail lists at most 20 such problems. |
 | `slice.busy` | queued | The job queue is full. |
-| `slice.scratch_unwritable` | building | The plate 3MF, the process file or Orca's folders cannot be written (a full disk, a folder where an earlier run's sliced file was), or the HTTP interface cannot make a slice job's folder in its work folder or hold its parts there, or the part store cannot keep an uploaded part (HTTP 500). |
+| `slice.scratch_unwritable` | building | The plate 3MF, the process file or Orca's folders cannot be written (a full disk, a folder where an earlier run's sliced file was), or the HTTP interface cannot make a slice job's folder in its work folder or hold its parts there, or the part store cannot keep an uploaded part (HTTP 500). The upload's report has its own sentence and remedy (`web.PART_STORE_UNWRITABLE_MESSAGE`, `web.PART_STORE_UNWRITABLE_REMEDY`: add the part again in a few minutes, or the server needs more free disk space). |
 | `slice.orca_missing` | slicing | No Orca at `PENGUIN_SLICE_ORCA` or `tools/orca`. |
 | `slice.orca_unstartable` | slicing | Orca is there but will not start (not executable, another architecture), or exits 126 or 127 with no `result.json` (the loader could not load a library it needs). |
 | `slice.timeout` | slicing | Orca took longer than `PLATE_SLICE_TIMEOUT_S`; the service stopped it, and the stop is what ended Orca, before its sliced file was complete. On a plate of one instance the remedy is to simplify or split the part, with no action. |
@@ -1778,7 +1785,7 @@ sentence, remedy, action, retryable flag and evidence its report must carry.
 | `slice.unknown_job` | fetching | The HTTP interface does not know the slice job (never, or expired, or accepted by another slice service process), or it is another user key's (answered exactly alike, and logged as a refusal). |
 | `slice.not_ready` | fetching | The sliced file or summary of a slice job that has not finished. |
 | `slice.file_gone` | fetching | The sliced file of a done slice job is no longer on the disk (HTTP 410), for the file and the summary alike. |
-| `slice.bad_request` | fetching | The HTTP interface does not offer that path (404) or that method on it (405), or an upload has no Content-Length (400). |
+| `slice.bad_request` | fetching | The HTTP interface does not offer that path (404) or that method on it (405), or an upload has no Content-Length (400). The upload's report has its own sentence and remedy (`web.NO_LENGTH_MESSAGE`, `web.NO_LENGTH_REMEDY`: add the part again, or the server needs fixing), a fault of the front server's. |
 | `slice.unexpected` | slicing | Anything else: a bug in the slice service; the detail keeps the traceback. |
 
 For a failure Orca reports, the detail holds Orca's code, the exit status, Orca's own

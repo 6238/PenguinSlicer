@@ -66,7 +66,11 @@ FILE_GONE_MESSAGE = "The sliced file is no longer on the print server."
 NO_USER_KEY_MESSAGE = "The slicer was not told whose request this is."
 BAD_UNITS_MESSAGE = "The slicer was not told whether this part is in millimetres or inches."
 NO_LENGTH_MESSAGE = "The slicer was not told how large this part is."
-PART_STORE_UNWRITABLE_MESSAGE = "The print server could not keep this part."
+PART_STORE_UNWRITABLE_MESSAGE = "The slicer could not keep this part."
+# The two upload failures whose codes are shared with failures of a slice: remedies of their own.
+NO_LENGTH_REMEDY = "Add the part again; if it happens again, the server needs fixing."
+PART_STORE_UNWRITABLE_REMEDY = ("Add the part again in a few minutes; if it fails again, the server needs more free "
+                                "disk space.")
 TOO_LARGE_PROBLEM = f"it is larger than {limits.MAX_PLATE_CONFIGURATION_BYTES:,} bytes"
 JOB_PARTS = "parts"           # a slice job's hold on its parts' files, in its folder
 STORE_LABEL = "parts-"        # the part store's folder: slice-<pid>-<start>-parts-<random>
@@ -234,7 +238,8 @@ def create_app(work_dir=None, pool=None, *, log=None, start_sweeper=True, enviro
             detail = "no units label" if units is None else f"units {units[:40]!r}, not 'mm' or 'in'"
             body, status = report_for_code("slice.bad_units", BAD_UNITS_MESSAGE, detail), 400
         elif length is None:
-            body, status = report_for_code("slice.bad_request", NO_LENGTH_MESSAGE, "upload without Content-Length"), 400
+            body, status = report_for_code("slice.bad_request", NO_LENGTH_MESSAGE, "upload without Content-Length",
+                                           remedy=NO_LENGTH_REMEDY), 400
         elif length > limits.MAX_PART_BYTES:
             body, status = report_for_code("slice.part_too_detailed",
                                            limits.TOO_DETAILED_BYTES_MESSAGE.format(name="This part"),
@@ -247,7 +252,8 @@ def create_app(work_dir=None, pool=None, *, log=None, start_sweeper=True, enviro
                 status = _status_for(body)
             except OSError as exc:
                 body, status = report_for_code("slice.scratch_unwritable", PART_STORE_UNWRITABLE_MESSAGE,
-                                               f"{type(exc).__name__}: {exc}"[:500]), 500
+                                               f"{type(exc).__name__}: {exc}"[:500],
+                                               remedy=PART_STORE_UNWRITABLE_REMEDY), 500
             except Exception as exc:          # a server profile that cannot be read
                 body = error_report(exc)
                 if body["code"] == "slice.unexpected":

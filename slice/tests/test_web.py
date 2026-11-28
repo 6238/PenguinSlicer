@@ -932,7 +932,7 @@ def test_the_sweeper_sweeps_the_part_store(work, monkeypatch):
     store = PartStore(work / "store", 1024)
     monkeypatch.setattr(store, "sweep", swept.set)
     pool = JobPool(slice_worker)
-    pool.start_sweeper(interval_s=0.001, also=(store.sweep,))
+    pool.start_sweeper(interval_s=0, also=(store.sweep,))           # no real interval: it waits on the event
     assert swept.wait(FAILSAFE_S)
     pool.shutdown()
     assert jobs.SWEEP_INTERVAL_S == 10

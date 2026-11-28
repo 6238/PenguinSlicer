@@ -461,6 +461,51 @@ def test_failure_produces_its_code(code, tmp_path, monkeypatch):
     assert expected.detail in report["detail"]
 
 
+def upload_without_a_length(scene):
+    """An upload whose body comes without a Content-Length (Transfer-Encoding: chunked)."""
+    client, _pool = scene.web()
+    return client.post("/parts?units=mm", headers={"X-Penguin-User-Key": "user-a", "Transfer-Encoding": "chunked"},
+                       content_type="application/octet-stream", input_stream=io.BytesIO(BOX),
+                       environ_overrides={"wsgi.input_terminated": True}).get_json()
+
+
+def part_store_full(scene):
+    """An upload the part store cannot keep: its disk is full."""
+    def full(*args, **kwargs):
+        raise OSError(28, "No space left on device")
+    client, _pool = scene.web()
+    scene.monkeypatch.setattr("penguin_slice.part_store.os.fdopen", full)
+    return upload(client, BOX).get_json()
+
+
+# The two upload failures whose codes are shared with other failures: their own sentence and
+# remedy, written out (a user adding a part on the Parts step reads them).
+UPLOAD_EXPECTED = {
+    "no_content_length": ("slice.bad_request", Expected(
+        upload_without_a_length, "The slicer was not told how large this part is.", "fetching", False, None,
+        "Add the part again; if it happens again, the server needs fixing.", "upload without Content-Length")),
+    "part_store_full": ("slice.scratch_unwritable", Expected(
+        part_store_full, "The slicer could not keep this part.", "building", True, None,
+        "Add the part again in a few minutes; if it fails again, the server needs more free disk space.",
+        "No space left on device")),
+}
+
+
+@pytest.mark.parametrize("case", list(UPLOAD_EXPECTED))
+def test_an_upload_failure_says_what_to_do_about_the_upload(case, tmp_path, monkeypatch):
+    code, expected = UPLOAD_EXPECTED[case]
+    report = expected.producer(Scene(tmp_path, monkeypatch))
+    assert report["code"] == code
+    assert_report_shape(report)
+    assert report["message"] == expected.message
+    assert report["where"]["stage"] == expected.stage
+    assert report["retryable"] is expected.retryable
+    assert report.get("action") == expected.action
+    assert report["remedy"] == expected.remedy
+    assert expected.detail in report["detail"]
+    assert not re.search(r"mentor|print server|slice again", report["message"] + report["remedy"], re.I)
+
+
 def test_the_three_ways_orca_can_end_on_a_signal_are_distinct(tmp_path, monkeypatch):
     """A kill for memory, a crash, a stop by someone else, and the service's own stops."""
     reports = {code: produce(code, tmp_path / code, monkeypatch)[1]

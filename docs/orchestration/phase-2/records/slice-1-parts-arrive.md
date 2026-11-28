@@ -134,6 +134,24 @@ and in [the guide](../../../../slice/README.md#keep-each-part-once-the-part-stor
     within the 1 mm the real parts use: 0.59 mm and 0.40 mm were measured.
 23. **A user key is compared exactly.** Only a missing or empty header is refused; a key of
     spaces is a key like any other, and none is trimmed or folded in case.
+24. **The two upload failures that share a code with a slice's failure have remedies of their
+    own** (after review). The documents fix the codes (`slice.scratch_unwritable` for a part
+    store that cannot be written, `slice.bad_request` for an upload without a
+    Content-Length) and are silent on their remedies; the codes' defaults said "ask a mentor"
+    and "slice again", wrong words and the wrong action on the Parts step. Chosen:
+    "The slicer could not keep this part." with "Add the part again in a few minutes; if it
+    fails again, the server needs more free disk space.", and "Add the part again; if it
+    happens again, the server needs fixing." (the words of `slice.no_user_key`'s remedy, the
+    other fault of the front server's). `errors.report_for_code` takes a `remedy`. Their
+    stage (`building`, `fetching`) and retryable flag stay the code's, as the details file's
+    table of codes fixes one stage per code. To overrule: change the two constants in `web.py`
+    and their entries in `tests/test_errors.py` (`UPLOAD_EXPECTED`); a stage of their own
+    would need a change to that table and to `errors.CODES`.
+25. **Two first uploads of the same bytes under one user key at once** (after review): the
+    documents are silent. Both still run the checks (no lock is held across a part's check);
+    `PartStore.put` now keeps an entry already under the three, as a use, instead of
+    replacing it, so a slice job that found the first entry can still hold it. To overrule:
+    drop that early return in `put` and its test.
 
 ## Targets missed
 
@@ -158,10 +176,14 @@ and in [the guide](../../../../slice/README.md#keep-each-part-once-the-part-stor
    tests. In their place, four checks were broken by hand and the suite run: the user key used
    as its own folder name (16 tests fail), the user key's check on a slice job removed (6
    fail), the rotation's tolerance made 1e-2 (3 fail), the scale of a part in inches dropped
-   from the plate written for Orca (1 fails).
+   from the plate written for Orca (1 fails). The review found a fifth that survived:
+   hashing only the first 100 characters of a user key passed all 1,193 fast tests. Four
+   tests now fail on it, one of them a sweep of one long user key's part that leaves
+   another's, differing only in its last character, unable to be held.
 6. **One test waits on a real thread.** `test_the_sweeper_sweeps_the_part_store` starts the
-   pool's sweeper at a 1 ms interval and waits on an event (behind the 10 s failsafe), not on
-   a fake clock, since the sweeper's interval is a real wait in `JobPool.start_sweeper`.
+   pool's sweeper on its own thread and waits on an event (behind the 10 s failsafe). After
+   review its interval is 0, as `tests/test_jobs.py` uses, so no real interval passes; the
+   wait is on the thread, not on a fake clock.
 7. **The user key is not yet on every log line**: on the lines of this batch only, until item
    16 puts it on all.
 
@@ -174,7 +196,21 @@ and in [the guide](../../../../slice/README.md#keep-each-part-once-the-part-stor
 3. Folding the plate configuration contract's phase 2 sections into its body, and retiring
    its form before phase 2 and the old example (decision 21).
 4. The words of the slice service's older sentences ("ask a mentor", "the print server"):
-   known future work, as the details file says; the new sentences of this batch use neither.
+   known future work, as the details file says. As first pushed, this record said the new
+   sentences of this batch used neither; that was false (the part store's refusal said "The
+   print server could not keep this part." and carried the default remedy "Ask a mentor
+   ..."). After review the batch's own sentences and remedies use neither (decision 24).
+   The older sentences, the 404 and 405 sentence ("The print server does not offer ...")
+   among them, keep the old words.
+6. **The review's findings declined.** A refusal of a path other than `POST /slices` and
+   `POST /parts` (a 404 or a 405, `GET /parts` for one) still writes no log line. That is the
+   details file's later item: item 9 of "Phase 3: hosted on Railway" (the log's new lines)
+   says that as built only the refusals of `POST /slices`, of `POST /parts`, of a request
+   without the user key and of another user key's slice job are logged, and makes "a line
+   for every exception and every refusal, whichever route it comes from" that item's work. The test that pins it,
+   `test_a_method_parts_does_not_take_is_no_upload`, changes with that item. Minor finding 1
+   (tests not written first) needs no change: it is Targets missed 5, and the reviewer's
+   mutations there were caught.
 5. Measuring the disk the part store takes: open in the guide's Unmeasured, before phase 3.
 
 ## For the owner to look at

@@ -28,10 +28,31 @@ class TestUserFolder:
         keys = ["a", "A", "a ", " a", "a\n", "é", "e\u0301", "user-a", "user-b", "0", "00", "\udc80", "\x80"]
         assert len({user_folder(k) for k in keys}) == len(keys)
 
-    def test_the_same_user_key_gets_the_same_folder_in_every_process(self):
-        # SHA-256 of the UTF-8 bytes: no table, nothing to lose at a restart.
-        assert user_folder("user-a") == sha256(b"user-a")
-        assert user_folder("é") == sha256("é".encode("utf-8"))
+    def test_two_long_user_keys_that_differ_only_in_their_last_character_never_share_a_folder(self):
+        # The whole key is hashed, however long: no prefix decides the folder.
+        long_a, long_b = "k" * 10_000 + "a", "k" * 10_000 + "b"
+        assert user_folder(long_a) != user_folder(long_b)
+
+    @pytest.mark.parametrize("key", ["user-a", "é", "x" * 10_000, "k" * 10_000 + "a", "\udc80", "a\udc80b"])
+    def test_the_same_user_key_gets_the_same_folder_in_every_process(self, key):
+        # SHA-256 of all the key's UTF-8 bytes (a lone surrogate as surrogatepass writes it):
+        # no table, nothing to lose at a restart.
+        assert user_folder(key) == sha256(key.encode("utf-8", "surrogatepass"))
+
+    def test_a_sweep_of_one_user_keys_part_leaves_another_user_keys_same_part_whole(self, tmp_path):
+        """Two user keys that differ only in their last character upload the same bytes; one
+        user key's entry is swept, and the other's can still be held."""
+        long_a, long_b = "k" * 10_000 + "a", "k" * 10_000 + "b"
+        store = Parts(tmp_path)
+        store.add(box_stl(), user_key=long_a)
+        store.clock[0] += 3600
+        store.add(box_stl(), user_key=long_b)
+        store.clock[0] += 3600                                     # long_a's entry is two hours old
+        assert store.store.sweep() == 1
+        assert store.store.get(long_a, sha256(box_stl()), "mm") is None
+        kept = store.store.get(long_b, sha256(box_stl()), "mm")
+        held = store.store.hold([kept], tmp_path / "job")
+        assert held[(sha256(box_stl()), "mm")].read_bytes() == box_stl()
 
     def test_a_part_is_kept_in_its_user_keys_folder(self, tmp_path):
         store = Parts(tmp_path)
@@ -50,6 +71,18 @@ class TestFinding:
         assert store.store.get("user-b", digest, "mm") is None
         assert store.store.get(USER_KEY, digest, "in") is None
         assert store.store.get(USER_KEY, "0" * 64, "mm") is None
+
+    def test_a_second_put_of_the_same_part_keeps_the_entry_a_slice_job_found(self, tmp_path):
+        """Two first uploads of the same bytes at once both pass the checks and both put: a
+        slice job that found the first entry between them can still hold it."""
+        store = Parts(tmp_path)
+        data = box_stl()
+        first = store.store.put(USER_KEY, "mm", sha256(data), data, {"checked": 1})
+        store.clock[0] += 60
+        second = store.store.put(USER_KEY, "mm", sha256(data), data, {"checked": 2})
+        assert second is first and first.last_used == store.clock[0]          # the second put is a use
+        assert store.store.hold([first], tmp_path / "job")[(sha256(data), "mm")].read_bytes() == data
+        assert len(store.store) == 1 and not list(first.path.parent.glob(".upload-*"))
 
     def test_two_users_who_upload_one_file_each_have_their_own_entry(self, tmp_path):
         store = Parts(tmp_path)

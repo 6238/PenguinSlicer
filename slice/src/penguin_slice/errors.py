@@ -122,9 +122,10 @@ CODES = {
 _OWN = (PlateConfigurationRefused, MeshError, ProfileError, OverrideError, SliceError, SliceCancelled)
 
 
-def report_for_code(code, message, detail="", where=None):
-    """The error report for `code` with its sentence and evidence (the HTTP interface's own)."""
-    return _report(code, message, detail, where)
+def report_for_code(code, message, detail="", where=None, remedy=None):
+    """The error report for `code` with its sentence and evidence (the HTTP interface's own),
+    and its own remedy when the code's is for another failure (an upload's, for one)."""
+    return _report(code, message, detail, where, remedy)
 
 
 def _report(code, message, detail="", where=None, remedy=None, no_action=False):
