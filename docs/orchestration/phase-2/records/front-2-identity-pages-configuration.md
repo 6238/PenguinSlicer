@@ -155,15 +155,32 @@ passed from the slice service. Written Fri 2026-11-27, Pacific time.
     produced by an httpx transport that raises `ReadTimeout`, passed to `SliceClient`
     (a new `transport` argument, for tests only), rather than by a listening socket and a
     small real time limit, which would make a test wait a number of seconds against the
-    quality bar. A second test pins `SLICE_TIMEOUT_S` at 30 on a client built by default.
-    What it does not prove is that httpx raises `ReadTimeout` after 30 s of silence: that is
-    httpx's own behaviour. To overrule: a socket test with a short `timeout_s`.
+    quality bar. A second test builds a `SliceClient` with its default time limit, over an
+    httpx transport that records the time limits httpx hands each request, and checks they
+    are 30 s for connecting, reading, writing and waiting for a pooled connection (fixed in
+    the third review: the test had read a stored copy of the figure that nothing passed to
+    httpx; that copy is gone). What it does not prove is that httpx raises `ReadTimeout`
+    after 30 s of silence: that is httpx's own behaviour. To overrule: a socket test with a
+    short `timeout_s`.
 31. **Review findings declined.** None: the three blocking findings were checked against the
     code and found real, and the reviewer's mutations (`found[0]` for the lowest rule; `<`
     for `<=` in `_text`, the filaments' count, the profiles' count and an override's name),
     each made alone by hand, fail the new tests; both minor findings were fixed. The coverage drop to
     99% (decision 23's two branches, never reached) went unnoticed in round 1's fixes
     because `make -C front coverage` was not rerun; it is 100% again.
+
+### Decisions made while fixing the third review
+
+32. **How `accepts_gzip` reads an item.** RFC 9110 makes parameter names case-insensitive
+    and allows parameters other than `q`; the details file was silent. Chosen: each item is
+    split into its coding and its parameters at `;`, `q` is read by its name in any case,
+    other parameters are passed over, and an item whose `q` is not a number is skipped as
+    before. A coding named twice keeps its highest weight, now tested (`gzip, gzip;q=0`
+    accepts gzip). No browser sends such headers; the change costs nothing. To overrule:
+    `settings_table._weight`.
+33. **Review findings declined.** None: the blocking finding was real (with `timeout=None`
+    the new test fails, seeing `None` for all four limits), and the three minor findings
+    were fixed.
 
 ## Targets missed
 
@@ -173,11 +190,12 @@ passed from the slice service. Written Fri 2026-11-27, Pacific time.
   sign in. The `cookie_large` line is written. The guide leaves this open for phase 3
   ([Whether the cookie fits](../../../../front/README.md#whether-the-cookie-fits)); a real
   account's tokens and group count decide it.
-- **The fast suite's time.** 588 tests in about 11 seconds (603 after the review's fixes,
-  in 10 to 11 seconds; 629 after the second review's, in about 4 seconds on two workers and
-  7 on one) on two of eight shared
-  processors, from about 2 seconds before the batch; each test builds the application on
-  fresh folders (about 15 ms). Still "seconds", but no longer "a few".
+- **The fast suite's time.** 635 tests in about 4 seconds on two workers and about 7 on one,
+  on shared processors, from about 2 seconds before the batch; each test builds the
+  application on fresh folders (about 15 ms). Still "seconds", but no longer "a few".
+- **The third review's fixes were merged without a further review.** The test of the slice
+  service's time limit and the reading of `Accept-Encoding` parameters (decisions 30 and
+  32) were checked only by their author.
 
 ## Not done
 

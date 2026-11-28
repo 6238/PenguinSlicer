@@ -21,7 +21,7 @@ from .identity import signed_in
 from .slice_client import SliceUnreachable
 
 PATH = "/settings-table"
-_CODING = re.compile(r"\s*([^;\s]+)\s*(?:;\s*q\s*=\s*([0-9.]+))?\s*")
+_WEIGHT = re.compile(r"[0-9.]+")
 
 
 def register(app):
@@ -35,15 +35,33 @@ def accepts_gzip(header):
     named explicitly overrides `*`)."""
     weights = {}
     for item in header.split(","):
-        match = _CODING.fullmatch(item)
-        if match is None or match[1].lower() not in ("gzip", "*"):
+        coding, *parameters = item.split(";")
+        coding = coding.strip().lower()
+        if coding not in ("gzip", "*"):
             continue
-        try:
-            weight = float(match[2]) if match[2] is not None else 1.0
-        except ValueError:
+        weight = _weight(parameters)
+        if weight is None:
             continue
-        weights[match[1].lower()] = max(weight, weights.get(match[1].lower(), 0.0))
+        # A coding named twice takes its highest weight.
+        weights[coding] = max(weight, weights.get(coding, 0.0))
     return weights.get("gzip", weights.get("*", 0.0)) > 0
+
+
+def _weight(parameters):
+    """The weight an item's parameters give it: its `q` (a name in any case), 1 when it has
+    none, or None when its `q` is not a number. Parameters other than `q` are passed over."""
+    weight = 1.0
+    for parameter in parameters:
+        name, _, value = parameter.partition("=")
+        if name.strip().lower() == "q":
+            value = value.strip()
+            if _WEIGHT.fullmatch(value) is None:
+                return None
+            try:
+                weight = float(value)
+            except ValueError:
+                return None
+    return weight
 
 
 def settings_table():

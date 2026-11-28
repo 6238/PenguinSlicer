@@ -93,6 +93,11 @@ def test_the_answer_is_compressed_when_the_browser_accepts_it(client, standin):
     # An explicit weight for gzip overrides `*`, in either order (RFC 9110, 12.5.3).
     ("gzip;q=0, *", False), ("*, gzip;q=0", False), ("*;q=0, gzip", True),
     ("*;q=0", False), ("br, *;q=0.1", True),
+    # A coding named twice takes its highest weight, in either order.
+    ("gzip, gzip;q=0", True), ("gzip;q=0, gzip", True),
+    # Parameter names are case-insensitive, and parameters other than q are passed over.
+    ("*, gzip;Q=0", False), ("gzip;q=0.5;x=1", True), ("gzip;x=1;q=0", False),
+    ("gzip;x=1", True),
 ])
 def test_a_browser_accepts_gzip_by_its_accept_encoding(header, accepted):
     assert accepts_gzip(header) is accepted
@@ -144,11 +149,21 @@ def test_a_slice_service_that_connects_and_then_sends_nothing_is_front_slice_unr
 
 
 def test_the_slice_client_waits_slice_timeout_s_for_the_next_bytes():
-    client = SliceClient("http://slice.invalid")
+    # httpx hands each request the time limits it will enforce; a client built by default
+    # must send 30 s for connecting, reading, writing and waiting for a pooled connection.
+    seen = []
+
+    def record(request):
+        seen.append(request.extensions["timeout"])
+        return httpx.Response(200, stream=httpx.ByteStream(b"{}"))
+
+    client = SliceClient("http://slice.invalid", transport=httpx.MockTransport(record))
     try:
-        assert client.timeout_s == SLICE_TIMEOUT_S == 30
+        client.get_raw("/settings-table")
     finally:
         client.close()
+    assert SLICE_TIMEOUT_S == 30
+    assert seen == [{"connect": 30, "read": 30, "write": 30, "pool": 30}]
 
 
 def test_without_a_sign_in_it_is_refused_and_the_slice_service_is_not_asked(app, standin):

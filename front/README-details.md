@@ -1380,7 +1380,9 @@ printer its table lacks).
 **As built** (`penguin_front.settings_table`): the front server asks with
 `Accept-Encoding: gzip` when the browser's `Accept-Encoding` names `gzip` with a weight
 above zero, or does not name `gzip` and names `*` with a weight above zero (`accepts_gzip`;
-a coding named explicitly overrides `*`, as RFC 9110 says), and `identity` otherwise, and
+a coding named explicitly overrides `*`, as RFC 9110 says; a coding named twice takes its
+highest weight; the parameter `q` is read in any case and other parameters are passed
+over), and `identity` otherwise, and
 answers the bytes and the
 `Content-Encoding` as the slice service sent them, with `Vary: Accept-Encoding`. It sends no
 user key. A failure answered with the slice service's own error report (a JSON object whose
