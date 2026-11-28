@@ -31,6 +31,7 @@ from penguin_slice.slicer import (DEFAULT_PROFILES, ORCA_STAGES, PROFILE_DIR, SA
 EXAMPLE = CONTRACTS / "examples" / "plate-configuration.json"
 EXAMPLE_PARTS = CONTRACTS / "examples" / "parts"
 ERROR_EXAMPLE = CONTRACTS / "examples" / "error-report.json"
+ERROR_ORCA_SENTENCE_EXAMPLE = CONTRACTS / "examples" / "error-report-orca-sentence.json"
 BAD = FIXTURES / "bad_stls"
 
 
@@ -363,10 +364,23 @@ def test_empty_layers_with_supports_off(empty_layers):
     assert lines[:3] == ["orca code -100", "exit code 156", "orca error_string: Failed slicing the model. Please "
                          "verify the slicing of all plates on Orca Slicer before uploading."]
     assert lines[3] == "orca warning_message: Object can't be printed for empty layer between 9.9 and 11.34."
-    # contracts/examples/error-report.json is this report.
+    # contracts/examples/error-report.json is this report as built before phase 2, without
+    # Orca's own sentence; error-report-orca-sentence.json is this report whole.
     example = json.loads(ERROR_EXAMPLE.read_text())
-    assert {k: v for k, v in report.items() if k != "detail"} == {k: v for k, v in example.items() if k != "detail"}
+    assert {k: v for k, v in report.items() if k not in ("detail", "orca_sentence")} == \
+        {k: v for k, v in example.items() if k != "detail"}
     assert lines[:6] == example["detail"].splitlines()[:6]
+    with_sentence = json.loads(ERROR_ORCA_SENTENCE_EXAMPLE.read_text())
+    assert {k: v for k, v in report.items() if k != "detail"} == \
+        {k: v for k, v in with_sentence.items() if k != "detail"}
+
+
+def test_orcas_empty_layer_sentence_is_pinned(empty_layers):
+    """Protects: the wording of Orca's own sentence about a gap, which the error reports of
+    the two failures about a gap quote to the user as orca_sentence (item 13)."""
+    for supports, high in (("off", "11.34"), ("on", "10.62")):
+        _exc, report = empty_layers[supports]
+        assert report["orca_sentence"] == f"Object can't be printed for empty layer between 9.9 and {high}.", supports
 
 
 def test_empty_layers_with_supports_on_ask_for_a_repair(empty_layers):
