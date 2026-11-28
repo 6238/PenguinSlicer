@@ -189,6 +189,16 @@ def test_opening_puts_focus_on_the_first_sections_heading_and_covers_the_panel(s
     assert page.evaluate("() => ['#wiz-header', '#wiz-body', '#wiz-nav'].every((s) => !document.querySelector(s).inert)")
 
 
+def test_a_report_sent_while_advanced_mode_is_open_names_the_step_advanced(settings_page, front_server):
+    w = settings_page()
+    open_advanced(w)
+    w.run("await wizard.reports.failure('page_failed', {detail: 'a test'});")
+    w.page.click("#adv-done")
+    w.run("await wizard.reports.failure('page_failed', {detail: 'a test'});")
+    steps = [json.loads(body)["step"] for method, path, body in front_server.bodies if path == "/api/reports/failure"]
+    assert steps == ["advanced", "settings"]
+
+
 def test_escape_does_not_close_advanced_mode(settings_page):
     w = settings_page()
     open_advanced(w)
