@@ -1144,9 +1144,11 @@ the checks). Each value is checked against its entry before Orca runs:
 
 - a value that is not a string is refused;
 - a choice must be one of its `choices`' values (`"0"` or `"1"` for an on-and-off setting);
-- a number must be of its `number_form`, written as Orca writes it: `integer` `-?\d+`, and
-  within a C++ int; `decimal` `-?\d+(\.\d+)?`, no exponent, no `nan`; `percent` a decimal
-  with `%`; `decimal_or_percent` either; at most 40 characters (`MAX_NUMBER_CHARS`); then
+- a number must be of its `number_form`, written as Orca writes it, in the digits 0 to 9
+  only (another script's digits are refused): `integer` `-?[0-9]+`, and within a C++ int;
+  `decimal` `-?[0-9]+(\.[0-9]+)?`, no sign `+`, no space, no exponent, no `nan`, no `.5`;
+  `percent` a decimal with `%`; `decimal_or_percent` either; at most 40 characters
+  (`MAX_NUMBER_CHARS`); then
   within `min` and `max` where the entry has them, a percentage's figure in percent;
 - a text must be no longer than its `max_length` and hold no control character (`\x00` to
   `\x1f`, `\x7f`).

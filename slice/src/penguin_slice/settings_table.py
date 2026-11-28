@@ -41,8 +41,8 @@ CONTROL_MESSAGE = "{setting} cannot hold a line break or other control character
 
 FORM_WORDS = {"integer": "a whole number", "decimal": "a number", "percent": "a percentage such as 40%",
               "decimal_or_percent": "a number or a percentage"}
-_DECIMAL = r"-?\d+(?:\.\d+)?"
-FORMS = {"integer": re.compile(r"-?\d+"), "decimal": re.compile(_DECIMAL),
+_DECIMAL = r"-?[0-9]+(?:\.[0-9]+)?"          # ASCII digits only: `\d` takes any script's digits
+FORMS = {"integer": re.compile(r"-?[0-9]+"), "decimal": re.compile(_DECIMAL),
          "percent": re.compile(_DECIMAL + "%"), "decimal_or_percent": re.compile(_DECIMAL + "%?")}
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 

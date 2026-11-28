@@ -195,6 +195,11 @@ class TestRefused:
         ("initial_layer_line_width", "0.6mm", "a number or a percentage"),
         ("layer_height", "", "a number"),
         ("layer_height", "1" * 41, "a number"),
+        ("wall_loops", "٣", "a whole number"),                # an Arabic-Indic three: a digit, not Orca's
+        ("layer_height", "0.٢", "a number"),
+        ("wall_loops", "+3", "a whole number"),
+        ("wall_loops", " 3", "a whole number"),
+        ("layer_height", ".5", "a number"),
     ])
     def test_a_number_of_the_wrong_form(self, name, value, words):
         assert words in refused({name: value}).message
