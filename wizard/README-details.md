@@ -1421,9 +1421,19 @@ shows no expiry until a later report gives one.
 the wizard shows the sliced file's own toolpaths, fetched with `GET /api/slices/<slice>/file` (with
 its headers; never stored), and the user inspects them layer by layer, with the appearance below.
 The worker reads `Metadata/plate_1.gcode` from the archive ([the sliced file](../contracts/sliced-file.md#contents))
-and prepares what is drawn. **The method is not fixed:** it is found while building, because the
-mockup's method (every segment a flat strip) is known not to be good enough and no better one has
-been tried.
+and prepares what is drawn. **The method** is the first trial's method C
+([wizard/trials/preview/README.md](trials/preview/README.md), and the
+[trial's record](../docs/orchestration/phase-2/records/wizard-1a-trial-preview.md) for its figures and
+why): every segment a box as wide as its line and as tall as its layer, its top and its long side
+towards the camera drawn, six vertices of its own (instanced drawing is far slower in software
+drawing), walls' tops 0.01 mm over the lines that end against them; while moving (turning the view
+or dragging the layer bar), every D-th layer of a coarser reading (arcs within 0.1 mm), each box D
+layers tall, D the smallest of 1, 2, 4, 8, 16 within 200,000 boxes, no ghost; at rest, the full look
+drawn into an image off the screen in pieces of at most 100,000 boxes, each after a fence shows the
+one before is drawn, then the ghost as a piece of its own, then copied to the screen; the vertices
+and the ghost uploaded 8 MB a frame behind a fence, and uploaded again after a lost drawing context;
+a first frame of one box to build the pipelines; a box at most 5.1 mm tall (its height is a byte of
+fiftieths of a millimetre), so D is never so large that a box of D layers would be taller.
 
 **The appearance** ([decision 33](../docs/mockups/print-wizard/DECISIONS.md#preview-step)):
 
@@ -1473,12 +1483,12 @@ method took 4 to 21 seconds a frame without a graphics card (4.2 s for 152,101 s
 for some 400,000), which made Chrome lose every 3D view on the page; with a graphics card it was
 fast but showed combs and show-through.
 
-Open, and to be tried first in phase 2: whether any method meets 10 frames a second without a
-graphics card at the largest plate with the required look
-([The risks to try first in phase 2](README.md#the-risks-to-try-first-in-phase-2)); how the trial
-is run is in [How the trials and measurements are run](#how-the-trials-and-measurements-are-run).
-If none does, the decision comes back to the owner: a smaller largest previewable plate, the
-Preview step unsupported without a graphics card, or a lower target.
+Tried first in phase 2 ([The risks to try first in phase 2](README.md#the-risks-to-try-first-in-phase-2)),
+as [How the trials and measurements are run](#how-the-trials-and-measurements-are-run) says: method C
+reaches 10 frames a second typical (10 to 20 measured) and no hold over 250 ms (113 to 198 ms) on the
+three plates without a graphics card, with the required look at rest, the ghost included, as read from
+the screen; the margin on a busy machine is thin (the trial's record). The owner's part (the renders,
+and Chrome on the Mac) is still open.
 
 Tests: a lost 3D context in each view, caused on purpose, draws again without a reload, twice in
 one page; the layer bar by arrow keys and its screen-reader layer; the colour key always has four
@@ -2018,9 +2028,9 @@ or is not yet in a contract:
 | Arrange | Under 2 s for 150 instances | Met: at most 30 ms for 150 of `hex-spacer.stl` (all placed) and 56 ms for a mix of 150 real parts (104 placed, the rest beside the plate) | The same |
 | The placement check | Keeps up with a drag at 150 instances | Met: at most 4.4 ms for each check of a drag at 150 instances, against one frame of 100 ms at 10 frames a second | The same |
 | The Layout view | 30 frames a second with a graphics card, 10 without, while dragging or turning, at 150 instances of parts up to 150,000 triangles | Set, no measurement | Timed in Chrome on both machines; reported in real use |
-| The layer preview | 30 with a graphics card, 10 without, while turning or dragging the layer bar, on a 14.1 MB sliced file and at 150 instances; a simpler look while moving | Set; the one method tried took 4 to 21 s a frame without a graphics card | Timed in Chrome on both machines; reported in real use; test renders |
-| The first layer drawn | Within 5 s, print time and filament at once | Set; unmeasured | The same |
-| The page's memory | Under 1 GB at the largest plate with the preview of a 14.1 MB sliced file | Set; unmeasured | Measured in Chrome at that plate |
+| The layer preview | 30 with a graphics card, 10 without, while turning or dragging the layer bar, on a 14.1 MB sliced file and at 150 instances; a simpler look while moving | Without a graphics card, method C of the first trial: 10 to 20 typical on the three plates (10.0 turning at `blocks-12-supports`); with one, unmeasured | Timed in Chrome on both machines; reported in real use; test renders |
+| The first layer drawn | Within 5 s, print time and filament at once | The first trial, method C: 1.5 to 2.7 s from fetching the sliced file to the first frame with toolpaths (the look while moving; the full look 2.4 to 8.5 s) | The same |
+| The page's memory | Under 1 GB at the largest plate with the preview of a 14.1 MB sliced file | The first trial, method C: 839 MB at that plate (the page's and the graphics process's peaks) | Measured in Chrome at that plate |
 | Before a self-reload | 120 s since the user last interacted, or a step change | Set | Fake clock |
 | Reports about itself | A few a minute from one page | Set; the front server has its own limit | Fake clock |
 | A sliced file | At most 50 MB; 8.8 to 14.1 MB on the plates measured | The slice service's and the front server's | A slice whose file would be larger ends with the slice service's sentence |
@@ -2043,7 +2053,7 @@ the other components are: `wizard/` is a `uv` project of its own, with its own
 | `wizard/src/seams/` | The seams: the only modules that may call `setTimeout`, `setInterval`, `Date.now` or `fetch` (the clock and the transport; from the skeleton, item 2 of [By phase](#by-phase)) |
 | `wizard/vendor/` | Third-party code kept as files, each with its release, licence and SHA-256 in [wizard/vendor/README.md](vendor/README.md) |
 | `wizard/tests/` | The tests without a browser window on Node's runner (`*.test.js`), with their fakes in `wizard/tests/fakes/` (from the skeleton) |
-| `wizard/tests/python/` | The tools' tests, on pytest: the build, Node's version check, the trials' server and made parts, the vendored files' hashes and the real parts' hashes. Not `tests/tools/`: the repository's `.gitignore` ignores every folder named `tools/` |
+| `wizard/tests/python/` | The tools' tests, on pytest: the build, Node's version check, the trials' server and made parts, the first trial's plates, slicing client and verdicts, the vendored files' hashes and the real parts' hashes. Not `tests/tools/`: the repository's `.gitignore` ignores every folder named `tools/` |
 | `wizard/tests_browser/` | The tests that drive Chromium, with the fake front server in Python (`fake_front_server.py`) |
 | `wizard/scripts/check_node.py` | Node's version check |
 | `wizard/trials/` | The two opening trials of phase 2, their pages, scripts, plates and results ([wizard/trials/README.md](trials/README.md)) |
@@ -2129,14 +2139,15 @@ imports, a style sheet's addresses) and building in `wizard/vendor/`.
 | `test-browser` | The tests in Chromium, after `build` |
 | `build` | `wizard/dist/` from `wizard/src/` (and, from the skeleton, `wizard/vendor/`) |
 | `trials` | Both opening trials' measurements, as [How the trials and measurements are run](#how-the-trials-and-measurements-are-run) says: runs `trials-preview` and `trials-geometry`, the second even when the first fails, and fails when either does |
-| `trials-preview` | The first trial: `wizard/trials/preview/run.py` |
+| `trials-preview` | The first trial: `wizard/trials/preview/run.py` (needs the three sliced files in `wizard/trials/sliced/`, made by `wizard/trials/make_sliced_files.py`) |
 | `trials-geometry` | The second trial: `wizard/trials/geometry/run.py` |
 | `trials-parts` | Writes the trials' made parts again into `wizard/trials/parts/` |
 | `trials-serve` | Serves `wizard/trials/` at `/`, with `wizard/vendor/` at `/vendor/` and `contracts/examples/parts/real/` at `/parts/real/`, on `127.0.0.1:8610`, for the owner's timing on the Mac; `HOST=0.0.0.0` (or `PORT=`) to change the address |
 
 Each trial's entry point is its own file in its own folder, so the two trials are built at
-the same time without touching one file; until its builder replaces it, each is a
-placeholder that says so and fails. A trial's script starts the trials' server itself with
+the same time without touching one file. Both are built; the first trial's exits 1 when no
+method reaches the builder's part of passing on all three plates, after writing its figures,
+renders and report. A trial's script starts the trials' server itself with
 `trials/serve.py`'s `make_server("127.0.0.1", 0)`, on a port the system chooses.
 
 ## How it is tested
@@ -2204,9 +2215,13 @@ processors and memory. The **machine with a graphics card** is the owner's Mac, 
 owner can take figures there.
 
 **The layer preview's speed without a graphics card** (the first trial of phase 2). Three real sliced
-files, made by `wizard/trials/make_sliced_files.py` (*proposed*), which submits each plate to a slice
-service started by hand on the same machine through its HTTP interface as built today (a plate
-configuration with its files) and saves the sliced file:
+files, made by `wizard/trials/make_sliced_files.py`, which has a slice service started by hand on
+the same machine slice each plate through its phase 2 HTTP interface
+([contracts/slice-http-interface.md](../contracts/slice-http-interface.md)): each part uploaded by
+itself with `POST /parts?units=mm`, then the plate configuration in its phase 2 form as JSON with
+`POST /slices` (its parts named by `sha256` and `units`, the plate's fixed `plate_id` and a new
+`submission_id` for each slice), every request under the user key `wizard-trials`; it saves the
+sliced file and its summary:
 
 | Plate | What it is | Sliced file | What making it needs |
 |---|---|---|---|
@@ -2292,11 +2307,10 @@ The page opened directly in a browser, with the development identity and no sign
    changes the design. Their project and inputs are built
    ([The project and its tools](#the-project-and-its-tools), and the inputs of
    [How the trials and measurements are run](#how-the-trials-and-measurements-are-run)), and so
-   is the second trial, [the geometry on real parts](README.md#the-risks-to-try-first-in-phase-2),
-   with the geometry it tried ([The geometry, in a worker](#the-geometry-in-a-worker)); the first
-   is to be built in place of its placeholder entry point:
-   [the layer preview's speed](README.md#the-risks-to-try-first-in-phase-2)
-   ([How the trials and measurements are run](#how-the-trials-and-measurements-are-run)).
+   are both trials: the first, [the layer preview's speed](README.md#the-risks-to-try-first-in-phase-2)
+   ([wizard/trials/preview/README.md](trials/preview/README.md)), and the second,
+   [the geometry on real parts](README.md#the-risks-to-try-first-in-phase-2), with the geometry it
+   tried ([The geometry, in a worker](#the-geometry-in-a-worker)).
 2. **The skeleton:** the build of `wizard/dist/` as
    [The wizard's built files](../contracts/wizard-front-server.md#the-wizards-built-files) fixes
    it (hashed asset names, the version placeholder, nothing the content security policy
@@ -2458,8 +2472,9 @@ Every undecided or unmeasured item that bears on building the wizard, each also 
 above. Build what each line says is safe; do not build past it.
 
 - **The layer preview's speed without a graphics card**, the first trial of phase 2
-  ([The risks to try first in phase 2](README.md#the-risks-to-try-first-in-phase-2)). Safe: everything
-  but the drawing method.
+  ([The risks to try first in phase 2](README.md#the-risks-to-try-first-in-phase-2)). Measured: method C
+  meets the builder's part. Safe: everything, on method C; open is only the owner's part, the renders
+  and the frame rate on the Mac.
 - **Laying on a face, auto-orient and Arrange on real exported parts**, the second trial
   ([The risks to try first in phase 2](README.md#the-risks-to-try-first-in-phase-2)). The builder's
   part passed; open is the owner's look at each part's pictures and the round parts exported from

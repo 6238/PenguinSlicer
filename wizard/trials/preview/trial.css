@@ -1,0 +1,8 @@
+/* The trial's pages: the view as the Preview step lays it out, the layer bar at its right. */
+body { margin: 14px; background: #f6f8fa; color: #1f2328; font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+#view { position: relative; }
+#view canvas { display: block; border: 1px solid #d0d7de; border-radius: 6px; }
+#layer { position: absolute; top: 12px; right: 8px; height: calc(100% - 64px); writing-mode: vertical-lr; direction: rtl; }
+#readout { margin: 6px 0 0; color: #5a6570; }
+#key span { margin-right: 14px; white-space: nowrap; }
+#key i { display: inline-block; width: 18px; height: 6px; margin-right: 6px; vertical-align: middle; border-radius: 2px; }
