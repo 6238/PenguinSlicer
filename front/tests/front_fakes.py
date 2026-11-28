@@ -104,8 +104,11 @@ class LoopbackServer:
 
         self._server = make_server("127.0.0.1", self.port, self.app, threaded=True)
         self.port = self._server.server_port
+        # `stop` waits for the serving loop to see its request, which it looks for once each
+        # `poll_interval`: 2 ms keeps a stop at about a millisecond (it was 10 ms, a second
+        # of the fast suite over its many stand-ins), for a negligible cost while it serves.
         self._thread = threading.Thread(target=self._server.serve_forever,
-                                        kwargs={"poll_interval": 0.01}, daemon=True)
+                                        kwargs={"poll_interval": 0.002}, daemon=True)
         self._thread.start()
         return self.url
 
@@ -115,6 +118,14 @@ class LoopbackServer:
             self._server.server_close()
             self._thread.join()
             self._server = None
+
+
+def loopback_client(url):
+    """An HTTP client for a stand-in on the loopback address. Plain HTTP, so it is made
+    without a TLS context: making one reads the system's certificates, about 8 ms a client."""
+    import httpx
+
+    return httpx.Client(base_url=url, timeout=BACKSTOP_S, verify=False)
 
 
 class Announcer:

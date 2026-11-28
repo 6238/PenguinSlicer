@@ -11,6 +11,8 @@ header of the browser's is ever passed on.
 """
 
 import json
+import ssl
+import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
 
@@ -26,6 +28,19 @@ from .errors import PassedReport
 SLICE_TIMEOUT_S = 30
 #: The header that tells the slice service whose part or slice job a request is about.
 USER_KEY_HEADER = "X-Penguin-User-Key"
+
+
+_TLS = []
+_TLS_LOCK = threading.Lock()
+
+
+def _tls_context():
+    """The one TLS context of the slice service's clients, made at first use: the system's
+    certificates, verified, as httpx makes by default."""
+    with _TLS_LOCK:
+        if not _TLS:
+            _TLS.append(ssl.create_default_context())
+        return _TLS[0]
 
 
 class SliceUnreachable(Exception):
@@ -46,9 +61,11 @@ class SliceClient:
         """`transport` replaces the network in a test, which then raises what a silent or
         cut-off slice service would make the network raise."""
         # trust_env off: the slice service's address is used as given, never through a proxy
-        # or with credentials that the environment names (HTTP_PROXY, .netrc).
+        # or with credentials that the environment names (HTTP_PROXY, .netrc). One TLS
+        # context serves every client: making one reads the system's certificates, about
+        # 8 ms, which the fast suite would otherwise pay for each application it builds.
         self._client = httpx.Client(base_url=base_url, timeout=timeout_s, trust_env=False,
-                                    transport=transport)
+                                    transport=transport, verify=_tls_context())
 
     def get_raw(self, path, headers=None):
         """`GET path`, its answer's bytes as sent, not decompressed."""

@@ -199,7 +199,9 @@ def test_an_answer_of_the_slice_service_that_is_neither_table_nor_its_report_is_
 
 
 @pytest.mark.parametrize("body, headers", [
-    (gzip.compress(b'{"code": "slice.x"}'), {"Content-Encoding": "gzip"}),
+    # mtime fixed: the compressed bytes name the test, and a time in them would make two
+    # workers that collect a second apart collect different tests.
+    (gzip.compress(b'{"code": "slice.x"}', mtime=0), {"Content-Encoding": "gzip"}),
     (b"<html>a proxy's page</html>", {}),
 ])
 def test_a_failure_answered_compressed_or_not_as_json_is_unexpected(client, standin, body,

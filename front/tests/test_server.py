@@ -110,16 +110,8 @@ def test_each_following_of_a_slice_job_is_counted_among_the_threads(tmp_path, cl
                                                                     monkeypatch, threads,
                                                                     followed, during):
     from front_helpers import nobody_listens
-    from penguin_front import server as served
 
-    counts, built = [], []
-    real_build = served.build
-
-    def keep(*args, **kwargs):
-        built.append(real_build(*args, **kwargs))
-        return built[-1]
-
-    monkeypatch.setattr(served, "build", keep)
+    counts, built = [], keep_built(monkeypatch)
 
     def use(_port, server):
         dispatcher = server.task_dispatcher
@@ -140,6 +132,142 @@ def test_each_following_of_a_slice_job_is_counted_among_the_threads(tmp_path, cl
     # At least one thread is always left to serve requests.
     assert result == [0] and counts == [threads, during, threads]
     assert lines[0]["threads"] == threads
+
+
+def test_the_running_server_sweeps_and_writes_how_full_it_is_once_a_minute(tmp_path, clock,
+                                                                          monkeypatch):
+    from front_helpers import nobody_listens
+
+    built = keep_built(monkeypatch)
+
+    def use(_port):
+        ctx = built[0][0].extensions["penguin_front"]
+        ctx["sweeper"].every.wait_for_runs(1)
+        ctx["load_loop"].wait_for_runs(1)
+        clock.wait_for_sleepers(3)  # the log's minute, the sweep and the line, all waiting
+        clock.advance(60)
+        ctx["load_loop"].wait_for_runs(2)
+
+    lines, result, _port = run_served(
+        tmp_path, clock, environ(tmp_path, PENGUIN_FRONT_THREADS="3",
+                                 PENGUIN_SLICE_URL=nobody_listens()), use)
+    assert result == [0]
+    loads = [line for line in lines if line["event"] == "load"]
+    assert len(loads) == 2
+    assert loads[0]["threads"] == 3 and loads[0]["slices_followed"] == 0
+    assert loads[0]["streams_open"] == 0 and loads[0]["threads_in_use"] >= 0
+    assert [line["event"] for line in lines].count("sweep") == 1
+    assert lines[-1]["event"] == "stop"
+
+
+class _IdleTold:
+    """The web server's condition its idle request threads wait on, announcing on `idle`
+    each time a thread goes idle (waitress lowers its count of busy threads just before), so
+    that a test waits for a count of busy threads by being told, never by looking again."""
+
+    def __init__(self, condition, idle):
+        self._condition = condition
+        self._idle = idle
+
+    def wait(self, *args):
+        self._idle.announce()
+        return self._condition.wait(*args)
+
+    def __getattr__(self, name):
+        return getattr(self._condition, name)
+
+
+def keep_built(monkeypatch):
+    """The applications `serve` builds, in a list, as each is built."""
+    from penguin_front import server as served
+
+    built = []
+    real_build = served.build
+
+    def keep(*args, **kwargs):
+        built.append(real_build(*args, **kwargs))
+        return built[-1]
+
+    monkeypatch.setattr(served, "build", keep)
+    return built
+
+
+def open_page_stream(port, job):
+    """Sign the development identity in over HTTP and open a page's progress stream on
+    `job`; gives the client and the open answer once its first two events are read."""
+    from front_helpers import DEV_GROUP
+
+    page = httpx.Client(base_url=f"http://127.0.0.1:{port}", timeout=10)
+    assert page.get("/signin").status_code == 302
+    answer = page.send(page.build_request("GET", f"/api/slices/{job}/events",
+                                          headers=DEV_GROUP), stream=True)
+    assert answer.status_code == 200
+    text, pieces = "", answer.iter_raw()
+    while text.count("\n\n") < 2:
+        text += next(pieces).decode()
+    return page, answer
+
+
+def test_threads_in_use_counts_the_request_thread_a_progress_stream_holds(tmp_path, clock,
+                                                                          standin,
+                                                                          monkeypatch):
+    from front_fakes import Announcer
+    from sliced_helpers import running
+
+    built = keep_built(monkeypatch)
+    standin.add_job("j1", "dev-user", "p", "s", running("j1", 5), file=b"sliced")
+
+    def use(port, server):
+        dispatcher = server.task_dispatcher
+        idle = Announcer()
+        dispatcher.queue_cv = _IdleTold(dispatcher.queue_cv, idle)
+        page, answer = open_page_stream(port, "j1")
+        try:
+            ctx = built[0][0].extensions["penguin_front"]
+            ctx["load_loop"].wait_for_runs(1)
+            # The sign-in's thread is idle again; the stream's is held for as long as the
+            # stream is open.
+            idle.wait_for(lambda: dispatcher.active_count == 1, "one request thread busy")
+            clock.wait_for_sleepers(4)  # the log, the sweep, the line and the stream
+            clock.advance(60)
+            ctx["load_loop"].wait_for_runs(2)
+        finally:
+            answer.close()
+            page.close()
+
+    lines, result, _port = run_served(
+        tmp_path, clock, environ(tmp_path, PENGUIN_FRONT_THREADS="3",
+                                 PENGUIN_SLICE_URL=standin.url), use, with_server=True)
+    assert result == [0]
+    load = [line for line in lines if line["event"] == "load"][1]
+    assert (load["slices_followed"], load["streams_open"], load["connections_open"]) == \
+        (1, 1, 2)
+    # The stream's request thread, and the following's thread counted among them.
+    assert (load["threads"], load["threads_in_use"]) == (3, 2)
+
+
+def test_the_running_servers_stop_ends_each_pages_progress_stream_before_its_stop_line(
+        tmp_path, clock, standin):
+    from sliced_helpers import running
+
+    standin.add_job("j1", "dev-user", "p", "s", running("j1", 5), file=b"sliced")
+    opened = []
+
+    def use(port):
+        opened.extend(open_page_stream(port, "j1"))
+
+    try:
+        lines, result, _port = run_served(
+            tmp_path, clock, environ(tmp_path, PENGUIN_FRONT_THREADS="3",
+                                     PENGUIN_SLICE_URL=standin.url), use)
+    finally:
+        for each in reversed(opened):
+            each.close()
+    assert result == [0]
+    events = [line["event"] for line in lines]
+    [closed] = [line for line in lines if line["event"] == "stream_closed"]
+    assert closed["why"] == "stopping" and closed["slice"] == "j1"
+    assert events.index("stream_closed") < events.index("stop") == len(events) - 1
 
 
 def test_a_start_without_a_cookie_key_makes_one_and_says_so_after_the_start_line(tmp_path,
