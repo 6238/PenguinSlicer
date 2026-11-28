@@ -46,6 +46,9 @@ MAX_NAME_CHARS = 40
 MAX_PURPOSE_CHARS = 120
 MAX_NOTE_CHARS = 2_000
 MAX_OVERRIDE_NAME_CHARS = 100
+#: The most of a field's name, and of a wrong value, that a line or an answer shows.
+MAX_SHOWN_KEY_CHARS = 200
+MAX_SHOWN_VALUE_CHARS = 40
 COLOUR = re.compile(r"#[0-9a-fA-F]{6}")
 UNITS = ("in", "mm")
 
@@ -119,8 +122,8 @@ def write_configuration():
     bucket, name = ctx["state_bucket"], _name(group)
     try:
         try:
-            old = json.loads(bucket.get(name)[0])
-        except (NotFound, ValueError):
+            old = _loads(bucket.get(name)[0])
+        except NotFound:
             old = None
         try:
             if based_on is None:
@@ -153,24 +156,29 @@ def _repeated(bucket, name, data):
 
 # What changed.
 
-def _leaves(value, path, into):
-    if isinstance(value, dict) and value:
-        for key, item in value.items():
-            _leaves(item, f"{path}.{key}" if path else key, into)
-    elif isinstance(value, list) and value:
-        for index, item in enumerate(value):
-            _leaves(item, f"{path}[{index}]", into)
-    else:
-        into[path] = value
+def _leaves(document):
+    """Each leaf of `document` by its path (an empty list or object is a leaf). Walked with a
+    list of its own rather than by calls, so that an old document nested deeper than Python's
+    limit of calls, which its reader still reads, is walked too."""
+    into, waiting = {}, [("", document)]
+    while waiting:
+        path, value = waiting.pop()
+        if isinstance(value, dict) and value:
+            waiting.extend((f"{path}.{key}" if path else key, item)
+                           for key, item in value.items())
+        elif isinstance(value, list) and value:
+            waiting.extend((f"{path}[{index}]", item) for index, item in enumerate(value))
+        else:
+            into[path] = value
     return into
 
 
 def changes(old, new):
     """Each field that differs between two documents: its path, old value and new value,
-    None standing for a field that is not there. `old` that is not an object counts as
-    empty."""
-    before = _leaves(old, "", {}) if isinstance(old, dict) else {}
-    after = _leaves(new, "", {})
+    None standing for a field that is not there. `old` that is not an object (none, not JSON,
+    or another value) counts as empty."""
+    before = _leaves(old) if isinstance(old, dict) else {}
+    after = _leaves(new)
     return [{"path": path, "old": before.get(path), "new": after.get(path)}
             for path in sorted(set(before) | set(after))
             if before.get(path, _GONE) != after.get(path, _GONE)]
@@ -197,12 +205,16 @@ NOT_AN_OBJECT = Broken(1, "", "it is not a JSON object")
 
 def parse(raw):
     """The document the bytes `raw` hold and None, or None and the first rule it breaks: the
-    lowest rule broken, and among the mistakes of that rule the first in the document."""
+    lowest rule broken, and among the mistakes of that rule the first the checks meet. The
+    checks run in a fixed order of fields, not in the document's order: in each object the
+    fields missing (by name) before the fields not listed (in the document's order); then the
+    document's `printer`, `upload_units`, `note` and `filaments`; each filament's `name`,
+    `colour`, `note` and `profiles`; each profile's `name`, `purpose`, `printer`, `filament`,
+    `process`, `note` and `overrides`; filaments and profiles in their lists' order."""
     if len(raw) > MAX_CONFIGURATION_BYTES:
         return None, TOO_LARGE
-    try:
-        document = json.loads(raw)
-    except ValueError:
+    document = _loads(raw)
+    if document is _NOT_JSON:
         return None, Broken(1, "", "it is not JSON")
     if not isinstance(document, dict):
         return None, NOT_AN_OBJECT
@@ -213,13 +225,43 @@ def parse(raw):
     return document, None
 
 
+_NOT_JSON = object()
+
+
+def _loads(raw):
+    """The value the bytes `raw` hold, or `_NOT_JSON`: bytes that are not JSON, and JSON
+    nested deeper than Python's reader goes (it raises `RecursionError`, not `ValueError`),
+    count alike as rule 1's "not JSON"."""
+    try:
+        return json.loads(raw)
+    except (ValueError, RecursionError):
+        return _NOT_JSON
+
+
 def _whole(value):
     return isinstance(value, int) and not isinstance(value, bool)
 
 
+def _key(key):
+    """A field's name as a path, a line and an answer show it: cut to `MAX_SHOWN_KEY_CHARS`,
+    since a name the front server does not know may be of any length."""
+    return key if len(key) <= MAX_SHOWN_KEY_CHARS else key[:MAX_SHOWN_KEY_CHARS] + "…"
+
+
+def _shown(value):
+    """A value of the wrong form as a sentence shows it: a list or an object by its kind, any
+    other value as JSON cut to `MAX_SHOWN_VALUE_CHARS`."""
+    if isinstance(value, list):
+        return "a list"
+    if isinstance(value, dict):
+        return "an object"
+    text = json.dumps(value)
+    return text if len(text) <= MAX_SHOWN_VALUE_CHARS else text[:MAX_SHOWN_VALUE_CHARS] + "…"
+
+
 def _fields(value, kind, path, report):
     required, optional = FIELDS[kind]
-    at = (lambda key: f"{path}.{key}") if path else (lambda key: key)
+    at = (lambda key: f"{path}.{_key(key)}") if path else _key
     for key in sorted(required - set(value)):
         report(Broken(3, at(key), f"the field {at(key)} is missing"))
     for key in value:
@@ -246,7 +288,7 @@ def _check_document(document, report):
         report(Broken(2, "format", "the field format is missing"))
     elif not _whole(document["format"]) or \
             not 1 <= document["format"] <= FORMATS["configuration"]:
-        report(Broken(2, "format", f"format {json.dumps(document['format'])} is not a "
+        report(Broken(2, "format", f"format {_shown(document['format'])} is not a "
                                    "format this server reads"))
     _fields(document, "document", "", report)
     printer = document.get("printer")
@@ -323,7 +365,7 @@ def _check_profile(profile, path, names, printer, report):
             report(Broken(4, f"{path}.overrides", f"{path}.overrides is not an object"))
             return
         for key, value in overrides.items():
-            at = f"{path}.overrides.{key}"
+            at = f"{path}.overrides.{_key(key)}"
             if not 1 <= len(key) <= MAX_OVERRIDE_NAME_CHARS:
                 report(Broken(6, at, f"an override's name in {path}.overrides is not 1 to "
                                      f"{MAX_OVERRIDE_NAME_CHARS} characters long"))

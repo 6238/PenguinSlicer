@@ -1294,8 +1294,18 @@ settled at the first Orca upgrade; build no comparison.
 `penguin_front/default_configuration.json`, the contract's example file byte for byte. A
 saved document over `MAX_CONFIGURATION_BYTES` (262,144) is not read. The line for an invalid
 one is `configuration_invalid` (`group`, `user_key`, `rule` 1 to 6, `path`, empty for the
-whole document, `why` in plain words, `revision`). The first rule broken is the lowest
-number broken, and within it the first mistake in the document's order. The rules are those
+whole document, `why` in plain words, `revision`). Bytes nested deeper than Python's
+reader goes (it raises `RecursionError`) are rule 1's "not JSON", on a read and where a
+write reads the old document alike. A field's name is shown cut to 200 characters in a
+`path`, a `why` and an answer, and a wrong `format` by its kind or as JSON cut to 40. The
+first rule broken is the lowest number broken, and within it the first mistake the checks
+meet. The checks run in a fixed order of fields, not in the document's order: in each
+object the fields missing (by name) before the fields not listed (in the document's order);
+then the document's `printer`, `upload_units`, `note` and `filaments`; each filament's
+`name`, `colour`, `note` and `profiles`; each profile's `name`, `purpose`, `printer`,
+`filament`, `process`, `note` and `overrides`; filaments and profiles in their lists'
+order. So a document whose `note` is too long and whose `upload_units` is `"cm"` is named at
+`upload_units`, whichever comes first in it. The rules are those
 of the contract and no more: a `note` is text of at most 2,000 characters, a colour's
 hexadecimal digits may be of either case, names are compared exactly. A write checks the
 document as sent, its own `format` included, and writes it with `records.record_bytes`, the
@@ -1305,7 +1315,8 @@ of a document that is gone included). A body that is not an object holding `base
 revision of at least one character, or null) and `configuration` is `400`
 `front.bad_request`. `configuration_edited` holds `group`, `user_key`, `user_name`,
 `revision` and `changes`, each `{"path", "old", "new"}` for a leaf that differs, null for a
-field not there; an old document that cannot be read counts as empty. A state bucket that
+field not there; an old document that cannot be read counts as empty, and one read but nested
+deeply is walked whole (the walk keeps a list of its own, not Python's calls). A state bucket that
 fails is `503` `front.state_bucket_unreachable` on either request.
 
 ### Tests
@@ -1327,6 +1338,10 @@ Built: `tests/test_configuration.py`.
   nothing is written.
 - A write repeated after its first attempt was written answers `200` with the current
   revision.
+- A saved document nested deeper than Python's reader goes is answered as the default
+  (rule 1), and a write over it, or over one read but nested deeper than Python's limit of
+  calls, is written.
+- Among one rule, the checks' fixed order of fields decides which mistake is named.
 - A write with `based_on` `null` creates the document; a second such write answers `409`.
 - An edit writes a line with the user's name and the changed fields.
 

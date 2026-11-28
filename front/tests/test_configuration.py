@@ -175,6 +175,8 @@ INVALID = [
     (1, "", b"\xff\xfe\x00"),
     (1, "", b"[1, 2]"),
     (1, "", b""),
+    # Nested deeper than Python's reader goes (40,000 bytes, under the 256 KB): not JSON.
+    (1, "", b"[" * 20_000 + b"]" * 20_000),
     # 2: the format.
     (2, "format", changed(dropping("format"))),
     (2, "format", changed(setting(2, "format"))),
@@ -280,7 +282,7 @@ def as_json(document):
         return document
     try:
         return json.loads(document)
-    except ValueError:
+    except (ValueError, RecursionError):
         return None
 
 
@@ -310,12 +312,51 @@ def test_the_first_rule_broken_is_the_one_named(client, saved, log):
     assert log.events("configuration_invalid")[0]["rule"] == 3
 
 
-def test_a_mistake_found_first_in_the_document_is_named_among_one_rule(client, saved, log):
+def test_among_one_rule_the_earlier_filament_in_the_list_is_named(client, saved, log):
     document = changed(setting("", "filaments", 2, "name"))
     document["filaments"][1]["colour"] = "red"
     saved(document)
     read(client)
     assert log.events("configuration_invalid")[0]["path"] == "filaments[1].colour"
+
+
+def test_among_one_rule_the_checks_run_in_a_fixed_order_of_fields_not_the_documents(
+        client, saved, log):
+    # The hand-written example has note before upload_units; upload_units is checked first.
+    document = changed(setting("n" * 2001, "note"))
+    document["upload_units"] = "cm"
+    saved(document)
+    read(client)
+    assert log.events("configuration_invalid")[-1]["path"] == "upload_units"
+    # filaments comes first in the document; printer is checked first.
+    saved({"format": 1, "filaments": [dict(HAND_WRITTEN["filaments"][0], colour="red")],
+           "printer": 5, "upload_units": "in"})
+    read(client)
+    assert log.events("configuration_invalid")[-1]["path"] == "printer"
+
+
+def test_within_an_object_a_missing_field_is_named_before_one_not_listed(client, saved, log):
+    document = changed(dropping("printer"))
+    document = {"extra": 1, **document}
+    saved(document)
+    read(client)
+    assert log.events("configuration_invalid")[-1]["path"] == "printer"
+
+
+def test_a_long_field_name_is_cut_in_the_line_and_the_answer(client, saved, log):
+    document = changed(setting(1, "k" * 100_000))
+    saved(document)
+    read(client)
+    line = log.events("configuration_invalid")[-1]
+    assert line["rule"] == 3 and len(line["path"]) <= 201 and len(line["why"]) <= 300
+    report = write(client, None, document).get_json()
+    assert len(report["detail"]) <= 600 and len(report["message"]) <= 400
+
+
+def test_a_long_format_is_cut_in_the_line(client, saved, log):
+    saved(changed(setting("f" * 100_000, "format")))
+    read(client)
+    assert len(log.events("configuration_invalid")[-1]["why"]) <= 300
 
 
 def test_the_hand_written_example_and_its_notes_are_valid(client, saved):
@@ -350,7 +391,8 @@ def test_a_write_based_on_null_creates_the_document_and_answers_its_revision(cli
     answer = write(client, None, HAND_WRITTEN)
     assert answer.status_code == 200 and answer.headers["Cache-Control"] == "no-store"
     body = answer.get_json()
-    assert set(body) == set(WRITTEN) and body["source"] == "group"
+    assert set(body) == set(WRITTEN) and body["source"] == WRITTEN["source"] == "group"
+    assert all(type(body[key]) is type(WRITTEN[key]) for key in WRITTEN)
     assert body["name"] == "Development Group"
     stored = (tmp_path / "state" / "config" / "dev-group.json").read_bytes()
     assert body["revision"] == hashlib.sha256(stored).hexdigest()
@@ -437,6 +479,24 @@ def test_an_edit_of_an_unreadable_document_lists_every_field_as_new(client, save
     write(client, revision_of(client), DEFAULT)
     changes = log.events("configuration_edited")[0]["changes"]
     assert {"path": "printer", "old": None, "new": DEFAULT["printer"]} in changes
+
+
+def test_a_write_over_a_document_nested_too_deeply_to_read_is_written(client, saved, log):
+    saved(b"[" * 20_000 + b"]" * 20_000)
+    answer = write(client, revision_of(client), DEFAULT)
+    assert answer.status_code == 200
+    changes = log.events("configuration_edited")[0]["changes"]
+    assert {"path": "printer", "old": None, "new": DEFAULT["printer"]} in changes
+
+
+def test_a_write_over_a_readable_document_nested_deeply_is_written(client, saved, log):
+    # Read by Python's reader, but deeper than Python's own limit of calls.
+    saved(b'{"format": 1, "deep": ' + b"[" * 5_000 + b"]" * 5_000 + b"}")
+    answer = write(client, revision_of(client), DEFAULT)
+    assert answer.status_code == 200
+    changes = log.events("configuration_edited")[0]["changes"]
+    assert {"path": "printer", "old": None, "new": DEFAULT["printer"]} in changes
+    assert any(c["path"].startswith("deep[0][0]") and c["new"] is None for c in changes)
 
 
 def test_an_edit_that_changes_nothing_writes_a_line_with_no_changes(client, log):
