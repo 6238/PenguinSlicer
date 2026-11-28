@@ -1466,11 +1466,14 @@ clock):
   due while the front server was down goes at once, then every `SWEEP_INTERVAL_S`. An
   application built for a test sweeps only when the test calls `sweep()`.
 - A slice job the front server follows is left alone, since its storing may be under way;
-  so is a record this front server cannot read (a newer format) and any name it does not
-  make (`sliced/<user_key>/<slice>.json` and `.gcode.3mf` only).
+  so is a record this front server cannot read (a newer format, no format, not a JSON
+  object), with its `record_unreadable` line at every sweep, and any name it does not
+  make (`sliced/<user_key>/<slice>.json` and `.gcode.3mf` only; a folder at such a name
+  holds names of another form and is passed over).
 - A record of a format the front server reads but with a field missing or malformed (no
   `slice_ended_at` on a `stored` record, a `submitted_at` or `expired_at` that is not an
-  RFC 3339 time) is counted `failed` and written as `sweep_item_failed` with `why`
+  RFC 3339 time, a `state` that is a list or an object, a due record with no `slice`) is
+  counted `failed` and written as `sweep_item_failed` with `why`
   `the record is malformed: <the fault>`; the record and its file are left as they are,
   and fail the same way at every sweep until somebody looks. The sweep goes on to every
   other file.
@@ -1728,7 +1731,9 @@ log's gathering of the slice service's lines stopped, [The log](#the-log)), what
 `read_record(bucket, name, kind, log)` gives the record and its marker when its `format` is a
 whole number from 1 to the front server's, and otherwise raises `UnreadableRecord` and writes
 one line, `record_unreadable`, with the record's name, its kind, the format found and the
-newest read. A file that is not a JSON object is refused the same way. From phase 5 the same
+newest read. A file that is not a JSON object is refused the same way: one that is empty,
+not UTF-8, not JSON, nested deeper than Python's reader goes (which raises
+`RecursionError`, not `ValueError`), or JSON of another kind than an object. From phase 5 the same
 interface, on the state bucket, is the store the front server gives the relay.
 
 The configurations and the paired-printer records have no second copy; if the bucket is
