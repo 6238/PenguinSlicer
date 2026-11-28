@@ -1361,12 +1361,16 @@ read it:
 - `tests/test_offered_faces.py`, in the fast suite: no pose is one on which an instance rests
   on no face of its own, by `resting_on_no_face`'s two conditions with the default process's
   first layer (`plate_configuration.REST_AREA_MM2`, `FIRST_LAYER_MM`, `FIRST_LINE_MM`). The
-  wizard applies the same rule with the same figures, so this is the agreement of the two.
+  wizard applies the same rule with the same figures, finding the section's inside by the
+  same even-odd rule, so this checks that the two agree on the real parts; where they can
+  still differ is listed in the row for `slice.rests_on_an_edge` of
+  [the error report's contract](../contracts/error-report.md).
 - `tests_orca/test_offered_faces.py`, in the upstream check: every pose is sliced through the
   HTTP interface as a plate of that one instance over the default set with supports off, and
   every one must slice. All 56 poses are sliced, in about 75 s on an aarch64 Linux machine
-  with 8 CPUs; no sample is needed. Run alone with
-  `flock /var/tmp/penguin-locks/real-orca.lock slice/.venv/bin/python -m pytest -s -p no:randomly slice/tests_orca/test_offered_faces.py`.
+  with 8 CPUs; no sample is needed. Run alone, under whatever lock keeps one real Orca at a
+  time on the machine, with
+  `slice/.venv/bin/python -m pytest -s -p no:randomly slice/tests_orca/test_offered_faces.py`.
 
 Measured with the pinned Orca 2.4.2 before the wizard had the rule: of the 60 poses it then
 offered, 59 sliced and one was refused (`slice.rests_on_an_edge`, Elevator Block Bottom Inner

@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 import { OFFERED_FACES_FILE, offeredFaces, offeredFacesText } from '../../scripts/offered-faces.js';
+import { autoOrient } from '../../src/geometry/orient.js';
 import { analysePart } from '../../src/geometry/part.js';
 import { instanceMatrix } from '../../src/geometry/turn.js';
 import { readRealPart } from './helpers.js';
@@ -56,5 +57,18 @@ test('each pose has its own id, its part\'s ranks, and the part named as the con
     assert.deepEqual(ranks, ranks.map((_, i) => i + 1), key);
     const sizes = written.poses.filter((p) => p.instance.ref === key).map((p) => p.area_rank).sort((a, b) => a - b);
     assert.deepEqual(sizes, sizes.map((_, i) => i + 1), key);
+  }
+});
+
+test('the ranks run the right way: by auto-orient\'s cost, cheapest first, and by area, largest first', () => {
+  for (const key of Object.keys(written.parts)) {
+    const part = analysePart(readRealPart(`${key}.stl`));
+    const costs = new Map(autoOrient(part).candidates.filter((c) => c.patch >= 0).map((c) => [c.patch, c.cost]));
+    const poses = written.poses.filter((p) => p.instance.ref === key);
+    const byRank = (field) => [...poses].sort((a, b) => a[field] - b[field]).map((p) => p.patch.index);
+    const orient = byRank('orient_rank').map((i) => costs.get(i));
+    assert.deepEqual(orient, [...orient].sort((a, b) => a - b), key);
+    const areas = byRank('area_rank').map((i) => part.patches[i].area);
+    assert.deepEqual(areas, [...areas].sort((a, b) => b - a), key);
   }
 });

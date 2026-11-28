@@ -1318,8 +1318,13 @@ with two rules of PenguinSlicer's own for round parts
    `ON_THE_PLATE_MM` (0.001 mm) of the face's plane add up, seen from above, to less than
    `REST_AREA_MM2` (0.01 mm²), and no disc `FIRST_LINE_MM` (0.62 mm) across fits in its section
    half `FIRST_LAYER_MM` (0.3 mm) above the plane. The section is cut from the part's triangles;
-   discs are tried touching its edge from inside, every 0.02 mm along it, the edge's inside
-   known from each triangle's outward winding. The figures are the default process's first
+   discs are tried touching its edge from inside, every 0.02 mm along it. A segment's inside is
+   the side on which a point 0.00001 mm off its middle is inside the section by the even-odd
+   rule, as the slice service's `first_layer_section` takes it, never the triangles' winding:
+   the slice service slices a part wound inside out, or partly so, with only the warning
+   `slice.part_inside_out`, and the face across such a part's hollow is dropped as for the
+   part wound outwards (`first-layer.test.js` turns the L inside out, and turns each of its
+   triangles in turn). The figures are the default process's first
    layer, since faces are found once for each part whatever the settings. Such a face is a hull
    face across a hollow whose rims meet the plane in edges, not faces: the real Orca refuses the
    part laid there for its empty first layer, and the slice service names it
@@ -2350,7 +2355,7 @@ or is not yet in a contract:
 | Storage in the browser | 25 parts of 7.5 MB for each tab's plate | Met for one tab in headless Chromium on the machine without a graphics card: stored and read back after a refresh, none refused; several tabs' full plates, and Chrome on the Mac, unmeasured | A full plate stored and reloaded |
 | A stored plate | Dropped after 12 hours unused, once no tab holds it | Set | Fake clock |
 | Faces found | Patches within 100 ms of selecting | Met: at most 1.1 ms for `hub-150k.stl` in the worker in Chromium on the machine without a graphics card, the faces having been found on arrival; found from nothing, 241 ms for it and at most 92 ms for a real part (the trial run again on Sat 2026-11-28 with step 5 of finding the faces, which adds up to about 17 ms on Node for a real part) | The second trial, `make -C wizard trials-geometry` |
-| Auto-orient | Best way within 1 s of arriving | Met: at most 236 ms for `hub-150k.stl` from the file to its best way, faces included; at most 170 ms for a real part | The same |
+| Auto-orient | Best way within 1 s of arriving | Met: at most 236 ms for `hub-150k.stl` from the file to its best way, faces included; at most 170 ms for a real part. Not measured in Chromium for a part as large on which step 5 drops faces, which reads the whole part once for each: a 144,000-triangle twelve-pointed star prism took up to 660 ms on Node, from the file to its best way; the guide's row allows for it | The same |
 | Arrange | Under 2 s for 150 instances | Met: at most 30 ms for 150 of `hex-spacer.stl` (all placed) and 44 ms for a mix of 150 real parts (104 placed, the rest beside the plate) | The same |
 | The placement check | Keeps up with a drag at 150 instances | Met: at most 4.1 ms for each check of a drag at 150 instances, against one frame of 100 ms at 10 frames a second | The same |
 | The Layout view | 30 frames a second with a graphics card, 10 without, while dragging or turning, at 150 instances of parts up to 150,000 triangles | Set, no measurement | Timed in Chrome on both machines; reported in real use |

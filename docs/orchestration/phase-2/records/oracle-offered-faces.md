@@ -68,7 +68,8 @@ What was built, by the task's items:
 5. **How the wizard measures the section.** The slice service uses shapely's buffer on the
    section polygon. The wizard has no polygon library, so it cuts the section's segments from
    the part's triangles and tries discs of the line's width touching the section's edge from
-   inside, every 0.02 mm along it, the inside known from each triangle's outward winding; a
+   inside, every 0.02 mm along it, the inside found by the even-odd rule as the slice service
+   finds it (amended by the first review's fixer: see "Fixes after the first review"); a
    disc that fits anywhere can be moved until it touches the edge, so that search finds it up to
    the sampling. Near the threshold the two may differ by a few hundredths of a millimetre; on
    the eight real parts and the made shapes they agree. To overrule: replace
@@ -147,6 +148,50 @@ What was built, by the task's items:
     fails under each of the reviewer's looser disc tests (a slack of 0.05 mm; discs tried 1.2
     half-lines in, caught only by the ring, since a straight ridge's ends still hold such a
     disc).
+14. **Second review, blocking finding: the section's inside found by the even-odd rule, not
+    from the winding.** The reviewer showed that `firstLayerHoldsALine` took each segment's
+    inside from its triangle's outward winding, while the slice service's
+    `first_layer_section` uses the even-odd rule and slices an inside-out part with only
+    `slice.part_inside_out`: the L wound inside out kept its face across the open corner, and
+    with one of its 20 triangles turned it kept it in 12 of 20 cases. The documents were
+    silent on winding; the reviewer offered (a) a winding-free search or (b) documenting the
+    case. I chose (a): the documents' list of cases where the code can still come stays
+    complete, and the wizard and the slice service measure the same section. Each segment's
+    inside is now the side on which a point 0.00001 mm (`SIDE_MM`) off its middle is inside
+    the section by counting crossings of a ray towards +x (segments bucketed by rows of one
+    line's width); a segment inside on neither side is skipped. A disc that touches a segment
+    on its inside and crosses no segment lies wholly inside, so the search's meaning is
+    unchanged for a part wound outwards: the committed poses file, the trial's results and the
+    real parts' tests are unchanged. The new test turns the L inside out and turns each of its
+    20 triangles in turn (each drops the face), and checks that the rods and the 20-degree
+    ridges still hold a line inside out; it failed before the fix (`true !== false` on the
+    inside-out L). Cost, on Node, from the file to the part's best way: `hub-150k.stl` 217 to
+    266 ms against 245 to 435 ms before (a shared machine; no difference to see), a
+    144,000-triangle twelve-pointed star prism 106 to 197 ms against 125 to 186 ms. The details'
+    step 5 and the guide's step 5 say so; `slice/README-details.md` no longer claims the fast
+    test is the whole agreement and points to the contract's list. To overrule: go back to
+    the winding and add wrong winding to the contract's row, the "When a slice fails" rows of
+    both wizard documents and the guide's step 5.
+15. **Second review, minor findings.** Fixed, each with a test seen to catch the mutation
+    the reviewer named: `ON_THE_PLATE_MM` (a 20 mm box with its bottom tilted 0.005 mm has no
+    face on the plate, tilted 0.0008 mm its 400 mm²; fails at 0.01 mm and would at 0.0005 mm);
+    `SAMPLE_MM` (a prism whose section is a flat triangle 10 mm across and 0.624 mm tall, where
+    a line fits only within 0.013 mm of the long side's middle; fails with the step at 1e9 and
+    at 0.1 mm, though a step of 0.03 or 0.05 mm can still land in the window by the
+    alignment, so the test pins the step to under about 0.03 mm, not to 0.02 mm exactly);
+    `orient_rank` backwards (a new test checks that poses sorted by `orient_rank` run by
+    auto-orient's cost, cheapest first, and by `area_rank` largest first; it fails under the
+    reversed rank, not only through the committed file); `REST_AREA_MM2` at its exact value
+    (two flats 2^-10 mm wide and 5.12 mm long add up to exactly 0.01 mm² in floating point,
+    and the part stands, as the slice service's strict `<` has it; fails with `<=`). The
+    guide's performance rows now agree with the details' figures (about a millisecond and
+    0.24 s for the faces, 0.24 s and 0.17 s for auto-orient) and say that a part as large on
+    which step 5 drops faces costs more, with the reviewer's 660 ms on Node; I could not
+    reproduce the 660 ms with a star prism of my own make (above), so the figure is the
+    reviewer's. `slice/README-details.md` no longer names this machine's lock path. Declined:
+    none. A checked test that the wizard's chosen pose has `orient_rank` 1 was tried and is
+    wrong: auto-orient keeps a part as modelled within 5% of the best cost, so the chosen
+    patch can rank 2 (one real part does).
 
 ## Targets missed
 
