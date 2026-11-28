@@ -1,0 +1,9 @@
+{
+  "code": "slice.rests_on_an_edge",
+  "message": "Bracket #1 touches the plate only along an edge or at a point, so the slicer can give it no first layer.",
+  "where": {"instance": "Bracket #1", "stage": "slicing"},
+  "remedy": "Lay the part on one of its own flat faces, or turn on supports with a raft, and slice again.",
+  "retryable": false,
+  "detail": "orca code -100\nresting on no face of its own: Bracket #1\nexit code 156\norca debug log warning: It seems object Bracket #1 has floating regions. Please re-orient the object or enable support generation.\norca error_string: Failed slicing the model. Please verify the slicing of all plates on Orca Slicer before uploading.\nErrors\nrun found error, return -100, exit...",
+  "action": "choose_orientation"
+}

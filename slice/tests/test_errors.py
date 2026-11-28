@@ -551,6 +551,22 @@ class TestRestsOnAnEdge:
     plate along an edge or at a point only: the pinned Orca refuses such an instance ("One
     object has an empty first layer", which reaches no file) with supports off and on."""
 
+    def test_the_contract_example_is_a_report_the_service_produces(self, tmp_path, monkeypatch):
+        """contracts/examples/error-report-rests-on-an-edge.json is what the real Orca gave for
+        the bracket on its hull face (tests_orca checks it whole); here, with the fake Orca and a
+        box on its edge, every field but the instance's name and the detail is the code's."""
+        example = json.loads((CONTRACTS / "examples" / "error-report-rests-on-an-edge.json").read_text())
+        assert_report_shape(example)
+        with pytest.raises(slicer.SliceError) as caught:
+            rests_on_an_edge()(Scene(tmp_path, monkeypatch))
+        report = error_report(caught.value)
+        same = ("code", "remedy", "action", "retryable")
+        assert {k: report.get(k) for k in same} == {k: example.get(k) for k in same}
+        assert report["message"] == example["message"].replace("Bracket #1", "Box #1")
+        assert report["where"] == dict(example["where"], instance="Box #1")
+        assert list(report) == list(example)
+        assert example["detail"].splitlines()[:2] == ["orca code -100", "resting on no face of its own: Bracket #1"]
+
     def test_with_supports_on_the_remedy_is_a_raft(self, tmp_path, monkeypatch):
         with pytest.raises(slicer.SliceError) as caught:
             rests_on_an_edge("1")(Scene(tmp_path, monkeypatch))

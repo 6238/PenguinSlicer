@@ -165,7 +165,7 @@
         "normal": [0, -1, 0],
         "area_mm2": 1045.68
       },
-      "area_rank": 8,
+      "area_rank": 7,
       "orient_rank": 2,
       "chosen": false,
       "instance": {
@@ -184,7 +184,7 @@
         "normal": [0, 0, 1],
         "area_mm2": 1512.09
       },
-      "area_rank": 3,
+      "area_rank": 2,
       "orient_rank": 1,
       "chosen": true,
       "instance": {
@@ -200,29 +200,10 @@
       "patch": {
         "index": 2,
         "kind": "hull",
-        "normal": [0, 0.707059, 0.707154],
-        "area_mm2": 606.48
-      },
-      "area_rank": 10,
-      "orient_rank": 10,
-      "chosen": false,
-      "instance": {
-        "ref": "elevator-block-bottom-inner",
-        "rotation": [0.382652308, -0.923892424, 0, 0],
-        "angle": 0,
-        "x": 170,
-        "y": 160
-      }
-    },
-    {
-      "id": "elevator-block-bottom-inner-3",
-      "patch": {
-        "index": 3,
-        "kind": "hull",
         "normal": [0, 0, -1],
         "area_mm2": 1038.62
       },
-      "area_rank": 9,
+      "area_rank": 8,
       "orient_rank": 3,
       "chosen": false,
       "instance": {
@@ -234,14 +215,14 @@
       }
     },
     {
-      "id": "elevator-block-bottom-inner-4",
+      "id": "elevator-block-bottom-inner-3",
       "patch": {
-        "index": 4,
+        "index": 3,
         "kind": "hull",
         "normal": [0.842447, -0.46658, -0.269418],
         "area_mm2": 1287.24
       },
-      "area_rank": 7,
+      "area_rank": 6,
       "orient_rank": 6,
       "chosen": false,
       "instance": {
@@ -253,14 +234,14 @@
       }
     },
     {
-      "id": "elevator-block-bottom-inner-5",
+      "id": "elevator-block-bottom-inner-4",
       "patch": {
-        "index": 5,
+        "index": 4,
         "kind": "hull",
         "normal": [-0.956383, 0, -0.292116],
         "area_mm2": 1484.14
       },
-      "area_rank": 4,
+      "area_rank": 3,
       "orient_rank": 5,
       "chosen": false,
       "instance": {
@@ -272,14 +253,14 @@
       }
     },
     {
-      "id": "elevator-block-bottom-inner-6",
+      "id": "elevator-block-bottom-inner-5",
       "patch": {
-        "index": 6,
+        "index": 5,
         "kind": "hull",
         "normal": [-0.842451, -0.466576, -0.269413],
         "area_mm2": 1288.23
       },
-      "area_rank": 6,
+      "area_rank": 5,
       "orient_rank": 7,
       "chosen": false,
       "instance": {
@@ -291,14 +272,14 @@
       }
     },
     {
-      "id": "elevator-block-bottom-inner-7",
+      "id": "elevator-block-bottom-inner-6",
       "patch": {
-        "index": 7,
+        "index": 6,
         "kind": "hull",
         "normal": [-0.840842, 0.464855, -0.277297],
         "area_mm2": 248.87
       },
-      "area_rank": 11,
+      "area_rank": 9,
       "orient_rank": 8,
       "chosen": false,
       "instance": {
@@ -310,33 +291,14 @@
       }
     },
     {
-      "id": "elevator-block-bottom-inner-8",
+      "id": "elevator-block-bottom-inner-7",
       "patch": {
-        "index": 8,
-        "kind": "hull",
-        "normal": [0, -0.869154, -0.494541],
-        "area_mm2": 2998.83
-      },
-      "area_rank": 2,
-      "orient_rank": 12,
-      "chosen": false,
-      "instance": {
-        "ref": "elevator-block-bottom-inner",
-        "rotation": [0.864448196, 0.502721908, 0, 0],
-        "angle": 0,
-        "x": 170,
-        "y": 160
-      }
-    },
-    {
-      "id": "elevator-block-bottom-inner-9",
-      "patch": {
-        "index": 9,
+        "index": 7,
         "kind": "hull",
         "normal": [0.840842, 0.464855, -0.277297],
         "area_mm2": 248.87
       },
-      "area_rank": 12,
+      "area_rank": 10,
       "orient_rank": 9,
       "chosen": false,
       "instance": {
@@ -348,14 +310,14 @@
       }
     },
     {
-      "id": "elevator-block-bottom-inner-10",
+      "id": "elevator-block-bottom-inner-8",
       "patch": {
-        "index": 10,
+        "index": 8,
         "kind": "hull",
         "normal": [0.956383, 0, -0.292116],
         "area_mm2": 1484.14
       },
-      "area_rank": 5,
+      "area_rank": 4,
       "orient_rank": 4,
       "chosen": false,
       "instance": {
@@ -367,15 +329,15 @@
       }
     },
     {
-      "id": "elevator-block-bottom-inner-11",
+      "id": "elevator-block-bottom-inner-9",
       "patch": {
-        "index": 11,
+        "index": 9,
         "kind": "hull",
         "normal": [0, 0.992029, -0.126012],
         "area_mm2": 3706.22
       },
       "area_rank": 1,
-      "orient_rank": 11,
+      "orient_rank": 10,
       "chosen": false,
       "instance": {
         "ref": "elevator-block-bottom-inner",
@@ -412,7 +374,7 @@
         "normal": [0.765519, 0.48928, -0.417835],
         "area_mm2": 156.83
       },
-      "area_rank": 9,
+      "area_rank": 8,
       "orient_rank": 6,
       "chosen": false,
       "instance": {
@@ -485,25 +447,6 @@
       "patch": {
         "index": 5,
         "kind": "hull",
-        "normal": [0, 0.707059, 0.707154],
-        "area_mm2": 606.48
-      },
-      "area_rank": 7,
-      "orient_rank": 8,
-      "chosen": false,
-      "instance": {
-        "ref": "elevator-block-carriage",
-        "rotation": [0.382652308, -0.923892424, 0, 0],
-        "angle": 0,
-        "x": 170,
-        "y": 160
-      }
-    },
-    {
-      "id": "elevator-block-carriage-6",
-      "patch": {
-        "index": 6,
-        "kind": "hull",
         "normal": [-0.894591, 0, -0.446885],
         "area_mm2": 934.32
       },
@@ -519,14 +462,14 @@
       }
     },
     {
-      "id": "elevator-block-carriage-7",
+      "id": "elevator-block-carriage-6",
       "patch": {
-        "index": 7,
+        "index": 6,
         "kind": "hull",
         "normal": [-0.765519, 0.48928, -0.417835],
         "area_mm2": 156.83
       },
-      "area_rank": 8,
+      "area_rank": 7,
       "orient_rank": 7,
       "chosen": false,
       "instance": {
@@ -538,15 +481,15 @@
       }
     },
     {
-      "id": "elevator-block-carriage-8",
+      "id": "elevator-block-carriage-7",
       "patch": {
-        "index": 8,
+        "index": 7,
         "kind": "hull",
         "normal": [0, 0.978582, -0.205858],
         "area_mm2": 2245
       },
       "area_rank": 1,
-      "orient_rank": 9,
+      "orient_rank": 8,
       "chosen": false,
       "instance": {
         "ref": "elevator-block-carriage",
@@ -637,30 +580,11 @@
       "patch": {
         "index": 4,
         "kind": "hull",
-        "normal": [0, 0.707059, 0.707154],
-        "area_mm2": 606.48
-      },
-      "area_rank": 7,
-      "orient_rank": 6,
-      "chosen": false,
-      "instance": {
-        "ref": "elevator-block-top",
-        "rotation": [0.382652308, -0.923892424, 0, 0],
-        "angle": 0,
-        "x": 170,
-        "y": 160
-      }
-    },
-    {
-      "id": "elevator-block-top-5",
-      "patch": {
-        "index": 5,
-        "kind": "hull",
         "normal": [-0.840842, 0.464855, -0.277297],
         "area_mm2": 248.87
       },
-      "area_rank": 8,
-      "orient_rank": 7,
+      "area_rank": 7,
+      "orient_rank": 6,
       "chosen": false,
       "instance": {
         "ref": "elevator-block-top",
@@ -671,15 +595,15 @@
       }
     },
     {
-      "id": "elevator-block-top-6",
+      "id": "elevator-block-top-5",
       "patch": {
-        "index": 6,
+        "index": 5,
         "kind": "hull",
         "normal": [0, 0.992029, -0.126012],
         "area_mm2": 3706.22
       },
       "area_rank": 1,
-      "orient_rank": 9,
+      "orient_rank": 8,
       "chosen": false,
       "instance": {
         "ref": "elevator-block-top",
@@ -690,15 +614,15 @@
       }
     },
     {
-      "id": "elevator-block-top-7",
+      "id": "elevator-block-top-6",
       "patch": {
-        "index": 7,
+        "index": 6,
         "kind": "hull",
         "normal": [0.840842, 0.464855, -0.277297],
         "area_mm2": 248.87
       },
-      "area_rank": 9,
-      "orient_rank": 8,
+      "area_rank": 8,
+      "orient_rank": 7,
       "chosen": false,
       "instance": {
         "ref": "elevator-block-top",
@@ -709,9 +633,9 @@
       }
     },
     {
-      "id": "elevator-block-top-8",
+      "id": "elevator-block-top-7",
       "patch": {
-        "index": 8,
+        "index": 7,
         "kind": "hull",
         "normal": [0.956383, 0, -0.292116],
         "area_mm2": 1484.14

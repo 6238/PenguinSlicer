@@ -220,6 +220,13 @@ def test_a_part_resting_on_an_edge_has_no_first_layer_unless_supported_on_a_raft
         assert report["error"]["code"] == "slice.rests_on_an_edge", report["error"]
         assert report["error"]["where"]["instance"] == "Bracket #1"
         assert "orca code -100" in report["error"]["detail"]
+        if overrides == {"enable_support": "0"}:
+            # contracts/examples/error-report-rests-on-an-edge.json is this report; Orca's own
+            # lines of the detail after the first three may change with its version.
+            example = json.loads((CONTRACTS / "examples" / "error-report-rests-on-an-edge.json").read_text())
+            assert {k: v for k, v in report["error"].items() if k != "detail"} == \
+                {k: v for k, v in example.items() if k != "detail"}
+            assert report["error"]["detail"].splitlines()[:3] == example["detail"].splitlines()[:3]
 
 
 def test_catalog_profiles_and_overrides_reach_the_gcode(example_slice):

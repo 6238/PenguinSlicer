@@ -1345,7 +1345,39 @@ again with the rotation's inverse (the conjugate quaternion), and again with the
 applied before the rotation, and requires a different answer on at least one of them each
 time. With the check's tolerance
 `plate.EPS_MM` made 0.02 mm, the five failing plates of the spacings and the margin fail
-their test; made -0.02 mm, the six passing ones do.
+their test; made -0.02 mm, the six passing ones do. Beside the 13 plates the folder holds one
+folder, `offered-faces/`, the wizard's (below), and nothing else.
+
+### The faces the wizard offers
+
+`contracts/examples/placement/offered-faces/real-parts.json` is written by the wizard
+(`make -C wizard offered-faces`, [its details](../wizard/README-details.md#the-faces-offered-against-the-real-orca)):
+the eight real parts of `contracts/examples/parts/real/`, named as a plate configuration names
+a part, and one pose for each face the wizard offers to lay each on, its instance exactly as a
+phase 2 plate configuration carries it (`orientation` or `rotation`, `angle` 0, at the plate's
+middle), with the patch it lays on, its rank by area and by auto-orient's cost. Two suites
+read it:
+
+- `tests/test_offered_faces.py`, in the fast suite: no pose is one on which an instance rests
+  on no face of its own, by `resting_on_no_face`'s two conditions with the default process's
+  first layer (`plate_configuration.REST_AREA_MM2`, `FIRST_LAYER_MM`, `FIRST_LINE_MM`). The
+  wizard applies the same rule with the same figures, so this is the agreement of the two.
+- `tests_orca/test_offered_faces.py`, in the upstream check: every pose is sliced through the
+  HTTP interface as a plate of that one instance over the default set with supports off, and
+  every one must slice. All 56 poses are sliced, in about 75 s on an aarch64 Linux machine
+  with 8 CPUs; no sample is needed. Run alone with
+  `flock /var/tmp/penguin-locks/real-orca.lock slice/.venv/bin/python -m pytest -s -p no:randomly slice/tests_orca/test_offered_faces.py`.
+
+Measured with the pinned Orca 2.4.2 before the wizard had the rule: of the 60 poses it then
+offered, 59 sliced and one was refused (`slice.rests_on_an_edge`, Elevator Block Bottom Inner
+on a hull face of 2,999 mm² across a pocket, normal (0, -0.87, -0.49)). Twenty-one of the 60
+were hull faces of the three blocks with no face of the part on the plate at all, the blocks
+resting on the rims of their pockets (and four more the pulley's bounding-box patches, on its
+rim); 17 of the 21 are millimetres across half a layer up and slice. Four meet both of the
+slice service's conditions: the refused one, and three that Orca slices though its first
+layer there is under a line across (the slanting hull faces of normal (0, 0.71, 0.71) of the
+three blocks, 606 mm², shrunk by 0.2 mm leaving 0.47 mm² and by 0.31 mm nothing). The wizard
+now offers none of the four.
 
 ## Checks on every part
 

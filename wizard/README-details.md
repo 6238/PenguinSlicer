@@ -201,6 +201,7 @@ in `wizard/src/reports.js`, `HEARTBEAT_MS` in `wizard/src/hold-meter.js`; and th
 | `MIN_FACE_MM2`, `MAX_FACES`, `SLIVER_DEG` | 5, 254, 1 | Faces dropped as too small, beyond the largest 254, or with a sliver corner | The guide; the sliver angle from the note |
 | `ROUND_SIDE_DEG` | 20 | A facet among its like (a face it reaches through faces bending less than this is at least half its size) | The guide |
 | `BBOX_COVER_DEG` | 30, plus 0.5 for rounding | A bounding-box side with no kept face within this angle gets a patch | The guide; [M29](../docs/mockups/print-wizard/DECISIONS.md#please-react-to-these) |
+| `REST_AREA_MM2`, `ON_THE_PLATE_MM`, `FIRST_LAYER_MM`, `FIRST_LINE_MM` | 0.01, 0.001, 0.3, 0.62 | A face is not offered when the part laid on it has under 0.01 mm² of its own faces within 0.001 mm of the plate and no disc 0.62 mm across fits in its section 0.15 mm up | The slice service's `slice.rests_on_an_edge`, its figures and the default process's first layer |
 | `MIN_CONTACT_MM2` | 25 | A resting candidate counts for auto-orient; a flat face of the part this large is never dropped beside a hull face that bridges | The guide |
 | `CONTACT_GAP_MM`, `OVERHANG_DEG` | 0.1, 45 | A triangle this close to the plate touches it; a downward triangle within this of straight down hangs over air | The mockup's score, kept |
 | `HEIGHT_CHARGE_PER_MM`, `NO_CONTACT_PENALTY` | 0.01, 100 | Auto-orient's small charge for height and large penalty under `MIN_CONTACT_MM2` | The mockup's score, kept |
@@ -1311,9 +1312,24 @@ with two rules of PenguinSlicer's own for round parts
    of it) is not dropped on account of one that mostly bridges a hollow or a step: on
    Elevator Top Inner each side's flat face sits 3 degrees from a hull face of the same size
    bridging down to a smaller lower block, and the rule as first written dropped both.
-5. A bounding-box patch for each of the six sides of the part's bounding box with no kept face
+5. A face dropped (`no_first_layer`) when the part laid on it would rest on no face of its own,
+   by the slice service's rule for `slice.rests_on_an_edge` with its figures
+   (`restsOnNoFace` in `geometry/first-layer.js`): the part's triangles with every corner within
+   `ON_THE_PLATE_MM` (0.001 mm) of the face's plane add up, seen from above, to less than
+   `REST_AREA_MM2` (0.01 mm²), and no disc `FIRST_LINE_MM` (0.62 mm) across fits in its section
+   half `FIRST_LAYER_MM` (0.3 mm) above the plane. The section is cut from the part's triangles;
+   discs are tried touching its edge from inside, every 0.02 mm along it, the edge's inside
+   known from each triangle's outward winding. The figures are the default process's first
+   layer, since faces are found once for each part whatever the settings. Such a face is a hull
+   face across a hollow whose rims meet the plane in edges, not faces: the real Orca refuses the
+   part laid there for its empty first layer, and the slice service names it
+   ([The faces offered, against the real Orca](#the-faces-offered-against-the-real-orca)). A
+   hull face across a hollow whose rims are rounded is kept, as Orca slices it: on the real
+   blocks such rims are millimetres across half a layer up.
+6. A bounding-box patch for each of the six sides of the part's bounding box with no kept face
    pointing within `BBOX_COVER_DEG` (30 degrees, plus half a degree for rounding) of it; end
-   patches included, even where they stand the part too tall (M29).
+   patches included, even where they stand the part too tall (M29). A face dropped at step 5
+   covers no side; the patches of this step are not tested by step 5's rule.
 
 `findFaces` in `geometry/faces.js` gives every joined face with the step that dropped it, and the
 patches, each `{kind: 'hull' | 'box', normal, area, outline}` in the part's own coordinates. A
@@ -1328,6 +1344,38 @@ filter tried on the real parts dropped Elevator Top Inner's four flat sides. Sti
 a round side of fewer than 18 facets, which bend more than 20 degrees apart, and a part modelled
 at an angle to its axes, whose bounding box does not meet its rim square; neither occurs among the
 real parts kept in the repository.
+
+### The faces offered, against the real Orca
+
+The real Orca is the oracle of the faces offered, in a test and never in the product.
+`make -C wizard offered-faces` (`wizard/scripts/offered-faces.js`) writes
+`contracts/examples/placement/offered-faces/real-parts.json`: the eight real parts of
+`contracts/examples/parts/real/`, each named as a plate configuration names a part (`name`,
+`sha256`, `units` `"mm"`), and one pose for each patch the worker offers on each, in the order of
+its patches. A pose has an `id` (the part's file name and the patch's index), the `patch`
+(`index`, `kind`, `side` for a bounding-box patch, `normal`, `area_mm2`), `area_rank` and
+`orient_rank` (from 1, by area and by auto-orient's cost), `chosen` (whether auto-orient lays
+the part on it), and the `instance` exactly as the plate configuration's phase 2 instance
+carries it: the part laid on the patch from as modelled, as a click lays it
+(`instanceTurn(layFor(normal), 0)`), at the middle of the default set's plate, (170, 160). The
+fast suite fails when the committed file differs from what the code writes
+(`tests/geometry/offered-faces.test.js`), so a change to the rules that changes what is offered
+changes the file in the same commit.
+
+The slice service reads the file twice ([its details](../slice/README-details.md#the-faces-the-wizard-offers)):
+its fast suite checks that no pose is one its rule for `slice.rests_on_an_edge` would name, and
+its upstream check slices every pose through its HTTP interface, one instance alone over the
+default set with supports off, and requires each to slice. The 56 poses slice in about 75 s
+with the pinned Orca. Before step 5 of finding the faces, 60 poses were offered and Orca refused
+one: Elevator Block Bottom Inner on a hull face of 2,999 mm² across a pocket. Of the 60, 21 were
+hull faces of the three blocks with none of the part's own faces on the plate; 17 of those rest
+on rounded rims, are millimetres
+across half a layer up and slice, and step 5 keeps them; it drops four, the refused one and
+three that Orca slices with a first layer under a line across.
+
+What the oracle cannot show is whether the wizard offers every face a person would want; that
+is for a person to judge from the second trial's pictures
+([the trial's notes](trials/geometry/README.md)).
 
 ### Auto-orient
 
@@ -1405,8 +1453,14 @@ the error an error report of the wizard's own:
 
 Tests (`wizard/tests/geometry/`, on Node's runner): on the eight real exported parts kept in the
 repository and the two made parts, the faces, patches and the way auto-orient lays each, as the
-second trial recorded them, and that every flat face of a real part (a hull face of at least
-25 mm², at least half of it the part's own surface) has a hull patch; each step of finding faces
+second trial recorded them (less the four hull faces step 5 drops, which the trial offered),
+that every flat face of a real part (a hull face of at least
+25 mm², at least half of it the part's own surface) has a hull patch, and that the faces step 5
+drops are the four the slice service names; the committed poses of
+[The faces offered, against the real Orca](#the-faces-offered-against-the-real-orca) are what the
+code writes; step 5 on an L across its open corner (dropped), two rods on the face beneath both
+(kept), ridges sloping 30 degrees (0.52 mm across half a layer up: dropped) and 20 degrees
+(0.82 mm: kept), and those ridges cut flat to 0.012 mm² (kept) and 0.008 mm² (dropped); each step of finding faces
 on small solids made in the tests (a box, a cylinder, a hex prism, a wedge, chamfers, a stepped
 block, a round side with slivers between its facets, a strip a few thousandths of a millimetre
 off a face); the hull checked against every corner of a real part and of random spheres; the
@@ -1542,6 +1596,7 @@ which the page acts on by name, are fixed and never renamed
 | Empty layers, supports on (a fault in the part's mesh) | `slice.empty_layers_with_supports` | Back to Parts. Folded Details |
 | A profile or setting not accepted | `slice.unknown_printer`, `slice.profiles_not_offered`, `slice.bad_overrides`, `slice.profile_unreadable` | Back to Settings |
 | Two instances' paths would meet | `slice.orca_too_close` | Back to Layout |
+| An instance rests on no face of its own (a plate laid out by another page version, since this one never offers such a face: [Finding the faces a part can lie on](#finding-the-faces-a-part-can-lie-on), step 5) | `slice.rests_on_an_edge`, `action` `choose_orientation` | Back to Layout |
 | Nothing printable | `slice.no_layers`, `slice.print_empty` | Back to Parts |
 | Too slow: past the slice service's time limit, today 240 seconds | `slice.timeout` | **Slice again**; Back to Parts |
 | The sliced file would be larger than 50 MB | `slice.output_too_large`; `front.sliced_file_too_large`, in a `failed` report, should one reach the front server | Back to Parts; no Slice again, since the same plate would give the same file |
@@ -2287,10 +2342,10 @@ or is not yet in a contract:
 | One part; different parts; instances | 7.5 MB (150,000 triangles); 25; 150 | The slice service's | One over each |
 | Storage in the browser | 25 parts of 7.5 MB for each tab's plate | Met for one tab in headless Chromium on the machine without a graphics card: stored and read back after a refresh, none refused; several tabs' full plates, and Chrome on the Mac, unmeasured | A full plate stored and reloaded |
 | A stored plate | Dropped after 12 hours unused, once no tab holds it | Set | Fake clock |
-| Faces found | Patches within 100 ms of selecting | Met: at most 4.1 ms for `hub-150k.stl` in the worker in Chromium on the machine without a graphics card, the faces having been found on arrival; found from nothing, 215 ms for it and at most 84 ms for a real part | The second trial, `make -C wizard trials-geometry` |
-| Auto-orient | Best way within 1 s of arriving | Met: at most 272 ms for `hub-150k.stl` from the file to its best way, faces included; at most 177 ms for a real part | The same |
-| Arrange | Under 2 s for 150 instances | Met: at most 30 ms for 150 of `hex-spacer.stl` (all placed) and 56 ms for a mix of 150 real parts (104 placed, the rest beside the plate) | The same |
-| The placement check | Keeps up with a drag at 150 instances | Met: at most 4.4 ms for each check of a drag at 150 instances, against one frame of 100 ms at 10 frames a second | The same |
+| Faces found | Patches within 100 ms of selecting | Met: at most 1.1 ms for `hub-150k.stl` in the worker in Chromium on the machine without a graphics card, the faces having been found on arrival; found from nothing, 241 ms for it and at most 92 ms for a real part (the trial run again on Sat 2026-11-28 with step 5 of finding the faces, which adds up to about 17 ms on Node for a real part) | The second trial, `make -C wizard trials-geometry` |
+| Auto-orient | Best way within 1 s of arriving | Met: at most 236 ms for `hub-150k.stl` from the file to its best way, faces included; at most 170 ms for a real part | The same |
+| Arrange | Under 2 s for 150 instances | Met: at most 30 ms for 150 of `hex-spacer.stl` (all placed) and 44 ms for a mix of 150 real parts (104 placed, the rest beside the plate) | The same |
+| The placement check | Keeps up with a drag at 150 instances | Met: at most 4.1 ms for each check of a drag at 150 instances, against one frame of 100 ms at 10 frames a second | The same |
 | The Layout view | 30 frames a second with a graphics card, 10 without, while dragging or turning, at 150 instances of parts up to 150,000 triangles | Set, no measurement | Timed in Chrome on both machines; reported in real use |
 | The layer preview | 30 with a graphics card, 10 without, while turning or dragging the layer bar, on a 14.1 MB sliced file and at 150 instances; a simpler look while moving | Without a graphics card, method C of the first trial: 10 to 20 typical on the three plates (10.0 turning at `blocks-12-supports`); with one, unmeasured | Timed in Chrome on both machines; reported in real use; test renders |
 | The first layer drawn | Within 5 s, print time and filament at once | The first trial, method C: 1.5 to 2.7 s from fetching the sliced file to the first frame with toolpaths (the look while moving; the full look 2.4 to 8.5 s) | The same |
@@ -2433,6 +2488,7 @@ rewritten nor refused, and the content security policy is what stops it loading.
 | `build` | `wizard/dist/` from `wizard/src/` and `wizard/vendor/` |
 | `look` | After `build`: pictures of the panel as a whole beside the mockup's, at 320, 480, 520 and 680 px, into `docs/orchestration/phase-2/look/wizard-2/` with an `index.html` showing the pairs |
 | `look-parts` | After `build`: the picture of each kept part as its row will show it, at 88 pixels, drawn by the page's own worker in Chromium, into `docs/orchestration/phase-2/look/wizard-3/` (`wizard/tests_browser/look_parts.py`), printing the main thread's longest hold for each part |
+| `offered-faces` | Writes the pose of every face offered on the real parts into `contracts/examples/placement/offered-faces/real-parts.json` ([The faces offered, against the real Orca](#the-faces-offered-against-the-real-orca)) |
 | `trials` | Both opening trials' measurements, as [How the trials and measurements are run](#how-the-trials-and-measurements-are-run) says: runs `trials-preview` and `trials-geometry`, the second even when the first fails, and fails when either does |
 | `trials-preview` | The first trial: `wizard/trials/preview/run.py` (needs the three sliced files in `wizard/trials/sliced/`, made by `wizard/trials/make_sliced_files.py`) |
 | `trials-geometry` | The second trial: `wizard/trials/geometry/run.py` |
