@@ -109,7 +109,10 @@ def mockup_pictures(browser, width):
     shoot(page, f"{width}-slicing-mockup.png")
     page.close()
 
+    # at its fast speed the mockup's slice ends during its 8 s outage, so the card it shows on
+    # reconnecting is only seen at its real-time speed
     page = mockup_page(browser, width)
+    page.select_option("#sc-speed", "real")
     mockup_to_preview(page, arm="conn_lost")
     run_until(page, "document.getElementById('slice-card').classList.contains('stalled') && !document.getElementById('slice-conn').hidden", step=50)
     page.clock.run_for(2500)
