@@ -2,7 +2,7 @@
 
 This is the builder's document for the front server. The guide beside it,
 [README.md](README.md), is what the owner reads and decides from. Where the two differ, the
-guide is right and this file is to be corrected. Of the front server, items 1 to 12 of
+guide is right and this file is to be corrected. Of the front server, items 1 to 16 of
 [Phase 2](#phase-2-one-machine-no-onshape-no-printer) are built: the project and its fakes,
 [the bucket interface](#the-bucket-interface) in its folder form,
 [the rules for every request](#rules-for-every-request) with
@@ -13,8 +13,13 @@ guide is right and this file is to be corrected. Of the front server, items 1 to
 [the current group's check and `GET /api/me`](#groups-and-the-current-group),
 [the configuration](#the-configuration), [the table of settings](#the-table-of-settings),
 [the user key](#the-user-key) and [uploading a part](#parts),
-[submitting a plate configuration](#submitting-a-plate-configuration), and
-[following every slice job and storing its sliced file](#following-slice-jobs-and-storing-sliced-files).
+[submitting a plate configuration](#submitting-a-plate-configuration),
+[following every slice job and storing its sliced file](#following-slice-jobs-and-storing-sliced-files),
+[asking about a slice job](#asking-about-a-slice-job),
+[progress streams](#progress-streams),
+[the sliced file's details and the sliced file](#the-sliced-files-details-and-the-sliced-file),
+and [the two-hour rule and the sweep](#two-hours-the-sweep-and-the-backstop) with the
+once-a-minute line on how full the server is ([the log](#the-log)).
 What this file says of those is true of the code in `front/`;
 every other sentence is design: it restates each requirement of the guide in the builder's
 terms, with the code-level names (requests, settings, constants, error codes, records) and
@@ -178,7 +183,9 @@ The contract's rules hold for every request. What the front server must build fo
 - **Ids.** A slice job's id is the slice service's, a delivery job's the relay's: opaque
   strings of 1 to 64 letters, digits, `-` and `_`. A group's id is Onshape's id for the
   company or classroom, or the user's own Onshape id for a group of one. The front server
-  refuses an id of another form in a path as `404` before it asks anyone.
+  refuses an id of another form in a path as `404` before it asks anyone: a slice job's as
+  `front.slice_unknown`, after the sign-in and the current group are checked, with the
+  `refused` line of every unknown slice job ([Asking](#asking-about-a-slice-job)).
 - **Every request is safe to repeat.** The page retries quietly for up to 300 seconds, so
   any request may arrive several times; each section below says how a repeat is
   recognised. The quiet retries are the page's; the front server's part is to answer the
@@ -199,7 +206,8 @@ below: [The cookie](#the-cookie), [Groups and the current group](#groups-and-the
   commit that first produces it. So far: `front.bad_request`, `front.no_such_request`,
   `front.unexpected`, `front.not_signed_in`, `front.group_not_allowed`,
   `front.configuration_changed`, `front.configuration_invalid`, `front.slice_unreachable`,
-  `front.state_bucket_unreachable`, `front.too_many_requests` and
+  `front.state_bucket_unreachable`, `front.too_many_requests`, `front.slice_unknown`,
+  `front.sliced_file_not_ready`, `front.sliced_file_expired`, `front.too_many_streams` and
   `front.sliced_file_too_large` (whose status is `None`: it is only ever the `error` of a
   `failed` report). A report whose sentence must say what in particular
   went wrong (`front.configuration_invalid`) passes its own `message`; a refusal that needs
@@ -1073,7 +1081,16 @@ as `follower`):
   `as_pages_see(user_key, job, report)` turns a report the slice service gave elsewhere
   (the `202` of a submission) into what pages see, holding back a `done` until stored.
   `stop()` follows nothing more: each following ends at its next wait or when its stream
-  next carries something; `join()` waits for the threads, for the tests.
+  next carries something; `join()` waits for the threads, for the tests. `whose(job)` is
+  the user key a slice job is followed for (the `refused` line of an unknown slice job
+  names another user's from it), and `states()` the latest `state` of each, for the
+  once-a-minute line.
+- **Who starts a following.** A submission ([Submitting](#submitting-a-plate-configuration)),
+  and asking about a slice job, or opening its progress stream, when the slice service
+  reports it not yet final and it is not followed (a front server started since it was
+  submitted), with its record's group or else the current group. So a page that comes back
+  after a restart of the front server has its slice job stored, before item 17 collects
+  them all at start.
 - **Each following has a thread of its own, counted among the 100.** The follower tells
   `on_count` the number followed whenever it changes, and the running server then serves
   with that many fewer request threads, never fewer than one ([Threads](#threads)). So a
@@ -1125,15 +1142,16 @@ The names and fields, within [the bucket interface](#the-bucket-interface)
   summary's `file`), `size_bytes`, `summary` (the slice service's, unchanged),
   `slice_ended_at`, `stored_at`, `report` (the `done` report as passed to pages, without its
   `sliced_file`, which `sliced.final_report` makes afresh each time it is given, since
-  `expires_in_s` counts from that moment; or the `failed` one), and from phase 5
-  `last_print_ended_at`.
+  `expires_in_s` counts from that moment; or the `failed` one), `expired_at` once
+  `expired` (the record keeps its other fields), and from phase 5 `last_print_ended_at`.
 
 The record of a stored file is what lets the front server answer about a slice job after the
 slice service has forgotten it. A `submitted` record whose slice job never ended `done`
-(it failed, was replaced, or the slice service restarted) stays `submitted`; the sweep
-([Two hours](#two-hours-the-sweep-and-the-backstop)) is to delete such a record once its
-slice job can no longer be known (*proposed*: two hours after `submitted_at` plus the
-slice service's own two hours).
+(it failed, was replaced, or the slice service restarted) stays `submitted` until the sweep
+([Two hours](#two-hours-the-sweep-and-the-backstop)) deletes it, once its slice job can no
+longer be known: four hours after `submitted_at` (`SUBMITTED_RECORD_KEPT_S`, 14,400,
+*proposed*: two hours, far longer than a slice job can wait and run, plus the slice
+service's own two hours).
 
 ### Tests
 
@@ -1160,8 +1178,8 @@ clock:
   states).
 - Three pages on one slice job make one connection to the stand-in.
 
-Built: `tests/test_following.py`, where a page is a `deliver` the test gives `subscribe`,
-until the progress streams (item 13) give pages theirs.
+Built: `tests/test_following.py`, where a page is a `deliver` the test gives `subscribe`;
+the pages' own streams on it are in `tests/test_streams.py`.
 
 ## Asking about a slice job
 
@@ -1193,6 +1211,35 @@ expired. A state bucket that does not answer is `503` `front.state_bucket_unreac
 slice service that does not answer, when the state bucket holds no record, is `503`
 `front.slice_unreachable`.
 
+**As built** (`penguin_front.asking`, `reckon(slice)`, the one answer `/summary`, `/file`
+and the progress stream start from too):
+
+- The checks, in order: signed in, the current group, the id's form (1 to 64 letters,
+  digits, `-` and `_`; another is unknown before the state bucket or the slice service is
+  asked), the record, then the slice service.
+- A `stored` record whose file is due, or whose file is no longer in the state bucket
+  (`sliced.file_present`, by listing its name), is expired at once: the file deleted, then
+  the record turned `expired` with `expired_at`, the line `sliced_file_expired` (`by`
+  `request`, `why` `due` or `gone`, `slice_ended_at`, `late_s`). A delete or write that
+  fails writes `sliced_file_expire_failed` and leaves the record for the sweep; the answer
+  is "expired" all the same, so the refusal is on time whatever the state bucket does.
+- The expired report is `sliced.expired_report`: the record's `done` report with `state`
+  `failed`, `sequence` one more and `error` `front.sliced_file_expired`.
+- An `expired` record answers "expired" until `EXPIRED_RECORD_KEPT_S` after its
+  `expired_at`, then unknown.
+- The slice service's answer: `200` with a report (a JSON object with a text `state` and a
+  whole-number `sequence`; anything else is `500` `front.unexpected`) is passed through
+  `Follower.as_pages_see`; `slice.unknown_job` is unknown; any other refusal of the slice
+  service is passed unchanged with its status.
+- A report not yet final for a slice job not followed starts its following
+  ([Following](#following-slice-jobs-and-storing-sliced-files)), after the answer is
+  reckoned.
+- **Unknown** writes the line `refused` (`reason` `slice_unknown`, `why`, `user_key`,
+  `group`, `slice`, `method`, `path`) beside the `error` line. The front server cannot tell
+  another user's slice job from one that never was (the slice service answers both alike,
+  and the records are filed under each user key), except one it follows itself for another
+  user key, whose `why` then says "another user's slice job".
+
 ### Tests
 
 One test for each row, the stand-in and the folder form set up for it on a fake clock,
@@ -1201,7 +1248,10 @@ stored, "expired" a day before and unknown a day after the record's extra day, "
 error" for a record of a file over 50 MB, and unknown for another user's slice job. Also: the
 state bucket not answering gives `front.state_bucket_unreachable`; the slice service not
 answering with no record gives `front.slice_unreachable`, and with a stored record answers
-"finished" without it.
+"finished" without it. Built: `tests/test_asking.py`, where "finished" is
+[the contract's example](../contracts/examples/wizard-front/slice-done.json) exactly, with
+an id of another form, a file removed by hand, a delete that fails and a slice service
+answer of the wrong shape besides.
 
 ## Progress streams
 
@@ -1231,8 +1281,31 @@ progress streams, on slice jobs and on delivery jobs together (`MAX_STREAMS_PER_
 *proposed* name). The count is the front server's, for each user key, in memory. A stream
 whose page has gone is noticed when a keep-alive or a report fails to write, within fifteen
 seconds; so that a page reconnecting at once is not refused on account of its own dropped
-stream, *proposed:* a new stream of a user on a job that user already follows closes that
-user's oldest stream on the same job before it is counted.
+stream, a user **at the limit** who opens a stream on a job they already follow has their
+oldest stream on that job closed before the new one is counted. Below the limit nothing is
+closed, so that several tabs on one slice job (the guide's three tabs on one connection)
+each keep their stream rather than closing each other's in turn.
+
+**As built** (`penguin_front.streams`): `Streams` holds the count (`open`, `close`, `held`,
+`count`, `stop`), and each accepted stream is fed by `Follower.subscribe`.
+
+- The second event is `reckon`'s answer, or the following's latest report when that is
+  newer; later reports are sent only with a `sequence` above the last sent, so a report
+  the following gives again is not sent twice.
+- A stream whose first report is already final (a slice job stored, failed, cancelled or
+  expired) sends it and closes at once, and is never counted: a fifth tab on a finished
+  slice job is answered.
+- The fifteen seconds count from the last thing the stream sent, on the front server's
+  clock, so that a wake that sends nothing does not put the comment line off.
+- A stream is counted from its acceptance until its answer is closed: by its end, or by
+  the web server when a write to a page that has gone fails (waitress closes the answer on
+  `ClientDisconnected`), which is the moment it leaves the count.
+- A `HEAD` is answered `200` with the stream's headers and holds nothing.
+- `stop()`, at the stop of the running server, ends every stream and opens no more.
+- The lines: `stream_opened` (`streams_held`) and `stream_closed` (`why`: `final`,
+  `following_ended`, `replaced`, `stopping` or `page_gone`; `open_s`), each with
+  `user_key`, `group` and `slice`. The refusal is the `error` line of
+  `front.too_many_streams`.
 
 **Open:** [whether progress arrives as it is sent](README.md#whether-progress-arrives-as-it-is-sent)
 (phase 3; the fallback, the page asking `GET /api/slices/<slice>` every second or two, needs
@@ -1253,9 +1326,14 @@ On a fake clock:
   and carries `sliced_file`.
 - A fifth stream of one user, over slice jobs (and from phase 5, delivery jobs), is refused
   `429` `front.too_many_streams` before it starts; when one of the four closes, a new one is
-  accepted; a second stream of a user on the same job closes the first.
+  accepted; at the limit, a new stream of a user on a job they already follow closes their
+  oldest on that job, and below it several streams on one job stay open.
 - A stream on another user's slice job is refused `404` `front.slice_unknown`.
 - A stream whose writer fails is removed from the user's count.
+
+Built: `tests/test_streams.py`, where a page reads its stream on a thread of its own and
+goes away by closing its answer; the stream of a stored slice job is checked against
+[the contract's example](../contracts/examples/wizard-front/slice-events.txt).
 
 ## The sliced file's details and the sliced file
 
@@ -1286,6 +1364,20 @@ The page fetches the file for the Preview step and for Download; from phase 5 th
 hands it to the daemon ([Running the relay](#running-the-relay-from-phase-5)). Each serving
 writes a log line.
 
+**As built** (`penguin_front.asking`, `summary` and `file`, on `reckon`):
+
+- A slice job with no sliced file that will ever be stored (one failed, a `failed` record
+  of a file over 50 MB, one cancelled) is `409` `front.sliced_file_not_ready`, as one not
+  yet stored is: the page asks for neither in honest use.
+- `/file` reads the state bucket's copy in its pieces (at most `CHUNK_BYTES`) and passes
+  each on as it is read; `Content-Length` is the stored file's size. A file gone between the
+  check and the read is expired as `reckon` expires one. The name in `Content-Disposition`
+  is the record's `file` when it is made only of letters, digits, `.`, `+`, `-` and `_` (as
+  [the sliced file's name](../contracts/sliced-file.md#name) always is), and otherwise
+  `<slice>.gcode.3mf`, so no name can break the header.
+- The line `sliced_file_served` (`size_bytes`, `sent_bytes`, `whole`), written when the
+  answer is closed, so a fetch cut off shows as not whole.
+
 ### Tests
 
 - The details of a stored file have every field, and `expires_in_s` is `expires_at` less the
@@ -1298,6 +1390,9 @@ writes a log line.
   own, with the contract's headers; with the group in the query alone it is served.
 - A file larger than the tests' memory chunk passes through without being held whole
   (*proposed*).
+
+Built: `tests/test_sliced_file.py`, where the details are
+[the contract's example](../contracts/examples/wizard-front/slice-summary.json) exactly.
 
 ## Two hours, the sweep, and the backstop
 
@@ -1319,9 +1414,13 @@ The front server enforces it itself, in three ways:
   nobody asks for again is still gone on time. The interval is the builder's (*proposed*:
   ten minutes, `SWEEP_INTERVAL_S` 600); it bounds only how long past its due time an
   unasked-for file can exist, since a file somebody asks for is refused exactly on time.
-  *Proposed:* the sweep lists `sliced/` through [the bucket interface](#the-bucket-interface)
-  and reads the records, and also deletes records `expired` for longer than
-  `EXPIRED_RECORD_KEPT_S`.
+  The sweep lists `sliced/` through [the bucket interface](#the-bucket-interface) and reads
+  the records; it also deletes records `expired` for longer than `EXPIRED_RECORD_KEPT_S`
+  (a day), `submitted` records older than `SUBMITTED_RECORD_KEPT_S` (four hours), `failed`
+  records older than `FAILED_RECORD_KEPT_S` from their slice's end (a day and two hours,
+  *proposed*: as long as a stored file and its `expired` record together), and a sliced file
+  with no record two hours after it was stored (a front server stopped between the file and
+  its record).
 - **From phase 5, a sliced file whose print is under way is kept.** A delivery job's record
   names the sliced file it used, by the user key and slice job id it is stored under, and
   records when the delivery job ended; the front server learns from the relay when a
@@ -1345,9 +1444,29 @@ it was last stored, in a private bucket (both accepted). A send whose sliced fil
 deleted by the rule, by the backstop or otherwise, is answered `410`
 `front.sliced_file_expired`: the plate must be sliced again.
 
+**As built** (`penguin_front.sliced`: `due`, `expire`, `expired_report` and the figures;
+`penguin_front.sweep.Sweeper`; `penguin_front.every.Every`, the loop on the front server's
+clock):
+
+- A sliced file is due when the front server's clock reaches `slice_ended_at` plus
+  `SLICED_FILE_KEPT_S`: served one second before, refused at that second.
+- The running server starts the sweep (`server.serve`): once at start, so a file that fell
+  due while the front server was down goes at once, then every `SWEEP_INTERVAL_S`. An
+  application built for a test sweeps only when the test calls `sweep()`.
+- A slice job the front server follows is left alone, since its storing may be under way;
+  so is a record this front server cannot read (a newer format) and any name it does not
+  make (`sliced/<user_key>/<slice>.json` and `.gcode.3mf` only).
+- The lines: `sliced_file_expired` (`by` `sweep`); `sliced_record_deleted` (`state`,
+  `age_s`); `sliced_file_deleted` (`why` `no record`, `size_bytes`); `sweep_item_failed`
+  for a file that cannot be deleted, which the next sweep tries again; `sweep_failed` when
+  the listing fails; and at the end of each sweep `sweep` with its counts (`checked`,
+  `files_expired`, `records_deleted`, `files_deleted`, `failed`). A fault inside a loop
+  writes `loop_failed` (`loop`, `trace`) and the loop goes on.
+
 ### Tests
 
-All on a fake clock; none waits.
+All on a fake clock; none waits. Built: `tests/test_two_hours.py`, with the phase 2 tests
+below and the records the sweep deletes besides.
 
 - A sliced file one second under two hours after its slice ended is served; at two hours,
   never printed, it is refused `410` `front.sliced_file_expired`, deleted, and asking about
@@ -1626,7 +1745,13 @@ page's version it concerns; the form of a line is the architecture's
 - what happened to each sliced file: stored (with its size, and *proposed*, the time from
   the slice's end to its storing), served, expired, deleted;
 - once a minute: the memory it holds, the slice jobs running and waiting, the connections it
-  holds open and the threads in use;
+  holds open and the threads in use (built: the line `load`, written by the running server
+  at start and every `LOAD_LINE_S`, 60, from `penguin_front.load`: `memory_bytes`, the
+  kernel's `VmRSS`, or `null` where there is no `/proc`; `slices_followed`,
+  `slices_running` and `slices_waiting`, by the latest report pages see of each, `queued`
+  being waiting; `streams_open` and `connections_open`, the pages' streams and those with
+  the followings' own; `threads`, and `threads_in_use`, waitress's busy request threads
+  and the followings' threads);
 - each start, with the version that started; each use of the previous cookie key.
 
 Every line about a slice or a send carries the user key and the current group. No line holds
@@ -1766,8 +1891,8 @@ A release build sets the version in the setting `PENGUIN_VERSION`; unset, as whe
 checkout, it is the moment the front server started, in UTC, then `-0000000`
 ([The wizard's built files](../contracts/wizard-front-server.md#the-wizards-built-files)).
 A `PENGUIN_VERSION` not of that form stops the start. Built (`penguin_front.version`, the
-header added to every answer by `penguin_front.app`); the progress stream's first event is
-built with the streams.
+header added to every answer by `penguin_front.app`, and the progress stream's first event
+by `penguin_front.streams`).
 
 Three rules hold across a deploy:
 
@@ -1839,7 +1964,11 @@ repeated submission is answered with the first attempt's slice job. For a repeat
 
 ## Stopping
 
-Guide: [Restarts and deploys](README.md#restarts-and-deploys). Phase 3.
+Guide: [Restarts and deploys](README.md#restarts-and-deploys). Phase 3. Built in phase 2:
+when the running server's serving ends, it stops following, ends every page's progress
+stream (`stream_closed` `why` `stopping`), stops the sweep and the once-a-minute line, and
+writes the `stop` line and what the log has gathered; it does not yet let downloads in
+progress finish.
 
 Asked to stop (`SIGTERM`, as at every deploy), the front server takes no new requests, lets
 uploads and downloads in progress finish, closes its progress streams and, from phase 5,
@@ -1897,7 +2026,8 @@ forty and four; build the four as a constant and the test below against fifty an
 ### Tests
 
 - The once-a-minute line reports the threads in use and the connections held open, checked
-  with a known number of open progress streams and followings.
+  with a known number of open progress streams and followings (built: `tests/test_load.py`,
+  and in `tests/test_server.py` the running server's line at start and a minute later).
 - With every thread held by the tests' streams, a further request waits and is served when
   one closes (event-ordered, no sleep).
 - Forty progress streams and three followings held open against the stand-ins, with short
@@ -2150,6 +2280,9 @@ of time is checked by a test with a fake clock.
 | A sign-in | 2 calls to Onshape | The allowance of 2,500 a year | Onshape's interface | |
 | The previous cookie key kept | One week | Users away briefly | The design's choice | `PREVIOUS_COOKIE_KEY_KEPT` |
 | A sliced file kept | Two hours after its slice ended, or after its last print ended if later | Sending again after a print | The design's choice | `SLICED_FILE_KEPT_S` |
+| An `expired` record kept | A day after its file was deleted | Asking about it answering "expired" | The builder's | `EXPIRED_RECORD_KEPT_S` |
+| A `submitted` record kept | Four hours after its submission | Its slice job being known | The builder's | `SUBMITTED_RECORD_KEPT_S` |
+| A `failed` record kept | A day and two hours after its slice ended | Asking about it answering the failure | The builder's | `FAILED_RECORD_KEPT_S` |
 | R2's backstop on sliced files | Three days from last stored | A file the front server failed to delete | The design's choice | An R2 lifecycle rule |
 | Log files in the log bucket | Ninety days | A problem reported weeks later | The design's choice | An R2 lifecycle rule |
 | Gathering the log | About once a minute | Lines lost in a crash | The design's choice | `LOG_FLUSH_S` |
@@ -2295,8 +2428,13 @@ order, any number of times. A test that fails once is fixed at its cause, never 
   `wait_for_sleepers(n)`, and a step limit that fails a test whose loop moves time without
   end); `Announcer`, on which fakes announce each change so a test waits by being told;
   `LoopbackServer`, which serves a fake on the loopback address and can stop listening and
-  listen again on the same port; and `BACKSTOP_S`, the bound after which a wait fails the
-  test, never a time a test relies on.
+  listen again on the same port (its serving loop looks for a stop every 2 ms);
+  `loopback_client`, an HTTP client for a stand-in made without a TLS context; and
+  `BACKSTOP_S`, the bound after which a wait fails the test, never a time a test relies on.
+- `sliced_helpers.py`: the contract's example slice job `3f9a1c2b` and its reports, the
+  records the following writes (`write_stored`, `write_failed`, `write_submitted`), a state
+  bucket a test can make refuse reads or writes (`Failing`), and the application on it with
+  the stand-in, for the tests of asking, streams, the sliced file and the two-hour rule.
 - `slice_standin.py`: `SliceStandIn`, every request of
   [the slice service's HTTP interface](../contracts/slice-http-interface.md), checked against
   each of its examples. A slice job moves only when the test calls `report`; `repeat` sends
@@ -2310,8 +2448,16 @@ order, any number of times. A test that fails once is fixed at its cause, never 
   two calls of a sign-in, counting each call (`calls`); `refuse_approval`, `refuse_codes`,
   `unreachable`.
 - `conftest.py` gives every test a `standin` fixture on the test's clock, and
-  `front_helpers.shut(app, standin)` ends what an application started: its followings, then
-  the stand-in's streams, then it waits for the followings' threads. A test of the following
+  `front_helpers.shut(app, standin)` ends what an application started: its pages' progress
+  streams and its followings, then the stand-in's streams, then it waits for the
+  followings' threads.
+- **What makes the suite take seconds:** every test builds the application on fresh
+  folders, so what an application costs to build is paid about 900 times. Each client for
+  the slice service once made its own TLS context, reading the system's certificates (about
+  8 ms); one context now serves them all. With that and the stand-ins' faster stop, the
+  suite went from about 10 s on one worker (6 s on two) to about 3.8 s (2.7 s on two), Fri
+  2026-11-27, Pacific time, on 776 tests. What remains of an application's cost is mostly the web
+  framework compiling its routes, about 2.5 ms. A test of the following
   waits for its next wait on the fake clock by a clock that notes each wait
   (`Recording.next_wait` in `tests/test_following.py`), never by counting sleepers, which
   can still count a sleeper that has just been woken.
@@ -2379,7 +2525,7 @@ From [the guide](README.md#what-is-built-in-which-phase).
 
 The front server runs beside one slice service process on one machine, with the development
 identity and a folder for each bucket. Build in this order; each item rests on those before
-it, and each is done with its tests. Items 1 to 12 are built.
+it, and each is done with its tests. Items 1 to 16 are built.
 
 1. **The project and its fakes** (built). `front/` as a `uv` project with its make targets; the
    fake clock; the stand-in for the slice service on the requests of
@@ -2425,17 +2571,19 @@ it, and each is done with its tests. Items 1 to 12 are built.
 12. **Following every slice job and storing the sliced file and its summary,** with the
     refusal of one over 50 MB (built) ([Following](#following-slice-jobs-and-storing-sliced-files);
     guide: [The front server follows every slice job itself](README.md#the-front-server-follows-every-slice-job-itself)).
-13. **Progress streams,** four at most for one user
+13. **Progress streams,** four at most for one user (built)
     ([Progress streams](#progress-streams); contract:
     [`GET /api/slices/<slice>/events`](../contracts/wizard-front-server.md#get-apislicessliceevents)).
-14. **Asking about a slice job** ([Asking about a slice job](#asking-about-a-slice-job);
+14. **Asking about a slice job** (built) ([Asking about a slice job](#asking-about-a-slice-job);
     contract: [`GET /api/slices/<slice>`](../contracts/wizard-front-server.md#get-apislicesslice)).
-15. **The sliced file's details and the sliced file,** with the moment it expires
+15. **The sliced file's details and the sliced file,** with the moment it expires (built)
     ([The sliced file's details](#the-sliced-files-details-and-the-sliced-file); contract:
     [`/summary`](../contracts/wizard-front-server.md#get-apislicesslicesummary),
     [`/file`](../contracts/wizard-front-server.md#get-apislicesslicefile)).
-16. **The two-hour rule:** refusing, deleting and the sweep
-    ([Two hours](#two-hours-the-sweep-and-the-backstop); guide: [The rule](README.md#the-rule)).
+16. **The two-hour rule:** refusing, deleting and the sweep, with the once-a-minute line on
+    how full the server is (built)
+    ([Two hours](#two-hours-the-sweep-and-the-backstop), [The log](#the-log); guide:
+    [The rule](README.md#the-rule)).
 17. **Collecting at start** ([Starting](#starting-and-what-a-restart-does)).
 18. **The log's gathering of the slice service's lines, and the page's reports about
     itself** ([The log](#the-log), [The page's reports](#the-pages-reports-about-itself);

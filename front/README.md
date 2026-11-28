@@ -1406,7 +1406,28 @@ The phases are the plan's.
   failed, and the page meanwhile sees the slice as still running; a sliced file over 50 MB
   is not stored and the page is told the slice failed, with a sentence of the front
   server's own. Each following runs on a thread of its own, counted among the 100, the web
-  server serving with one fewer while it lasts.
+  server serving with one fewer while it lasts;
+- answering a page that comes back, with each of the six answers: the state bucket is
+  looked in first and the slice service asked only when it holds no answer, so a finished
+  slice is answered after the slice service has forgotten it; a slice job that a front
+  server started since its submission does not yet follow is followed from that moment;
+  a slice job of another user, or an id that cannot be one, is answered as unknown and the
+  attempt written to the log;
+- the progress streams: the version and the latest report at once, then each new report
+  once, a line that means nothing after fifteen seconds of quiet, and the stream closed
+  after the slice's last report; four at most for one user, the fifth refused before it
+  starts. A user at the four who opens a stream on a slice they already follow has their
+  oldest stream on that slice closed to make room, so a page reconnecting at once is not
+  refused on account of its own dropped stream; below the four nothing is closed, so
+  several tabs can follow one slice. A stream whose page has gone leaves the count as soon
+  as a write to it fails;
+- the sliced file's details, with the moment it expires and the seconds to it, and the
+  sliced file itself, passed from the state bucket in pieces and never held whole, also to
+  a plain link that names the group;
+- the two-hour rule: a sliced file served until two hours after its slice ended and
+  refused as expired from that second, when it is deleted; the sweep, at start and every
+  ten minutes, which deletes every sliced file due and the records nobody can use any more;
+  and the once-a-minute line in the log on how full the front server is.
 
 Measured while building: the cookie of a user in sixty groups with long names is about ten
 kilobytes, more than a browser keeps, so such a user could not sign in; whether real
@@ -1426,10 +1447,7 @@ is what the two hours count from.
 slice service on one machine, with the development identity and a folder for each
 bucket. Built here, beyond what is listed above as built so far:
 
-- answering a page that comes back, and the progress streams, four at most for one user;
 - collecting at start the slice jobs that ended while the front server was down;
-- the two-hour rule: refusing, deleting, the sweep, and telling the page the moment a
-  sliced file expires;
 - the log, with the page's reports about itself and the slice service's lines, gathered
   once a minute into the folder that stands for the log bucket, one file for all
   components, in folders by day;
