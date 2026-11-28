@@ -97,6 +97,8 @@ def shut(app, standin=None):
     streams (which ends a following thread blocked on one), then wait for the following
     threads to end, and close the client for the slice service."""
     ctx = app.extensions["penguin_front"]
+    if ctx.get("streams") is not None:
+        ctx["streams"].stop()
     follower = ctx.get("follower")
     if follower is not None:
         follower.stop()
