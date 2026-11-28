@@ -48,6 +48,7 @@ precision mediump float;
 flat in vec3 vColour; out vec4 o;
 void main() { o = vec4(vColour, 1.0); }`;
 const VERTEX_BYTES = 12, SEGMENT_BYTES = 72, BATCH = Math.floor(65536 / 6);
+const UPLOAD_BYTES = 8 * 1024 * 1024;
 
 function boxIndex() {
   const idx = new Uint16Array(BATCH * 12);
@@ -65,7 +66,13 @@ export function boxSet(gl, set) {
   const vao = gl.createVertexArray();
   gl.bindVertexArray(vao);
   buffer(gl, boxIndex(), gl.ELEMENT_ARRAY_BUFFER);
-  const data = buffer(gl, set.vertices);
+  // The vertices go to the graphics side UPLOAD_BYTES a frame, each piece once the one before
+  // has arrived (a fence), so that no frame holds the browser for a whole plate's upload.
+  const total = set.vertices.byteLength;
+  const data = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, data);
+  gl.bufferData(gl.ARRAY_BUFFER, Math.max(total, 4), gl.STATIC_DRAW);
+  let uploaded = 0, fence = null;
   const at = { pos: prog.a('aPos'), nrm: prog.a('aNrm'), wh: prog.a('aWH'), flags: prog.a('aFlags') };
   for (const a of Object.values(at)) if (a >= 0) gl.enableVertexAttribArray(a);
   gl.bindVertexArray(null);
@@ -73,6 +80,21 @@ export function boxSet(gl, set) {
   const layerStart = set.layerStart;
   return {
     layerStart,
+    // One more piece of the upload; true once every byte is on the graphics side.
+    upload() {
+      if (fence) {
+        if (gl.getSyncParameter(fence, gl.SYNC_STATUS) !== gl.SIGNALED) return false;
+        gl.deleteSync(fence); fence = null;
+      }
+      if (uploaded >= total) return true;
+      const n = Math.min(UPLOAD_BYTES, total - uploaded);
+      gl.bindBuffer(gl.ARRAY_BUFFER, data);
+      gl.bufferSubData(gl.ARRAY_BUFFER, uploaded, set.vertices, uploaded, n);
+      uploaded += n;
+      fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+      gl.flush();
+      return false;
+    },
     begin(f) {
       gl.useProgram(prog.p);
       gl.uniformMatrix4fv(prog.u.viewProj, false, f.viewProj);
@@ -121,14 +143,17 @@ function drawFull(gl, full, f, scene, bands = 24) {
 // The look while moving: every D-th layer below the cut (from the coarser set, each box as
 // tall as the D layers it stands for), the few layers between the last of them and the cut
 // from the full set, and the current layer; no ghost.
-function drawMoving(gl, full, moving, decimate, f, scene) {
+// While the full set is still uploading, only the coarser layers are drawn.
+function drawMoving(gl, full, moving, decimate, f, scene, fullReady = true) {
   clear(gl);
   scene.plate(f.viewProj);
   let n = 0;
   const lastGroup = Math.floor(f.k / decimate) * decimate - 1;   // the top layer of the last whole group below k
-  full.begin(f);
-  n += full.draw(full.layerStart[f.k], full.layerStart[f.k + 1], true);
-  if (lastGroup + 1 < f.k) n += full.draw(full.layerStart[lastGroup + 1], full.layerStart[f.k], false);
+  if (fullReady) {
+    full.begin(f);
+    n += full.draw(full.layerStart[f.k], full.layerStart[f.k + 1], true);
+    if (lastGroup + 1 < f.k) n += full.draw(full.layerStart[lastGroup + 1], full.layerStart[f.k], false);
+  }
   if (lastGroup >= 0) {
     moving.begin(f);
     n += moving.draw(0, moving.layerStart[lastGroup + 1], false);
@@ -142,11 +167,21 @@ export const methodA = {
   create(gl, prepared) {
     const full = boxSet(gl, prepared.full);
     return {
-      draw(f, scene) { return { segments: drawFull(gl, full, f, scene), complete: true }; },
+      draw(f, scene) {
+        if (!full.upload()) { clear(gl); scene.plate(f.viewProj); return { segments: 0, complete: false, again: true }; }
+        return { segments: drawFull(gl, full, f, scene), complete: true };
+      },
       drawFull(f, scene) { return drawFull(gl, full, f, scene); },
     };
   },
 };
+
+// Uploads the coarser set first, then the full one; says which are on the graphics side.
+function uploading(moving, full) {
+  const movingReady = moving.upload();
+  return { movingReady, fullReady: movingReady && full.upload() };
+}
+const waiting = (gl, f, scene) => { clear(gl); scene.plate(f.viewProj); return { segments: 0, complete: false, again: true }; };
 
 // Method B: while the view moves or the layer bar is dragged, every D-th layer with coarser
 // arcs; at rest, every box, in one frame.
@@ -157,7 +192,12 @@ export const methodB = {
     return {
       decimate: prepared.decimate,
       draw(f, scene) {
-        if (f.moving) return { segments: drawMoving(gl, full, moving, prepared.decimate, f, scene), complete: false };
+        const { movingReady, fullReady } = uploading(moving, full);
+        if (!movingReady) return waiting(gl, f, scene);
+        if (f.moving || !fullReady) {
+          const n = drawMoving(gl, full, moving, prepared.decimate, f, scene, fullReady);
+          return { segments: n, complete: false, again: !fullReady };
+        }
         return { segments: drawFull(gl, full, f, scene), complete: true };
       },
       drawFull(f, scene) { return drawFull(gl, full, f, scene); },
@@ -183,13 +223,22 @@ export const methodC = {
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     let work = null;          // the pieces still to draw for the view at rest, or null
     let fence = null;         // the last piece's fence: the next piece waits until it is drawn
+    let shown = false;        // the full look of the present view is on the screen
     return {
       decimate: prepared.decimate,
       // `fresh` is true when the view or the layer changed since the last frame.
       draw(f, scene, fresh) {
-        if (f.moving || fresh) {
+        const { movingReady, fullReady } = uploading(moving, full);
+        if (!movingReady) return waiting(gl, f, scene);
+        if (!fullReady) {
+          const n = drawMoving(gl, full, moving, prepared.decimate, f, scene, false);
+          work = null;
+          return { segments: n, complete: false, again: true };
+        }
+        if (f.moving || fresh || (!work && !shown)) {
           const n = drawMoving(gl, full, moving, prepared.decimate, f, scene);
           work = f.moving ? null : { pieces: fullPieces(full.layerStart, f.k, PIECE), next: 0, started: false };
+          shown = false;
           return { segments: n, complete: false, again: !f.moving };
         }
         if (!work) return { segments: 0, complete: true };
@@ -225,6 +274,7 @@ export const methodC = {
         gl.blitFramebuffer(0, 0, w, h, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
         gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
         work = null;
+        shown = true;
         return { segments: 0, complete: true };
       },
       drawFull(f, scene) { return drawFull(gl, full, f, scene); },

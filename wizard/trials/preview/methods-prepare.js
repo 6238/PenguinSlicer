@@ -3,9 +3,10 @@
 // `coarse()` reads the G-code again with coarser arcs, for the look while moving.
 import { boxVertices } from './prepare.js';
 
-// The most segments the look while moving may draw (methods B and C): 1.2 million triangles,
-// which software drawing on the trial's machine does in well under 100 ms.
-export const MOVING_BUDGET = 300000;
+// The most segments the look while moving may draw (methods B and C): 0.8 million triangles,
+// which software drawing on the trial's machine does in about 70 ms, leaving room for a
+// machine shared with other work.
+export const MOVING_BUDGET = 200000;
 const DECIMATIONS = [1, 2, 4, 8, 16];
 
 function pack(sets) {

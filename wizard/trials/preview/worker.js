@@ -30,12 +30,14 @@ self.onmessage = async ({ data }) => {
     for (const part of Object.values(plateConfiguration.parts)) corners[part.stl] = readStl(await bytesOf(PART_URL(part.stl)));
     const ghost = ghostOf(plateConfiguration, corners);
     const tGhost = performance.now();
+    const groups = [0, 0, 0, 0];
+    for (let i = 0; i < p.count; i++) groups[p.group[i]]++;
     const transfer = [ghost.corners.buffer, ...prepared.transfer];
     self.postMessage({
       ok: true, prepared: prepared.data, ghost: ghost.corners, bounds: ghost.bounds,
       layers: p.layers, layerZ: p.layerZ, layerHeight: p.layerHeight, layerStart: p.layerStart,
       stats: { sliced_file_bytes: archive.byteLength, sliced_file_lines: p.lines, moves: p.moves, segments: p.count,
-        instances: plateConfiguration.instances.length,
+        instances: plateConfiguration.instances.length, groups,
         worker_ms: { fetch: tFetched - t0, unzip: tUnzipped - tFetched, parse: tParsed - tUnzipped,
           prepare: tPrepared - tParsed, ghost: tGhost - tPrepared } },
     }, transfer);

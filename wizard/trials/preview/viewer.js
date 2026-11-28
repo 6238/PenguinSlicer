@@ -146,8 +146,10 @@ export async function start(method) {
   let complete = false;
 
   function build() {
+    const t = performance.now();
     scene = scenery(gl, data.ghost);
     drawer = method.create(gl, data.prepared, { resolution: [width, height] });
+    trial.build_ms = performance.now() - t;
   }
   build();
   canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); lost = true; trial.contextLost = (trial.contextLost || 0) + 1; });
@@ -311,10 +313,11 @@ export async function start(method) {
     };
   }
 
-  // The coarse checks of the look: the full look drawn and its pixels sorted.
+  // The coarse checks of the look: the full look drawn, without the ghost, whose grey would
+  // tint the colours under it, and its pixels sorted.
   function look() {
     gl.viewport(0, 0, width, height);
-    drawer.drawFull(frameState(), scene);
+    drawer.drawFull(frameState(), { ...scene, ghost() {} });
     const px = new Uint8Array(width * height * 4);
     gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, px);
     const counts = [0, 0, 0, 0];
@@ -360,6 +363,7 @@ export async function start(method) {
     async loseContext() {
       const ext = gl.getExtension('WEBGL_lose_context');
       await new Promise((resolve) => { canvas.addEventListener('webglcontextlost', resolve, { once: true }); ext.loseContext(); });
+      await afterFrame();              // a restore asked for while the loss is being handled is ignored
       await new Promise((resolve) => { canvas.addEventListener('webglcontextrestored', resolve, { once: true }); ext.restoreContext(); });
       await untilComplete(); await afterFrame();
     },
