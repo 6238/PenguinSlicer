@@ -62,8 +62,8 @@ def _transform(instance, footprint):
 
 
 def _check_stop(stop):
-    """Raise SliceCancelled when the slice job's stop is set (a cancel, an abandonment, a
-    shutdown): the write ends here and Orca is never started."""
+    """Raise SliceCancelled when the slice job's stop is set (a replacement, a shutdown, a
+    requested cancel): the write ends here and Orca is never started."""
     if stop is not None and stop.is_set():
         raise SliceCancelled(f"stopped by the slice service ({stop.reason}) while the plate was being written, "
                              "before Orca was started")

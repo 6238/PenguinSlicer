@@ -79,7 +79,9 @@ def no_gcode(path):
 
 
 def busy(scene):
+    # Every place taken: the one running place, held by a job its executor never runs, and no waiting place.
     pool = JobPool(lambda job_id, payload, context: {}, executor=mock.Mock(), max_queued=0)
+    pool.submit()
     pool.submit()
 
 

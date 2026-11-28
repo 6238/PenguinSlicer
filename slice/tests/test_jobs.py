@@ -1,4 +1,6 @@
-"""jobs.JobPool: progress reports, cancellation, abandonment, expiry, shutdown and the log.
+"""jobs.JobPool: progress reports with the count ahead, cancellation and its reason, the
+replacement of a plate's earlier slice job, a repeated submission, a slice job that goes on
+without a follower, expiry, shutdown and the log.
 
 Synchronous stand-ins for the executor and an injected clock. No test sleeps or waits on a
 timeout that is expected to run out: a worker that must stay running blocks on an Event
@@ -102,7 +104,7 @@ class TestReports:
         job_id = pool.submit("payload", expected_s=12.5)
         queued = pool.get(job_id)
         assert queued == {"job": job_id, "state": "queued", "stage": "queued", "stage_label": "Waiting for the slicer",
-                          "elapsed_s": 0.0, "sequence": 1, "expected_s": 12.5}
+                          "elapsed_s": 0.0, "sequence": 1, "expected_s": 12.5, "ahead": 0}
         original = pool._progress
 
         def spy(*args):
@@ -226,12 +228,28 @@ class TestFailure:
 
 class TestQueue:
     def test_queue_full(self):
+        # The places are the running ones and the waiting ones together: one and two.
         pool, _ = make_pool(executor=HeldExecutor(), max_queued=2)
+        pool.submit()
         pool.submit()
         pool.submit()
         with pytest.raises(QueueFull):
             pool.submit()
         assert error_report(QueueFull())["code"] == "slice.busy"
+
+    def test_a_job_being_stopped_holds_no_place(self):
+        worker = Blocking(cancellable=False)
+        pool, _logs, executor = threaded_pool(worker, max_queued=0)
+        stopping = pool.submit()
+        assert worker.started.wait(FAILSAFE_S)
+        with pytest.raises(QueueFull):
+            pool.submit()
+        pool.cancel(stopping)
+        waiting = pool.submit()
+        assert pool.get(waiting)["ahead"] == 1          # the one being stopped still holds Orca
+        worker.release.set()
+        assert wait_final(pool, waiting)["state"] == "done"
+        executor.shutdown(wait=True)
 
     def test_two_jobs_at_once_with_one_slot_run_one_after_the_other(self):
         worker = Blocking(cancellable=False)
@@ -289,7 +307,7 @@ class TestCancel:
         executor.shutdown(wait=True)
         assert final["state"] == "cancelled" and "error" not in final
         assert [e["state"] for e in logs] == ["queued", "running", "cancelling", "cancelled"]
-        assert logs[-1]["cancel_reason"] == "cancel"
+        assert logs[-1]["cancel_reason"] == "requested"
 
     def test_cancel_twice(self):
         worker = Blocking(cancellable=False)
@@ -353,7 +371,6 @@ class TestSubscribers:
         stream = pool.follow(job_id, wait_s=0)
         assert next(stream)["sequence"] == next(stream)["sequence"] == 1
         stream.close()
-        assert pool._jobs[job_id]["subscribers"] == 0
 
     def test_many_subscribers_each_see_the_end(self):
         worker = Blocking(cancellable=False)
@@ -371,7 +388,6 @@ class TestSubscribers:
         for thread in threads:
             thread.start()
         ready.wait(FAILSAFE_S)
-        assert pool._jobs[job_id]["subscribers"] == 8
         worker.release.set()
         for thread in threads:
             thread.join(FAILSAFE_S)
@@ -384,62 +400,373 @@ class TestSubscribers:
         assert pool.wait(job_id, 1, timeout=None)["state"] == "done"
 
 
-class TestAbandoned:
-    def test_a_job_nobody_follows_is_cancelled_after_the_grace_time(self):
+class TestGoesOnWithoutItsPage:
+    """Item 9: once accepted, a slice job runs to its end whether or not anything follows it."""
+
+    def test_a_job_nobody_follows_past_120_s_ends_done(self):
         clock = FakeClock()
         worker = Blocking()
-        pool, logs, executor = threaded_pool(worker, clock=clock, abandon_grace_s=60)
+        pool, logs, executor = threaded_pool(worker, clock=clock)
         job_id = pool.submit()
         assert worker.started.wait(FAILSAFE_S)
-        clock.now += 59
-        assert pool.sweep() == (0, 0)
-        clock.now += 1
-        assert pool.sweep() == (1, 0)
-        assert wait_final(pool, job_id)["state"] == "cancelled"
+        clock.now += 121                          # past the old grace time, with no follower ever
+        assert pool.sweep() == 0
+        assert pool.get(job_id)["state"] == "running"
+        worker.release.set()
+        assert wait_final(pool, job_id)["state"] == "done"
         executor.shutdown(wait=True)
-        assert logs[-1]["cancel_reason"] == "abandoned"
+        assert [e["state"] for e in logs] == ["queued", "running", "done"]
 
-    def test_a_subscriber_that_returns_resets_the_grace_time(self):
+    def test_a_queued_job_nobody_follows_is_not_ended(self):
         clock = FakeClock()
-        pool, _ = make_pool(executor=HeldExecutor(), clock=clock, abandon_grace_s=60)
+        pool, _ = make_pool(executor=HeldExecutor(), clock=clock)
         job_id = pool.submit()
-        pool.subscribe(job_id)
-        clock.now += 100
-        assert pool.sweep() == (0, 0)             # followed: never abandoned
-        pool.unsubscribe(job_id)
-        clock.now += 30
-        pool.subscribe(job_id)                    # back within the grace time
-        pool.unsubscribe(job_id)
-        clock.now += 59
-        assert pool.sweep() == (0, 0)
-        clock.now += 1
-        assert pool.sweep() == (1, 0)
-        assert pool.get(job_id)["state"] == "cancelled"
+        clock.now += 10 ** 6
+        assert pool.sweep() == 0
+        pool._executor.run_next()
+        assert pool.get(job_id)["state"] == "done"
 
-    def test_an_abandoned_job_that_finishes_as_it_is_cancelled_ends_cancelled_like_a_callers_cancel(self):
-        # Nobody is waiting for its file: it ends cancelled, the file discarded, and its log
-        # lines say it was abandoned and which file was thrown away.
-        discarded = []
-
-        def worker(job_id, payload, context):
-            pool.sweep()                               # the grace time has passed; it finishes anyway
-            return {"file": "late.gcode.3mf"}
+    def test_a_follower_that_leaves_changes_nothing(self):
+        worker = Blocking(cancellable=False)
         clock = FakeClock()
-        pool, logs = make_pool(worker, clock=clock, abandon_grace_s=0, on_discard=discarded.append)
+        pool, _logs, executor = threaded_pool(worker, clock=clock)
         job_id = pool.submit()
-        assert pool.get(job_id)["state"] == "cancelled" and pool.result(job_id) is None
-        assert discarded == [{"file": "late.gcode.3mf"}]
-        assert [(e["state"], e.get("cancel_reason")) for e in logs] == \
-            [("queued", None), ("running", None), ("cancelling", "abandoned"), ("cancelled", "abandoned")]
-        assert logs[-1]["file_discarded"] == "late.gcode.3mf" and "file" not in logs[-1]
+        assert worker.started.wait(FAILSAFE_S)
+        stream = pool.follow(job_id, wait_s=FAILSAFE_S)
+        next(stream)
+        stream.close()                            # the page went away
+        clock.now += 10 ** 6
+        pool.sweep()
+        worker.release.set()
+        assert wait_final(pool, job_id)["state"] == "done"
+        executor.shutdown(wait=True)
 
-    def test_unsubscribe_of_an_unknown_job_or_below_zero_is_harmless(self):
+    def test_there_is_no_grace_time_any_more(self):
+        assert not hasattr(jobs, "ABANDON_GRACE_S")
+
+
+class Gates:
+    """A worker whose every slice job waits for its own gate: `started[n]` is set when the
+    n-th job to run has started, `release(n)` lets it finish (or, once stopped, end)."""
+
+    def __init__(self, count=4, stoppable=True):
+        self.started = [threading.Event() for _ in range(count)]
+        self.gates = [threading.Event() for _ in range(count)]
+        self.order = []
+        self.stoppable = stoppable      # False: a stop is seen only once the gate opens (an Orca still dying)
+        self._lock = threading.Lock()
+
+    def release(self, n):
+        self.gates[n].set()
+
+    def __call__(self, job_id, payload, context):
+        with self._lock:
+            n = len(self.order)
+            self.order.append(job_id)
+        if self.stoppable:
+            context.stop.listen(self.gates[n].set)
+        self.started[n].set()
+        assert self.gates[n].wait(FAILSAFE_S)
+        if context.stop.is_set():
+            raise SliceCancelled("stopped")
+        return {"file": f"{job_id}.gcode.3mf"}
+
+
+def wait_for(pool, job_id, predicate):
+    """The job's first report for which predicate(report) holds, waiting on its reports."""
+    report = pool.get(job_id)
+    while not predicate(report):
+        assert report["state"] not in FINAL, report
+        report = pool.wait(job_id, report["sequence"], timeout=FAILSAFE_S)
+    return report
+
+
+class TestAhead:
+    """Item 8: every queued report says how many slice jobs are ahead, over every user key."""
+
+    def test_the_first_report_of_a_job_says_none_are_ahead(self):
         pool, _ = make_pool(executor=HeldExecutor())
-        pool.unsubscribe("nope")
+        job_id = pool.submit("p", user_key="a", plate_id="p1", submission_id="s1")
+        assert pool.get(job_id)["ahead"] == 0
+
+    def test_with_one_running_and_two_queued_they_report_1_and_2_and_then_1(self):
+        gates = Gates()
+        pool, _logs, executor = threaded_pool(gates)
+        first = pool.submit(user_key="a", plate_id="p1", submission_id="s1")
+        assert gates.started[0].wait(FAILSAFE_S)
+        second = pool.submit(user_key="b", plate_id="p1", submission_id="s1")
+        third = pool.submit(user_key="c", plate_id="p9", submission_id="s9")
+        assert (pool.get(second)["ahead"], pool.get(third)["ahead"]) == (1, 2)
+        assert "ahead" not in pool.get(first)
+        before = pool.get(third)
+        gates.release(0)
+        after = wait_for(pool, third, lambda r: r["ahead"] == 1)
+        assert after["sequence"] == before["sequence"] + 1 and after["state"] == "queued"
+        assert gates.started[1].wait(FAILSAFE_S)
+        assert wait_for(pool, second, lambda r: r["state"] == "running")
+        assert pool.get(third)["ahead"] == 1          # the second running: still one ahead
+        assert "ahead" not in pool.get(second)
+        gates.release(1)
+        assert gates.started[2].wait(FAILSAFE_S)
+        gates.release(2)
+        assert wait_final(pool, third)["state"] == "done"
+        executor.shutdown(wait=True)
+        assert all("ahead" not in pool.get(j) for j in (first, second, third))
+
+    def test_a_queued_job_that_ends_moves_those_behind_it_up(self):
+        pool, _ = make_pool(executor=HeldExecutor())
+        ids = [pool.submit(user_key="a", plate_id=f"p{n}", submission_id=f"s{n}") for n in range(3)]
+        assert [pool.get(j)["ahead"] for j in ids] == [0, 1, 2]
+        sequence = pool.get(ids[2])["sequence"]
+        assert pool.cancel(ids[0]) == "cancelled"
+        assert [pool.get(j)["ahead"] for j in ids[1:]] == [0, 1]
+        assert pool.get(ids[2])["sequence"] == sequence + 1
+        assert "ahead" not in pool.get(ids[0])
+
+    def test_no_new_report_when_the_count_does_not_change(self):
+        pool, _ = make_pool(executor=HeldExecutor())
+        first = pool.submit(user_key="a", plate_id="p1", submission_id="s1")
+        sequence = pool.get(first)["sequence"]
+        pool.submit(user_key="a", plate_id="p2", submission_id="s2")      # behind it: nothing changes for it
+        assert pool.get(first)["sequence"] == sequence
+
+
+class TestCancelReason:
+    """Item 8: every cancelled report carries why the slice job ended early."""
+
+    def test_a_requested_cancel_of_a_queued_job(self):
+        pool, logs = make_pool(executor=HeldExecutor())
         job_id = pool.submit()
-        pool.unsubscribe(job_id)
-        assert pool._jobs[job_id]["subscribers"] == 0
-        assert pool.subscribe("nope") is False
+        pool.cancel(job_id)
+        assert pool.get(job_id)["cancel_reason"] == "requested"
+        assert (logs[-1]["state"], logs[-1]["cancel_reason"]) == ("cancelled", "requested")
+
+    def test_a_requested_cancel_of_a_running_job(self):
+        worker = Blocking()
+        pool, logs, executor = threaded_pool(worker)
+        job_id = pool.submit()
+        assert worker.started.wait(FAILSAFE_S)
+        pool.cancel(job_id)
+        final = wait_final(pool, job_id)
+        executor.shutdown(wait=True)
+        assert (final["state"], final["cancel_reason"]) == ("cancelled", "requested")
+        assert [(e["state"], e.get("cancel_reason")) for e in logs][-2:] == \
+            [("cancelling", "requested"), ("cancelled", "requested")]
+
+    def test_a_shutdown(self):
+        worker = Blocking()
+        pool, logs, _executor = threaded_pool(worker)
+        running, queued = pool.submit(), pool.submit()
+        assert worker.started.wait(FAILSAFE_S)
+        pool.shutdown()
+        assert [pool.get(j)["cancel_reason"] for j in (running, queued)] == ["shutdown", "shutdown"]
+        assert {e["cancel_reason"] for e in logs if e["state"] == "cancelled"} == {"shutdown"}
+
+    def test_a_replacement(self):
+        pool, logs = make_pool(executor=HeldExecutor())
+        earlier = pool.submit(user_key="a", plate_id="p1", submission_id="s1")
+        pool.submit(user_key="a", plate_id="p1", submission_id="s2")
+        assert pool.get(earlier)["cancel_reason"] == "replaced"
+        cancelled = [e for e in logs if e["state"] == "cancelled"]
+        assert [(e["job"], e["cancel_reason"]) for e in cancelled] == [(earlier, "replaced")]
+
+    def test_a_job_that_ends_cancelled_by_itself_still_says_why(self):
+        # A worker that raises SliceCancelled with no stop asked of it: the pool never asked,
+        # so the reason is the one left, requested.
+        def worker(job_id, payload, context):
+            raise SliceCancelled("stopped")
+        pool, _ = make_pool(worker)
+        assert pool.get(pool.submit())["cancel_reason"] == "requested"
+
+    def test_no_other_report_carries_a_reason(self):
+        pool, _ = make_pool()
+        failing, _ = make_pool(lambda *a: (_ for _ in ()).throw(ValueError("x")))
+        assert "cancel_reason" not in pool.get(pool.submit())
+        assert "cancel_reason" not in failing.get(failing.submit())
+
+
+class TestReplacement:
+    """Item 7: a plate's later slice job ends its earlier one, of the same user key only."""
+
+    def test_a_queued_one_is_ended_at_once(self):
+        cleaned = []
+        pool, _ = make_pool(executor=HeldExecutor(), cleanup=cleaned.append)
+        earlier = pool.submit("earlier", user_key="a", plate_id="p1", submission_id="s1")
+        later = pool.submit("later", user_key="a", plate_id="p1", submission_id="s2")
+        assert pool.get(earlier)["state"] == "cancelled" and cleaned == ["earlier"]
+        assert pool.get(later)["state"] == "queued" and pool.get(later)["ahead"] == 0
+        pool._executor.run_next()                     # the earlier's turn: it never runs
+        pool._executor.run_next()
+        assert pool.get(later)["state"] == "done"
+
+    def test_a_running_one_is_reported_replaced_only_once_its_work_has_stopped(self):
+        gates = Gates(stoppable=False)
+        pool, logs, executor = threaded_pool(gates)
+        earlier = pool.submit(user_key="a", plate_id="p1", submission_id="s1")
+        assert gates.started[0].wait(FAILSAFE_S)
+        later = pool.submit(user_key="a", plate_id="p1", submission_id="s2")
+        # Its stop is set, but its work has not returned: it is not yet reported ended.
+        assert pool.get(earlier)["state"] == "running"
+        assert [(e["job"], e["state"], e.get("cancel_reason")) for e in logs][-2:] == \
+            [(earlier, "cancelling", "replaced"), (later, "queued", None)]
+        assert pool.get(later)["ahead"] == 1            # the earlier still holds the one Orca
+        gates.release(0)
+        final = wait_final(pool, earlier)
+        assert (final["state"], final["cancel_reason"]) == ("cancelled", "replaced")
+        assert gates.started[1].wait(FAILSAFE_S)
+        gates.release(1)
+        assert wait_final(pool, later)["state"] == "done"
+        executor.shutdown(wait=True)
+
+    def test_a_running_one_that_finishes_as_it_is_replaced_discards_its_file(self):
+        discarded = []
+        worker = Blocking(cancellable=False, result={"file": "late.gcode.3mf"})
+        pool, _logs, executor = threaded_pool(worker, on_discard=discarded.append)
+        earlier = pool.submit(user_key="a", plate_id="p1", submission_id="s1")
+        assert worker.started.wait(FAILSAFE_S)
+        later = pool.submit(user_key="a", plate_id="p1", submission_id="s2")
+        worker.release.set()                           # it returns its file all the same
+        assert wait_final(pool, earlier)["cancel_reason"] == "replaced"
+        assert wait_final(pool, later)["state"] == "done"
+        executor.shutdown(wait=True)
+        assert discarded == [{"file": "late.gcode.3mf"}] and pool.result(earlier) is None
+
+    def test_another_plate_and_another_user_key_are_untouched(self):
+        pool, _ = make_pool(executor=HeldExecutor(), max_queued=5)
+        mine = pool.submit(user_key="a", plate_id="p1", submission_id="s1")
+        other_plate = pool.submit(user_key="a", plate_id="p2", submission_id="s2")
+        other_user = pool.submit(user_key="b", plate_id="p1", submission_id="s3")
+        pool.submit(user_key="a", plate_id="p1", submission_id="s4")
+        assert [pool.get(j)["state"] for j in (mine, other_plate, other_user)] == ["cancelled", "queued", "queued"]
+
+    def test_a_finished_one_is_not_touched(self):
+        pool, _ = make_pool()
+        earlier = pool.submit(user_key="a", plate_id="p1", submission_id="s1")
+        before = pool.get(earlier)
+        pool.submit(user_key="a", plate_id="p1", submission_id="s2")
+        assert pool.get(earlier) == before and before["state"] == "done"
+
+    def test_with_every_place_taken_by_one_user_key_a_changed_plate_is_accepted_and_another_refused(self):
+        gates = Gates(stoppable=False)
+        pool, _logs, executor = threaded_pool(gates)
+        running = pool.submit(user_key="a", plate_id="p1", submission_id="s1")
+        assert gates.started[0].wait(FAILSAFE_S)
+        waiting = [pool.submit(user_key="a", plate_id=f"p{n}", submission_id=f"s{n}") for n in (2, 3)]
+        with pytest.raises(QueueFull):
+            pool.submit(user_key="a", plate_id="p4", submission_id="s4")
+        with pytest.raises(QueueFull):
+            pool.submit(user_key="b", plate_id="p1", submission_id="s5")
+        changed_waiting = pool.submit(user_key="a", plate_id="p3", submission_id="s6")
+        assert pool.get(waiting[1])["cancel_reason"] == "replaced"
+        changed_running = pool.submit(user_key="a", plate_id="p1", submission_id="s7")
+        with pytest.raises(QueueFull):
+            pool.submit(user_key="a", plate_id="p4", submission_id="s8")
+        gates.release(0)
+        assert wait_final(pool, running)["cancel_reason"] == "replaced"
+        for n in (1, 2, 3):
+            assert gates.started[n].wait(FAILSAFE_S)
+            gates.release(n)
+        for job_id in (waiting[0], changed_waiting, changed_running):
+            assert wait_final(pool, job_id)["state"] == "done"
+        executor.shutdown(wait=True)
+        assert gates.order == [running, waiting[0], changed_waiting, changed_running]
+
+    def test_a_later_one_refused_as_busy_leaves_the_earlier_as_it_was(self):
+        # The earlier one is already being stopped (a requested cancel), so it holds no place
+        # to give up: the later one finds every place taken and replaces nothing.
+        gates = Gates(stoppable=False)
+        pool, logs, executor = threaded_pool(gates, max_queued=1)
+        earlier = pool.submit(user_key="a", plate_id="p1", submission_id="s1")
+        assert gates.started[0].wait(FAILSAFE_S)
+        assert pool.cancel(earlier) == "cancelling"
+        others = [pool.submit(user_key="b", plate_id=f"p{n}", submission_id=f"s{n}") for n in (8, 9)]
+        with pytest.raises(QueueFull):
+            pool.submit(user_key="a", plate_id="p1", submission_id="s2")
+        assert pool.remembered("a", "s2") is None
+        gates.release(0)
+        assert wait_final(pool, earlier)["cancel_reason"] == "requested"
+        assert [e["state"] for e in logs if e["job"] == earlier].count("cancelling") == 1
+        for n in (1, 2):
+            assert gates.started[n].wait(FAILSAFE_S)
+            gates.release(n)
+        assert [wait_final(pool, j)["state"] for j in others] == ["done", "done"]
+        executor.shutdown(wait=True)
+
+    def test_while_closing_nothing_is_replaced(self):
+        pool, _ = make_pool(executor=HeldExecutor())
+        earlier = pool.submit(user_key="a", plate_id="p1", submission_id="s1")
+        pool._closing.set()
+        with pytest.raises(QueueFull):
+            pool.submit(user_key="a", plate_id="p1", submission_id="s2")
+        assert pool.get(earlier)["state"] == "queued"
+
+    def test_jobs_without_a_plate_or_a_user_key_replace_nothing(self):
+        pool, _ = make_pool(executor=HeldExecutor())
+        first, second = pool.submit(), pool.submit()
+        assert [pool.get(j)["state"] for j in (first, second)] == ["queued", "queued"]
+
+
+class TestRepeat:
+    """Item 7: a submission the pool remembers, under the same user key, starts nothing."""
+
+    def test_a_repeat_is_the_first_attempts_job(self):
+        pool, logs = make_pool(executor=HeldExecutor())
+        first = pool.submit("p", user_key="a", plate_id="p1", submission_id="s1")
+        assert pool.remembered("a", "s1") == first
+        with pytest.raises(jobs.RepeatedSubmission) as caught:
+            pool.submit("p", user_key="a", plate_id="p1", submission_id="s1")
+        assert caught.value.job_id == first
+        assert pool.get(first)["state"] == "queued" and pool.get(first)["sequence"] == 1
+        assert [e["state"] for e in logs] == ["queued"]
+        assert pool.counts()["queued"] == 1
+
+    def test_one_value_under_two_user_keys_is_two_submissions(self):
+        pool, _ = make_pool(executor=HeldExecutor())
+        first = pool.submit(user_key="a", plate_id="p1", submission_id="s1")
+        assert pool.remembered("b", "s1") is None
+        second = pool.submit(user_key="b", plate_id="p1", submission_id="s1")
+        assert second != first and pool.get(first)["state"] == "queued"
+
+    def test_a_repeat_is_answered_even_when_every_place_is_taken_or_the_pool_closes(self):
+        pool, _ = make_pool(executor=HeldExecutor(), max_queued=0)
+        first = pool.submit(user_key="a", plate_id="p1", submission_id="s1")
+        with pytest.raises(jobs.RepeatedSubmission):
+            pool.submit(user_key="a", plate_id="p1", submission_id="s1")
+        pool._closing.set()
+        with pytest.raises(jobs.RepeatedSubmission):
+            pool.submit(user_key="a", plate_id="p1", submission_id="s1")
+        assert pool.get(first)["state"] == "queued"
+
+    def test_a_repeat_of_an_ended_job_is_that_job(self):
+        pool, _ = make_pool()
+        first = pool.submit(user_key="a", plate_id="p1", submission_id="s1")
+        assert pool.remembered("a", "s1") == first and pool.get(first)["state"] == "done"
+
+    def test_an_expired_job_is_no_longer_remembered(self):
+        clock = FakeClock()
+        pool, _ = make_pool(clock=clock, ttl_s=10)
+        pool.submit(user_key="a", plate_id="p1", submission_id="s1")
+        clock.now += 10
+        pool.sweep()
+        assert pool.remembered("a", "s1") is None
+
+    def test_nothing_is_remembered_without_a_user_key_or_a_value(self):
+        pool, _ = make_pool(executor=HeldExecutor())
+        pool.submit()
+        assert pool.remembered(None, None) is None
+        assert pool.remembered("a", None) is None
+
+    def test_a_refused_submission_is_not_remembered(self):
+        pool, _ = make_pool(executor=HeldExecutor(), max_running=1, max_queued=0)
+        pool.submit(user_key="a", plate_id="p1", submission_id="s1")
+        with pytest.raises(QueueFull):
+            pool.submit(user_key="a", plate_id="p2", submission_id="s2")
+        assert pool.remembered("a", "s2") is None
+
+    def test_the_payload_of_a_job(self):
+        pool, _ = make_pool(executor=HeldExecutor())
+        job_id = pool.submit("the payload")
+        assert pool.payload(job_id) == "the payload" and pool.payload("nope") is None
 
 
 class TestExpiry:
@@ -449,9 +776,9 @@ class TestExpiry:
         pool, logs = make_pool(clock=clock, ttl_s=3600, on_discard=discarded.append)
         job_id = pool.submit()
         clock.now += 3599
-        assert pool.sweep() == (0, 0)
+        assert pool.sweep() == 0
         clock.now += 1
-        assert pool.sweep() == (0, 1)
+        assert pool.sweep() == 1
         assert pool.get(job_id) is None
         assert [d["file"] for d in discarded] == ["Box-20261009-1432.gcode.3mf"]
         assert logs[-1]["state"] == "expired"
@@ -459,11 +786,11 @@ class TestExpiry:
     def test_a_running_job_never_expires_and_finishes_normally(self):
         clock = FakeClock()
         worker = Blocking(cancellable=False)
-        pool, _logs, executor = threaded_pool(worker, clock=clock, ttl_s=10, abandon_grace_s=10 ** 9)
+        pool, _logs, executor = threaded_pool(worker, clock=clock, ttl_s=10)
         job_id = pool.submit()
         assert worker.started.wait(FAILSAFE_S)
         clock.now += 10 ** 6
-        assert pool.sweep() == (0, 0)
+        assert pool.sweep() == 0
         worker.release.set()
         assert wait_final(pool, job_id)["state"] == "done"
         executor.shutdown(wait=True)
@@ -588,13 +915,12 @@ class TestALogThatFails:
 
     def test_a_cancel_and_a_sweep_still_work(self):
         clock = FakeClock()
-        pool = JobPool(good_worker, executor=HeldExecutor(), log=BrokenLog(), clock=clock, ttl_s=1,
-                       abandon_grace_s=1)
-        queued, abandoned = pool.submit(), pool.submit()
+        pool = JobPool(good_worker, executor=HeldExecutor(), log=BrokenLog(), clock=clock, ttl_s=1)
+        queued, unfollowed = pool.submit(), pool.submit()
         assert pool.cancel(queued) == "cancelled"
         clock.now += 1
-        assert pool.sweep() == (1, 1)
-        assert pool.get(abandoned)["state"] == "cancelled" and pool.get(queued) is None
+        assert pool.sweep() == 1
+        assert pool.get(unfollowed)["state"] == "queued" and pool.get(queued) is None
 
     def test_the_sweeper_survives_a_log_that_fails_while_it_reports_a_failing_sweep(self):
         calls = []
@@ -664,4 +990,5 @@ class TestEdges:
 
 
 def test_constants_are_the_documented_defaults():
-    assert (jobs.MAX_RUNNING, jobs.MAX_QUEUED, jobs.RECORD_TTL_S, jobs.ABANDON_GRACE_S) == (1, 2, 3600, 120)
+    assert (jobs.MAX_RUNNING, jobs.MAX_QUEUED, jobs.RECORD_TTL_S) == (1, 2, 3600)
+    assert jobs.CANCEL_REASONS == ("replaced", "shutdown", "requested")

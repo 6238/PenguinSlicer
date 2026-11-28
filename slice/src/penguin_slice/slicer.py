@@ -56,8 +56,8 @@ How a run ends is decided in one place, settle(): a complete sliced file (_resul
 what complete means) is never discarded by a stop the slice service decides on itself. If
 Orca exited 0, or was stopped for a timeout or by the watchdog, and its sliced file is
 complete, the slice succeeds; a stop is then recorded in SliceResult.stop_note, and a peak
-over the ceiling in SliceResult.memory_note. A cancel (the caller's, an abandoned job's, a
-shutdown's) that ended Orca discards the file. Only then does a stop count, and only then
+over the ceiling in SliceResult.memory_note. A cancel (a replacement, a shutdown, a
+requested cancel) that ended Orca discards the file. Only then does a stop count, and only then
 Orca's own failure.
 """
 import collections
@@ -778,7 +778,7 @@ def _run_orca(cmd, output_dir, archive, timeout_s, stop=None, on_progress=None, 
     judge. Whatever an earlier run left in output_dir that settle() reads (the sliced file
     `archive` and its temporary name, result.json, the debug log) is removed first, so a
     run stopped before Orca writes anything is never handed an old file. A `stop` already
-    set by a cancel, an abandonment or a shutdown that came before Orca raises
+    set by a cancel (a replacement, a shutdown, a requested cancel) that came before Orca raises
     SliceCancelled and Orca is never started (a timeout or a watchdog stop is set only by
     the run itself, once Orca runs). Raises RuntimeError when the binary is missing,
     SliceError when the scratch folder cannot be written or Orca cannot start."""
@@ -818,7 +818,7 @@ def settle(run, archive, output_dir, supports_on=None, entries=(GCODE_ENTRY,)):
        that reached Orca is recorded in stop_note, a peak over the ceiling in memory_note.
     2. A stop the slice service sent and that ended Orca (run.stopped, the first reason
        asked): "memory" is slice.out_of_memory, "timeout" slice.timeout, any other (a
-       cancel, an abandoned job, a shutdown) SliceCancelled, even with a complete file.
+       replacement, a shutdown, a requested cancel) SliceCancelled, even with a complete file.
     3. Orca's own ending: its failure's error report, or the sliced file's own fault. A stop
        that was asked but did not end Orca (run.overtaken) is named in the detail."""
     if run.returncode == 0 or run.stopped in KEEPING_STOPS:
@@ -861,7 +861,7 @@ def _stop_error(run):
     if run.stopped == "timeout":
         return SliceError(TIMEOUT_MESSAGE, _stop_detail(run) + "\n" + _tail(run.output, DETAIL_LINES - 1),
                           code="timeout", error_code="slice.timeout", run=run)
-    return SliceCancelled(_stop_detail(run))          # a cancel, an abandoned job, a shutdown
+    return SliceCancelled(_stop_detail(run))          # a replacement, a shutdown, a requested cancel
 
 
 def _stop_detail(run):
