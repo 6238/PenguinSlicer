@@ -28,6 +28,25 @@ function usable(answer, path, problem) {
   return { ok: false, status: answer.status, report: { ...badAnswer(path, answer.status, JSON.stringify(answer.body)), detail: `${path}: ${fault}` } };
 }
 
+// endOpening(opening, {report, mark}): how the page's entry point ends the opening. An opening
+// that resolves marks the document opened (mark('true')); one that throws, a fault of the page's
+// own code, is reported as `page_failed` and marks the document failed (mark('failed')), so the
+// rejection is never left unhandled and the page's tests stop waiting. Resolves to the outcome,
+// {opened: false} on a throw.
+export async function endOpening(opening, { report, mark }) {
+  try {
+    const outcome = await opening;
+    mark('true');
+    return outcome;
+  } catch (err) {
+    const name = err && err.name ? err.name : 'Error';
+    const message = err && err.message ? err.message : String(err);
+    report('page_failed', { detail: `opening the page: ${name}: ${message}` });
+    mark('failed');
+    return { opened: false };
+  }
+}
+
 // openWizard({api, store, panel, storage}) resolves to {opened}, false when /api/me could not
 // be used (its report is shown, and nothing is asked or stored for a group).
 export async function openWizard({ api, store, panel, storage }) {

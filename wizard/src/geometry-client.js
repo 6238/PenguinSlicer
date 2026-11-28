@@ -7,9 +7,10 @@
 // waiting, and every later one, with wizard.layout_failed, so no question waits for ever.
 import { LAYOUT_FAILED, errorReport } from './geometry/errors.js';
 
-// createGeometryClient(port): `port` is the worker seam's ({post(message, transfer),
-// listen(onReply, onFailure)}).
-export function createGeometryClient(port) {
+// createGeometryClient(port, {report}): `port` is the worker seam's ({post(message, transfer),
+// listen(onReply, onFailure)}); `report(what, {detail})` sends a failure report about the page
+// itself: a worker that fails as a whole sends one `layout_failed` report, the first time only.
+export function createGeometryClient(port, { report = () => {} } = {}) {
   const waiting = new Map();
   let next = 0;
   let failed = null;
@@ -20,7 +21,9 @@ export function createGeometryClient(port) {
     waiting.delete(reply.id);
     resolve(reply.ok ? { ok: true, result: reply.result } : { ok: false, error: reply.error });
   }, (error) => {
-    failed = errorReport(LAYOUT_FAILED, `the worker failed: ${error && error.message ? error.message : String(error)}`);
+    const detail = `the worker failed: ${error && error.message ? error.message : String(error)}`;
+    if (!failed) report('layout_failed', { detail });
+    failed = failed ?? errorReport(LAYOUT_FAILED, detail);
     for (const resolve of waiting.values()) resolve({ ok: false, error: failed });
     waiting.clear();
   });

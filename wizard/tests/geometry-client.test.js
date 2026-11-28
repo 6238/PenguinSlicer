@@ -80,6 +80,19 @@ test('a worker that fails as a whole answers every question waiting with wizard.
   assert.equal(later.error.code, 'wizard.layout_failed');
 });
 
+test('a worker that fails as a whole sends one layout_failed report to the server\'s log, however often it fails', async () => {
+  const worker = new InThreadWorker();
+  const reports = [];
+  const geometry = createGeometryClient(worker.port, { report: (what, fields) => reports.push({ what, ...fields }) });
+  worker.hold();
+  const waiting = geometry.read('p-1', pulley(), 'mm');
+  worker.fail({ message: 'Failed to load the worker script' });
+  worker.fail({ message: 'a second error event' });
+  await waiting;
+  await geometry.picture('p-1', 88, PART_COLOURS[0]);
+  assert.deepEqual(reports, [{ what: 'layout_failed', detail: 'the worker failed: Failed to load the worker script' }]);
+});
+
 test('a part\'s picture is drawn at the row\'s 44 px times the screen\'s density, up to three', () => {
   assert.equal(PICTURE_CSS_PX, 44);
   assert.equal(picturePx(1), 44);
@@ -120,6 +133,20 @@ test('the heartbeat beats every 10 ms and measures the longest gap between two b
   assert.equal(meter.longest(), 250);
   assert.equal(meter.stop(), 250);
   assert.equal(clock.due, null);          // stopped: no timer left
+});
+
+test('a hold after the last beat and before stop is counted: the open gap is a gap', () => {
+  const clock = lateClock();
+  const meter = createHoldMeter(clock);
+  meter.start();
+  clock.beat();
+  clock.beat();
+  clock.t += 400;                         // the thread held for 400 ms; the next beat never came
+  assert.equal(meter.longest(), 400);
+  assert.equal(meter.stop(), 400);
+  assert.equal(meter.longest(), 400);     // stopped: the figure stays as it was at the stop
+  clock.t += 1000;
+  assert.equal(meter.longest(), 400);
 });
 
 test('starting the heartbeat again measures afresh', async () => {

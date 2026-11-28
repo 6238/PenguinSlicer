@@ -310,6 +310,52 @@ test('a plate written by a later page, in a format this page does not know, is l
   assert.deepEqual(b.records.value(`plates/${a.plate.plate_id}`), record);
 });
 
+test('a stored plate of this page\'s format that the page cannot read is dropped, never taken up, with one page_failed report', async () => {
+  const b = browser();
+  const a = await openTab(b, 'A');
+  await a.storage.addPart({ sha256: 'aa', units: 'mm', name: 'Bracket' }, bytes(84, 1));
+  const good = b.records.value(`plates/${a.plate.plate_id}`);
+  b.locks.closeTab('A');
+  b.records.map.set('plates/no-list', { ...good, plate_id: 'no-list', parts: { 0: 'not a list' }, last_used_ms: good.last_used_ms + 2 });
+  b.records.map.set('part-bytes/no-list/aa.mm', bytes(84, 1));
+  const { settings, ...withoutSettings } = good;
+  b.records.map.set('plates/no-settings', { ...withoutSettings, plate_id: 'no-settings', last_used_ms: good.last_used_ms + 1 });
+  // The tab names the broken plate, as a refresh of its tab would.
+  const c = await openTab(b, 'C', { tab: new FakeTab({ 'penguinslicer.plate_id': 'no-list' }) });
+  assert.equal(c.plate.plate_id, a.plate.plate_id);          // the readable plate is taken up
+  assert.equal(c.plate.parts.length, 1);
+  assert.deepEqual(b.records.keys().filter((k) => k.includes('no-list') || k.includes('no-settings')), []);
+  assert.deepEqual(b.reports.map((r) => r.what), ['page_failed']);
+  assert.match(b.reports[0].detail, /2 stored plates/);
+  assert.equal(c.tab.get('penguinslicer.plate_id'), a.plate.plate_id);
+});
+
+test('a stored plate the page cannot read that another tab holds is left alone', async () => {
+  const b = browser();
+  const a = await openTab(b, 'A');
+  const record = { ...b.records.value(`plates/${a.plate.plate_id}`), parts: null };
+  b.records.map.set(`plates/${a.plate.plate_id}`, record);
+  const c = await openTab(b, 'C');
+  assert.notEqual(c.plate.plate_id, a.plate.plate_id);
+  assert.deepEqual(b.records.value(`plates/${a.plate.plate_id}`), record);
+});
+
+test('New plate drops the old plate while still holding its lock, so no tab can take it up half-deleted', async () => {
+  const b = browser();
+  const a = await openTab(b, 'A');
+  const old = a.plate.plate_id;
+  await a.storage.addPart({ sha256: 'aa', units: 'mm', name: 'Bracket' }, bytes(84, 1));
+  const heldWhileDeleting = [];
+  const forget = b.records.map.delete.bind(b.records.map);
+  b.records.map.delete = (key) => {
+    if (key.includes(old)) heldWhileDeleting.push(b.locks.heldBy('A').includes(plateLock(old)));
+    return forget(key);
+  };
+  await a.storage.newPlate();
+  assert.deepEqual(heldWhileDeleting, [true, true]);
+  assert.equal(b.locks.heldBy('A').includes(plateLock(old)), false);
+});
+
 test('New plate drops the plate, bytes and all, and begins another with a new id, keeping the settings when asked', async () => {
   const b = browser();
   const a = await openTab(b, 'A');

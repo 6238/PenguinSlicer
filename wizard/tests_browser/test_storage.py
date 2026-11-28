@@ -72,6 +72,30 @@ def test_a_tab_opened_beside_an_open_one_does_not_take_its_plate(page, front_ser
     assert len({plate_id(a), plate_id(c), plate_id(d)}) == 3
 
 
+def test_a_duplicated_tab_begins_a_plate_of_its_own_and_never_waits_for_the_original(page, front_server):
+    # Chrome copies a tab's sessionStorage when it duplicates the tab: the copy names the plate
+    # the open original holds. Asking for that plate's lock must never wait (the original would
+    # hold it until it closed, and the copy would never open).
+    a = open_tab(page, front_server)
+    first = plate_id(a)
+    a.set({"step": "layout"})
+    a.run("await wizard.storage.written();")
+    before = stored(a, f"plates/{first}")
+    copy = page.context.new_page()
+    copy.set_default_timeout(10_000)                           # a copy that waits for the lock fails soon
+    copy.add_init_script(
+        "try { sessionStorage.setItem('penguinslicer.plate_id', %s); } catch (e) {}" % json.dumps(first))
+    c = open_tab(copy, front_server)
+    assert c.page.evaluate("() => sessionStorage.getItem('penguinslicer.plate_id')") != first
+    second = plate_id(c)
+    assert second != first
+    assert c.run("return wizard.store.get().step;") == "parts"
+    assert stored(a, f"plates/{first}") == before
+    held = sorted(a.page.evaluate("async () => (await navigator.locks.query()).held.map((l) => l.name)"))
+    assert held == sorted([f"penguinslicer-plate/{first}", f"penguinslicer-plate/{second}"])
+    assert a.problems == [] and c.problems == []
+
+
 def test_the_owner_is_stored_from_the_start(page, front_server):
     a = open_tab(page, front_server)
     assert stored(a, "owner") == example("wizard-front/me.json")["user"]["id"]

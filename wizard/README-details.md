@@ -1240,7 +1240,8 @@ needs no worker. Every result arrives a moment after it was asked for, so each j
 yet" state (a row without its picture, an instance selected before its patches appear); a
 part's geometry is handed to the main thread as transferable buffers, so it is not copied
 twice. The page measures the longest stretch the main thread was held by a heartbeat: a 10 ms
-timer on the main thread, the hold being the longest gap between two beats, for its tests and
+timer on the main thread, the hold being the longest gap between two beats, the gap still open
+since the last beat counted too (a hold just before the measuring stops is a hold), for its tests and
 its reports ([What the wizard reports about itself](#what-the-wizard-reports-about-itself)).
 The browser's long-task timing is not the measure: in the second trial Chromium reported long
 tasks of 0.1 to 0.9 s during steps whose answers all came back in under 0.3 s while the
@@ -1256,7 +1257,8 @@ message with an id, answered by its own reply whatever order the replies come in
 copied to the worker and never transferred, since the page keeps them in the browser's storage and
 uploads them; and a worker that fails as a whole (its script cannot load, an error it did not catch)
 answers every question waiting, and every later one, with `wizard.layout_failed`, so no question
-waits for ever. The heartbeat is `createHoldMeter` in `wizard/src/hold-meter.js` (`start`, `longest`,
+waits for ever, and sends one `layout_failed` report the first time it fails
+([What the wizard reports about itself](#what-the-wizard-reports-about-itself)). The heartbeat is `createHoldMeter` in `wizard/src/hold-meter.js` (`start`, `longest`,
 `stop`), on the clock seam. The running wizard exports both (`wizard.geometry`, `wizard.holdMeter`).
 
 **A part's picture** on its row is drawn in the worker (`drawPicture` in
@@ -1269,9 +1271,11 @@ both is near the part's own colour rather than white), each pixel the average of
 a transparent ground. It is drawn at `PICTURE_CSS_PX` (44) times the screen's density, up to three,
 and put on the page as a canvas of class `thumb`, which the mockup's style sheet sizes as
 `.part-item .thumb` (`partPicture` in `wizard/src/part-picture.js`). It takes 18 ms for
-`hub-150k.stl` on Node; in Chromium, reading a part and drawing its picture held the main thread at
-most 11 ms (the heartbeat's longest gap) for every kept part, `hub-150k.stl` included. Pictures of
-each kept part, at 88 pixels, are in `docs/orchestration/phase-2/look/wizard-3/`.
+`hub-150k.stl` on Node; in Chromium, reading a part, drawing its picture and putting it on the page
+held the main thread at most 12 ms (the heartbeat's longest gap, the open gap up to the heartbeat's
+stop included) for every kept part, `hub-150k.stl` included. Pictures of each kept part, at 88
+pixels, are in `docs/orchestration/phase-2/look/wizard-3/`, made again with `make -C wizard
+look-parts`, which prints each part's hold.
 
 All of it is written fresh: an implementer may read Orca's source to understand a method,
 and no Orca code, comment or constant name enters the repository.
@@ -2044,8 +2048,14 @@ where the browser gives no Web Locks (plain HTTP from another machine) keeps its
 refresh and never takes up another, since it cannot tell which are held.
 
 **When a plate is dropped.** A stored plate that no tab holds and that has not been used for 12 hours
-is dropped, checked when any page opens; a plate an open tab holds is never dropped under it. A plate
-is also dropped when the user presses New plate in its tab or changes the current group, and every
+is dropped, checked when any page opens; a plate an open tab holds is never dropped under it. A stored
+plate of the page's own format whose shape the page cannot use (its parts or instances not lists, its
+settings missing, its `plate_id` not its key's) is never taken up and is dropped, unless a tab holds
+it, with one `page_failed` report for the opening; a plate of a format the page does not know, which
+a later release's page wrote, is left alone. A plate
+is also dropped when the user presses New plate in its tab or changes the current group (its records
+deleted while the tab still holds its lock, which is let go only then, so no tab opening meanwhile
+takes up a plate half deleted), and every
 stored plate, with `uploadUnits` and `currentGroup`, is cleared when `/api/me` names a different user
 from `owner`.
 
@@ -2073,7 +2083,10 @@ clock); a closed tab's lock is released and its plate can be taken up; a plate n
 at 12 hours and one an open tab holds is not; a different user's sign-in clears every plate; a full
 plate of 25 parts of 7.5 MB stored, the page reloaded, everything back; a refused write, caused on
 purpose by a fake storage, gives the amber line and one report; a cleared storage opens empty with one
-report.
+report; a stored plate the page cannot read is dropped with one report and never taken up; New plate
+deletes the old plate's records while still holding its lock. In Chromium, a duplicated tab (a second
+page whose `sessionStorage` names the open first page's plate) opens at once with a plate of its own,
+the first plate untouched, which proves the lock is asked for without waiting.
 
 As built, `tests/storage.test.js` runs several pages on one fake storage (`FakeRecords`), each tab
 with its own fake `sessionStorage` (`FakeTab`) and all with one fake of the browser's locks
@@ -2195,7 +2208,10 @@ loads (a version 4 UUID, `randomId` in `wizard/src/environment.js`). A page that
 drops its reports. As built: the failure reports, with `browser` and `browser_version` from the
 browser's brands or its user agent and `software_3d` from whether a WebGL context asked to fail on a
 major performance caveat is refused (`browserEnvironment`), asked once when the first report needs
-it; the storage's two failures send them. The drawing summaries come with item 18 of
+it; the storage's two failures send them, a stored plate the page cannot read and an opening that
+throws (`endOpening` in `wizard/src/opening.js`, which then marks the document `data-opened="failed"`)
+send `page_failed`, and a worker that fails as a whole sends `layout_failed`. The handler for every
+uncaught error and rejected promise and the drawing summaries come with item 18 of
 [By phase](#by-phase).
 
 **Failures in the browser,** `POST /api/reports/failure`: `what` one of `part_not_drawable`,
@@ -2251,7 +2267,7 @@ or is not yet in a contract:
 | Tooltip delay; printer details close | 150 ms; 300 ms | The mockup | Fake clock |
 | Quiet retrying; retrying in all | 20 s; 300 s, waits doubling 1 to 30 s | The guide | Fake clock |
 | A progress stream counted as failed | 20 s failing to reopen, 45 s open and silent | The guide | Fake clock, fake front server |
-| The main thread held | Never over 250 ms, any step, any plate up to the limits, on the machine without a graphics card | Set; measured so far only for reading a part and drawing its picture: at most 11 ms in Chromium on that machine, `hub-150k.stl` included | Measured by the page in tests and real use |
+| The main thread held | Never over 250 ms, any step, any plate up to the limits, on the machine without a graphics card | Set; measured so far only for reading a part and drawing its picture: at most 12 ms in Chromium on that machine, `hub-150k.stl` included | Measured by the page in tests and real use |
 | A part's row says it is slow | 4 s | The mockup | Fake clock |
 | One part; different parts; instances | 7.5 MB (150,000 triangles); 25; 150 | The slice service's | One over each |
 | Storage in the browser | 25 parts of 7.5 MB for each tab's plate | Met for one tab in headless Chromium on the machine without a graphics card: stored and read back after a refresh, none refused; several tabs' full plates, and Chrome on the Mac, unmeasured | A full plate stored and reloaded |
@@ -2401,6 +2417,7 @@ rewritten nor refused, and the content security policy is what stops it loading.
 | `test-browser` | The tests in Chromium, after `build` |
 | `build` | `wizard/dist/` from `wizard/src/` and `wizard/vendor/` |
 | `look` | After `build`: pictures of the panel as a whole beside the mockup's, at 320, 480, 520 and 680 px, into `docs/orchestration/phase-2/look/wizard-2/` with an `index.html` showing the pairs |
+| `look-parts` | After `build`: the picture of each kept part as its row will show it, at 88 pixels, drawn by the page's own worker in Chromium, into `docs/orchestration/phase-2/look/wizard-3/` (`wizard/tests_browser/look_parts.py`), printing the main thread's longest hold for each part |
 | `trials` | Both opening trials' measurements, as [How the trials and measurements are run](#how-the-trials-and-measurements-are-run) says: runs `trials-preview` and `trials-geometry`, the second even when the first fails, and fails when either does |
 | `trials-preview` | The first trial: `wizard/trials/preview/run.py` (needs the three sliced files in `wizard/trials/sliced/`, made by `wizard/trials/make_sliced_files.py`) |
 | `trials-geometry` | The second trial: `wizard/trials/geometry/run.py` |

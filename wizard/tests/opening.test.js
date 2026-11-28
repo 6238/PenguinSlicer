@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createApi } from '../src/api.js';
-import { openWizard } from '../src/opening.js';
+import { endOpening, openWizard } from '../src/opening.js';
 import { createReports } from '../src/reports.js';
 import { createStore } from '../src/state.js';
 import { createStorage } from '../src/storage.js';
@@ -333,6 +333,20 @@ test('a cleared storage sends one storage_cleared report through the front serve
   await openPage(b, 'A', { tab: a.tab });
   const reports = b.server.made('POST', '/api/reports/failure').map((r) => JSON.parse(r.body));
   assert.deepEqual(reports.map((r) => [r.what, r.page, r.step]), [['storage_cleared', 'page-A', 'parts']]);
+});
+
+test('an opening that ends marks the page opened; one that throws is reported as page_failed and marks the page failed', async () => {
+  const marks = [];
+  const reports = [];
+  const report = (what, fields) => reports.push({ what, ...fields });
+  const ended = await endOpening(Promise.resolve({ opened: true }), { report, mark: (m) => marks.push(m) });
+  assert.deepEqual(ended, { opened: true });
+  assert.deepEqual(marks, ['true']);
+  assert.deepEqual(reports, []);
+  const failed = await endOpening(Promise.reject(new TypeError('stored.parts.filter is not a function')), { report, mark: (m) => marks.push(m) });
+  assert.deepEqual(failed, { opened: false });
+  assert.deepEqual(marks, ['true', 'failed']);
+  assert.deepEqual(reports, [{ what: 'page_failed', detail: 'opening the page: TypeError: stored.parts.filter is not a function' }]);
 });
 
 test('the sentences of a choice gone are the wizard\'s own', () => {

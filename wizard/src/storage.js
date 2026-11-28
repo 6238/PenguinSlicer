@@ -46,6 +46,18 @@ function emptyPlate(plateId, user, group, now, settings = null) {
   };
 }
 
+const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+// Whether a stored plate of PLATE_FORMAT, under the key of `plateId`, has the shape the page
+// takes up and opens: anything else would throw while the page opens.
+function readable(p, plateId) {
+  return p.plate_id === plateId && typeof p.user === 'string' && typeof p.group === 'string'
+    && Array.isArray(p.parts) && p.parts.every((part) => isObject(part) && typeof part.sha256 === 'string' && typeof part.units === 'string')
+    && Array.isArray(p.instances)
+    && isObject(p.settings) && isObject(p.settings.changes)
+    && typeof p.step === 'string' && Number.isFinite(p.last_used_ms);
+}
+
 const failure = (err) => `${err && err.name ? err.name : 'Error'}: ${err && err.message ? err.message : String(err)}`;
 
 // createStorage({openRecords, locks, tab, clock, newId, report}):
@@ -97,15 +109,21 @@ export function createStorage({ openRecords, locks, tab, clock, newId, report })
     return locks.tryHold(plateLock(plateId));
   }
 
+  // The stored plates of this page's format, {plates, unreadable}: `unreadable` names, by the
+  // plate_id in their key, the plates of this format whose shape the page cannot use. A plate of
+  // another format is in neither: a later release's page wrote it.
   async function readPlates() {
     const keys = await records.keys();
     const plates = [];
+    const unreadable = [];
     for (const key of keys) {
       if (!key.startsWith(PLATES)) continue;
       const value = await records.get(key);
-      if (value && value.format === PLATE_FORMAT) plates.push(value);
+      if (!value || value.format !== PLATE_FORMAT) continue;
+      if (readable(value, key.slice(PLATES.length))) plates.push(value);
+      else unreadable.push(key.slice(PLATES.length));
     }
-    return plates;
+    return { plates, unreadable };
   }
 
   // Takes a stored plate into this tab: its parts whose bytes were never saved are gone with the
@@ -149,7 +167,14 @@ export function createStorage({ openRecords, locks, tab, clock, newId, report })
           // Drop every plate no tab holds and unused for PLATE_UNUSED_H.
           const held = locks ? await locks.held() : new Set();
           const fresh = [];
-          for (const p of await readPlates()) {
+          const { plates, unreadable } = await readPlates();
+          // A plate of this format the page cannot read is dropped unless a tab holds it.
+          const dropped = unreadable.filter((id) => !held.has(plateLock(id)));
+          for (const id of dropped) await dropPlate(id);
+          if (dropped.length) {
+            report('page_failed', { detail: `${dropped.length} stored plate${dropped.length === 1 ? '' : 's'} of format ${PLATE_FORMAT} the page could not read, dropped` });
+          }
+          for (const p of plates) {
             const unused = now - p.last_used_ms >= PLATE_UNUSED_H * 3600 * 1000;
             if (unused && !held.has(plateLock(p.plate_id))) await dropPlate(p.plate_id);
             else fresh.push(p);
@@ -238,12 +263,14 @@ export function createStorage({ openRecords, locks, tab, clock, newId, report })
 
     // Drops this tab's plate and begins an empty one with a new plate_id, in `group` (by default
     // the plate's own), keeping the filament, the profile and the changes when `keepSettings`.
+    // The old plate is dropped while this tab still holds its lock, and only then let go, so no
+    // tab opening meanwhile can take up a plate whose records are being deleted.
     async newPlate({ group = plate.group, keepSettings = false } = {}) {
       const old = plate;
-      if (release) release();
-      release = null;
       unsaved.clear();
       await dropPlate(old.plate_id);
+      if (release) release();
+      release = null;
       const plateId = newId();
       release = await hold(plateId);
       plate = emptyPlate(plateId, old.user, group, clock.now(), keepSettings ? structuredClone(old.settings) : null);

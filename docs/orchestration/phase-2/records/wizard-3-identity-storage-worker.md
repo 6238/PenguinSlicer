@@ -107,6 +107,69 @@ built is described in the details file's sections
     `look` script wait for it; the requests the opening made are counted apart. Reason: the opening
     sets the store, and a test that set it first would race with it.
 
+### Decisions of the review round (finding numbers are the reviewer's on pull request #37)
+
+23. **The heartbeat counts the gap still open when it is read or stopped** (blocking finding 1).
+    The details defined the hold as "the longest gap between two beats", which leaves out a hold
+    after the last beat and before the measuring stops: in the worker's browser test that is the
+    stretch where the picture goes on the page. Chosen: `longest()` and `stop()` count the open
+    gap too; a stopped meter keeps the figure it had at the stop. Re-measured with
+    `make -C wizard look-parts` over all ten kept parts: at most 12 ms (`clamp-plate-inner.stl`;
+    `hub-150k.stl` 11 ms), so the figure in the details file and the guide went from 11 to 12 ms.
+    The reviewer's mutation (a 400 ms busy wait after `putImageData`) now fails both reading
+    tests (409 and 403 ms). To overrule: measure only between beats, and accept that the end of
+    a measured stretch is unseen.
+24. **The duplicated tab is tested in Chromium** (blocking finding 2) by a second page whose
+    `sessionStorage` is set, by an init script, to name the open first page's plate. With
+    `ifAvailable` removed from the locks seam the test fails (the copy never opens); restored, it
+    passes and the first plate's record is unchanged. No code change was needed.
+25. **A stored plate of this page's format whose shape the page cannot use** (minor finding 1) is
+    never taken up and is dropped, unless a tab holds it, with one `page_failed` report for the
+    opening naming how many. The documents are silent. Readable means: `plate_id` equal to its
+    key's, `user` and `group` strings, `parts` a list of objects with string `sha256` and `units`,
+    `instances` a list, `settings` an object with a `changes` object, `step` a string and
+    `last_used_ms` a finite number. Reason: the page knows its own format, so such a plate is a
+    fault, not a later release's work, and keeping it would break every opening until it aged
+    out (which it never would, its time being unreadable). `page_failed` because it is the page's
+    own writing gone wrong; the contract's list has no closer `what`. To overrule: change
+    `readable` in `wizard/src/storage.js`, or leave such plates alone as for an unknown format.
+26. **An opening that throws** (minor finding 2) is caught by `endOpening` in
+    `wizard/src/opening.js`: one `page_failed` report, and the document marked
+    `data-opened="failed"`, so the rejection is never unhandled and a test waiting for the
+    opening stops. The user is shown nothing new: the documents give no sentence for a page that
+    cannot open, and inventing an error code is not this batch's to do; the general handler
+    for uncaught errors comes with item 18. To overrule: give the failure a notification with
+    its own code and sentences in `wizard/src/sentences.js`.
+27. **New plate deletes the old plate's records while still holding its lock** (minor finding
+    3), and lets the lock go only then. Reason: a tab opening between the release and the
+    deletion could take up a plate half deleted. To overrule: nothing; there is no gain in the
+    old order.
+28. **The kept parts' pictures are made by `make -C wizard look-parts`**
+    (`wizard/tests_browser/look_parts.py`, minor finding 4): the page's own worker in Chromium,
+    the first of the parts' colours, at twice the density (88 pixels), with each part's hold
+    printed. The pictures were made again by it; they differ from the first ones only in their
+    PNG encoding.
+29. **The bounds of the picture message, `MIN_PICTURE_PX` 16 and `MAX_PICTURE_PX` 512** (minor
+    finding 5), in `wizard/src/geometry/picture.js`. The documents are silent. Chosen: 16 is
+    below any picture the rows draw (44 at the lowest density) and 512 is far above the largest
+    (132 at three times), while bounding the worker's buffer at 1 MB of pixels. A `px` outside
+    them, or not whole, is the page's fault, `wizard.layout_failed`. To overrule: change the two
+    figures.
+30. **The *proposed* way of knowing a cleared storage is settled as built** (minor finding 5):
+    an `owner` record gone while the tab's `sessionStorage` still names a plate, reported once
+    as `storage_cleared`, since the opening writes `owner` again at once. Reason: `owner` is
+    written on every first opening, so its absence while the tab names a plate can only mean the
+    storage was cleared under the tab. It misses a storage cleared while no tab of the site was
+    open (no tab then names a plate), which is indistinguishable from a first visit. Tested in
+    the fast suite and in Chromium with the real IndexedDB deleted. To overrule: keep a
+    second marker outside IndexedDB (for example in `localStorage`) and compare the two.
+31. **A worker that fails as a whole sends one `layout_failed` report** (minor finding 6), the
+    first time only, with the failure in `detail`. The details file says a `wizard.layout_failed`
+    answer is reported as `layout_failed` when the geometry's code failed; a worker failing as a
+    whole is its own code failing. To overrule: report it as `page_failed`.
+
+No finding of the review was declined: each was checked against the code and reproduced.
+
 ## Targets missed
 
 None.
@@ -119,7 +182,13 @@ None.
   worker's report and the main thread's never being held while it arrives are built and tested.
 - Choosing a group, the group details and the fall-back on `front.group_not_allowed`: phase 3.
 - The records `signInTrip` and `selfReload`: phase 3 and item 17.
-- The drawing summaries of the page's reports: item 18.
+- The drawing summaries of the page's reports, and the handler that reports every uncaught error
+  and rejected promise as `page_failed`: item 18.
+- Reporting a `wizard.layout_failed` answer of the worker (its code failing on one part, the
+  worker still running), and the notification of a worker that fails: they belong to the steps
+  that ask the worker and show its answers, items 8 and 10, and need the worker to tell its own
+  failure from the page asking wrongly. Only the worker failing as a whole is reported now.
+- A notification for a page whose opening throws (decision 26): no sentence for it exists.
 - How often a browser refuses or clears the storage with several tabs' full plates, in Chrome on the
   Mac and in real use: only one tab's full plate was stored, in headless Chromium.
 - The second run of the browser tests in Edge.
@@ -127,7 +196,8 @@ None.
 ## For the owner to look at
 
 - The pictures of each kept part as its row will show it, at 88 pixels (44 at twice the density):
-  [docs/orchestration/phase-2/look/wizard-3/](../../look/wizard-3/).
+  [docs/orchestration/phase-2/look/wizard-3/](../../look/wizard-3/), made again by
+  `make -C wizard look-parts`, which also prints the main thread's longest hold for each part.
 - `make -C wizard test` and `make -C wizard test-browser`; the new tests are
   `wizard/tests/storage.test.js`, `wizard/tests/opening.test.js`, `wizard/tests/reports.test.js`,
   `wizard/tests/geometry/picture.test.js`, `wizard/tests/geometry-client.test.js`,
