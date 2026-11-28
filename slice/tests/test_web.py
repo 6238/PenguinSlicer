@@ -887,6 +887,46 @@ class TestTheSlicedFileOnceStored:
         assert job_folders(work) == []
 
 
+class TestTheListOfSliceJobs:
+    """Item 11: GET /slices, every slice job the slice service process knows, for a front
+    server that has just started."""
+
+    def test_the_list_answers_in_the_contracts_shape(self, tmp_path, monkeypatch, work):
+        install_fake_orca(tmp_path, monkeypatch, "ok")
+        executor = HeldExecutor()
+        client, pool, _logs = app_with(work, executor=executor, wall_clock=lambda: 1795817638.0)
+        done = submit(client, plate_configuration(plate_id="plate-a")).get_json()["job"]
+        executor.run_next()
+        queued = submit(client, plate_configuration(plate_id="plate-b")).get_json()["job"]
+        answer = client.get("/slices")                 # the whole slice service: no user key needed
+        assert answer.status_code == 200 and answer.headers["Cache-Control"] == "no-store"
+        body = answer.get_json()
+        example = json.loads((EXAMPLES / "slice-http" / "slices-list.json").read_text())
+        assert set(body) == set(example) == {"slices"}
+        assert [e["job"] for e in body["slices"]] == [done, queued]
+        for entry in body["slices"]:
+            assert set(entry) == set(example["slices"][0])
+            assert {k: type(v) for k, v in entry.items() if k not in ("ended_at",)} == \
+                {k: type(v) for k, v in example["slices"][0].items() if k not in ("ended_at",)}
+        first, second = body["slices"]
+        assert (first["user_key"], first["plate_id"], first["progress"]["state"]) == (USER_KEY, "plate-a", "done")
+        assert (first["file_on_disk"], first["ended_at"]) == (True, "2026-11-27T22:13:58Z")
+        assert first["submission_id"].startswith("submission-")
+        assert (second["progress"]["state"], second["file_on_disk"], second["ended_at"]) == ("queued", False, None)
+        assert second["progress"] == pool.get(queued)
+
+    def test_a_deleted_file_is_listed_as_not_on_disk(self, tmp_path, monkeypatch, work):
+        install_fake_orca(tmp_path, monkeypatch, "ok")
+        client, _pool, _logs = app_with(work)
+        job_id = submit(client, plate_configuration()).get_json()["job"]
+        client.delete(f"/slices/{job_id}/file", headers=HEADERS)
+        assert client.get("/slices").get_json()["slices"][0]["file_on_disk"] is False
+
+    def test_a_newly_started_process_lists_nothing(self, work):
+        client = create_app(work, start_sweeper=False).test_client()
+        assert client.get("/slices", headers=HEADERS).get_json() == {"slices": []}
+
+
 class FirstAtOnce:
     """Runs the first slice job submitted at once, on the calling thread, and holds the rest."""
 
@@ -1168,8 +1208,8 @@ class TestEveryAnswerIsAnErrorReport:
     """Every status of 400 or more the app gives is an error report, never Flask's HTML."""
 
     @pytest.mark.parametrize("method, path, status", [("get", "/nothing", 404), ("put", "/slices", 405),
-                                                      ("get", "/slices", 405), ("post", "/slices/jx", 405),
-                                                      ("put", "/parts", 405)])
+                                                      ("delete", "/slices", 405), ("post", "/slices/jx", 405),
+                                                      ("put", "/parts", 405), ("post", "/slices/jx/file", 405)])
     def test_a_path_or_method_not_offered(self, work, method, path, status):
         client, _pool, _logs = app_with(work)
         answer = getattr(client, method)(path, headers=HEADERS)

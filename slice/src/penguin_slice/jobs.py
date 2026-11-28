@@ -57,6 +57,7 @@ import threading
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 
 from .slicer import SliceCancelled, Stop
 
@@ -148,6 +149,11 @@ def exception_text(exc):
     return text if len(text) <= UNEXPECTED_DETAIL_CHARS else text[:UNEXPECTED_DETAIL_CHARS] + " [cut]"
 
 
+def rfc3339(seconds):
+    """A moment of the wall clock as the HTTP interface writes a time: UTC, to the second."""
+    return datetime.fromtimestamp(seconds, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def _default_error(exc):
     return {"code": "slice.unexpected", "message": GENERIC_FAILURE, "remedy": "Slice again.", "retryable": False,
             "detail": exception_text(exc)}
@@ -162,8 +168,9 @@ class JobPool:
 
     def __init__(self, worker, *, executor=None, max_running=MAX_RUNNING, max_queued=MAX_QUEUED,
                  ttl_s=RECORD_TTL_S, clock=time.monotonic, log=None, error_report=None, on_discard=None,
-                 cleanup=None):
+                 cleanup=None, wall_clock=None):
         self._worker = worker
+        self._wall_clock = wall_clock or time.time      # the moment a job ended (ended_at), in UTC
         self._executor = executor or ThreadPoolExecutor(max_workers=max_running, thread_name_prefix="slice")
         self._places = max_running + max_queued
         self._ttl_s = ttl_s
@@ -208,7 +215,7 @@ class JobPool:
                                   "state": "queued", "submitted": self._clock(), "started": None, "finished": None,
                                   "stop": Stop(), "result": None, "describe": describe or {},
                                   "expected_s": expected_s, "cancel_asked": None, "payload": payload,
-                                  "file_deleted": False,
+                                  "file_deleted": False, "ended_at": None,
                                   "user_key": user_key, "plate_id": plate_id, "submission_id": submission_id}
             if expected_s is not None:
                 self._jobs[job_id]["report"]["expected_s"] = expected_s
@@ -264,6 +271,18 @@ class JobPool:
             record["file_deleted"] = True
             self._log_transition(job_id, "file_deleted")
             return "deleted", record["result"]
+
+    def listing(self):
+        """Every job the pool remembers, waiting, running or ended, of every user key, in the
+        order accepted (contracts/slice-http-interface.md, GET /slices): job, user_key,
+        plate_id, submission_id, progress (its latest report), file_on_disk (a done job's
+        sliced file not yet given up by delete_file) and ended_at (RFC 3339 in UTC, None
+        while it waits or runs)."""
+        with self._lock:
+            return [{"job": job_id, "user_key": r["user_key"], "plate_id": r["plate_id"],
+                     "submission_id": r["submission_id"], "progress": self._snapshot(r),
+                     "file_on_disk": r["state"] == "done" and r["result"] is not None and not r["file_deleted"],
+                     "ended_at": r["ended_at"]} for job_id, r in self._jobs.items()]
 
     def file_deleted(self, job_id):
         """Whether delete_file() gave up the job's sliced file."""
@@ -447,6 +466,7 @@ class JobPool:
     def _finish(self, record, job_id, state, error=None, result=None, exc=None, discarded=None):
         record["state"] = state
         record["finished"] = self._clock()
+        record["ended_at"] = rfc3339(self._wall_clock())
         record["result"] = result
         if state == "cancelled":       # always with its reason; a stop the pool never asked counts as requested
             record["cancel_asked"] = record["cancel_asked"] or REQUESTED

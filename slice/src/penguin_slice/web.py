@@ -5,6 +5,8 @@
                                   part store; 201 with the part's record
     POST   /slices                a plate configuration as a JSON body, its parts named by
                                   hash and units: 202 with the slice job
+    GET    /slices                every slice job this process remembers, of every user key:
+                                  {"slices": [...]}, for a front server that has just started
     GET    /slices/<job>          the slice job's latest progress report
     GET    /slices/<job>/events   the slice job's progress reports as a stream
                                   (text/event-stream), the latest first, ending with the final one
@@ -17,8 +19,8 @@
     GET    /settings-table       the table of settings (contracts/settings-table.md) whole,
                                   gzip-encoded when the request accepts it
 
-Every one of these requests but the table of settings, which answers for the whole slice
-service, carries the user key in the header X-Penguin-User-Key: the
+Every one of these requests but the list of slice jobs and the table of settings, which
+answer for the whole slice service, carries the user key in the header X-Penguin-User-Key: the
 front server's word for whose part or slice job it is. A request without it, or with an
 empty one, is refused (slice.no_user_key). A part is kept, and a slice job held, under the
 user key that sent it; a request about another user key's slice job is answered exactly as
@@ -453,6 +455,13 @@ def create_app(work_dir=None, pool=None, *, log=None, start_sweeper=True, enviro
             answer = Response(table.raw, mimetype="application/json")
         answer.headers["Vary"] = "Accept-Encoding"
         return answer
+
+    @app.get("/slices")
+    def every_slice_job():
+        """Every slice job this slice service process remembers, of every user key, for a
+        front server that has just started. It answers for the whole slice service, so the
+        user key is not looked at."""
+        return jsonify({"slices": pool.listing()})
 
     @app.get("/slices/<job_id>")
     def progress(job_id):
