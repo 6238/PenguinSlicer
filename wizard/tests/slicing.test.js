@@ -407,6 +407,7 @@ test('the front server cannot be reached: the figures stop and the time-left lin
   assert.equal(card.elapsed, '1:26');                          // the time taken goes on counting
   assert.equal(card.stage, T.LAST_HEARD('Generating infill'));
   assert.equal(card.pct, '42%');
+  assert.equal(card.litLayers, 0);
   const held = page.server.made('GET', EVENTS)[1];
   held.held.release(steps.stream([events.version(), events.progress(progress({ fraction: 0.6, elapsed_s: 90, sequence: 25 }))]));
   await page.clock.advance(0);

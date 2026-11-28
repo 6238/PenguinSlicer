@@ -45,7 +45,7 @@ export function createPreviewStep(section, { slicing, store, clock }) {
     if (now) now.setAttribute('aria-current', 'step');
     const conn = $('#slice-conn');
     conn.hidden = !c.conn;
-    conn.className = c.conn && c.conn.kind === 'back' ? 'conn back' : 'conn';
+    conn.className = c.conn ? `conn ${c.conn.kind}` : 'conn';
     conn.textContent = c.conn ? c.conn.text : '';
   }
 

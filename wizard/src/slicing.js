@@ -457,7 +457,7 @@ export function createSlicing({
     return {
       pct: running && c.fraction !== null ? `${Math.floor(c.fraction * 100)}%` : '',
       fraction,
-      litLayers: Math.min(4, Math.floor(fraction * 5)),
+      litLayers: stalled ? 0 : Math.min(4, Math.floor(fraction * 5)),     // none while there is no news, as the mockup's
       stage,
       elapsed: clockText(elapsed),
       elapsedWord: running ? T.ELAPSED : T.WAITED,
