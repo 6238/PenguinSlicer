@@ -257,7 +257,13 @@ class Follower:
                     continue
                 followed.last_sequence = sequence
                 if report.get("state") == "done":
-                    self._store(followed, report)
+                    try:
+                        self._store(followed, report)
+                    except Exception:
+                        # A fault while storing: the stream opened again gives this `done`
+                        # report again, which must then not be dropped as already passed on.
+                        followed.last_sequence = sequence - 1
+                        raise
                     return True
                 self._publish(followed, report)
                 if report.get("state") in FINAL_STATES:

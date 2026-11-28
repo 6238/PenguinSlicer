@@ -670,6 +670,29 @@ def test_a_report_without_a_sequence_is_a_fault_logged_and_the_stream_opened_aga
     assert "without a sequence" in line["trace"] and line["slice"] == "j1"
 
 
+def test_a_fault_while_storing_is_logged_and_the_done_report_is_handled_again(
+        standin, follower, bucket, clock, log):
+    page = start(standin, follower)
+    watch(follower, "j1", page)
+    original = bucket.put
+    faults = []
+
+    def fault_once(name, data, **condition):
+        if not faults:
+            faults.append(name)
+            raise RuntimeError("a fault planted by the test")
+        return original(name, data, **condition)
+
+    bucket.put = fault_once
+    standin.report("j1", done("j1", 2))
+    clock.next_wait()
+    assert "a fault planted" in log.events("following_failed")[-1]["trace"]
+    clock.advance(1)
+    page.wait(lambda p: p.closed, "done")
+    assert page.reports[-1]["state"] == "done" and page.reports[-1]["sequence"] == 2
+    assert bucket.get(sliced.file_name(USER, "j1"))[0] == FILE
+
+
 def test_a_stream_refused_otherwise_is_opened_again(standin, follower, clock, log):
     standin.add_job("j1", USER, "p", "s", queued("j1"), file=FILE, summary=SUMMARY)
     standin.answer_next("GET", "/slices/j1/events", 500,
