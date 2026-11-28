@@ -83,6 +83,9 @@ def test_from_upload_to_download(page, slice_service, front_server):
     stages = [r["stage"] for r in reports if r.get("stage") in STAGES]
     assert [STAGES.index(s) for s in stages] == sorted(STAGES.index(s) for s in stages), \
         "a slice job never goes back to an earlier stage"
+    elapsed = [r["elapsed_s"] for r in reports]
+    assert all(isinstance(e, (int, float)) and e >= 0 for e in elapsed)
+    assert elapsed == sorted(elapsed)
     done = stream.final
     assert done["state"] == "done" and done["job"] == accepted["id"]
     details = done["sliced_file"]

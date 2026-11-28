@@ -152,7 +152,7 @@ phase 2 form, `Content-Type: application/json`, at most 1,048,576 bytes, with no
 | `job` | string | The slice job's id |
 | `plate_id` | string | The plate configuration's `plate_id`, as sent |
 | `submission_id` | string | The plate configuration's `submission_id`, as sent |
-| `progress` | object | The slice job's latest [progress report](progress-report.md): for a new slice job its first, `queued` with `ahead`; for a repeat, whatever is latest |
+| `progress` | object | The slice job's latest [progress report](progress-report.md) at the moment of the answer: for a new slice job its first, `queued` with `ahead`, unless the slice has already started, as it does at once when nothing is ahead of it, and then a later one; for a repeat, whatever is latest |
 | `part_warnings` | array | The warnings found on the plate's parts when each was uploaded, in the shape of the sliced file's `part_warnings` (with `where` naming the part) |
 
 See [examples/slice-http/slice-accepted.json](examples/slice-http/slice-accepted.json).

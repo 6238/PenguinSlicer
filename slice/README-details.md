@@ -608,7 +608,7 @@ their stand-ins, and the whole row, all three together, in the joined suite.
 | Request | Answer |
 |---|---|
 | `POST /parts?units=mm` or `?units=in`, one binary STL as the body | 201 with the part's record (see [The part store](#the-part-store)) |
-| `POST /slices`, a phase 2 plate configuration as a JSON body | 202 with `job`, `plate_id`, `submission_id`, the first progress report (`progress`, `queued` with `ahead`) and the `part_warnings`, each naming its part; for a repeat, the same with the latest report (see [A plate's slice jobs: repeats, replacement and the places](#a-plates-slice-jobs-repeats-replacement-and-the-places)) |
+| `POST /slices`, a phase 2 plate configuration as a JSON body | 202 with `job`, `plate_id`, `submission_id`, the latest progress report when the answer is made (`progress`: its first, `queued` with `ahead`, unless the slice has already started, as it does at once when nothing is ahead of it) and the `part_warnings`, each naming its part; for a repeat, the same with the latest report (see [A plate's slice jobs: repeats, replacement and the places](#a-plates-slice-jobs-repeats-replacement-and-the-places)) |
 | `GET /slices` | `{"slices": [...]}`, every slice job this slice service process remembers, of every user key, in the order accepted; the user key is not looked at (see "The list of slice jobs" under [Progress, cancellation and cleanup](#progress-cancellation-and-cleanup)) |
 | `GET /slices/<job>` | The latest progress report |
 | `GET /slices/<job>/events` | The progress reports as `text/event-stream`, the latest first, ending with the final one |

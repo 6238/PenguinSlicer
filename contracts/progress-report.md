@@ -12,8 +12,8 @@ anything that can take more than a few seconds: a slice, a delivery, a print.
 | `stage` | string | no | What the job is doing now, as a stable name, for example `generating_supports` or `uploading`. Each component's guide lists its stages in order. |
 | `stage_label` | string | no | The stage in words a user understands. |
 | `fraction` | number | no | How far through the whole job, from 0 to 1. Left out when it cannot be known; never invented. |
-| `elapsed_s` | number | yes | Seconds since the job started running. |
-| `expected_s` | number | no | The expected total running time in seconds, when an estimate exists. |
+| `elapsed_s` | number | yes | Seconds since the job started running; it may carry a fraction (a slice job's is to the millisecond). |
+| `expected_s` | number | no | The expected total running time in seconds, when an estimate exists; it may carry a fraction. |
 | `sequence` | integer | yes | Increases by one with every report of a job, so a client can tell a missed report from a repeated one. |
 | `error` | object | when `state` is `failed` | The [error report](error-report.md). |
 | `ahead` | integer | when a slice job's `state` is `queued` | From phase 2: how many slice jobs are ahead of this one, those running and those waiting before it, counted over every user. 0 or more. |

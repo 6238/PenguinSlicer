@@ -172,6 +172,45 @@ def test_every_place_taken_a_changed_plate_of_the_same_user_key_is_accepted(stan
     assert replaced["state"] == "cancelled" and replaced["cancel_reason"] == "replaced"
 
 
+def test_a_part_no_instance_names_is_not_read_and_so_never_missing(http):
+    # contracts/plate-configuration.md, "Fields in phase 2": only parts an instance names are
+    # read; the real slice service lists only those as missing.
+    assert upload(http, BRACKET).status_code == 201
+    plate = dict(PLATE, instances=[i for i in PLATE["instances"] if i["ref"] == "bracket"])
+    assert submit(http, plate).status_code == 202
+    answer = submit(http, dict(PLATE, submission_id="both"))
+    assert [m["key"] for m in answer.json()["where"]["missing_parts"]] == ["spacer"]
+
+
+def test_a_repeat_is_answered_before_any_check_and_the_stopping_answer_before_the_form(
+        standin, http):
+    # contracts/slice-http-interface.md, "Repeat and replacement" and "While stopping": the
+    # real slice service answers a remembered submission before any check, and the stopping
+    # answer before it reads the plate's form.
+    with_both_parts(http)
+    first = submit(http).json()
+    broken = {"submission_id": PLATE["submission_id"], "plate_id": "not an id"}
+    assert submit(http, broken).json()["job"] == first["job"]
+    standin.stopping = True
+    answer = submit(http, {"submission_id": "new", "plate_id": "not an id"})
+    assert answer.status_code == 503 and answer.json() == example("slice-http/stopping.json")
+
+
+def test_a_slice_job_that_starts_at_once_is_accepted_with_its_latest_report(standin, http):
+    # The real slice service answers a new slice job with its latest report, which is
+    # already `running` when nothing else waits and Orca starts at once
+    # (contracts/slice-http-interface.md, "The slice job").
+    with_both_parts(http)
+    standin.starts_at_once = True
+    accepted = submit(http).json()
+    assert accepted["progress"]["state"] == "running" and accepted["progress"]["sequence"] == 2
+    assert "ahead" not in accepted["progress"]
+    assert http.get(f"/slices/{accepted['job']}", headers=KEY).json() == accepted["progress"]
+    # One waiting behind it is still answered with its first report.
+    waiting = submit(http, dict(PLATE, plate_id="other", submission_id="other")).json()
+    assert (waiting["progress"]["state"], waiting["progress"]["ahead"]) == ("queued", 1)
+
+
 def test_a_stopping_slice_service_answers_the_examples_refusal_but_repeats_a_submission(
         standin, http):
     with_both_parts(http)

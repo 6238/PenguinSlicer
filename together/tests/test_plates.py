@@ -82,6 +82,15 @@ def test_a_part_the_part_store_has_forgotten_is_uploaded_again_and_the_plate_sub
     assert page.stream(accepted["id"]).wait_closed().final["state"] == "done"
 
 
+def test_a_part_no_instance_names_is_not_read(page):
+    """Only the parts an instance names are read: a part listed but never placed, and never
+    uploaded, neither refuses the plate nor is listed missing."""
+    configuration = clamp_plate(page)
+    configuration["parts"]["unplaced"] = {"name": "Unplaced", "sha256": "0" * 64, "units": "mm"}
+    accepted = page.submit(configuration)
+    assert page.stream(accepted["id"]).wait_closed().final["state"] == "done"
+
+
 def test_an_instance_naming_no_part_is_the_pages_fault_with_no_parts_listed(page):
     configuration = clamp_plate(page)
     configuration["instances"].append(dict(configuration["instances"][0], ref="nothing", x=250.0))

@@ -76,6 +76,34 @@ def test_a_part_the_slice_service_refuses_is_answered_with_its_own_bytes(page, s
     assert answer.json()["code"] == "slice.part_unreadable"
 
 
+def _without_detail(body):
+    report = json.loads(body)
+    report.pop("detail")
+    return report
+
+
+def test_the_two_refusals_for_size_the_front_server_makes_itself_are_the_slice_services_own(
+        page, slice_service):
+    """The front server refuses a part over 7,500,084 bytes and a plate configuration over
+    1,048,576 before reading either, with the slice service's report for that limit: the
+    same as the slice service answers, but for `detail`, which says who measured what."""
+    part = b"\0" * 7_500_085
+    headers = {"Content-Type": "application/octet-stream"}
+    answer = page.client.post("/api/parts", params={"units": "mm"}, content=part,
+                              headers={**page._headers(changing=True), **headers})
+    own = slice_service.request("POST", "/parts", params={"units": "mm"}, content=part, headers=headers)
+    assert (answer.status_code, own.status_code) == (413, 413)
+    assert _without_detail(answer.content) == _without_detail(own.content)
+
+    configuration = b"{" + b" " * 1_048_576 + b"}"
+    headers = {"Content-Type": "application/json"}
+    answer = page.client.post("/api/slices", content=configuration,
+                              headers={**page._headers(changing=True), **headers})
+    own = slice_service.request("POST", "/slices", content=configuration, headers=headers)
+    assert (answer.status_code, own.status_code) == (413, 413)
+    assert _without_detail(answer.content) == _without_detail(own.content)
+
+
 def test_a_part_without_its_units_is_refused_by_the_slice_service_not_the_front_server(page, slice_service):
     body = b"\0" * 84
     answer = page.client.post("/api/parts", content=body, headers={
