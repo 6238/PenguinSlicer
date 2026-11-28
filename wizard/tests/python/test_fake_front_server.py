@@ -7,7 +7,7 @@ import urllib.request
 
 import pytest
 
-from tests_browser.fake_front_server import FakeFrontServer, error_report, example
+from tests_browser.fake_front_server import EXAMPLES, FakeFrontServer, error_report, example, progress_event, stream
 
 VERSION_META = '<meta name="penguinslicer-version" content="__PENGUINSLICER_VERSION__">'
 
@@ -44,6 +44,26 @@ def test_the_default_answers_are_the_contract_examples(server, method, path, sta
     assert (got_status, got) == (status, body)
     assert headers["X-PenguinSlicer-Version"] == server.version
     assert headers["Cache-Control"] == "no-store"
+
+
+def test_a_progress_stream_is_by_default_the_contracts_example_closed(server):
+    status, headers, body = ask(server, "GET", "/api/slices/3f9a1c2b/events")
+    assert status == 200
+    assert headers["Content-Type"] == "text/event-stream"
+    assert headers["X-PenguinSlicer-Version"] == server.version
+    assert body.decode("utf-8") == (EXAMPLES / "wizard-front" / "slice-events.txt").read_text(encoding="utf-8")
+
+
+def test_a_held_stream_is_written_at_once_and_ends_when_released(server):
+    held = stream(progress_event({"job": "j", "state": "running", "sequence": 3}), hold=True)
+    server.script("GET", "/api/slices/j/events", held)
+    request = urllib.request.Request(server.url.rstrip("/") + "/api/slices/j/events")
+    with urllib.request.urlopen(request, timeout=10) as answer:
+        first = answer.readline()
+        held.release()
+        rest = answer.read()
+    assert first == b"event: progress\n"
+    assert rest.startswith(b"id: 3\n")
 
 
 def test_an_upload_is_answered_with_the_record_of_the_bytes_sent(server):

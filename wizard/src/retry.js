@@ -97,10 +97,11 @@ export function createRetryBoard(clock) {
     state,
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
 
-    // A request's attempt failed: its entry, made at its first failure.
-    failed(entry) {
+    // A request's attempt failed: its entry, made at its first failure, or at `since` (a moment in
+    // the clock's milliseconds) for a request that counts as failing from then.
+    failed(entry, since = null) {
       hidden = false;
-      const made = entry ?? { firstFailedAt: clock.now(), nextAttemptAt: null, timer: null, resume: null, parked: false, again: false };
+      const made = entry ?? { firstFailedAt: since ?? clock.now(), nextAttemptAt: null, timer: null, resume: null, parked: false, again: false };
       entries.add(made);
       changed();
       return made;

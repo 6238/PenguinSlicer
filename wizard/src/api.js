@@ -36,10 +36,13 @@ export function retryAfterS(value, nowMs) {
 // The attempt's time runs from sending until the headers arrive; then, while the body is read,
 // the attempt fails only when no bytes arrive for that same time. So a body that stalls fails
 // quietly, and a large one (a sliced file of up to 50 MB) arriving slowly is read to its end.
+// A progress stream (expect 'stream') is handed over once its headers arrive: the attempt's time
+// covers only those, and its caller's signal goes on ending it while the caller reads it.
 async function attemptOnce({ transport, clock, method, path, headers, body, timeoutS, expect, tellVersion, stop }) {
   const controller = new AbortController();
   const stopIt = () => controller.abort();
   if (stop) stop.addEventListener('abort', stopIt, { once: true });
+  let handedOver = false;
   let timer = null;
   const arm = () => {
     if (timer !== null) clock.cancel(timer);
@@ -57,6 +60,10 @@ async function attemptOnce({ transport, clock, method, path, headers, body, time
     if (!version) return { retry: true };           // not the front server's answer
     tellVersion(version);
     const success = answer.status >= 200 && answer.status < 300;
+    if (success && expect === 'stream') {
+      handedOver = true;
+      return { answer: { ok: true, status: answer.status, stream: { chunks: (onChunk) => answer.chunks(onChunk) } } };
+    }
     // While the body is read, each arrival of bytes gives the attempt its time afresh: a body
     // that stalls is aborted by the timer and, like one cut off partway by a restart, makes the
     // attempt fail quietly.
@@ -88,7 +95,7 @@ async function attemptOnce({ transport, clock, method, path, headers, body, time
     return { answer: { ok: false, status: answer.status, report: content } };
   } finally {
     if (timer !== null) clock.cancel(timer);
-    if (stop) stop.removeEventListener('abort', stopIt);
+    if (stop && !handedOver) stop.removeEventListener('abort', stopIt);
   }
 }
 
@@ -102,12 +109,18 @@ async function attemptOnce({ transport, clock, method, path, headers, body, time
 //     itself: one attempt, and {ok: false, dropped: true} on any failure), signal (an
 //     AbortSignal: its caller no longer wants the request, as when a part is removed while its
 //     upload is retried; the attempt being made is aborted, no other is made, the request leaves
-//     the panel line and resolves to {ok: false, stopped: true}).
+//     the panel line and resolves to {ok: false, stopped: true}), failingSince (a moment, in
+//     the clock's milliseconds: the request counts as failing since then before its first
+//     attempt, as a progress stream that has been silent too long does, so that the panel line
+//     follows from that moment). With expect 'stream' (a progress stream) a success resolves
+//     once its headers arrive to {ok: true, status, stream}, stream.chunks(onChunk) reading its
+//     body piece by piece until it ends, and `signal` ending it.
 //   get, post, put: request with that method.
 //   link(path): a plain link's address, naming the current group in its query.
 //   pending(): the requests sent and not yet answered.
 //   waiting(): of those, the ones waiting between attempts or for Try again.
 //   onVersion(listener): told every answer's X-PenguinSlicer-Version.
+//   heard(version): a version heard otherwise, as a progress stream's `version` event, told the same way.
 //   board: the retry board, for the panel line.
 export function createApi({ transport, clock, version, currentGroup = () => null, random = Math.random }) {
   const board = createRetryBoard(clock);
@@ -126,7 +139,7 @@ export function createApi({ transport, clock, version, currentGroup = () => null
   }
 
   async function request(method, path, options = {}) {
-    const { json, bytes, upload = false, expect = 'json', onSlow = null, once = false, signal = null } = options;
+    const { json, bytes, upload = false, expect = 'json', onSlow = null, once = false, signal = null, failingSince = null } = options;
     const attempt = () => attemptOnce({
       transport, clock, method, path,
       headers: headersFor(method, path, options),
@@ -152,6 +165,7 @@ export function createApi({ transport, clock, version, currentGroup = () => null
       }
       let index = 0;
       let slowTimer = null;
+      if (failingSince !== null) entry = board.failed(null, failingSince);
       try {
         for (;;) {
           if (signal && signal.aborted) { board.stop(entry); return STOPPED; }
@@ -207,6 +221,7 @@ export function createApi({ transport, clock, version, currentGroup = () => null
     pending: () => pending,
     waiting: () => waiting,
     onVersion(listener) { versionListeners.add(listener); return () => versionListeners.delete(listener); },
+    heard(v) { for (const listener of versionListeners) listener(v); },
     board,
   };
 }

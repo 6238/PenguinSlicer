@@ -1,11 +1,12 @@
 # The wizard
 
-Of the wizard a user sees, only the panel as a whole is built: the header with its step
-tabs, the line under them that says why a step is held and that the server is slow, the
-plate summary, Back and Next, the six ways the panel tells the user something and its own
-tooltip, with the page retrying every request. None of the five steps' contents is built
-yet; their project, tools, the two trials that open phase 2 and the geometry of the Layout
-step are ([What is to be built, by phase](#what-is-to-be-built-by-phase)). This guide is its design: what a user sees and does at
+Of the wizard a user sees, the panel as a whole is built (the header with its step tabs,
+the line under them that says why a step is held and that the server is slow, the plate
+summary, Back and Next, the six ways the panel tells the user something and its own
+tooltip, with the page retrying every request), and so are the Parts step, the Settings
+step with advanced mode, the Layout step, and the Preview step's slicing with every slice
+failure; the result with the layer preview, and the Send step, are not built yet
+([What is to be built, by phase](#what-is-to-be-built-by-phase)). This guide is its design: what a user sees and does at
 every step, what the code in the browser must do and how well, and what is still undecided.
 It is written for the person who decides whether the wizard is being built correctly.
 [README-details.md](README-details.md) holds what a builder needs beside it: the names in
@@ -2283,8 +2284,9 @@ The screens designed here follow the decisions recorded in the body.
 
 ## What is to be built, by phase
 
-Of what a user sees, the panel as a whole, the Parts step and the Layout step are built, and
-none of the other steps' contents. The
+Of what a user sees, the panel as a whole, the Parts step, the Settings step, the Layout step
+and the Preview step's slicing and its failures are built, and neither the result with the
+layer preview nor the Send step. The
 mockup is kept in the repository as the reference for the look, and its style sheet for the
 panel is taken over whole, unchanged, as the cheap way to match it; its scripts were faked,
 and the wizard's behaviour is built from this guide
@@ -2365,6 +2367,37 @@ longer than its quarter of a second during a drag: 0.39 to 0.49 s on the plate o
 0.22 to 0.46 s on a plate of 150 small spacers and up to 0.28 s on 150 of the largest part,
 which the record of the build lists as missed. Pictures of the built step beside the
 mockup's, at four widths and in each state the mockup shows, are kept with the build records.
+
+The Preview step's slicing is built as [Slicing](#slicing) and
+[When a slice fails](#when-a-slice-fails) describe it. Entering the step sends the plate's
+description, made from the stored plate, the Settings step's changes and the Layout step's
+instances, in exactly the form the slice service reads; a plate already sliced, or slicing,
+as it stands is not sent again, a plate that failed or found no room to wait is sent again,
+since it is not sliced, and a slice goes on, still followed, when the user leaves the
+step. A slice the server no longer knows two hours or more after it was sent is not sent
+again by the page itself: until the expired message is built, the server's own sentence shows
+with Slice again, and entering the step again slices. A repeat after a lost answer, the plate sent again while the slicer stops, and the
+plate sent again after the parts the slicer no longer holds have been uploaded again from the
+browser's storage (twice at most; a third time is shown as a failure) all carry the same
+value, so that they start one slice; the page sends a new value only when it decides to slice
+anew. The slicing card shows waiting behind others, waiting while the slicer restarts (with
+the line under the tabs saying the server could not be reached only after the 300 seconds),
+slicing, no news while the server cannot be reached and the line when the page hears again,
+and the line that the slicer restarted and the slice began again. No room to wait is the
+amber message with Slice again, and every failure of the slice service is the red message
+with its own sentences and the wizard's buttons, with Orca's own sentence under Details on the
+two empty-layers failures (the slice service writes no separate sentence of where to look on
+the part, its message naming the instance and the heights, so Details holds Orca's sentence
+alone); Turn on Supports and slice again checks the plate's spacing first.
+Progress arrives on a stream that is reopened silently when it closes, counts as failed after
+20 seconds without reopening or 45 seconds without a word, and is followed by asking every two
+seconds when the front server refuses a fifth stream. The description the page sends was
+checked against the real slice service's reading of the thirteen shared plates and of the
+contract's example, all fourteen read as expected, and the whole path was walked once from the
+built page through the real front server to the real slice service, with the slice service's
+stand-in for Orca. Until the result and the layer preview join it, a sliced plate shows one
+plain line in their place. Pictures of the slicing card and of each failure beside the
+mockup's, at four widths, are kept with the build records.
 
 The Settings step and advanced mode are built: the Filament and
 Profile menus with the filament's colour, the four quick changes with a value off a menu's
