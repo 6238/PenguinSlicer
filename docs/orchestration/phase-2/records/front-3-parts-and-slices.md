@@ -118,7 +118,8 @@ the refusal of one over 50 MB. Written Sat 2026-11-28, Pacific time.
 23. **The log lines.** Named `part_uploaded`, `slice_submitted`, `slice_record_unwritten`,
     `slice_followed`, `slice_progress` (each change of state or stage, not each report),
     `slice_stream_reopening`, `slice_ended`, `slice_unknown`, `sliced_file_retry`,
-    `sliced_file_stored` (with `stored_after_s`), `sliced_file_too_large`,
+    `sliced_file_stored` (with `stored_after_s`), `sliced_file_already_stored` (decision
+    28), `sliced_file_too_large`,
     `sliced_file_lost`, `following_failed`; each about a slice job carries the user key, the
     group and the slice job.
 24. **Answers of the slice service of the wrong shape.** A `202` without a `job` of the id's
@@ -136,6 +137,37 @@ the refusal of one over 50 MB. Written Sat 2026-11-28, Pacific time.
     before the delete (four failures); the limit on a sliced file (`>` to `>=`, one
     failure); the rate limit's window (`<=` to `<`, four failures); the plate
     configuration's limit (`>` to `>=`, one failure); and decision 21's fix (one failure).
+27. **After review: the `202` of a repeat that ended `done` is tested** (decision 10). Three
+    tests in `tests/test_slices.py` give the stand-in's `202` a `done` report at sequence 9:
+    with no record the page gets `running` at sequence 8 and no `sliced_file`; with a stored
+    record it gets the `done` with `sliced_file`; while the slice job is followed it gets the
+    following's latest report. Replacing `as_pages_see` with the `202`'s own `progress` fails
+    all three.
+28. **After review: a record found already `stored` or `failed` still sends the delete.** The
+    documents call for it (the details file's step 3, the guide, and the architecture's "the
+    moments until the front server has stored it"); the code had skipped it. That path is a
+    front server that wrote the record and stopped before its delete went out, so the slice
+    service is told again (`DELETE /slices/<job>/file` is idempotent; `slice.unknown_job`
+    counts as done) before the pages get the record's final report. A delete that fails is
+    tried again after the same waits, from the delete, with the page still waiting. The line
+    `sliced_file_already_stored` (`state`) is written. To overrule: drop the `_delete` call
+    in the `storing.found` branch of `Follower._store_steps`.
+29. **After review: `slice_ended_at` is kept across a fault while storing.** The following
+    notes the moment its `done` first arrived (`_Followed.ended_at`); a `done` handled again
+    after a fault (decision 21) keeps it instead of taking a later one.
+30. **After review: `Retry-After` rounds a part second up.** A test with 30.5 s left expects
+    31; the code already did so, and `int` in place of `math.ceil` now fails it.
+31. **Declined after review: a malformed `Content-Length` (`-1`, `abc`, `1e3`).** Not changed
+    in this batch. Werkzeug reads such a header as no length, so the body is read as empty and
+    the slice service refuses it in its own words (`slice.part_unreadable` for a part,
+    `slice.bad_plate_configuration` for a plate configuration), a report of the right form
+    that tells the page the request was bad. And no such header reaches the application when
+    the front server runs: Waitress, which serves it, answers `400` to any `Content-Length`
+    that is not all digits before the application runs (`waitress/parser.py`,
+    `ONLY_DIGIT_RE`, "Content-Length is invalid"), so all three examples reach it only
+    through Flask's test client. The reviewer placed the fix with the rules for every
+    request, an item of another batch, not with uploading and submitting; a check there (`400` `front.bad_request` for any
+    `Content-Length` that is not a whole number) is the way to overrule.
 
 ## Targets missed
 
@@ -152,9 +184,13 @@ the refusal of one over 50 MB. Written Sat 2026-11-28, Pacific time.
   no `Content-Length` at all: the HTTP client reads no further than a length a header
   states, so a lying header cannot carry more bytes than it says.
 - **The fast suite's time.** 768 tests, about 7.5 seconds on two workers and about 13 on
-  one, from about 4 and 7 before the batch. The slowest test, an upload of a part of
+  one, from about 4 and 7 before the batch (773 tests, about 9 seconds on two workers, after
+  the review's fixes). The slowest test, an upload of a part of
   exactly 7.5 MB, takes about 0.5 s; where the rest goes was not measured.
-- **Test first** was not met for item 12 (decision 26).
+- **Test first** was not met for item 12 (decision 26). The reviewer's finding on it cannot
+  be fixed after the fact; the fixes of decisions 27 to 30 were each written test first and
+  seen to fail for the finding's reason (decision 27's by the reviewer's mutation, since the
+  code was already right).
 
 ## Not done
 

@@ -446,18 +446,52 @@ def test_a_slice_job_unknown_when_its_file_is_fetched_ends_the_following(standin
     assert page.reports == [] and log.events("slice_unknown")
 
 
-def test_a_file_already_stored_is_not_fetched_again(standin, follower, bucket):
+def test_a_file_already_stored_is_not_fetched_again_and_its_delete_is_sent(standin, follower,
+                                                                           bucket):
+    # A front server that wrote the record and stopped before its delete went out: the
+    # slice service is still told, before the page gets done.
     write_record(bucket, sliced.record_name(USER, "j1"), "sliced_file", {
         "slice": "j1", "group": GROUP, "state": "stored", "file": "x.gcode.3mf",
         "size_bytes": 3, "summary": SUMMARY, "slice_ended_at": sliced.utc(START - 60),
         "report": done("j1", 2)})
     page = start(standin, follower)
-    watch(follower, "j1", page)
+    seen_delete = []
+
+    def deliver(report):
+        if report is not None:
+            seen_delete.append(bool(requests_of(standin, "DELETE", "/slices/j1/file")))
+        page.deliver(report)
+
+    follower.subscribe(USER, "j1", deliver)
     standin.report("j1", done("j1", 2))
     page.wait(lambda p: p.closed, "done")
     assert page.reports[-1]["sliced_file"]["expires_in_s"] == 7140
     assert requests_of(standin, "GET", "/slices/j1/file") == []
-    assert requests_of(standin, "DELETE", "/slices/j1/file") == []
+    assert len(requests_of(standin, "DELETE", "/slices/j1/file")) == 1
+    assert seen_delete == [True]
+    assert standin.jobs["j1"].file is None
+
+
+def test_a_delete_after_a_stored_record_that_fails_is_sent_again(standin, follower, bucket,
+                                                                  clock, log):
+    write_record(bucket, sliced.record_name(USER, "j1"), "sliced_file", {
+        "slice": "j1", "group": GROUP, "state": "stored", "file": "x.gcode.3mf",
+        "size_bytes": 3, "summary": SUMMARY, "slice_ended_at": sliced.utc(START),
+        "report": done("j1", 2)})
+    page = start(standin, follower)
+    watch(follower, "j1", page)
+    standin.answer_next("DELETE", "/slices/j1/file", 500,
+                        {"code": "slice.unexpected", "message": "m", "remedy": "r",
+                         "retryable": True, "detail": "d"})
+    standin.report("j1", done("j1", 2))
+    clock.next_wait()
+    assert page.reports == []
+    assert log.events("sliced_file_retry")[-1]["step"] == \
+        "telling the slice service the file is stored"
+    clock.advance(1)
+    page.wait(lambda p: p.closed, "done")
+    assert page.reports[-1]["state"] == "done"
+    assert len(requests_of(standin, "DELETE", "/slices/j1/file")) == 2
 
 
 def test_the_state_bucket_not_read_before_storing_is_read_again(standin, follower, bucket,
@@ -551,6 +585,7 @@ def test_a_too_large_files_record_already_written_is_its_final_report(standin, f
     page.wait(lambda p: p.closed, "the end")
     assert page.reports == [failed]
     assert requests_of(standin, "GET", "/slices/j1/file") == []
+    assert len(requests_of(standin, "DELETE", "/slices/j1/file")) == 1
 
 
 def test_the_summary_of_a_slice_service_not_answering_is_fetched_again(standin, follower,
@@ -691,6 +726,9 @@ def test_a_fault_while_storing_is_logged_and_the_done_report_is_handled_again(
     page.wait(lambda p: p.closed, "done")
     assert page.reports[-1]["state"] == "done" and page.reports[-1]["sequence"] == 2
     assert bucket.get(sliced.file_name(USER, "j1"))[0] == FILE
+    # When the slice ended is when the done report first arrived, not after the wait.
+    assert record_of(bucket, "j1")["slice_ended_at"] == sliced.utc(START)
+    assert page.reports[-1]["sliced_file"]["expires_in_s"] == 7199
 
 
 def test_a_stream_refused_otherwise_is_opened_again(standin, follower, clock, log):

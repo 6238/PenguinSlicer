@@ -91,6 +91,9 @@ class _Followed:
     latest: dict | None = None
     subscribers: list = field(default_factory=list)
     closed: bool = False
+    #: When the `done` report first reached this following, kept across a fault while
+    #: storing so that the `done` handled again keeps the moment the slice ended.
+    ended_at: str | None = None
 
 
 @dataclass
@@ -100,6 +103,8 @@ class _Storing:
     done: dict
     ended_at: str
     checked: bool = False
+    #: A `stored` or `failed` record found by the check, written before this storing began.
+    found: dict | None = None
     summary: dict | None = None
     file_stored: bool = False
     size_bytes: int | None = None
@@ -303,7 +308,9 @@ class Follower:
     # Storing the sliced file and its summary.
 
     def _store(self, followed, done):
-        storing = _Storing(done, sliced.utc(self._clock.now()))
+        if followed.ended_at is None:
+            followed.ended_at = sliced.utc(self._clock.now())
+        storing = _Storing(done, followed.ended_at)
         waits = _Waits()
         while True:
             try:
@@ -326,9 +333,16 @@ class Follower:
                 raise _Again("reading the record", str(exc)) from None
             storing.checked = True
             if record is not None and record.get("state") in ("stored", "failed"):
-                # Stored already, by this front server before a restart or an earlier one.
-                self._publish(followed, sliced.final_report(record, self._clock.now()))
-                return
+                storing.found = record
+        if storing.found is not None:
+            # Stored already, by this front server before a restart or an earlier one, which
+            # may have stopped before its delete went out: the slice service is told again
+            # (the delete is idempotent) before the pages get the record's final report.
+            self._delete(followed)
+            self._line("sliced_file_already_stored", followed,
+                       state=storing.found.get("state"))
+            self._publish(followed, sliced.final_report(storing.found, self._clock.now()))
+            return
         if storing.summary is None:
             storing.summary = self._summary(followed)
         if not storing.file_stored and storing.too_large is None:

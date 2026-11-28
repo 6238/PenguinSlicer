@@ -1084,14 +1084,18 @@ as `follower`):
   report as `running`, one `sequence` earlier.
 - **Each step of storing is tried again from where it failed**, after the same growing
   waits: reading the slice job's record (a record already `stored` or `failed`, written by
-  this front server before a restart or by an earlier one, is passed to pages as it is and
-  nothing is fetched again), fetching the summary, fetching and writing the file, writing
-  the record, telling the slice service. A summary or file the slice service answers
-  `slice.unknown_job` ends the following as unknown; `slice.file_gone` (the copy gone
+  this front server before a restart or by an earlier one, is not fetched again: the slice
+  service is told again that it is stored, since that front server may have stopped before
+  its delete went out, and the record's final report then reaches the pages, with the line
+  `sliced_file_already_stored` (`state`)), fetching the summary, fetching and writing the
+  file, writing the record, telling the slice service. A summary or file the slice service
+  answers `slice.unknown_job` ends the following as unknown; `slice.file_gone` (the copy gone
   without being stored) ends it with the line `sliced_file_lost`. A delete answered
   `slice.unknown_job` counts as done, since the slice service then holds no copy.
 - **When the slice ended** (`slice_ended_at`) is the moment, on the front server's clock,
-  that the `done` report reached the front server, to the second.
+  that the `done` report first reached this following, to the second; a `done` handled
+  again after a fault while storing keeps that moment. A stream opened again by a new
+  following (a front server started later) takes it afresh.
 - **Over the limit:** `MAX_SLICED_FILE_BYTES` is in `penguin_front.sliced`; the delete is
   sent before the `failed` record is written, and sent again with it if that write is tried
   again. The `failed` report is the `done` report with `state` `failed` and `error` the
@@ -1104,7 +1108,8 @@ as `follower`):
   `slice_ended` for a `failed` or `cancelled` end (`state`, `cancel_reason`, the error's
   `code`); `slice_unknown`; `sliced_file_retry` (`step`, `why`, `wait_s`);
   `sliced_file_stored` (`size_bytes`, `stored_after_s`, the seconds from the slice's end to
-  its storing); `sliced_file_too_large` (`size_bytes`, `limit_bytes`); `sliced_file_lost`;
+  its storing); `sliced_file_already_stored` (`state`); `sliced_file_too_large`
+  (`size_bytes`, `limit_bytes`); `sliced_file_lost`;
   `following_failed` (`trace`). Each carries `user_key`, `group` and `slice`.
 
 ### The records of a sliced file
