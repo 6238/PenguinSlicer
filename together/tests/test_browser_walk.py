@@ -44,4 +44,13 @@ def test_a_user_adds_parts_lays_them_out_slices_inspects_the_preview_and_downloa
     assert len(made) == 1 and body == made[0]
     assert len(body) == details["size_bytes"]
     w.page.wait_for_selector("#notices .notice")
+    # A report the page makes about itself, in the form its reports module writes it, is taken
+    # by the front server and written as one line with the page's version. (A drawing summary
+    # is sent only for a use of a view whose frames were measured, which this walk does not
+    # make: the wizard's own browser suite drives the views.)
+    assert w.run("return wizard.reports.failure('page_failed', { detail: 'the joined suite' });") is True
+    [line] = wizard_front.running.events("failure_report")
+    assert (line["what"], line["step"], line["detail"], line["user_key"]) == \
+        ("page_failed", "send", "the joined suite", "dev-user")
+    assert line["page_version"] == wizard_front.version
     assert w.problems == []
