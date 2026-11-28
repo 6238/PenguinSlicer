@@ -62,6 +62,7 @@ class SliceService:
         """`orca`: the Orca to run (the stand-in, written here, when None); `env`: settings
         of the slice service's own."""
         self.folder = Path(folder)
+        self.folder.mkdir(parents=True, exist_ok=True)
         self.work = self.folder / "work"
         self.mode_file = None
         if orca is None:
@@ -177,6 +178,7 @@ def page_files(folder):
 class FrontServer:
     def __init__(self, folder, slice_url, *, wizard_dist=None, env=None):
         self.folder = Path(folder)
+        self.folder.mkdir(parents=True, exist_ok=True)
         self.state = self.folder / "state"
         self.log_dir = self.folder / "log"
         self.wizard_dist = wizard_dist or page_files(self.folder / "pages")

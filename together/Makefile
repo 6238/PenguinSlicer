@@ -11,7 +11,7 @@ ORCA_LOCK ?= /var/tmp/penguin-locks/real-orca.lock
 RUN_LIMIT_S ?= 900
 RUN_MEMORY ?= 4G
 PYTHON = $(CURDIR)/.venv/bin/python
-TIMED = MALLOC_ARENA_MAX=2 timeout --kill-after=10 $(RUN_LIMIT_S)
+TIMED = env MALLOC_ARENA_MAX=2 timeout --kill-after=10 $(RUN_LIMIT_S)
 # The limit on the address space is inherited by the servers a test starts, which is what
 # bounds them too; the real Orca run leaves it off, since the slice service sets Orca's own.
 BOUNDED = $(TIMED) prlimit --as=$$(numfmt --from=iec $(RUN_MEMORY)) --
