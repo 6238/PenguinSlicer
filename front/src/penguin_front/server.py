@@ -62,7 +62,7 @@ def serve(args, *, environ=None, stdout, stderr, clock=None, on_listening=None):
     # The signals are taken before the start line, which is what tells a watcher the front
     # server listens: a stop sent at that moment ends the serving as every stop does, with
     # the stop line and what the log gathered, never by the signal's default action.
-    with _stop_on_signals():
+    with _stop_on_signals() as signals:
         try:
             _begin(args, settings, app, log, ctx, server, on_listening)
             server.run()
@@ -70,6 +70,10 @@ def serve(args, *, environ=None, stdout, stderr, clock=None, on_listening=None):
             # A stop asked before the web server ran (which takes one itself, and closes).
             server.close()
         finally:
+            # Once stopping, a second stop is ignored, so that the stop line and the log's
+            # writing out of what it gathered always happen; a host that will not wait ends
+            # the process outright.
+            signals.ignore()
             _end(follower, ctx, server, log)
     return 0
 
@@ -129,6 +133,12 @@ class _stop_on_signals:
         if threading.current_thread() is threading.main_thread():  # pragma: no cover
             for sig in self.SIGNALS:
                 self._previous[sig] = signal.signal(sig, _interrupt)
+        return self
+
+    def ignore(self):
+        """From now until the block ends, `SIGINT` and `SIGTERM` do nothing."""
+        for sig in self._previous:  # pragma: no cover - the main thread only
+            signal.signal(sig, signal.SIG_IGN)
 
     def __exit__(self, *_exc):
         for sig, old in self._previous.items():  # pragma: no cover - the main thread only

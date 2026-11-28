@@ -83,7 +83,18 @@ Written Fri 2026-11-27, Pacific time.
     the drain is short, since every slice job has ended, and a deploy's stop time is not yet
     known. Answers still being written at the bound are cut and named in a line
     `slice_service_answers_cut`. To overrule: `InFlight` and `STOP_ANSWERS_S` in
-    `slice/src/penguin_slice/__main__.py`.
+    `slice/src/penguin_slice/__main__.py`. Its test,
+    `test_the_answer_to_the_delete_that_ends_the_drain_is_written_before_serve_returns` in
+    `slice/tests/test_serve_stop.py`, holds the draining `DELETE`'s answer until `serve`
+    either starts waiting for the answers being written or has returned, and reads whether it
+    was written on the line straight after `serve` returns, before the driver thread is
+    joined. With the wait removed (`if False:` in place of the `wait_idle` check) it failed
+    eight runs of eight; with the wait it passes every run. The hold is released by a wrapper
+    on `InFlight.wait_idle`, which ties the test to that name: the price of a test that
+    cannot pass by the timing of a thread. Its first form checked only after the driver,
+    which itself waits for the answer, had been joined, and so could not fail; the review
+    found that, and the joined test of the same stop passes with or without the wait too,
+    since in-process the handler's thread is never killed at exit.
 13. **Mismatch 7: the front server takes the stop signals before it writes its `start`
     line.** The documents say a stop writes the `stop` line and the gathered log, and are
     silent on a stop during the start. To overrule: `server.serve`.
@@ -110,6 +121,54 @@ Written Fri 2026-11-27, Pacific time.
 19. **Two rows of "The front server restarts" are in the suite too.** Not asked for; they
     are the only way to exercise `GET /slices`, its `file_on_disk` and its `ended_at` across
     the seam.
+20. **The quiet-slice test waits on the slice service's real 15-second timer, about 16
+    seconds, against the quality bar's rule that a test never waits a number of seconds.**
+    `test_a_quiet_slice_keeps_both_streams_open` in `together/tests/test_walk.py` waits for
+    the event (the front server's comment line on the page's stream), but that event comes
+    only when the slice service's own 15-second keep-alive (`WAIT_S` in
+    `slice/src/penguin_slice/jobs.py`) and the front server's `PROGRESS_KEEPALIVE_S` have
+    passed: a real process has no fake clock to move. Chosen: keep the one test, since it is
+    the only check that a quiet slice keeps both streams open across the seam; each side's
+    fast suite checks its own timer with a fake clock. To overrule: a setting on each side
+    that shortens its keep-alive, which neither has, or drop the test.
+21. **The stand-in Orca ends itself after 25 seconds** (`LIMIT_S` in
+    `slice/tests/fake_orca.py`), so a slice held in mode `gate` is let go by then at the
+    latest; the slice then fails, so a test that held it longer would fail, not pass
+    silently. The longest hold in the suite is the quiet-slice test's, about 16 seconds, a
+    margin of about 9 seconds on a slow machine. Said in [the suite's README](../../../../together/README.md).
+    To overrule: `LIMIT_S`, which the slice service's own suite shares.
+22. **The port a restarted slice service asks for again may be taken in between** (decision
+    3). Between the stop of one slice service process and the start of the next, another
+    process on the machine may take the port; the new slice service then exits saying it
+    cannot listen, and the test fails at once with that line, never silently. Accepted: the
+    window is the length of a process start, and the front server must keep one address.
+23. **The details of a failed or replaced slice answer `409` `front.sliced_file_not_ready`:
+    a reading the joined suite now pins down.** The wizard's contract gives that code "while
+    the slice job has not finished, or its sliced file is not yet stored" and is silent on a
+    slice job that ended without a sliced file.
+    `test_a_slice_that_fails_reaches_the_page_with_the_slice_services_own_report`
+    (`together/tests/test_failures.py`) and
+    `test_the_same_plate_sliced_again_replaces_its_unfinished_slice`
+    (`together/tests/test_plates.py`) assert it, as the front server answers today. To
+    overrule: the wizard's contract names another answer for that case, and the two
+    assertions change with the front server.
+24. **A second stop while the front server stops is ignored.** The details file said a stop
+    writes the `stop` line and the gathered lines, and was silent on a second `SIGTERM` or
+    Ctrl-C during the stop, which raised `KeyboardInterrupt` inside `_end` and skipped both.
+    Chosen: from the start of the stop the two signals are ignored
+    (`_stop_on_signals.ignore` in `front/src/penguin_front/server.py`), so the stop always
+    finishes; a host that will not wait ends the process outright. Reason: unlike the slice
+    service, whose second stop gives up a running Orca, the front server has nothing a
+    second stop could hurry, and its stop is bounded by its own parts. Tested by
+    `test_a_second_stop_during_the_stop_still_writes_what_the_log_gathered`, seen to fail
+    first. To overrule: let the second stop end the process, and say so in the details
+    file's stop paragraph.
+25. **The real-Orca walk checks the profiles travel inside the archive** by reading
+    `Metadata/project_settings.config`, the entry Orca writes the settings it sliced with
+    into, and checking it names the plate configuration's printer, process and filament and
+    carries the process's settings. The sliced file's contract says only that the profiles
+    travel inside and names no entry; this one is Orca's own, and the slice service's
+    real-Orca suite reads it too. To overrule: `test_real_orca.py`.
 
 ## Mismatches between the two sides
 
@@ -137,10 +196,34 @@ Each in full, with its evidence, in [the record of the seam](../seam-front-slice
    woke inside that `DELETE`'s handler and the process exited before the answer was written,
    so the front server held the page's `done` and asked again until a new slice service
    answered. Fixed in the slice service: it waits, at most 10 s, for the answers it is
-   writing.
+   writing; its fast suite's test fails with that wait removed (decision 12).
 7. **A stop at the moment the front server said it listened ended it without its stop line
    or its gathered log.** The front server wrote its `start` line before taking the stop
    signals. Fixed in the front server: the signals are taken first.
+
+## The review's findings
+
+A reviewer who did not write the batch found one blocking finding and seven minor ones. All
+eight were found real and fixed; none was declined.
+
+1. **Blocking: the test of mismatch 6 could not fail.** Rewritten (decision 12); the record
+   of the seam corrected to match.
+2. **The quiet-slice test could not see a repeat passed on again.** It now counts the
+   reports carrying the held report's `sequence` and checks each `sequence` appears once.
+   With both deduplicating checks (`following.py` and `streams.py`) changed from `<=` to
+   `<`, it fails (a `sequence` seen twice); with them as built it passes. A repeat is not
+   an equal report, since its `elapsed_s` moves, so counting `held` itself was not enough.
+3. **The quiet-slice test's wait of a duration:** recorded (decision 20).
+4. **The stand-in Orca's 25-second limit:** recorded (decision 21) and said in the suite's
+   README.
+5. **The port taken between two slice service processes:** recorded (decision 22) and said
+   in the suite's README.
+6. **The `409` of a failed or replaced slice's details:** recorded as a reading the suite
+   pins down (decision 23).
+7. **A second stop during the front server's stop:** fixed and tested (decision 24), the
+   front server's details and guide brought into line.
+8. **The profiles inside the archive:** checked by the real-Orca walk (decision 25), which
+   passed under the real-Orca lock.
 
 ## Targets missed
 

@@ -2129,8 +2129,11 @@ once-a-minute line are stopped is not checked: both run on daemon threads that e
 process. The signals are taken before the `start` line is written (`server.serve`), so a
 stop sent the moment that line appears ends the serving the same way, `stop` line and
 gathered lines included, never by the signal's default action; a stop that arrives before
-the web server runs is caught there (`KeyboardInterrupt`) and ends the same. Tested in
-`tests/test_server.py`, in the main thread where the handlers are taken.
+the web server runs is caught there (`KeyboardInterrupt`) and ends the same. Once the stop
+has begun, a second `SIGTERM` or Ctrl-C is ignored, so the stop is never cut short before its
+`stop` line and the gathered lines are written; a host that will not wait ends the process
+outright. Tested in `tests/test_server.py`, in the main thread where the handlers are taken
+(the second stop: `test_a_second_stop_during_the_stop_still_writes_what_the_log_gathered`).
 
 Asked to stop (`SIGTERM`, as at every deploy), the front server takes no new requests, lets
 uploads and downloads in progress finish, closes its progress streams and, from phase 5,

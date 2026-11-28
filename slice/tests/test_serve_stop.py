@@ -83,9 +83,10 @@ def plate(submission):
             "instances": [{"ref": "box", "orientation": "+z", "angle": 0, "x": 50.0, "y": 50.0}]}
 
 
-def serve_with(tmp_path, monkeypatch, drive):
+def serve_with(tmp_path, monkeypatch, drive, on_return=lambda: None):
     """Run serve in this thread while `drive(client, log, returned)` runs in another: (exit
-    status, the log, the driver's error or None)."""
+    status, the log, the driver's error or None). `on_return` runs on the line straight after
+    serve returns, before `returned` is set and before the driver is joined."""
     servers, returned, log, failure = queue.SimpleQueue(), threading.Event(), LogWatch(), []
     real = cli.make_server
 
@@ -109,6 +110,7 @@ def serve_with(tmp_path, monkeypatch, drive):
         thread = threading.Thread(target=driver, daemon=True)
         thread.start()
         code = cli.main(["serve", "--work", str(tmp_path / "work"), "--port", "0"], stderr=log)
+        on_return()
         returned.set()
         thread.join(FAILSAFE_S)
     finally:
@@ -159,21 +161,33 @@ def test_a_stop_while_orca_runs_finishes_the_slice_and_exits_once_its_file_is_de
 def test_the_answer_to_the_delete_that_ends_the_drain_is_written_before_serve_returns(tmp_path, monkeypatch):
     # Found by the joined suite: the front server's DELETE of the last sliced file drained
     # the slice service, which exited before that DELETE's answer was written, so the front
-    # server never heard its file was stored. Here that answer is held until the drain's
-    # last line is written, and must still be written before serve returns.
+    # server never heard its file was stored. Here that answer is held past the drain's last
+    # line until serve either starts waiting for the answers being written or has returned,
+    # whichever comes first. A serve that waits writes it first; a serve that does not returns
+    # with it unwritten, which `on_return` sees on the line straight after serve returns.
     install_fake_orca(tmp_path, monkeypatch, "ok")
-    written, watch = threading.Event(), []
-    real = cli.make_server
+    written, release, watch, at_return = threading.Event(), threading.Event(), [], []
+    real, real_wait_idle = cli.make_server, cli.InFlight.wait_idle
 
     def holding(host, port, app, **kwargs):
         def held(environ, start_response):
             body = app(environ, start_response)
             if environ["REQUEST_METHOD"] == "DELETE" and environ["PATH_INFO"].endswith("/file"):
                 watch[0].wait_for(event("slice_service_stopped"))
+                assert release.wait(FAILSAFE_S), "serve neither waited for the answer nor returned"
                 return _Closing(body, written)
             return body
         return real(host, port, held, **kwargs)
     monkeypatch.setattr(cli, "make_server", holding)
+
+    def waiting(self, seconds):
+        release.set()
+        return real_wait_idle(self, seconds)
+    monkeypatch.setattr(cli.InFlight, "wait_idle", waiting)
+
+    def on_return():
+        at_return.append(written.is_set())
+        release.set()
 
     def drive(client, log, returned):
         watch.append(log)
@@ -183,8 +197,8 @@ def test_the_answer_to_the_delete_that_ends_the_drain_is_written_before_serve_re
         log.wait_for(event("slice_service_stopping", stop=1))
         assert client.json("DELETE", f"/slices/{job}/file") == (200, {"job": job, "file": "deleted"})
     monkeypatch.setattr(jobs.JobPool, "start_sweeper", lambda self, *args, **kwargs: None)
-    code, log, failure = serve_with(tmp_path, monkeypatch, drive)
-    assert written.is_set(), "serve returned before the answer that drained it was written"
+    code, log, failure = serve_with(tmp_path, monkeypatch, drive, on_return)
+    assert at_return == [True], "serve returned before the answer that drained it was written"
     assert failure is None, failure
     assert code == 0
 

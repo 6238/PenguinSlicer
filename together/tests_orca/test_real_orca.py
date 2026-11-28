@@ -38,6 +38,13 @@ def test_a_real_plate_from_upload_to_download(page):
         gcode = archive.read("Metadata/plate_1.gcode").decode("utf-8", "replace")
         assert archive.read("Metadata/slice_info.config")
         objects = json.loads(archive.read("Metadata/plate_1.json"))["bbox_objects"]
+        # "The profiles the plate was sliced with travel inside the archive": Orca writes the
+        # settings it sliced with, and the names of the three profiles, in this entry.
+        used = json.loads(archive.read("Metadata/project_settings.config"))
+    named = (used.get("printer_settings_id"), used.get("print_settings_id"), used.get("filament_settings_id"))
+    assert named[:2] == (configuration["printer"], configuration["process"]), named
+    assert configuration["filament"] in (named[2] if isinstance(named[2], list) else [named[2]]), named
+    assert used.get("layer_height"), "the process's settings travel with the names"
     layers = re.search(r"^; total layer number: (\d+)$", gcode, re.MULTILINE)
     assert layers is not None and int(layers.group(1)) == summary["layer_count"]
     # Each instance named `<part name> #<n>`, the name reduced as the plate configuration's

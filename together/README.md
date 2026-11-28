@@ -23,8 +23,13 @@ their HTTP interfaces and the folders it gave them, never by importing their cod
   (`slice/tests/fake_orca.py`), through a small wrapper the suite writes and names in
   `PENGUIN_SLICE_ORCA`. The wrapper reads the stand-in's mode from a file at each slice, so
   a test says how the next slice goes (sliced, refused by Orca, held until the test lets it
-  go) without starting the slice service again. A restart starts a new slice service
-  process on the same port.
+  go) without starting the slice service again. The stand-in ends itself 25 seconds after
+  it starts whatever it was asked to do, so a slice held for the test is let go by then at
+  the latest: that slice then fails as an Orca that died, and the test sees a failed slice,
+  not a held one. No test holds a slice longer than about 16 seconds. A restart starts a
+  new slice service process on the same port; should another process take that port in
+  the moment between the two, the new slice service exits saying it cannot listen there,
+  and the test fails at once with that line.
 - **The front server** runs with the development identity, a cookie key the suite makes (so
   a restart signs nobody out), a state folder, a log folder and a folder of page files.
   Until the browser tests arrive the page files are a one-line page the suite writes; the

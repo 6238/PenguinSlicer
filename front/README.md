@@ -914,7 +914,8 @@ ended while the front server was down is stored a moment after it comes back.
 **When it is asked to stop,** as at every deploy, it takes no new requests, lets
 uploads and downloads in progress finish, closes its progress streams and, from phase
 5, answers the held syncs, so that pages and daemons reconnect to its replacement; and
-it writes the log lines it has gathered to the log bucket. It has whatever time Railway
+it writes the log lines it has gathered to the log bucket. A second request to stop while
+it is stopping is ignored, so those lines are always written. It has whatever time Railway
 allows a stopping container, which is not known (see
 [What Railway does at a deploy](#what-railway-does-at-a-deploy)).
 

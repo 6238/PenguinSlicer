@@ -179,9 +179,12 @@ page's stream never ended.
 **Done.** The slice service waits, before it exits, for the answers it is writing, at most
 10 seconds, counting them at its web server's request handler, and says in a line which
 answers it cut at the bound. A test in its fast suite holds the draining `DELETE`'s answer
-until the stop's last line is written and checks it was written before `serve` returned; it
-failed one run in three before the fix and passes every run after. A second test checks the
-cut at the bound.
+past the stop's last line until `serve` either starts waiting for the answers being written
+or has returned, and reads on the line straight after `serve` returns whether the answer was
+written. With the wait removed it fails every run (eight of eight), since the answer is then
+released only after `serve` has returned; with the wait it passes every run. (Its first form
+checked only after the driver thread, which itself waits for the answer, was joined, and so
+could not fail; a review found that.) A second test checks the cut at the bound.
 
 ### 7. A stop at the moment the front server says it listens
 

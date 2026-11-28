@@ -3,6 +3,7 @@ port the system chooses."""
 
 import io
 import json
+import os
 import signal
 import socket
 import threading
@@ -372,6 +373,37 @@ def test_a_stop_before_the_serving_begins_still_writes_the_stop_line(tmp_path, c
     assert status == 0
     events = [json.loads(line)["event"] for line in stdout.getvalue().splitlines()]
     assert events[0] == "start" and events[-1] == "stop"
+    written = [json.loads(line)["event"] for path in sorted((tmp_path / "log").rglob("*.jsonl"))
+               for line in path.read_text().splitlines()]
+    assert written[-1] == "stop"
+
+
+class _SecondStop(io.StringIO):
+    """Standard output that, when the `stop` line is written, sends the process a second
+    `SIGTERM`, as a host or a person pressing Ctrl-C again does during a stop."""
+
+    def write(self, text):
+        written = super().write(text)
+        if '"event": "stop"' in text:
+            os.kill(os.getpid(), signal.SIGTERM)
+        return written
+
+
+def test_a_second_stop_during_the_stop_still_writes_what_the_log_gathered(tmp_path, clock):
+    # The stop takes up to a few seconds (the progress streams, the followings, the web
+    # server's threads). A second SIGTERM or Ctrl-C in that time must not cut it short: the
+    # stop line and the log's writing out of what it gathered still happen. Run in the main
+    # thread, where the front server takes the signals.
+    stdout = _SecondStop()
+    try:
+        status = serve(parse_args(["serve", "--port", "0"]),
+                       environ=environ(tmp_path, PENGUIN_FRONT_THREADS="2"), stdout=stdout,
+                       stderr=io.StringIO(), clock=clock,
+                       on_listening=lambda server: threading.Thread(
+                           target=stop_server, args=(server,)).start())
+    except KeyboardInterrupt:
+        pytest.fail("the second stop cut the stop short")
+    assert status == 0
     written = [json.loads(line)["event"] for path in sorted((tmp_path / "log").rglob("*.jsonl"))
                for line in path.read_text().splitlines()]
     assert written[-1] == "stop"

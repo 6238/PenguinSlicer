@@ -59,9 +59,15 @@ def test_a_quiet_slice_keeps_both_streams_open(page, slice_service, front_server
     stream = page.stream(accepted["id"])
     held = stream.wait_for_stage("slicing_mesh")
     stream.wait_for_comment()
-    assert stream.reports[-1] == held, "the slice service's repeat is not passed on again"
+    assert stream.reports[-1] == held
     slice_service.release_orca()
     assert stream.wait_closed().final["state"] == "done"
+    # The slice service's repeat carries the latest report's sequence again (its `elapsed_s`
+    # may have moved, so it need not equal `held`): passed on again, it would show here as a
+    # second report with that sequence, before or after the comment line.
+    sequences = [r["sequence"] for r in stream.reports]
+    assert sequences.count(held["sequence"]) == 1, "the slice service's repeat is not passed on again"
+    assert len(sequences) == len(set(sequences)), "each report once"
     assert front_server.running.events("slice_stream_reopening") == []
 
 
