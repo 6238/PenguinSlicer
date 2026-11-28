@@ -35,8 +35,9 @@ void main() {
   bool under = camPos.z < base.z - hh;
   // Lines of one layer overlap where Orca lays infill and surfaces over the walls' edge. Their
   // tops lying at one height would fight in the depth buffer and speckle; the walls' tops sit
-  // 0.01 mm lower, so the other line types are drawn over them there, the same at every angle.
-  float lift = (g == 0 || under) ? 0.0 : 0.01;
+  // 0.01 mm higher, so the walls' smooth edge is drawn over the ends of the lines that meet
+  // them, the same at every angle.
+  float lift = (g == 0 && !under) ? 0.01 : 0.0;
   float zFace = under ? base.z - hh : base.z + lift, zOther = under ? base.z : base.z - hh;
   vec3 pos;
   if (role == 0) pos = vec3(base.xy + n * side * halfW, zFace);
