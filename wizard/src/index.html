@@ -5,9 +5,67 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="penguinslicer-version" content="__PENGUINSLICER_VERSION__">
 <title>PenguinSlicer</title>
+<link rel="icon" href="favicon.svg">
+<link rel="stylesheet" href="css/panel.css">
+<link rel="stylesheet" href="css/wizard.css">
 <script type="module" src="main.js"></script>
 </head>
 <body>
-<main id="panel"></main>
+<!-- The panel: the mockup's markup (docs/mockups/print-wizard/index.html, version 8) from
+     #wizard down, as far as the panel as a whole; each step's body comes with its step. The
+     printer-status icon comes in phase 5, advanced mode with the Settings step. -->
+<div id="wizard">
+  <header id="wiz-header">
+    <div class="brand-row">
+      <div class="brand">PenguinSlicer</div>
+    </div>
+    <div class="config-info" id="config-info">
+      <p class="config-status" id="config-status" hidden>Config: <span id="config-name"></span><a href="#" class="config-refresh" id="config-refresh" role="button" title="Reload the configuration" aria-label="Reload the configuration">↻</a></p>
+    </div>
+    <ol id="stepbar" aria-label="Steps">
+      <li data-step="parts" data-num="1" class="active" role="button" tabindex="0" title="1. Parts" aria-label="Step 1: Parts"><span class="sn">Parts</span></li>
+      <li data-step="settings" data-num="2" role="button" tabindex="0" title="2. Settings" aria-label="Step 2: Settings"><span class="sn">Settings</span></li>
+      <li data-step="layout" data-num="3" role="button" tabindex="0" title="3. Layout" aria-label="Step 3: Layout"><span class="sn">Layout</span></li>
+      <li data-step="preview" data-num="4" role="button" tabindex="0" title="4. Preview" aria-label="Step 4: Preview"><span class="sn">Preview</span></li>
+      <li data-step="send" data-num="5" role="button" tabindex="0" title="5. Send" aria-label="Step 5: Send"><span class="sn">Send</span></li>
+    </ol>
+    <!-- the panel line: why a click on a tab was held, or that the server is slow -->
+    <p id="step-why" class="step-why" role="status" hidden></p>
+  </header>
+
+  <main id="wiz-body">
+    <div class="summary-wrap">
+      <div id="wiz-summary" hidden aria-label="Plate summary"></div>
+      <!-- the change details, joined to the "+2 changes" pill -->
+      <div id="chg-pop" class="chg-pop" hidden></div>
+    </div>
+    <div id="notices" aria-live="polite"></div>
+
+    <section class="step" data-step="parts">
+      <h2>Parts</h2>
+    </section>
+    <section class="step" data-step="settings" hidden>
+      <h2>Settings</h2>
+    </section>
+    <section class="step" data-step="layout" hidden>
+      <h2>Layout</h2>
+    </section>
+    <section class="step" data-step="preview" hidden>
+      <h2>Preview</h2>
+    </section>
+    <section class="step" data-step="send" hidden>
+      <h2>Send</h2>
+    </section>
+  </main>
+
+  <footer id="wiz-nav">
+    <button type="button" id="btn-back" class="btn" disabled>Back</button>
+    <button type="button" id="btn-next" class="btn primary" disabled>Next</button>
+    <!-- phase 2: the Send step's one button; the printer's Send and its menu come in phase 5 -->
+    <div id="final-action" class="split-btn" hidden>
+      <button type="button" id="btn-do" class="btn primary" disabled>Download the sliced file</button>
+    </div>
+  </footer>
+</div>
 </body>
 </html>

@@ -1,0 +1,29 @@
+/* The wizard's own additions to css/panel.css, which is the mockup's style sheet (version 8)
+   taken over byte for byte and never edited here. Only what the mockup never drew, or what
+   the page around the panel needs, is styled in this file. */
+
+/* The page: the panel fills the tab, on the panel's own background. */
+html, body { margin: 0; height: 100%; }
+body { background: #f6f8fa; }
+
+/* The panel line's lasting use (designed in the guide): amber while the browser retries, with
+   its link Retry now; red, the line's own colour, once the server could not be reached, with
+   its button Try again. */
+#wizard .step-why.slow { color: var(--warn); }
+#wizard .step-why .linkish { font-size: inherit; line-height: inherit; }
+#wizard .step-why .btn.small { margin-left: 2px; padding: 1px 8px; }
+
+/* The configuration's name is plain text for a user in one group (the guide's departure from
+   decision 2), so it keeps the line's own colour. */
+.config-status #config-name { color: inherit; }
+
+/* Phase 2: the Send step's one button, Download the sliced file, without the printer's menu. */
+.split-btn #btn-do:only-child { border-radius: 6px; }
+
+/* A confirmation (designed in the guide): a small box joined to the pressed control, in the
+   look of the panel's other joined boxes. */
+.confirm-pop { position: absolute; z-index: 45; background: var(--panel); color: var(--ink);
+               border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 18px rgba(31, 35, 40, 0.14);
+               padding: 8px 12px 10px; font-size: 13px; line-height: 1.45; }
+.confirm-pop p { margin: 0; }
+.confirm-pop .acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-top: 8px; }

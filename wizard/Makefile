@@ -1,4 +1,4 @@
-.PHONY: install check-node sync install-browser test test-page test-tools test-browser build \
+.PHONY: install check-node sync install-browser test test-page test-tools test-browser build look \
 	trials trials-preview trials-geometry trials-parts trials-serve
 
 UV ?= uv
@@ -47,9 +47,14 @@ test-tools:
 test-browser: build
 	$(PY) -m pytest $(CURDIR)/tests_browser
 
-# wizard/dist/ from wizard/src/ (and, from the skeleton on, wizard/vendor/).
+# wizard/dist/ from wizard/src/ and wizard/vendor/.
 build:
 	$(PY) $(CURDIR)/build.py
+
+# Pictures of the panel as a whole beside the mockup's, at 320, 480, 520 and 680 px, into
+# docs/orchestration/phase-2/look/wizard-2/, for a person to look at.
+look: build
+	$(PY) $(CURDIR)/tests_browser/look.py
 
 # The two opening trials of phase 2, each its own entry point: both run, even when the
 # first fails, and the target fails when either does.

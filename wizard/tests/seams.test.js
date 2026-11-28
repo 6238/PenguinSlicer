@@ -1,8 +1,9 @@
 // The page reaches time and the network only through its seams: the clock, which a test
 // moves, and the transport, which the fake front server replaces. A module that calls
-// setTimeout, setInterval, Date.now or fetch directly would wait on the wall clock or the
-// real network in a test, so this suite searches every page module for those names
-// outside src/seams/ and fails naming each file and line.
+// setTimeout, setInterval, Date.now, new Date(), performance.now, requestAnimationFrame,
+// fetch, XMLHttpRequest, EventSource, WebSocket or the like directly would wait on the wall
+// clock or the real network in a test, so this suite searches every page module for those
+// names outside src/seams/ and fails naming each file and line.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
@@ -14,7 +15,7 @@ import { findForbidden, isSeam, pageModules, scanPage } from './forbidden_calls.
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)), '..', 'src');
 
-test('no page module calls setTimeout, setInterval, Date.now or fetch outside the seams', () => {
+test('no page module reaches the time or the network outside the seams', () => {
   const found = scanPage(SRC);
   assert.deepEqual(found, [], found.map((f) => `${f.file}:${f.line} calls ${f.name}`).join('\n'));
 });
@@ -82,6 +83,45 @@ test('lines are counted across a block comment', () => {
 
 test('words that only contain a name are not calls', () => {
   const text = 'prefetch(); fetchedParts; const setTimeoutMs = 3; Dates.now; myDate.nowish; clock.setTimer();';
+  assert.deepEqual(findForbidden(text), []);
+});
+
+test('every other way to read the time or reach the network is found', () => {
+  const text = [
+    'const a = new Date();',
+    'const b = new Date;',
+    'const c = Date();',
+    'const d = performance.now();',
+    'const e = self.performance . now();',
+    'requestAnimationFrame(draw);',
+    'requestIdleCallback(work);',
+    'const x = new XMLHttpRequest();',
+    'const s = new EventSource("/api/slices/1/events");',
+    'const w = new WebSocket("ws://x");',
+    'navigator.sendBeacon("/api/reports/failure", body);',
+  ].join('\n');
+  assert.deepEqual(findForbidden(text), [
+    { name: 'new Date()', line: 1 },
+    { name: 'new Date()', line: 2 },
+    { name: 'Date()', line: 3 },
+    { name: 'performance.now', line: 4 },
+    { name: 'performance.now', line: 5 },
+    { name: 'requestAnimationFrame', line: 6 },
+    { name: 'requestIdleCallback', line: 7 },
+    { name: 'XMLHttpRequest', line: 8 },
+    { name: 'EventSource', line: 9 },
+    { name: 'WebSocket', line: 10 },
+    { name: 'sendBeacon', line: 11 },
+  ]);
+});
+
+test('a date made from a figure reads no clock and is not found', () => {
+  const text = 'const a = new Date(ms);\nconst b = new Date(2026, 10, 28);\nconst t = new Date(text).getTime();\nconst p = Date.parse(s);\nconst u = Date.UTC(2026, 0, 1);\n';
+  assert.deepEqual(findForbidden(text), []);
+});
+
+test('words that only contain the other names are not found', () => {
+  const text = 'myperformance.nowish; requestAnimationFrames; fakeEventSource; WebSockets; isDate(x); toDate(y);';
   assert.deepEqual(findForbidden(text), []);
 });
 

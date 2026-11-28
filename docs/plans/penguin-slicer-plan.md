@@ -15,9 +15,11 @@ result. It gives no time estimates. Where something is open, it says so.
   on the shapes in [contracts/](../../contracts/README.md).
 - **Built and tested:** the slice service (built and tested for one slice service process)
   and printer delivery (tested against the simulated printer only, never against the real
-  H2S). **Not started:** the wizard, the front server and the Onshape integration. The
-  wizard exists as a mockup, version 8, which the owner accepted as the last version on
-  Thu 2026-11-26 and which is kept as the reference for how the wizard looks.
+  H2S). **Being built in phase 2:** the wizard (its build, the geometry of the Layout
+  step, retrying and the panel as a whole; not yet the five steps' contents) and the front
+  server. **Not started:** the Onshape integration. The wizard's mockup, version 8, which
+  the owner accepted as the last version on Thu 2026-11-26, is kept as the reference for
+  how the wizard looks.
 - **How the components fit together when hosted is designed** and approved by the owner
   (Thu 2026-11-26): it is in [the architecture](../architecture.md). Each component's guide
   says what that design asks of it and what of that is built.
@@ -133,8 +135,9 @@ contracts.
 - **Printer delivery**, in `delivery/`, takes a sliced file from the caller and gets it
   printed: the relay inside the caller's process, the daemon on the daemon's computer, and
   the simulated printer for tests ([its guide](../../delivery/README.md)).
-- **The wizard**, in `wizard/`, is the user interface: the code in the browser. None of it
-  is built. [Its guide](../../wizard/README.md) is its design, every step included. The
+- **The wizard**, in `wizard/`, is the user interface: the code in the browser. It is being
+  built in phase 2: its build, the geometry of the Layout step, retrying and the panel as
+  a whole exist, and the five steps' contents do not yet. [Its guide](../../wizard/README.md) is its design, every step included. The
   wizard looks the same as the mockup, which is kept in
   [docs/mockups/print-wizard](../mockups/print-wizard/index.html), with every design choice
   in its [DECISIONS.md](../mockups/print-wizard/DECISIONS.md), as the reference for the
@@ -304,7 +307,13 @@ As of Fri 2026-11-27:
   which the owner has not yet read; it carries the decisions of the other reviews that
   bear on it. With their details files and the contracts they are enough to build
   phase 2.
-- **The wizard, the front server and the Onshape integration** have no code.
+- **The wizard** is being built in phase 2: its project and build, both opening trials, the
+  Layout step's geometry in its worker, the module that makes every request with retrying,
+  and the panel as a whole (header, step tabs, panel line, plate summary, Back and Next, the
+  six ways of telling, tooltips), matched to the mockup at each width; none of the five
+  steps' contents yet. Its state is in [its guide](../../wizard/README.md).
+- **The front server** is being built in phase 2 (its guide says how far), and **the Onshape
+  integration** has no code.
 
 **What is undecided.** The last part of each of the four guides, "What is undecided or
 unmeasured", holds what remains open in its component: what only a trial, the real host,
