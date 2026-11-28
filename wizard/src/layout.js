@@ -98,7 +98,8 @@ export function createLayout({ geometry, storage, store, parts, panel }) {
   let nextId = 1;
   const info = new Map();          // part key -> {best: {lay, normal}, patches, height}
   let checked = { problems: [], bounds: [], heights: [], fits: new Map(), at: -1 };
-  let notes = { lay: null, arrange: null };
+  // `slice`: the Preview step's line above the usual message, that the plate was not sliced
+  let notes = { lay: null, arrange: null, slice: null };
   const parked = new Set();        // ids of the instances the wizard put beside the plate
   let version = 0;                 // moves on with every change of the instances
   let checking = null;             // the check in flight
@@ -325,7 +326,7 @@ export function createLayout({ geometry, storage, store, parts, panel }) {
   }
 
   function shownNotes() {
-    return [shownNote('lay'), shownNote('arrange')].filter(Boolean);
+    return [notes.slice, shownNote('lay'), shownNote('arrange')].filter(Boolean);
   }
 
   function workOut() {
@@ -691,8 +692,10 @@ export function createLayout({ geometry, storage, store, parts, panel }) {
   store.subscribe((state, before) => {
     if (state.step === 'layout' && before.step !== 'layout') track(inTurn(join));
     if (before.step === 'layout' && state.step !== 'layout') {
-      // a message about a move, and "Arranged 16 instances.", goes when the user leaves the step
+      // a message about a move, and "Arranged 16 instances.", goes when the user leaves the step,
+      // and so does the Preview step's line that the plate was not sliced
       notes.lay = null;
+      notes.slice = null;
       tell();
     }
     if (state.plate.filament !== before.plate.filament || state.plate.profile !== before.plate.profile
@@ -718,6 +721,9 @@ export function createLayout({ geometry, storage, store, parts, panel }) {
     },
     // The settings changed (supports on or off): the spacing follows, and nothing moves.
     settingsChanged() { if (instances.length) recheck(); },
+    // The Preview step did not slice the plate (Turn on Supports and slice again found it too close
+    // together): its line, grey, above the step's usual messages until the user leaves the step.
+    notSliced(text) { notes.slice = { kind: 'info', what: text, actions: [], instances: [] }; tell(); },
     select,
     selectAll: () => select(null, 'all'),
     clearSelection: () => select(null, 'none'),

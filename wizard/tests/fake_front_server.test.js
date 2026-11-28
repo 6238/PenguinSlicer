@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { EXAMPLES, FRONT_CODES, FakeFrontServer, errorReport, errorReportProblems, example, steps } from './fakes/front_server.js';
+import { EXAMPLES, FRONT_CODES, FakeFrontServer, errorReport, errorReportProblems, example, exampleEvents, steps } from './fakes/front_server.js';
 
 async function ask(server, method, path) {
   const answer = await server.transport.send({ method, path, headers: {} });
@@ -25,6 +25,34 @@ test('the default answers are the contract examples, whole, with their statuses'
   const configuration = (await ask(server, 'GET', '/api/configuration')).body;
   assert.deepEqual(configuration, { configuration: example('configuration-default.json'), source: 'default', name: 'PenguinSlicer default', revision: null });
   assert.deepEqual(await ask(server, 'POST', '/api/reports/failure'), { status: 204, version: server.version, body: null });
+});
+
+test('a progress stream is by default the contract\'s example, whole, and then closed', async () => {
+  const server = new FakeFrontServer();
+  const answer = await server.transport.send({ method: 'GET', path: '/api/slices/3f9a1c2b/events', headers: {} });
+  assert.equal(answer.status, 200);
+  assert.equal(answer.header('Content-Type'), 'text/event-stream');
+  const got = [];
+  await answer.chunks((text) => got.push(text));
+  assert.equal(got.join(''), exampleEvents());
+});
+
+test('a stream the test feeds gives each piece in order, then ends, or is cut off', async () => {
+  const server = new FakeFrontServer();
+  const one = steps.stream(['a']);
+  const two = steps.stream();
+  server.script('GET', '/api/slices/j/events', one, two);
+  const first = await server.transport.send({ method: 'GET', path: '/api/slices/j/events', headers: {} });
+  const got = [];
+  const reading = first.chunks((text) => got.push(text));
+  one.feed.send('b');
+  one.feed.end();
+  await reading;
+  assert.deepEqual(got, ['a', 'b']);
+  const second = await server.transport.send({ method: 'GET', path: '/api/slices/j/events', headers: {} });
+  const cut = second.chunks(() => {});
+  two.feed.cut();
+  await assert.rejects(cut, TypeError);
 });
 
 test('an upload is answered with the record of the bytes sent: their hash, the query\'s units, no warning, the example\'s measurements', async () => {

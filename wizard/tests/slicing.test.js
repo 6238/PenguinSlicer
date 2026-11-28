@@ -498,9 +498,12 @@ test('done: the step shows its placeholder, the plate is sliced, and a change to
   const plate = page.storage.plate();
   await page.storage.update({ instances: plate.instances.map((i, n) => (n === 0 ? { ...i, angle: 10 } : i)) });
   page.slicing.plateChanged();
+  page.slicing.plateChanged();                     // told twice in one turn, worked out once
+  await page.clock.advance(0);
   assert.equal(page.store.get().sliced, false);
   await page.storage.update({ instances: plate.instances });
   page.slicing.plateChanged();
+  await page.clock.advance(0);
   assert.equal(page.store.get().sliced, true);
   await page.enter();
   assert.equal(page.submissions().length, 1);

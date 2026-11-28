@@ -102,8 +102,11 @@ const isErrorReport = (r) => r !== null && typeof r === 'object' && typeof r.cod
 //   report(what, {detail})  a failure report about the page itself
 //   newId()   a new random UUID, for each submission
 //   mode      'stream' (the default) or 'ask': how a slice job is followed
+//   ready()   resolves once the plate can be read as it stands (the page opened, the Layout step's
+//             work done); by default layout.idle()
 export function createSlicing({
   api, clock, storage, store, settings, layout, panel, report, newId, random = Math.random, mode = 'stream', follow = followJob,
+  ready = () => layout.idle(),
 }) {
   let run = 0;                  // moves on each time the page decides to slice; older work stops
   let current = null;           // {id, submissionId, fingerprint, submittedMs}
@@ -113,6 +116,7 @@ export function createSlicing({
   let lastSequence = -Infinity;
   const pauses = new Set();
   let parked = null;
+  let checking = false;
   const listeners = new Set();
 
   const tell = () => { for (const listener of listeners) listener(); };
@@ -393,7 +397,8 @@ export function createSlicing({
   }
 
   async function enter() {
-    await layout.idle();
+    await ready();
+    if (store.get().step !== 'preview') return;        // left again before the plate could be read
     const built = make('probe');
     if (!built.configuration) {
       run += 1;
@@ -495,11 +500,17 @@ export function createSlicing({
     },
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
     // The plate may have changed (a part, an instance, a setting): it is sliced only while it is the
-    // plate the sliced file was made of.
+    // plate the sliced file was made of. Worked out after the change has been told to everyone, so
+    // that a store listener is never handed an older state after a newer one.
     plateChanged() {
-      if (view.kind !== 'done' || !current) return;
-      const built = make('probe');
-      setSliced(Boolean(built.configuration) && fingerprint(built.configuration) === current.fingerprint);
+      if (view.kind !== 'done' || !current || checking) return;
+      checking = true;
+      queueMicrotask(() => {
+        checking = false;
+        if (view.kind !== 'done' || !current) return;
+        const built = make('probe');
+        setSliced(Boolean(built.configuration) && fingerprint(built.configuration) === current.fingerprint);
+      });
     },
     enter,
     sliceAgain: () => slice(),

@@ -6,7 +6,10 @@ upload, answered with the record of the bytes sent), on a port the system choose
 files carries `Cache-Control: no-store`.
 
 A test sets what the next requests to a path meet with `script(method, path, *answers)`: each
-answer is `(status, body)` or `(status, body, headers)`, the body a dict sent as JSON. The
+answer is `(status, body)` or `(status, body, headers)`, the body a dict sent as JSON, or a
+progress stream, `stream(text, ...)`: server-sent events written at once, then the stream closed,
+or with `hold=True` left open until the test calls `release()` or the server stops (the default
+answer of `GET /api/slices/<slice>/events` is the contract's example of a stream, closed). The
 requests are recorded with their headers and their bodies. `files` maps a path to bytes that a
 test's own code fetches (a part's STL file, which in use comes from the user's disk).
 """
@@ -29,6 +32,30 @@ EXAMPLES = Path(__file__).resolve().parents[2] / "contracts" / "examples"
 
 def example(name):
     return json.loads((EXAMPLES / name).read_text(encoding="utf-8"))
+
+
+class stream:
+    """A progress stream's answer: `chunks` (texts of server-sent events) written at once; then the
+    stream is closed, or with `hold` left open until `release()` or the server's stop."""
+
+    def __init__(self, *chunks, hold=False):
+        self.chunks = chunks
+        self.hold = hold
+        self.released = threading.Event()
+
+    def release(self):
+        self.released.set()
+
+
+def progress_event(report):
+    return f"event: progress\nid: {report['sequence']}\ndata: {json.dumps(report)}\n\n"
+
+
+def version_event(version):
+    return f"event: version\ndata: {json.dumps({'version': version})}\n\n"
+
+
+EXAMPLE_EVENTS = (EXAMPLES / "wizard-front" / "slice-events.txt").read_text(encoding="utf-8")
 
 
 def error_report(code, **fields):
@@ -82,6 +109,8 @@ class FakeFrontServer:
         self.files = {}                 # path: bytes, served to a test's own fetch (a part's STL file)
         self.scripts = {}
         self.lock = threading.Lock()
+        self.stopping = threading.Event()        # set at the stop, which ends every stream held open
+        self.held = []
         server = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -110,11 +139,38 @@ class FakeFrontServer:
                     else:
                         self.json(404, error_report("front.no_such_request"))
                     return
+                route = self.path.split("?")[0]
+                if scripted is None and method == "GET" and route.startswith("/api/slices/") and route.endswith("/events"):
+                    scripted = stream(EXAMPLE_EVENTS)
+                if isinstance(scripted, stream):
+                    self.stream(scripted)
+                    return
                 if scripted is not None:
                     status, body, *rest = scripted
                     self.json(status, body, rest[0] if rest else {})
                     return
                 self.json(*default_answer(method, self.path, body))
+
+            def stream(self, answer):
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("X-PenguinSlicer-Version", server.version)
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Connection", "close")
+                self.end_headers()
+                try:
+                    for chunk in answer.chunks:
+                        self.wfile.write(chunk.encode("utf-8"))
+                        self.wfile.flush()
+                    if answer.hold:
+                        with server.lock:
+                            server.held.append(answer)
+                            if server.stopping.is_set():
+                                answer.release()
+                        answer.released.wait()
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+                self.close_connection = True
 
             def do_GET(self):
                 self.handle_any("GET")
@@ -163,6 +219,10 @@ class FakeFrontServer:
         return self
 
     def __exit__(self, *exc):
+        with self.lock:
+            self.stopping.set()
+            for answer in self.held:
+                answer.release()
         self.httpd.shutdown()
         self.httpd.server_close()
         self.thread.join()
