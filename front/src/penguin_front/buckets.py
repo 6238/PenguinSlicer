@@ -63,8 +63,13 @@ class Entry:
 
 
 def check_name(name):
-    """Refuse a name that could leave the bucket, hide a file, or differ between forms."""
+    """Refuse a name that could leave the bucket, hide a file, or differ between forms; a
+    name holding a lone surrogate, which no form can encode, is refused like the rest."""
     parts = name.split("/")
+    try:
+        name.encode()
+    except UnicodeEncodeError:
+        raise BadName(f"no file may be named {name!r}") from None
     if not name or len(name.encode()) > MAX_NAME_BYTES or "\\" in name or "\0" in name \
             or any(part in ("", ".", "..") or part.startswith(".")
                    or len(part.encode()) > MAX_PART_BYTES for part in parts):

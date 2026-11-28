@@ -1698,7 +1698,8 @@ A file not there is `NotFound`; a conditional write whose condition does not hol
 may have is `BadName`, a fault of the code. A name is 1 to 1,024 bytes (`MAX_NAME_BYTES`) of
 parts separated by `/`, each at most 255 bytes (`MAX_PART_BYTES`, a file system's limit on
 one file's name), none empty, `.` or `..`, none starting with `.`, with no `\` and no NUL,
-so no name leaves its bucket and both forms take the same names. A name that is a folder of other
+and no lone surrogate (which no form can encode, and which a user key read from another
+component's JSON can hold: such an entry or line is skipped as one of another form), so no name leaves its bucket and both forms take the same names. A name that is a folder of other
 files' names in the folder form is not found and its delete is harmless, and a listing under
 a file is empty, as R2 answers. One difference remains and the layout never meets it: R2
 can hold a file `a` beside a file `a/b`, the folder form cannot, and a write that would make
