@@ -14,6 +14,10 @@ import threading
 
 from .waits import BACKSTOP_S, Backstop
 
+#: The setting, in this process's environment, of the bytes of address space each server may
+#: take; unset, no limit of the suite's own.
+SERVER_AS_BYTES = "JOINED_SERVER_AS_BYTES"
+
 
 class Line:
     """One line of a process's output: the stream (`out` or `err`), its text, and the JSON
@@ -41,6 +45,13 @@ class Running:
         self._log = open(log_path, "a", encoding="utf-8")
         self._log.write(f"# {name}: {' '.join(str(a) for a in argv)}\n")
         self._log.flush()
+        # The limit on each server's address space, when the run gives one (together/Makefile,
+        # `test`): `prlimit` sets it and runs the server in its own place, so the pid is the
+        # server's. Given to each server rather than to pytest, whose Chromium cannot start
+        # under it; the real-Orca run gives none, since the slice service sets Orca's own.
+        limit = os.environ.get(SERVER_AS_BYTES)
+        if limit:
+            argv = ["prlimit", f"--as={limit}", "--", *argv]
         # A session of its own, so that a kill reaches every process it started (Orca).
         self.process = subprocess.Popen([str(a) for a in argv], env=env, cwd=cwd,
                                         stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,

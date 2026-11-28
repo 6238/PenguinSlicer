@@ -42,31 +42,50 @@ def _clean_environ(extra):
     return env
 
 
-def write_fake_orca(folder):
+def write_fake_orca(folder, kept=None):
     """The wrapper `PENGUIN_SLICE_ORCA` names: it runs the slice service's stand-in Orca with
     Python in the mode the file `orca-mode` beside it holds at that moment. Gives (wrapper,
-    mode file)."""
+    mode file).
+
+    With `kept`, a folder, the wrapper also keeps a byte-for-byte copy of each sliced file the
+    stand-in wrote in its `--outputdir`, once it has ended, so that a test can compare what a
+    browser downloaded with what the slice service's Orca made. It then runs the stand-in as
+    its child rather than in its place; the slice service ends Orca by its process group, which
+    holds both."""
     folder.mkdir(parents=True, exist_ok=True)
     mode_file = folder / "orca-mode"
     mode_file.write_text("ok\n")
     wrapper = folder / "fake-orca"
-    wrapper.write_text("#!/bin/sh\n"
-                       f'mode=$(cat "{mode_file}")\n'
-                       f'exec "{sys.executable}" -I -S "{FAKE_ORCA}" --mode "$mode" "$@"\n')
+    run = f'"{sys.executable}" -I -S "{FAKE_ORCA}" --mode "$mode" "$@"'
+    if kept is None:
+        body = f"exec {run}\n"
+    else:
+        kept.mkdir(parents=True, exist_ok=True)
+        body = ('out=""; previous=""\n'
+                'for a in "$@"; do [ "$previous" = "--outputdir" ] && out="$a"; previous="$a"; done\n'
+                f"{run}\n"
+                "code=$?\n"
+                'for f in "$out"/*.gcode.3mf; do\n'
+                f'  [ -f "$f" ] && cp "$f" "$(mktemp -p "{kept}" --suffix=.gcode.3mf)"\n'
+                "done\n"
+                'exit "$code"\n')
+    wrapper.write_text("#!/bin/sh\n" f'mode=$(cat "{mode_file}")\n' + body)
     wrapper.chmod(wrapper.stat().st_mode | stat.S_IXUSR)
     return wrapper, mode_file
 
 
 class SliceService:
-    def __init__(self, folder, *, orca=None, env=None):
+    def __init__(self, folder, *, orca=None, env=None, keep_sliced=False):
         """`orca`: the Orca to run (the stand-in, written here, when None); `env`: settings
-        of the slice service's own."""
+        of the slice service's own; `keep_sliced`: with the stand-in, keep a copy of each
+        sliced file it writes (`sliced_files`)."""
         self.folder = Path(folder)
         self.folder.mkdir(parents=True, exist_ok=True)
         self.work = self.folder / "work"
         self.mode_file = None
+        self.kept = self.folder / "kept" if keep_sliced else None
         if orca is None:
-            orca, self.mode_file = write_fake_orca(self.folder / "orca")
+            orca, self.mode_file = write_fake_orca(self.folder / "orca", self.kept)
         self.orca = orca
         self.env = dict(env or {})
         self.port = 0
@@ -77,6 +96,12 @@ class SliceService:
     @property
     def url(self):
         return f"http://{LOOPBACK}:{self.port}"
+
+    def sliced_files(self):
+        """The bytes of each sliced file the stand-in wrote, as kept (`keep_sliced`), oldest
+        first."""
+        assert self.kept is not None, "made without keep_sliced"
+        return [path.read_bytes() for path in sorted(self.kept.iterdir(), key=lambda p: p.stat().st_mtime_ns)]
 
     def orca_mode(self, mode):
         """How the stand-in Orca slices from the next slice on (slice/tests/fake_orca.py)."""

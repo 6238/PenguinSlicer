@@ -94,6 +94,47 @@ test('an error report reaches the caller whole, by its code, with its status', a
   assert.deepEqual(await api.post('/api/slices', { json: {} }), { ok: false, status: 503, report });
 });
 
+// The sign-in trip (wizard/README-details.md, "Signing in and signing out"): an answer of
+// front.not_signed_in on an open page sends the page on the trip, which in phase 2 signs the
+// development identity in again at once (the front server's restart on one machine with no
+// cookie key given); the joined suite found the page showing the refusal instead.
+function withTrip({ leaves = true } = {}) {
+  const clock = new FakeClock();
+  const server = new FakeFrontServer();
+  const told = [];
+  const signIn = { refused: (report) => { told.push(['refused', report.code]); return leaves; }, answered: () => told.push(['answered']) };
+  const api = createApi({ transport: server.transport, clock, version: PAGE, currentGroup: () => GROUP, signIn });
+  return { clock, server, api, told };
+}
+
+test('a request answered front.not_signed_in sends the page on the sign-in trip and shows nothing', async () => {
+  const { server, api, told } = withTrip();
+  server.script('POST', '/api/slices', steps.report(errorReport('front.not_signed_in')));
+  let settled = false;
+  api.post('/api/slices', { json: {} }).then(() => { settled = true; });
+  await server.arrived(1);
+  for (let i = 0; i < 20; i += 1) await Promise.resolve();
+  assert.deepEqual(told, [['refused', 'front.not_signed_in']]);
+  assert.equal(settled, false, 'the request waits for the trip, which leaves the page');
+  assert.equal(api.board.state().kind, 'none');
+});
+
+test('once the trip has failed, front.not_signed_in reaches the caller to be shown', async () => {
+  const { server, api, told } = withTrip({ leaves: false });
+  const report = errorReport('front.not_signed_in');
+  server.script('GET', '/api/me', steps.report(report));
+  assert.deepEqual(await api.get('/api/me'), { ok: false, status: 401, report });
+  assert.deepEqual(told, [['refused', 'front.not_signed_in']]);
+});
+
+test('an answer of the front server for a signed-in request ends the trip', async () => {
+  const { server, api, told } = withTrip();
+  server.script('GET', '/api/configuration', steps.report(errorReport('front.group_not_allowed')));
+  await api.get('/api/me');
+  await api.get('/api/configuration');
+  assert.deepEqual(told, [['answered'], ['answered']]);
+});
+
 test('every answer\'s version is told, whatever its status', async () => {
   const { server, api } = setUp();
   const seen = [];

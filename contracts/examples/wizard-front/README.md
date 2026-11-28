@@ -22,6 +22,14 @@ hold them:
   number of whole seconds. The values the front server reckons itself (`expires_in_s`, and
   the files' invented printer delivery figures) are whole.
 
+Two reports differ from what the slice service sends, which the front server passes unchanged
+([the record of the seam](../../../docs/orchestration/phase-2/seam-wizard-front.md#mismatches)):
+the `done` report of [slice-done.json](slice-done.json) and [slice-events.txt](slice-events.txt)
+carries `stage` `reading_result`, its `stage_label` and `fraction` 1.0, where the real `done`
+and `failed` reports carry none of the three; and the real first `running` report, which the
+`202` of [slice-accepted.json](slice-accepted.json) often carries in place of its `queued` one,
+has no `stage`. A reader acts on neither.
+
 The files show shapes, not one story: [slice-accepted.json](slice-accepted.json) names
 [the phase 2 plate configuration](../plate-configuration-phase-2.json), of 4 instances, while
 the summary that slice job `3f9a1c2b` carries in [slice-done.json](slice-done.json),

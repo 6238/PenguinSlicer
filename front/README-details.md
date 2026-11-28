@@ -19,8 +19,11 @@ guide is right and this file is to be corrected. Of the front server, items 1 to
 [progress streams](#progress-streams),
 [the sliced file's details and the sliced file](#the-sliced-files-details-and-the-sliced-file),
 and [the two-hour rule and the sweep](#two-hours-the-sweep-and-the-backstop) with the
-once-a-minute line on how full the server is ([the log](#the-log)).
-What this file says of those is true of the code in `front/`;
+once-a-minute line on how full the server is ([the log](#the-log)); and items 17 to 20, the
+collecting at start, the log's gathering and the page's reports, the tests across the whole
+(but for those that need a second release) and the joined suite in `together/`
+([Running phase 2 on one machine](#running-phase-2-on-one-machine)).
+What this file says of those is true of the code in `front/` and `together/`;
 every other sentence is design: it restates each requirement of the guide in the builder's
 terms, with the code-level names (requests, settings, constants, error codes, records) and
 the tests each requirement needs.
@@ -2451,9 +2454,10 @@ and the folders it gave them, never by importing their code. As built:
 - **The stand-in Orca's mode** is read by the wrapper from a file at each slice, so a test
   sets how the next slice goes (`ok`, `empty_layers`, `gate` to hold Orca until the test lets
   it go) without a restart.
-- **The front server** is given `PENGUIN_COOKIE_KEY`, so a restart signs nobody out, and a
-  folder of page files holding a one-line `index.html` with the version's placeholder, until
-  the browser tests give it the wizard's build.
+- **The front server** is given `PENGUIN_COOKIE_KEY`, so a restart signs nobody out (the one
+  test of a restart with a new key sets another before it), and a folder of page files: for
+  the HTTP tests a one-line `index.html` with the version's placeholder, for the browser tests
+  the wizard's build.
 - **The page** (`joined/page.py`) makes the wizard's requests over HTTP: the trip that signs
   in, `X-PenguinSlicer-Group`, `X-PenguinSlicer-Page`, `X-PenguinSlicer-Wizard` on each
   changing request, and the progress stream read as server-sent events on a thread of its
@@ -2469,15 +2473,37 @@ and the folders it gave them, never by importing their code. As built:
 - **One walk with the real Orca**, `make -C together test-orca`, outside `make -C together
   test`: the same walk for one small real plate with the pinned Orca, under the real-Orca
   lock (`flock /var/tmp/penguin-locks/real-orca.lock`), the downloaded sliced file checked
-  as [the sliced file's contract](../contracts/sliced-file.md) describes a real one.
+  as [the sliced file's contract](../contracts/sliced-file.md) describes a real one; and the
+  browser walk below with the real Orca, in the same target.
 
-What the joining found is in [the record of the seam](../docs/orchestration/phase-2/seam-front-slice.md).
-To be built, as the last item of phase 2 once the wizard's steps exist: the browser half,
-which builds the wizard and drives it in Chromium through Playwright over the same two
-servers (the fixtures `slice_service` and `front_server`): the phase's "Done when" from
-adding parts to the download, and each row of the architecture's table "The slice container
-restarts", the slice service being restarted at that row's moment
-([Keeping it true](../docs/architecture.md#keeping-it-true)).
+- **The browser half** (`together/tests/test_browser_*.py`, `joined/browser.py`) builds the
+  wizard first (`make -C together test` runs `make -C wizard build`) and drives it in Chromium
+  through Playwright for Python, headless, with no graphics card, over the same two servers:
+  the fixture `slice_service`, and `wizard_front`, a front server whose page files are
+  `wizard/dist/`. The page runs on its own real clock, since the two servers take no fake
+  clock; every wait is for the page to reach a state, asked on each animation frame, behind
+  the same backstop. Covered: the phase's "Done when" on real parts, from adding them to the
+  download, the bytes downloaded being those the stand-in Orca wrote (the wrapper keeps a copy
+  of each sliced file when a test is marked `keep_sliced`), the layer preview drawing the
+  sliced file and the layer bar changing it; each row of "The slice container restarts" that
+  needs a page (an open page after a crash mid-slice, a closed page opened again, a waiting
+  slice ended by a stop and shown waiting while the slicer restarts, a finished slice
+  unchanged), the slice service restarted at that row's moment; a failed slice with the slice
+  service's sentences and the wizard's buttons; a plate changed while it slices and after; a
+  page reloaded while its slice runs, following the same slice job to its result with no
+  second submission; settings changed in advanced mode, and every setting of the real table at its bounds
+  accepted by the slice service exactly when the wizard takes it; and the open page's sign-in
+  trip across a front server restarted with a new cookie key. The address-space limit is given
+  to each server (`JOINED_SERVER_AS_BYTES`), not to pytest, since Chromium cannot start
+  under it.
+- **The real-Orca walk in the browser** (`tests_orca/test_real_orca_browser.py`, in
+  `make -C together test-orca`): a plate configuration the page made, with a setting changed
+  in advanced mode, sliced by the pinned Orca, the layer preview drawing the real sliced file,
+  and the download carrying the changed setting.
+
+What the joining found is in the records of the two seams,
+[the front server and the slice service](../docs/orchestration/phase-2/seam-front-slice.md) and
+[the wizard and the front server](../docs/orchestration/phase-2/seam-wizard-front.md).
 
 ### Tests
 
@@ -2767,7 +2793,7 @@ From [the guide](README.md#what-is-built-in-which-phase).
 
 The front server runs beside one slice service process on one machine, with the development
 identity and a folder for each bucket. Build in this order; each item rests on those before
-it, and each is done with its tests. Items 1 to 19 are built, except in item 19 the previous
+it, and each is done with its tests. Items 1 to 20 are built, except in item 19 the previous
 release's page and the previous slice service's stand-in, which wait for a second release.
 
 1. **The project and its fakes** (built). `front/` as a `uv` project with its make targets; the
@@ -2837,8 +2863,8 @@ release's page and the previous slice service's stand-in, which wait for a secon
     still answered (built); no secret in any log line or answer (built).
 20. **The joined suite,** `together/` ([Running phase 2 on one machine](#running-phase-2-on-one-machine)):
     the two servers run together, driven over HTTP as the wizard drives them, and one walk
-    with the real Orca (built); the browser half, once the wizard's steps exist (to be
-    built).
+    with the real Orca (built); the browser half, the wizard driven in Chromium over the same
+    two servers, and one browser walk with the real Orca (built).
 
 In phase 2 the page sends the wizard's mark, and the front server does not yet check it.
 

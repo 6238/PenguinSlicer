@@ -30,7 +30,8 @@ import { createSettings } from './settings.js';
 import { createReports, watchUncaught } from './reports.js';
 import { createReloader } from './reloading.js';
 import { realClock } from './seams/clock.js';
-import { reloadPage } from './seams/location.js';
+import { goTo, pageAddress, reloadPage } from './seams/location.js';
+import { createSignInTrip, quietMoments } from './signing-in.js';
 import { webLocks } from './seams/locks.js';
 import { openIndexedDb, sessionTab } from './seams/browser-storage.js';
 import { fetchTransport } from './seams/transport.js';
@@ -42,7 +43,12 @@ const meta = document.querySelector('meta[name="penguinslicer-version"]');
 const version = meta ? meta.content : '';
 
 const store = createStore();
-const api = createApi({ transport: fetchTransport, clock: realClock, version, currentGroup: () => store.get().group });
+// A request answered front.not_signed_in sends the page on the sign-in trip, once a tab.
+const signIn = createSignInTrip({
+  tab: sessionTab, clock: realClock, here: () => pageAddress(), go: (address) => goTo(address),
+  whenQuiet: quietMoments(window, document),
+});
+const api = createApi({ transport: fetchTransport, clock: realClock, version, currentGroup: () => store.get().group, signIn });
 const panel = createPanel(document.getElementById('wizard'), { api, clock: realClock, store });
 const reports = createReports({
   api, clock: realClock, page: randomId(), environment: browserEnvironment(),

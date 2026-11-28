@@ -116,10 +116,23 @@ def wait_for_a_signal(pipe, ignore_term):
         signal.pause()
 
 
+def layered_gcode(layers=42, moves=2000):
+    """G-code a page can draw, in the pinned Orca's markers: the header's 42 layers, each opened
+    by `; CHANGE_LAYER`, `; Z_HEIGHT:` and `; LAYER_HEIGHT:`, with its share of `moves` extruding
+    moves (relative E, as Orca's M83) under a `; FEATURE:`, inside a 50 x 43 mm square."""
+    out = [HEADER, "M83\nG90\n"]
+    for layer in range(layers):
+        z = round(0.2 * (layer + 1), 2)
+        out.append(f"; CHANGE_LAYER\n; Z_HEIGHT: {z}\n; LAYER_HEIGHT: 0.2\nG1 Z{z} F600\n"
+                   "; FEATURE: Outer wall\n; LINE_WIDTH: 0.42\n")
+        for i in range(layer * moves // layers, (layer + 1) * moves // layers):
+            out.append(f"G1 X{100 + i % 50} Y{100 + i * 7 % 43} E0.{i + 1}\n")
+    return "".join(out)
+
+
 def write_archive(path, names):
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("Metadata/plate_1.gcode", HEADER + "".join(f"G1 X{i % 997} Y{i * 7 % 113} E0.{i}\n"
-                                                               for i in range(2000)))
+        zf.writestr("Metadata/plate_1.gcode", layered_gcode())
         zf.writestr("Metadata/slice_info.config", SLICE_INFO)
         zf.writestr("Metadata/plate_1.json", json.dumps({"bbox_objects": [{"name": n} for n in names]}))
 

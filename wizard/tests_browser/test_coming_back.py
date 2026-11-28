@@ -298,3 +298,27 @@ def test_a_second_use_of_the_layout_view_measures_its_figures_afresh(page, front
     assert first["longest_hold_ms"] >= HOLD_MS, first
     assert second["longest_hold_ms"] < first["longest_hold_ms"], (first, second)
     assert w.problems == []
+
+
+def test_a_request_answered_not_signed_in_makes_the_trip_and_comes_back_to_the_plate(page, front_server):
+    """The front server restarted on one machine with no cookie key given: every cookie is
+    unreadable, the next request is answered front.not_signed_in, and the page makes the trip,
+    which the development identity's /signin ends at once, back on the same step with the plate
+    as it was; the part whose upload was refused is uploaded again. On the real clock, since the
+    page navigates."""
+    w = Wizard(page, front_server, fake_clock=False)
+    w.page.check("#upload-units input[value=mm]")
+    w.page.set_input_files("#f-upload", [{"name": "Spacer.stl", "mimeType": "application/octet-stream", "buffer": spacer()[1]}])
+    w.until("return wizard.parts.rows().length === 1 && wizard.parts.rows().every((r) => !r.arriving);")
+    front_server.new_cookie_key()
+    with w.page.expect_navigation():
+        w.page.set_input_files("#f-upload", [{"name": "Bracket.stl", "mimeType": "application/octet-stream", "buffer": bracket()[1]}])
+    w.wait_opened()
+    w.until("return wizard.parts.rows().length === 2 && wizard.parts.rows().every((r) => !r.arriving && r.drawn);")
+    assert [p for p in front_server.requests if p.startswith("/signin")] == ["/signin?return=%2F"]
+    uploads = [(m, p) for (m, p, _h) in front_server.request_headers if p.startswith("/api/parts")]
+    assert len(uploads) == 3                     # the first part, the refused one, and it again
+    assert w.run("return sessionStorage.getItem('penguinslicer.sign_in_trip');") == ""
+    assert w.page.locator("#notices .notice").count() == 0
+    # Chromium's own line for the refused upload, and nothing of the page's
+    assert [p for p in w.problems if "status of 401" not in p] == []
