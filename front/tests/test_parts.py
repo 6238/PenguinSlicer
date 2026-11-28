@@ -218,7 +218,7 @@ def test_an_upload_without_content_length_is_front_bad_request(client, standin, 
 def test_an_upload_cut_short_of_its_content_length_is_front_bad_request(client, standin):
     answer = raw_upload(client, io.BytesIO(BRACKET[:1000]), len(BRACKET))
     assert answer.status_code == 400 and answer.get_json()["code"] == "front.bad_request"
-    assert "parts" not in standin.parts
+    assert standin.parts.get("dev-user", {}) == {}
 
 
 @pytest.mark.parametrize("body", [b"not json", b"[1]",
@@ -344,6 +344,15 @@ def test_the_limit_holds_for_each_user_by_itself(clock):
     clock.advance(59.5)
     assert limit.take("a") == 1
     clock.advance(0.5)
+    assert limit.take("a") is None
+
+
+def test_a_wait_of_part_of_a_second_is_rounded_up_to_the_next_whole_second(clock):
+    limit = RateLimit(clock, 1)
+    assert limit.take("a") is None
+    clock.advance(29.5)
+    assert limit.take("a") == 31  # 30.5 seconds left: told 30, the page would be refused again
+    clock.advance(30.5)
     assert limit.take("a") is None
 
 

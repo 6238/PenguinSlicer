@@ -216,6 +216,62 @@ def test_a_repeat_answers_the_first_attempts_slice_job_and_one_is_followed(app, 
     assert len(log.events("slice_followed")) == 1
 
 
+# A repeat of a slice job that ended done: the 202 carries the slice service's done report,
+# which the page sees as the front server's pages see it (contracts/wizard-front-server.md,
+# "The reports the front server passes").
+
+def done_report(job, sequence):
+    return {"job": job, "state": "done", "stage": "reading_result",
+            "stage_label": "Reading the sliced file", "fraction": 1.0, "elapsed_s": 52.8,
+            "expected_s": 75, "sequence": sequence}
+
+
+def accepted_done(job, sequence):
+    return {"job": job, "plate_id": PLATE["plate_id"], "submission_id": PLATE["submission_id"],
+            "progress": done_report(job, sequence), "part_warnings": []}
+
+
+def test_a_repeat_answered_done_with_no_stored_file_is_held_back(client, standin):
+    # The slice job is one the stand-in does not know, so its following ends at once and
+    # nothing is stored while the answer is made.
+    standin.answer_next("POST", "/slices", 202, accepted_done("jdone1", 9))
+    answer = submit(client)
+    assert answer.status_code == 202
+    progress = answer.get_json()["slice"]["progress"]
+    assert progress["state"] == "running" and progress["sequence"] == 8
+    assert "sliced_file" not in progress
+
+
+def test_a_repeat_answered_done_with_a_stored_file_is_done_with_the_sliced_file(app, client,
+                                                                                 standin,
+                                                                                 clock):
+    write_record(state_bucket(app), sliced.record_name("dev-user", "jdone2"), "sliced_file", {
+        "slice": "jdone2", "group": "dev-group", "state": "stored", "file": "x.gcode.3mf",
+        "size_bytes": 3, "summary": {"file": "x.gcode.3mf"},
+        "slice_ended_at": sliced.utc(clock.now()), "report": done_report("jdone2", 9)})
+    standin.answer_next("POST", "/slices", 202, accepted_done("jdone2", 9))
+    progress = submit(client).get_json()["slice"]["progress"]
+    assert progress["state"] == "done" and progress["sequence"] == 9
+    assert progress["sliced_file"]["slice"] == "jdone2"
+    assert progress["sliced_file"]["expires_in_s"] == 7200
+
+
+def test_a_repeat_answered_done_while_followed_is_the_followings_latest_report(app, client,
+                                                                               standin):
+    running = {"job": "jdone3", "state": "running", "stage": "slicing",
+               "stage_label": "Slicing", "elapsed_s": 5, "expected_s": 75, "sequence": 5}
+    standin.add_job("jdone3", "dev-user", PLATE["plate_id"], PLATE["submission_id"], running)
+    follower(app).follow("dev-user", "jdone3", "dev-group")
+    told = Announcer()
+    subscription = follower(app).subscribe("dev-user", "jdone3", lambda _r: told.announce())
+    told.wait_for(lambda: follower(app).latest("dev-user", "jdone3") is not None,
+                  "the following's first report")
+    subscription.cancel()
+    standin.answer_next("POST", "/slices", 202, accepted_done("jdone3", 9))
+    progress = submit(client).get_json()["slice"]["progress"]
+    assert progress == running
+
+
 def test_no_submission_reaches_the_slice_services_cancel(client, standin):
     submit(client)
     submit(client, plate(submission_id="a-new-submission"))
