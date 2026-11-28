@@ -9,13 +9,16 @@
 //      and is at least half its size (the facets of a round side), unless the face is the
 //      part's own surface, at least MIN_CONTACT_MM2, and that neighbour mostly bridges a
 //      hollow or a step;
-//   5. a bounding-box patch for each side of the part's bounding box that no kept face points
-//      within BBOX_COVER_DEG of.
+//   5. a face dropped when the part laid on it would rest on no face of its own, as the slice
+//      service judges it for slice.rests_on_an_edge (first-layer.js);
+//   6. a bounding-box patch for each side of the part's bounding box that no kept face points
+//      within BBOX_COVER_DEG of (a face step 5 dropped covers no side).
 // Everything is in the part's own coordinates, so the faces turn with an instance for free.
 import {
   BBOX_COVER_DEG, FACE_JOIN_DEG, FLAT_GAP_MM, FLAT_TURN_DEG, MAX_FACES, MIN_CONTACT_MM2, MIN_FACE_MM2,
   ROUND_SIDE_DEG, SLIVER_DEG,
 } from './constants.js';
+import { planeBasis, restsOnNoFace } from './first-layer.js';
 import { area as outlineArea, containsPoint, convexHull2d, sharpestCorner } from './outline.js';
 
 const COS = (deg) => Math.cos((deg * Math.PI) / 180);
@@ -26,15 +29,9 @@ export const BOX_SIDES = [
   ['+z', [0, 0, 1]], ['-z', [0, 0, -1]],
 ];
 
-// Two directions square to `n`, so that (u, w, n) is right-handed.
-export function planeBasis(n) {
-  const e = Math.abs(n[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
-  let u = [n[1] * e[2] - n[2] * e[1], n[2] * e[0] - n[0] * e[2], n[0] * e[1] - n[1] * e[0]];
-  const len = Math.hypot(...u);
-  u = u.map((v) => v / len);
-  const w = [n[1] * u[2] - n[2] * u[1], n[2] * u[0] - n[0] * u[2], n[0] * u[1] - n[1] * u[0]];
-  return [u, w];
-}
+// Two directions square to a direction (first-layer.js, which needs it and imports nothing of
+// this module, so that the build's modules import no circle).
+export { planeBasis };
 
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 
@@ -250,7 +247,8 @@ function mergeFlat(hull, faceOf, groups, faces, normals, areas) {
 // The faces of `hull` and the patches a part can be laid down by. `mesh` is the part (its
 // `positions` and its bounding box `min`, `max`); `triangles` its triangles' normals and areas,
 // when already worked out. Each face is {normal, area, outline, material, dropped}, `dropped`
-// naming the step that left it out ('small', 'sliver', 'beyond_max', 'round_side') or null;
+// naming the step that left it out ('small', 'sliver', 'beyond_max', 'round_side',
+// 'no_first_layer') or null;
 // each patch {kind: 'hull' | 'box', normal, area, outline, face | side}. Whether the part
 // would stand on a patch without tipping is auto-orient's test (orient.js), which marks each
 // patch; no patch is dropped for it, since the plate holds a print's first layer whichever way
@@ -308,11 +306,15 @@ export function findFaces(hull, mesh, { triangles = null } = {}) {
   const spares = (face, other) => own(face) && !own(other) && face.area >= MIN_CONTACT_MM2;
   const facets = [...shallow].filter(([face, near]) => near.some((k) => !spares(face, faces[k]))).map(([face]) => face);
   for (const face of facets) face.dropped = 'round_side';
+  // Step 5: a face on which the part would rest on no face of its own (first-layer.js).
+  for (const face of faces) {
+    if (!face.dropped && restsOnNoFace(mesh, face.normal)) face.dropped = 'no_first_layer';
+  }
   const kept = faces.filter((f) => !f.dropped);
   const patches = kept.map((face) => ({
     kind: 'hull', face: faces.indexOf(face), normal: face.normal, area: face.area, outline: face.outline,
   }));
-  // Step 5.
+  // Step 6.
   const cover = COS(BBOX_COVER_DEG);
   for (const [side, direction] of BOX_SIDES) {
     if (!kept.some((face) => dot(face.normal, direction) >= cover)) patches.push(boxPatch(side, direction, box));

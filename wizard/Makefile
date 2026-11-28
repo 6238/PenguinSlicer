@@ -1,6 +1,6 @@
 .PHONY: install check-node sync install-browser test test-page test-tools test-browser build look look-parts look-parts-step \
 	look-layout-step measure-layout \
-	trials trials-preview trials-geometry trials-parts trials-serve
+	offered-faces trials trials-preview trials-geometry trials-parts trials-serve
 
 UV ?= uv
 NODE ?= node
@@ -62,6 +62,13 @@ look: build
 # longest hold for each part.
 look-parts: build
 	$(PY) $(CURDIR)/tests_browser/look_parts.py
+
+# Every face the wizard offers on each real part, as one pose each, into
+# contracts/examples/placement/offered-faces/real-parts.json, which the slice service's
+# real-Orca suite slices (the fast suite fails when the committed file differs).
+offered-faces:
+	mkdir -p $(CURDIR)/../contracts/examples/placement/offered-faces
+	$(NODE) $(CURDIR)/scripts/offered-faces.js
 
 # Pictures of the Parts step beside the mockup's, in each state the mockup shows and in the
 # screens it never drew, at 320, 480, 520 and 680 px, into docs/orchestration/phase-2/look/wizard-4/.

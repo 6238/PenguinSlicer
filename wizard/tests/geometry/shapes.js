@@ -86,6 +86,28 @@ export function regularPolygon(sides, radius, phase = 0) {
 
 export const cylinder = (sides, radius, height) => prism(regularPolygon(sides, radius), 0, height);
 
+// A star prism: `points` tips at radius `outer` (the first on +x) and as many notches at radius
+// `inner` between them, from z = 0 to `height`. Its ends are fanned from the axis, since the star
+// is not convex.
+export function starPrism(points, outer, inner, height) {
+  const outline = Array.from({ length: 2 * points }, (_, i) => {
+    const t = (Math.PI * i) / points;
+    const r = i % 2 ? inner : outer;
+    return [r * Math.cos(t), r * Math.sin(t)];
+  });
+  const tris = [];
+  const n = outline.length;
+  for (let i = 0; i < n; i++) {
+    const p = outline[i];
+    const q = outline[(i + 1) % n];
+    tris.push([[0, 0, height], [p[0], p[1], height], [q[0], q[1], height]]);
+    tris.push([[0, 0, 0], [q[0], q[1], 0], [p[0], p[1], 0]]);
+    tris.push([[p[0], p[1], 0], [q[0], q[1], 0], [q[0], q[1], height]]);
+    tris.push([[p[0], p[1], 0], [q[0], q[1], height], [p[0], p[1], height]]);
+  }
+  return meshOf(tris);
+}
+
 // A mesh turned by the row-major 3 x 3 matrix `m`.
 export function turned(mesh, m) {
   const p = mesh.positions;
