@@ -231,6 +231,73 @@ def test_a_record_with_a_missing_or_malformed_field_fails_alone_and_the_sweep_go
     assert sliced.record_name("aaaa", "broken") in names(bucket)
 
 
+@pytest.mark.parametrize("body", [
+    b"not json", b"", b"\xff\xfe", b"[1, 2]", b'"stored"', b'{"slice": "broken"}',
+    b'{"format": 2, "slice": "broken", "state": "stored"}',
+    b'{"format": "1", "slice": "broken", "state": "stored"}',
+    b"[" * 100_000 + b"]" * 100_000,
+    b'{"format": 1, "d": ' + b"[" * 100_000 + b"]" * 100_000 + b"}",
+], ids=["not-json", "empty", "not-utf8", "a-list", "a-string", "no-format",
+        "a-future-format", "a-format-as-text", "nested-too-deep", "a-field-nested-too-deep"])
+def test_a_record_that_cannot_be_read_is_left_alone_and_the_sweep_goes_on(
+        app, bucket, clock, log, body):
+    # "aaaa" sorts before USER: the unreadable record is met before the due file.
+    bucket.put(sliced.record_name("aaaa", "broken"), body)
+    write_stored(bucket)
+    at(clock, ENDED + 7200)
+    for expired in (1, 0):  # the due file goes at the first sweep; the record stays
+        counts = sweeper(app).sweep()
+        assert counts["files_expired"] == expired and counts["failed"] == 0
+    assert read_state(bucket) == "expired"
+    assert sliced.record_name("aaaa", "broken") in names(bucket)
+    assert [line["record"] for line in log.events("record_unreadable")] == [
+        sliced.record_name("aaaa", "broken")] * 2
+
+
+@pytest.mark.parametrize("record", [
+    {"slice": "broken", "group": GROUP, "state": ["stored"]},
+    {"slice": "broken", "group": GROUP, "state": {"stored": 1}},
+    {"slice": "broken", "group": GROUP, "state": "stored", "slice_ended_at": ["x"]},
+    {"slice": "broken", "group": GROUP, "state": "stored",
+     "slice_ended_at": "99999-01-01T00:00:00Z"},
+    {"group": GROUP, "state": "stored", "slice_ended_at": ENDED_AT},
+    {"slice": "broken", "group": GROUP, "state": "failed", "slice_ended_at": 1e300},
+], ids=["state-a-list", "state-an-object", "end-a-list", "end-past-year-9999",
+        "due-without-slice", "end-a-number"])
+def test_a_record_of_other_wrong_types_fails_alone_and_the_sweep_goes_on(
+        app, bucket, clock, log, record):
+    from penguin_front.records import write_record
+
+    write_record(bucket, sliced.record_name("aaaa", "broken"), sliced.KIND, record)
+    write_stored(bucket)
+    at(clock, ENDED + 7200)
+    for expired in (1, 0):  # it fails again at the next sweep, left as it is
+        counts = sweeper(app).sweep()
+        assert counts["files_expired"] == expired and counts["checked"] == 2
+        assert counts["failed"] == 1
+    assert read_state(bucket) == "expired"
+    assert sliced.record_name("aaaa", "broken") in names(bucket)
+    lines = log.events("sweep_item_failed")
+    assert [(line["user_key"], line["slice"], line["group"]) for line in lines] == [
+        ("aaaa", "broken", GROUP)] * 2
+    assert all(line["why"].startswith("the record is malformed: ") for line in lines)
+
+
+def test_a_folder_where_a_record_or_a_sliced_file_is_expected_is_passed_over(
+        app, bucket, clock, log):
+    # In the folder form a name can be a folder of other names: such names are not the
+    # front server's, and the sweep goes on past them.
+    bucket.put(sliced.record_name("aaaa", "broken") + "/inside", b"{}")
+    bucket.put(sliced.file_name("aaaa", "broken") + "/inside", b"x")
+    bucket.put("sliced/aaab", b"a file where a user's folder is")
+    write_stored(bucket)
+    at(clock, ENDED + 7200)
+    counts = sweeper(app).sweep()
+    assert counts == {"checked": 1, "files_expired": 1, "records_deleted": 0,
+                      "files_deleted": 0, "failed": 0}
+    assert read_state(bucket) == "expired"
+
+
 def test_a_lone_file_that_cannot_be_deleted_fails_without_a_group(app, bucket, clock, log):
     bucket.put(sliced.file_name(USER, JOB), FILE)
     at(clock, START + 7200)

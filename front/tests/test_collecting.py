@@ -204,6 +204,8 @@ def test_an_end_time_is_counted_refused_only_for_a_slice_job_collected(app, stan
     {"job": "jx", "user_key": USER, "progress": "done"},
     {"job": "jx", "user_key": USER, "progress": {"state": 3}},
     {"job": "jx", "user_key": "a/b", "progress": {"state": "running"}},
+    # A lone surrogate, which JSON's `\udc80` gives and no name can be encoded with.
+    {"job": "jx", "user_key": "u\udc80", "progress": {"state": "done"}},
 ])
 def test_an_entry_the_front_server_cannot_read_is_skipped_with_a_line(app, standin, log,
                                                                       entry):

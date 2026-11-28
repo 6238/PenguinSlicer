@@ -166,6 +166,26 @@ def test_the_slice_client_waits_slice_timeout_s_for_the_next_bytes():
     assert seen == [{"connect": 30, "read": 30, "write": 30, "pool": 30}]
 
 
+def test_the_front_servers_own_requests_to_the_slice_service_carry_slice_timeout_s(
+        app, client, standin):
+    # The client the application builds for itself, not one a test builds: its network is
+    # wrapped so that each request's time limits, as httpx hands them to the network, are
+    # seen on the way to the stand-in.
+    seen = []
+    slice_client = app.extensions["penguin_front"]["slice"]._client
+    network = slice_client._transport
+
+    class Recording(httpx.BaseTransport):
+        def handle_request(self, request):
+            seen.append(request.extensions["timeout"])
+            return network.handle_request(request)
+
+    slice_client._transport = Recording()
+    assert client.get("/api/settings-table").status_code == 200
+    assert seen == [{"connect": SLICE_TIMEOUT_S, "read": SLICE_TIMEOUT_S,
+                     "write": SLICE_TIMEOUT_S, "pool": SLICE_TIMEOUT_S}]
+
+
 def test_without_a_sign_in_it_is_refused_and_the_slice_service_is_not_asked(app, standin):
     answer = app.test_client().get("/api/settings-table")
     assert answer.status_code == 401 and answer.get_json()["code"] == "front.not_signed_in"

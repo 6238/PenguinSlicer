@@ -106,10 +106,11 @@ def test_the_lines_gain_the_group_of_their_slice_job(clock, client, state, log, 
     standin.log_line("start", version="x", group="a group the slice service wrote")
     standin.log_line("slice_job", job="j/../../x", user_key=USER)
     standin.log_line("slice_job", job="jrec", user_key="a/b")
+    standin.log_line("slice_job", job="jrec", user_key="u\udc80")  # no name can hold it
     gatherer(clock, client, state, log, followed).gather_once()
     groups = [line.get("group") for line in log.gathered]
     assert groups == ["group-of-rec", "group-of-fol", "other-group", None, None, None, None,
-                      None]
+                      None, None]
     assert "group" not in log.gathered[5]
 
 
