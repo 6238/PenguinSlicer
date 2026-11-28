@@ -667,8 +667,7 @@ submitted again.
 
 ### Go on without the page
 
-*Built today: a slice job that runs to its end whether or not anything follows it. To be
-built in phase 2: the three things of the slice service's side listed below.*
+*Built today, with the three things of the slice service's side listed below.*
 
 Once submitted, a slice job runs to its end whether or not anything is following it:
 through a refresh, a dropped connection or a closed laptop lid. A user who comes back
@@ -687,14 +686,15 @@ The slice service's side of that bargain is three small things:
   slice job the slice service process knows, with whose it is, its latest progress report
   and whether its sliced file is still there, then follows the unfinished ones and
   collects the finished ones.
-- **It remembers a slice job for two hours after it ends** (today, one hour), so a page
+- **It remembers a slice job for two hours after it ends,** so a page
   that returns within two hours of the slice's end still gets an answer about it. After
   that a finished slice is known by its sliced file, which the front server keeps until
   two hours after the slice ended or two hours after its last print ended, whichever is
   later.
 - **It deletes its own copy of the sliced file as soon as the front server says it has
   stored it.** The record of the slice job stays until it expires. A sliced file that is
-  never collected goes with its record.
+  never collected goes with its record. A slice job lets go of its parts as soon as its
+  plate is sliced; the part store keeps each part by its own rule.
 
 ## How it does the hard parts
 
@@ -854,8 +854,9 @@ the plate configuration must be in the sliced file's list of objects, because Or
 out an instance that lies wholly off the plate without reporting an error. And every entry
 of the archive must pass its checksum.
 
-From phase 2 there is a third guard: **a sliced file is at most 50 MB.** A slice whose
-file would be larger ends as a failed slice, with a sentence of the slice service's own.
+A third guard follows them: **a sliced file is at most 50 MB.** A slice whose file is
+larger ends as a failed slice, with a sentence of the slice service's own, and the file is
+removed.
 The largest sliced file measured is 14.1 MB. The limit bounds what every preview,
 download and print moves, and keeps each fetch of a sliced file well inside the 100 MB
 that Cloudflare allows one request. The front server refuses to store a larger file all
@@ -958,10 +959,10 @@ to read all eight real parts and up to 5.8 seconds to accept the largest plate.
 | One part | 150,000 triangles; 7,500,084 bytes | The time to read and check one part, and one upload. Reading all eight real parts (7 MB together) took 0.17 to 0.19 seconds | Tests at the limit and one over |
 | A plate configuration without its files | 1 MB, from phase 2; chosen without a measurement | The description alone, and with it all the settings of one plate together. No plate of 150 instances has been measured against it | Tests at the limit and one over |
 | The text of one text setting | The length of the longest text value in the profile catalog, from phase 2 | What one setting can add to the profile written for Orca and to a line of the log. The figure is read from the catalog when the check is built | Tests at the limit and one over |
-| A sliced file | 50 MB, from phase 2 | What each preview, download and print moves, and each fetch against the 100 MB Cloudflare allows one request. The largest measured is 14.1 MB | A test with a stand-in Orca that writes a larger file |
+| A sliced file | 50 MB | What each preview, download and print moves, and each fetch against the 100 MB Cloudflare allows one request. The largest measured is 14.1 MB | A test with a stand-in Orca that writes a larger file |
 | Margin, spacing, least size | 3 mm; 5 mm and 12 mm; 0.1 mm | See [Check a plate before it is sliced](#check-a-plate-before-it-is-sliced). The spacings are measured, with room to spare | The upstream check slices the tightest pairs exactly the spacing apart |
 | A part in the part store | Two hours after last use; no count for one user | Disk, and how long a stranger's model rests on the server. The part store's overall limit on disk is what bounds the number of parts: 1,024 MB on one machine, a starting figure chosen without a measurement; the slice container's is not set ([Unmeasured](#unmeasured)) | Tests that move a clock; tests that fill a small limit and see the least recently used part go |
-| A slice job remembered | Two hours after it ends, from phase 2 (one hour today) | Memory of the slice service process | Tests that move a clock |
+| A slice job remembered | Two hours after it ends; its sliced file only until the front server has stored it | Memory of the slice service process | Tests that move a clock |
 | A quiet progress stream | Something sent at least every 15 seconds | Railway's 5 minutes and Cloudflare's 125 seconds without data, both theirs | A test |
 | Grace when stopping Orca | 5 seconds, then killed | How long a stop can take to be reported | Tests with a stand-in Orca that ignores the request |
 | Retrying a submission while the slice service stops | 300 seconds; the wizard's figure | At a deploy the slice service finishes its running slice and turns new submissions away meanwhile ([What a user sees while the slice service stops](#what-a-user-sees-while-the-slice-service-stops)). The page goes on submitting by itself for this long before it says the server could not be reached, so the time limit and the time a new slice service takes to start must together stay under it | Phase 3's trial of a deploy during a slice |
@@ -1091,13 +1092,13 @@ one exception described under
 | The plate needs too much memory | "This plate is too large to slice: the slicer needed more than the 2,000 MB of memory the print server allows." | Fewer instances or a new plate; for a single instance, split or simplify the part |
 | The slice ran out of time | "The slicer took too long on this plate." | The same remedies |
 | Orca found two instances' paths would meet | Which two, and that supports are the likely cause when they are on | Spread them out, turn supports off, or use a new plate |
-| A part has a gap with nothing under it | Which instance, and between which heights nothing would be printed. From phase 2 the error report also carries Orca's own sentence | Turn supports on, offered as the single action. With supports already on, the part must be repaired |
+| A part has a gap with nothing under it | Which instance, and between which heights nothing would be printed. The error report also carries Orca's own sentence | Turn supports on, offered as the single action. With supports already on, the part must be repaired |
 | Nothing printable was found | That no layers were found (a surface with holes, a part too thin), or that the print is empty (a part thinner than the nozzle prints), naming the part when the plate has one | Repair the part in CAD, or check its size |
 | An instance lies partly or wholly off the plate in Orca's eyes | That it is not on the plate | Move it |
 | Orca failed and gave only a general reason | "The slicer could not slice this plate.", with Orca's warnings added and labelled as possibly unrelated | Act on a warning if one fits |
 | Orca crashed, or something on the server killed it | That the slicer crashed, or was stopped before it finished | Slice again |
 | Orca finished but its file is missing, damaged or incomplete | That the sliced file is damaged or missing | Slice again |
-| The sliced file would be larger than 50 MB (phase 2) | That the sliced file is too large | Fewer instances or a new plate |
+| The sliced file is larger than 50 MB | That the sliced file is too large, and how large it may be | Fewer instances or a new plate; for a single instance, split or simplify the part |
 | The server could not write into the slice job's folder (a full disk, for one) | That the print server could not write the slicer's working files | Slice again; if it persists it is for the owner to fix |
 | An uploaded part cannot be kept (a full disk, for one), or arrives without its size | That the slicer could not keep the part, or was not told how large it is | Add the part again; if it fails again, the server needs fixing (more free disk space, for the first). This arrives on the Parts step |
 | The slice service has a bug | "The slicer failed unexpectedly." The full trace goes to the log | Slice again |
@@ -1124,7 +1125,7 @@ for people; changing them is known future work.
 
 ### Orca's own sentence in an error report
 
-*To be built in phase 2. Today no error report carries Orca's words for the user.*
+*Built.*
 
 The rule is that Orca's own words go to the log and are never shown: the slice service
 writes its own sentence from them, naming the instance and the heights. There is one
@@ -1140,7 +1141,10 @@ It costs little. The slice service already reads that sentence to write its own,
 upstream check pins its wording, so a new Orca version that changes it is noticed before
 any user sees the change. The slice service's part is one more field of the error
 report, filled on those two failures and on no other, with a test for each;
-[the error report's contract](../contracts/error-report.md) gains the field.
+[the error report's contract](../contracts/error-report.md) has the field. The quotation is
+at most 300 characters: a longer sentence of Orca's is left out rather than cut, since a
+cut quotation would no longer be Orca's words. With supports on, Orca can name other
+heights for the same part, and the quotation is whatever Orca said.
 
 ### What a restart does
 
@@ -1306,8 +1310,8 @@ that leaves a branch unreached fails. Its rules:
 
 - **Time never passes by itself.** A test never sleeps and never waits a number of seconds
   to see whether something happened. The time limit's timer is replaced by one the test
-  fires; expiry is tested by moving a clock; a test waits on an event, never on a
-  duration.
+  fires; expiry is tested by moving a clock, and the sweeper that removes what expired
+  waits on the test's clock too; a test waits on an event, never on a duration.
 - **Orca is a stand-in that misbehaves on demand.** It is a real separate process with a
   mode for each way Orca can go wrong, so the hard cases of stopping and of deciding how a
   slice ended are all exercised in an exact order chosen by the test.
@@ -1332,8 +1336,8 @@ and the catching of the spike. It also keeps the stand-in honest, by comparing t
 stand-in's progress lines and log line with the real ones. It fails when the pinned Orca
 has a setting that is classified nowhere or when the table of settings is not the one its
 source gives, and it slices with the table's values and with a setting of every kind
-changed, and finds each in the settings Orca says it used. From phase 2 it also pins the
-wording of the one sentence of Orca's that a user is shown.
+changed, and finds each in the settings Orca says it used. It also pins the wording of the
+one sentence of Orca's that a user is shown, with supports off and on.
 
 **What only the host can prove.** How Orca behaves on Railway's machines; the memory and
 time of plates between 2,600 MB and the hosted ceiling; whether the container is really
@@ -1391,12 +1395,16 @@ hostile inputs are tried.
 - a repeated submission answered with the first attempt's slice job;
 - the reason in the last progress report of a slice job ended early;
 - the number of slice jobs ahead, in a waiting slice job's progress report;
-- a slice job that goes on without its page.
+- a slice job that goes on without its page;
+- a slice job remembered for two hours, and its sliced file deleted once the front server
+  has stored it;
+- the list of slice jobs, for a restarted front server;
+- the limit of 50 MB on a sliced file;
+- Orca's own sentence in the error reports of the two failures about a gap with nothing
+  under it.
 
-**Built today and replaced in phase 2:** the keeping of a
-finished slice job, with its hold on its parts and its sliced file, for one hour; the stop that
-ends every slice job early; "a second plate" in the sentences whose remedy is another
-plate.
+**Built today and replaced in phase 2:** the stop that ends every slice job early; "a
+second plate" in the sentences whose remedy is another plate.
 
 **Built today and left as it is, unused:** the request that cancels a slice job. The
 front server never sends it.
@@ -1404,12 +1412,6 @@ front server never sends it.
 **Phase 2, on one machine, adds besides:**
 
 - "a new plate" in every sentence whose remedy is another plate;
-- a slice job remembered for two hours, and its sliced file deleted once the front server
-  has stored it;
-- the limit of 50 MB on a sliced file;
-- Orca's own sentence in the error reports of the two failures about a gap with nothing
-  under it;
-- the list of slice jobs, for a restarted front server;
 - finishing the running slice when asked to stop, and answering new submissions meanwhile
   with an answer of its own;
 - the log lines collected by the front server, each carrying the component's name, the
