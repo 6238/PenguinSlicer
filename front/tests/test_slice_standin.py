@@ -160,6 +160,17 @@ def test_one_running_and_two_waiting_leave_no_room(standin, http):
     assert answer.json()["code"] == "slice.busy" and answer.json()["retryable"] is True
 
 
+def test_every_place_taken_a_changed_plate_of_the_same_user_key_is_accepted(standin, http):
+    # slice/README-details.md: the slice job it replaces gives up its place.
+    with_both_parts(http)
+    first = [submit(http, dict(PLATE, plate_id=f"plate{n}", submission_id=f"s{n}")).json()
+             for n in range(3)]
+    answer = submit(http, dict(PLATE, plate_id="plate2", submission_id="changed"))
+    assert answer.status_code == 202 and answer.json()["job"] != first[2]["job"]
+    replaced = http.get(f"/slices/{first[2]['job']}", headers=KEY).json()
+    assert replaced["state"] == "cancelled" and replaced["cancel_reason"] == "replaced"
+
+
 def test_a_stopping_slice_service_answers_the_examples_refusal_but_repeats_a_submission(
         standin, http):
     with_both_parts(http)

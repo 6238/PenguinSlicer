@@ -16,6 +16,7 @@ together").
 """
 
 import json
+import math
 import secrets
 import traceback
 
@@ -41,10 +42,14 @@ def create_app(settings, *, clock, log, version=None):
 
     @app.before_request
     def not_offered():
-        # A doubled slash anywhere is refused here, on the path as sent, before the handler
-        # runs: the web framework strips a path's leading slashes before matching it (so
-        # `//x` would be served as `/x`) and answers one elsewhere with a redirect.
-        if request.method == "OPTIONS" or "//" in request.environ.get("PATH_INFO", ""):
+        # A doubled slash anywhere is refused here, before the handler runs, on the path of
+        # the request's target as sent: waitress drops a path's leading slashes before the
+        # application sees it (so `//x` would be served as `/x`), a target without a leading
+        # slash would be served as if it had one, and the web framework answers a doubled
+        # slash elsewhere with a redirect. The decoded path is checked too, for `%2F`.
+        sent = _path()
+        if request.method == "OPTIONS" or not sent.startswith("/") or "//" in sent \
+                or "//" in request.environ.get("PATH_INFO", ""):
             raise FrontError("front.no_such_request",
                              f"{request.method} {_path()} is not offered")
 
@@ -86,14 +91,23 @@ def page_file(response, cache_control):
 def json_body():
     """The request's body read as JSON, whatever its Content-Type says; a body that is not
     JSON (empty, cut short, not UTF-8, or using NaN or Infinity) is `front.bad_request`, as is
-    one nested too deeply for the reader, whether or not it is whole."""
+    one nested too deeply for the reader, whether or not it is whole, and one holding a number
+    too large for a float (`1e999`), which would be read as an infinity no answer could
+    hold."""
     raw = request.get_data(cache=True)
 
     def no_constants(name):
         raise ValueError(f"{name} is not JSON")
 
+    def finite(text):
+        number = float(text)
+        if not math.isfinite(number):
+            raise ValueError(f"the number {text[:40]} is too large for the server to read")
+        return number
+
     try:
-        return json.loads(raw.decode("utf-8"), parse_constant=no_constants)
+        return json.loads(raw.decode("utf-8"), parse_constant=no_constants,
+                          parse_float=finite)
     except (UnicodeDecodeError, ValueError) as exc:
         raise FrontError("front.bad_request", f"the body is not JSON: {exc}") from None
     except RecursionError:
@@ -103,11 +117,20 @@ def json_body():
 
 
 def _path():
-    """The request's path as sent: the web framework's `request.path` with any leading
-    slashes it dropped put back."""
-    leading = len(request.environ.get("PATH_INFO", "")) - \
-        len(request.environ.get("PATH_INFO", "").lstrip("/"))
-    return "/" * max(leading - 1, 0) + request.path
+    """The path of the request's target as sent, still percent-encoded: the target
+    (`REQUEST_URI`, which waitress and the test client both give, else `RAW_URI`) without
+    its query or fragment, and in the absolute form (`http://host/path`) without its scheme
+    and host. With neither key, the server's decoded `PATH_INFO`."""
+    environ = request.environ
+    target = environ.get("REQUEST_URI") or environ.get("RAW_URI")
+    if target is None:
+        return environ.get("PATH_INFO", "")
+    target = target.split("#", 1)[0].split("?", 1)[0]
+    scheme, sep, rest = target.partition("://")
+    if sep and scheme.isalpha():
+        slash = rest.find("/")
+        target = rest[slash:] if slash >= 0 else ""
+    return target
 
 
 def _answer_report(log, status, report, **extra):

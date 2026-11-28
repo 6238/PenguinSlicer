@@ -3,10 +3,12 @@ port the system chooses."""
 
 import io
 import json
+import socket
 import threading
 
 import httpx
 import pytest
+import waitress
 
 from penguin_front.__main__ import main, parse_args
 from penguin_front.server import build, serve, stop_server
@@ -89,6 +91,73 @@ def test_the_front_server_answers_over_http_writes_its_start_line_and_stops(tmp_
     events = [json.loads(line)["event"] for path in written
               for line in path.read_text().splitlines()]
     assert events[0] == "start" and "error" in events and events[-1] == "stop"
+
+
+@pytest.fixture
+def served(clock):
+    """The application, with a planted `GET /t/x`, served by waitress on a port the system
+    chooses; gives a function that sends one raw request line and gives (status, body)."""
+    from penguin_front.app import create_app
+    from penguin_front.settings import Settings
+
+    lines = []
+
+    class Lines:
+        def write(self, event, **fields):
+            lines.append({"event": event, **fields})
+
+    app = create_app(Settings.from_environ({"PENGUIN_DEV_IDENTITY": "1"}), clock=clock,
+                     log=Lines(), version=VERSION)
+
+    @app.get("/t/x")
+    def planted():
+        return {"served": "/t/x"}
+
+    server = waitress.create_server(app, host="127.0.0.1", port=0, threads=2, ident="")
+    thread = threading.Thread(target=server.run)
+    thread.start()
+    port = int(server.effective_port)
+
+    def send(target):
+        with socket.create_connection(("127.0.0.1", port), timeout=10) as connection:
+            connection.sendall(f"GET {target} HTTP/1.1\r\nHost: h\r\n"
+                               "Connection: close\r\n\r\n".encode("latin-1"))
+            answer = b""
+            while chunk := connection.recv(65536):
+                answer += chunk
+        head, _, body = answer.partition(b"\r\n\r\n")
+        return int(head.split()[1]), json.loads(body), lines[-1] if lines else None
+
+    try:
+        yield send
+    finally:
+        stop_server(server)
+        thread.join(10)
+
+
+@pytest.mark.parametrize("target", ["/t/x", "http://h/t/x", "/t/x?a=1"])
+def test_a_path_offered_is_served_through_waitress(served, target):
+    status, body, _line = served(target)
+    assert (status, body) == (200, {"served": "/t/x"})
+
+
+@pytest.mark.parametrize("target, path", [
+    ("//t/x", "//t/x"), ("///t/x", "///t/x"), ("http://h//t/x", "//t/x"),
+    ("https://h//t/x?a=1", "//t/x"), ("t/x", "t/x"), ("/t//x", "/t//x"),
+    ("/t/%2Fx", "/t/%2Fx"), ("http://h", ""), ("//t/x?a=b//c", "//t/x"),
+])
+def test_a_path_not_offered_is_404_through_waitress_as_sent(served, target, path):
+    # Waitress drops a path's leading slashes before the application sees it, so the rule
+    # is checked on the request's target as sent.
+    status, body, line = served(target)
+    assert status == 404 and body["code"] == "front.no_such_request"
+    assert line["path"] == path
+
+
+@pytest.mark.parametrize("target", ["/t/x?a=b//c", "http://h/t/x?next=//y"])
+def test_a_doubled_slash_in_the_query_alone_is_served(served, target):
+    status, body, _line = served(target)
+    assert (status, body) == (200, {"served": "/t/x"})
 
 
 @pytest.mark.parametrize("argv", [["serve", "--port", "x"], ["nothing"], []])

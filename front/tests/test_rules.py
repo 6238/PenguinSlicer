@@ -132,20 +132,37 @@ def test_a_path_or_method_not_offered_is_front_no_such_request(client, log, meth
         "front.no_such_request"
 
 
-@pytest.mark.parametrize("path_info", ["//test/raise", "///test/raise", "/test//raise"])
-def test_a_doubled_slash_anywhere_in_the_path_is_front_no_such_request(client, log,
-                                                                       path_info):
-    # The test client would read a path starting `//` as a host; the environment's path is
-    # set directly, as a server passes it for a request line `GET //test/raise`.
-    answer = client.get("/", environ_overrides={"PATH_INFO": path_info})
+@pytest.mark.parametrize("target, path_info, path", [
+    ("//test/raise", "/test/raise", "//test/raise"),
+    ("///test/raise", "/test/raise", "///test/raise"),
+    ("http://h//test/raise?a=1", "/test/raise", "//test/raise"),
+    ("test/raise", "test/raise", "test/raise"),
+    ("/test/%2Fraise", "/test//raise", "/test/%2Fraise"),
+])
+def test_a_doubled_slash_anywhere_in_the_path_is_front_no_such_request(client, log, target,
+                                                                       path_info, path):
+    # The test client would read a path starting `//` as a host; the environment is set
+    # directly, as waitress passes it for a request line `GET <target>`: the target whole,
+    # the path with its leading slashes dropped (tests/test_server.py sends these through
+    # waitress itself).
+    answer = client.get("/", environ_overrides={"REQUEST_URI": target, "RAW_URI": target,
+                                                "PATH_INFO": path_info})
     report = assert_error_report(answer, "front.no_such_request", 404)
-    assert path_info in report["detail"] and "Location" not in answer.headers
-    assert log.lines[-1]["path"] == path_info
+    assert path in report["detail"] and "Location" not in answer.headers
+    assert log.lines[-1]["path"] == path
+
+
+def test_without_the_target_as_sent_the_servers_path_is_checked(client, log):
+    answer = client.get("/", environ_overrides={"REQUEST_URI": None, "RAW_URI": None,
+                                                "PATH_INFO": "/test//raise"})
+    assert_error_report(answer, "front.no_such_request", 404)
+    assert log.lines[-1]["path"] == "/test//raise"
 
 
 # Answers.
 
 @pytest.mark.parametrize("body", [b"", b"not json", b"{", b'{"a": NaN}', b"[1, Infinity]",
+                                  b'{"a": 1e999}', b"[-1e400]",
                                   b'{"a": 1} trailing', b"\xff\xfe{}", b'"\xed\xa0\x80"',
                                   b"[" * 100_000, b"[" * 50_000 + b"]" * 50_000,
                                   b'{"a":' * 50_000 + b"1" + b"}" * 50_000])

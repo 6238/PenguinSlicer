@@ -38,12 +38,19 @@ in [its guide](../../../../front/README.md#what-is-built-in-which-phase).
 5. **Slashes.** Silent. Chosen: a path with a doubled slash anywhere, its start included,
    or differing from an offered one by a trailing slash is `404`, never a redirect; the
    report and the line give the path as sent. Reason: a redirect would be an answer the
-   contract does not list. How (changed after review): one check before every handler reads
-   the path as the server passed it (`PATH_INFO`), since the web framework drops a path's
-   leading slashes before matching (and `request.path` drops them too), and waitress passes
-   a request line `GET //test/raise` with its path whole; the router's own
-   `merge_slashes` setting is not used, the check covering what it did. To overrule: the
-   check in `create_app`.
+   contract does not list. How (changed after the second review): one check before every
+   handler reads the path of the request's target as sent (`REQUEST_URI`, which waitress
+   and Werkzeug's test client both set, without its query or fragment and, in the absolute
+   form `http://host/path`, without scheme and host), and the decoded `PATH_INFO` as well
+   (so `/x/%2Fy` is refused). Reading `PATH_INFO` alone was not enough: waitress 3.0.2
+   strips a path's leading slashes before the application sees it (`task.py`, `path = "/" +
+   path.lstrip("/")`), so `GET //x` and `GET http://h//x` arrived as `/x` and were served;
+   a target with no leading slash (`GET x`) was served too. Both are now `404`, as is an
+   absolute form with no path (`GET http://h`): the contract's table names paths, and a
+   target with none is not one of them. A doubled slash in the query alone is served.
+   The tests send these request lines through waitress itself (`tests/test_server.py`).
+   The router's own `merge_slashes` setting is not used, the check covering what it did.
+   To overrule: the check in `create_app` and `_path` in `app.py`.
 6. **What counts as JSON.** The rule is "a body that is not JSON is `front.bad_request`".
    Chosen: the body is read as JSON whatever its `Content-Type` says; an empty body, one cut
    short, one not in UTF-8, and one using `NaN` or `Infinity` (which Python's reader would
@@ -157,8 +164,14 @@ in [its guide](../../../../front/README.md#what-is-built-in-which-phase).
     cannot hold is written as its text. Chosen: `NaN` and the infinities are written as
     text (`"nan"`, `"inf"`), keys that are not text as their text, a value met again inside
     itself as a note, and anything past 64 levels as a note; the same for gathered lines.
-    Reason: a line must never fail inside the request that writes it, and every line must
-    be JSON for the reading command. To overrule: `line_text` in `log.py`.
+    Added after the second review: an integer past Python's limit of 4,300 digits, which
+    neither `json.dumps` nor `str` can write, is the note `<int of N bits, too long to
+    write>`, as a value or a key, and an object whose `__str__` raises is the note `<Type
+    that cannot be written as text>`. No request reaches either today (bodies and gathered
+    lines are refused at parsing), but the documents say no value can make writing a line
+    fail, and now none can. Reason: a line must never fail inside the request that writes
+    it, and every line must be JSON for the reading command. To overrule: `line_text` in
+    `log.py`.
 26. **Settings checked for range as well as form** (after review). Chosen: an address with
     a user or password, or a port of 0, past 65535 or not a number, is refused; a
     `PENGUIN_VERSION` whose date or time is not real (month 13, 25 o'clock, 31 November) is
@@ -173,6 +186,20 @@ in [its guide](../../../../front/README.md#what-is-built-in-which-phase).
     classrooms: declined, since decision 19 records its shapes as provisional and what
     Onshape answers for a group is phase 3's to settle with the real interface; adding a
     guessed shape now would be one more thing to correct.
+29. **A number too large for a float in a body** (second review, minor). Python's reader
+    reads `1e999` as an infinity, which no JSON answer can hold. Chosen: such a body is
+    `400` `front.bad_request` ("the number ... is too large for the server to read"), as
+    `NaN` and `Infinity` already are. Reason: the body is JSON, but the front server
+    cannot keep it as written, and a later handler that echoed or stored it would write
+    invalid JSON. To overrule: `finite` in `json_body`.
+30. **Fixes of the second review, and nothing declined.** All five findings were checked
+    against the code and found real; each has a test that failed for its reason before the
+    fix: the leading doubled slash through waitress (decision 5), the integer too long to
+    write (decision 25), the kept lines trimmed after a failed write
+    (`test_lines_written_while_a_file_fails_stay_within_the_bound`), the stand-in's place
+    given up by a replaced slice job
+    (`test_every_place_taken_a_changed_plate_of_the_same_user_key_is_accepted`, which fails
+    with the reviewer's mutation), and `1e999` (decision 29).
 
 ## Targets missed
 

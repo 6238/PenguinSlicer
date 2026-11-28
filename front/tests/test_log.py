@@ -90,6 +90,27 @@ def test_a_number_json_cannot_hold_is_written_as_text(log, stdout):
     assert (line["a"], line["b"], line["c"], line["e"]) == ("nan", ["inf"], {"d": "-inf"}, 1.5)
 
 
+def test_an_integer_too_long_to_write_as_digits_is_written_as_a_note(log, stdout):
+    line = log.write("e", big=10**5000, small=-(10**4400), key={10**5000: "k"}, fine=10**4000)
+    assert json.loads(stdout.getvalue()) == line
+    assert line["big"] == "<int of 16610 bits, too long to write>"
+    assert line["small"] == "<int of 14617 bits, too long to write>"
+    assert line["key"] == {"<int of 16610 bits, too long to write>": "k"}
+    assert line["fine"] == 10**4000
+
+
+def test_a_value_whose_text_cannot_be_made_is_written_as_a_note(log, stdout):
+    class Stubborn:
+        def __str__(self):
+            raise RuntimeError("no text")
+
+    line = log.write("e", value=Stubborn(), key={Stubborn(): 1}, kept="yes")
+    assert json.loads(stdout.getvalue()) == line
+    assert line["value"] == "<Stubborn that cannot be written as text>"
+    assert line["key"] == {"<Stubborn that cannot be written as text>": 1}
+    assert line["kept"] == "yes"
+
+
 def test_keys_that_are_not_text_are_written_as_text(log):
     line = log.write("e", counts={1: "one", (2, 3): "pair", None: "none"})
     assert line["counts"] == {"1": "one", "(2, 3)": "pair", "None": "none"}
@@ -247,6 +268,24 @@ def test_lines_written_while_a_file_fails_are_kept_after_the_lines_it_held(tmp_p
     writer.bucket = FolderBucket(tmp_path / "log", clock)
     assert [line["event"] for line in lines_of(writer.bucket, writer.flush())] == [
         "held", "meanwhile"]
+
+
+def test_lines_written_while_a_file_fails_stay_within_the_bound(tmp_path, clock, stdout):
+    class FailingWhileWriting:
+        def put(self, name, body, **_condition):
+            for n in range(3):
+                writer.write("meanwhile", n=n)
+            raise OSError("the store failed")
+
+    writer = Log(clock, stdout, FailingWhileWriting(), max_pending=3)
+    for n in range(3):
+        writer.write("held", n=n)
+    writer.flush()
+    writer.bucket = FolderBucket(tmp_path / "log", clock)
+    written = lines_of(writer.bucket, writer.flush())
+    assert [(line["event"], line.get("n")) for line in written] == [
+        ("log_lines_dropped", None), ("meanwhile", 0), ("meanwhile", 1), ("meanwhile", 2)]
+    assert written[0]["dropped"] == 3
 
 
 def test_the_minutes_loop_runs_with_no_one_told_of_each_file(tmp_path, clock, stdout):

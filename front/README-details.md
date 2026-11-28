@@ -190,15 +190,22 @@ below: [The cookie](#the-cookie), [Groups and the current group](#groups-and-the
   `errors.FRONT_REPORTS` with its status, `retryable` and its two sentences, added in the
   commit that first produces it. So far: `front.bad_request`, `front.no_such_request` and
   `front.unexpected`.
-- **Not offered** includes an `OPTIONS` request to any path, a path with a doubled slash
-  anywhere in it (at its start too: the check reads the path as sent, since the web
-  framework would otherwise drop leading slashes and serve `//x` as `/x`), and a path that
-  differs from an offered one only by a trailing slash, all `404` `front.no_such_request`,
-  never a redirect, with no `Allow` header; the report and the log line give the path as
-  sent. A `HEAD` is answered wherever a `GET` is, as HTTP requires.
+- **Not offered** includes an `OPTIONS` request to any path, a request target whose path
+  does not start with a slash (`GET x`, or `GET http://host` with no path at all), a path
+  with a doubled slash anywhere in it, its start included, written as `//` or as `%2F`, and
+  a path that differs from an offered one only by a trailing slash, all `404`
+  `front.no_such_request`, never a redirect, with no `Allow` header. The check reads the
+  path of the request's target as sent (`REQUEST_URI`, without its query and, in the
+  absolute form `http://host/path`, without its scheme and host), since waitress drops a
+  path's leading slashes before the application sees it and would have `//x` served as
+  `/x`; the report and the log line give that path, still percent-encoded. A doubled slash
+  in the query alone is no reason to refuse. A `HEAD` is answered wherever a `GET` is, as
+  HTTP requires. `tests/test_server.py` sends these request lines through waitress itself.
 - **Not JSON** (`json_body()`): the body is read as JSON whatever its `Content-Type` says;
-  an empty body, one cut short, one not in UTF-8, one using `NaN` or `Infinity`, or one
-  nested too deeply for Python's reader (whole or cut short) is `400` `front.bad_request`. A refusal of the web framework's own below 500 (a body too large, a
+  an empty body, one cut short, one not in UTF-8, one using `NaN` or `Infinity`, one
+  holding a number too large for a float (`1e999`, which would be read as an infinity), or
+  one nested too deeply for Python's reader (whole or cut short) is `400`
+  `front.bad_request`. A refusal of the web framework's own below 500 (a body too large, a
   header too long) is `front.bad_request` too, and one of 500 or more `front.unexpected`.
 - **Unexpected:** the report's `detail` names an incident id and nothing of the failure;
   the log line carries the same `incident` and the whole `trace`.
@@ -1402,8 +1409,9 @@ carry their component and are in that component's own output, so they are not pr
 A line's `time` is UTC, RFC 3339, to the millisecond, as the slice service's are; `time`,
 `component` and `event` come first and no field can replace them; a value JSON cannot hold
 (an object, `NaN`, an infinity) is written as its text, a key that is not text as its text,
-a value met again inside itself and anything nested past `MAX_DEPTH` (64) levels as a short
-note (`line_text`), so no field can make writing a line fail. `start()` runs the minute's loop on the front server's clock;
+and as a short note a value or key with no text (an integer past Python's limit of 4,300
+digits, an object whose text fails), a value met again inside itself and anything nested
+past `MAX_DEPTH` (64) levels (`line_text`), so no field can make writing a line fail. `start()` runs the minute's loop on the front server's clock;
 `stop()` ends it and writes what is gathered. The running front server writes `start`
 (with `version`, `host`, `port`, `threads`, `dev_identity`) and, when stopped, `stop`.
 

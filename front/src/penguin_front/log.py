@@ -42,8 +42,9 @@ def _file_suffix():
 def line_text(line):
     """A line as one JSON object, whatever its fields hold: a value JSON cannot hold (an
     object, `NaN` or an infinity) is written as its text, a key that is not text as its
-    text, a value met again inside itself as a note, and one nested past `MAX_DEPTH` as a
-    note, so writing a line never fails."""
+    text, and as a note a value or key with no text (an integer too long for its digits, an
+    object whose text fails), a value met again inside itself, and one nested past
+    `MAX_DEPTH`, so writing a line never fails."""
     return json.dumps(_jsonable(line, 0, set()), allow_nan=False)
 
 
@@ -51,13 +52,36 @@ def line_text(line):
 MAX_DEPTH = 64
 
 
+def _too_long(value):
+    """The note for an integer past the interpreter's limit on digits (4,300 by default),
+    which has no text; None for any other integer."""
+    try:
+        int.__repr__(value)
+    except ValueError:
+        return f"<int of {value.bit_length()} bits, too long to write>"
+    return None
+
+
+def _text(value):
+    """`value` as text, or a note when it has none: an integer too long for its digits, or
+    an object whose `__str__` fails."""
+    if isinstance(value, int) and (note := _too_long(value)) is not None:
+        return note
+    try:
+        return str(value)
+    except Exception:  # noqa: BLE001 - writing a line never fails
+        return f"<{type(value).__name__} that cannot be written as text>"
+
+
 def _jsonable(value, depth, holding):
     if isinstance(value, float):
         return value if math.isfinite(value) else str(value)
-    if value is None or isinstance(value, (str, int)):  # bool is an int
+    if isinstance(value, int):  # bool is an int
+        return _too_long(value) or value
+    if value is None or isinstance(value, str):
         return value
     if not isinstance(value, (dict, list, tuple)):
-        return str(value)
+        return _text(value)
     if id(value) in holding:
         return f"<{type(value).__name__} holding itself>"
     if depth >= MAX_DEPTH:
@@ -65,7 +89,7 @@ def _jsonable(value, depth, holding):
     holding.add(id(value))
     try:
         if isinstance(value, dict):
-            return {k if isinstance(k, str) else str(k): _jsonable(v, depth + 1, holding)
+            return {k if isinstance(k, str) else _text(k): _jsonable(v, depth + 1, holding)
                     for k, v in value.items()}
         return [_jsonable(v, depth + 1, holding) for v in value]
     finally:
