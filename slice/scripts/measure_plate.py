@@ -49,6 +49,9 @@ PITCH_MM = 50.0            # grid pitch: a 10 mm gap between 40 mm hubs
 GRID_ORIGIN_MM = 40.0
 GRID_COLUMNS = 6           # 6 x 5 covers FULL_SMALL_HUBS on the 340 x 320 mm plate
 FULL_SMALL_HUBS = 25       # the full-small plate: the old cap of 25 instances, kept so the rows stay comparable
+# Supports on and off as the measurements were made: Orca's automatic tree supports.
+SUPPORTS_ON = {"enable_support": "1", "support_type": "tree(auto)"}
+SUPPORTS_OFF = {"enable_support": "0"}
 
 
 def _hub_profile():
@@ -218,7 +221,7 @@ def measure(name, stop_mb=limits.MEASURE_STOP_MB):
                   for ref, x, y in placed_instances]
         names = write_plate_3mf(work / "plate.3mf", instances, parts)
         process = write_process_with_overrides(DEFAULT_PROFILES.process,
-                                               validate_overrides({"supports": "on" if supports else "off"}),
+                                               validate_overrides(SUPPORTS_ON if supports else SUPPORTS_OFF),
                                                work / "process.json")
         profiles = SliceProfiles(DEFAULT_PROFILES.printer, DEFAULT_PROFILES.filament, process)
         instance_volumes = [volumes[c["ref"]] for c in instances]

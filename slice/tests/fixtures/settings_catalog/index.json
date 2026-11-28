@@ -1,0 +1,15 @@
+{
+    "dropped": [],
+    "filaments": [
+        {"compatible_printers": ["Test Printer 0.6 nozzle"], "file": "filament/Test_PLA.json", "name": "Test PLA"}
+    ],
+    "orca_version": "9.9.9",
+    "printers": [
+        {"file": "printer/Test_Printer_0.6_nozzle.json", "name": "Test Printer 0.6 nozzle"}
+    ],
+    "processes": [
+        {"compatible_printers": ["Test Printer 0.6 nozzle"], "file": "process/Fine.json", "name": "0.16mm Fine @Test"},
+        {"compatible_printers": ["Test Printer 0.6 nozzle"], "file": "process/Coarse.json", "name": "0.30mm Coarse @Test"}
+    ],
+    "skipped": []
+}

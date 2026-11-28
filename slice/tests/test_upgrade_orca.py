@@ -110,21 +110,39 @@ def tree(tmp_path):
     return tmp_path, install
 
 
-def run_upgrade(tree, runner):
+SOURCE_SHA = "4" * 64
+
+
+def fetches_source(fail=False):
+    """A stand-in for fetching the source: writes a VERSION into the folder it is given and
+    answers the archive's checksum, or fails."""
+    def fetcher(version, dest):
+        dest.mkdir(parents=True)
+        (dest / "VERSION").write_text(version)
+        if fail:
+            raise UpgradeError("download of the archive failed: OSError: no network")
+        return SOURCE_SHA
+    return fetcher
+
+
+def run_upgrade(tree, runner, source_fetcher=None):
     root, install = tree
     upgrade("2.5.1", opener=opener_for(release()), runner=runner, install=install, patches=root / "patches",
-            tools=root / "tools")
+            tools=root / "tools", source_fetcher=source_fetcher or fetches_source())
 
 
 def test_upgrade_installs_beside_then_pins_regenerates_and_checks(tree):
     root, install = tree
     runner = Installs()
     run_upgrade(tree, runner)
-    assert runner.steps == ["install beside the current Orca", "regenerate profiles and catalog", "upstream check"]
+    assert runner.steps == ["install beside the current Orca", "regenerate profiles and catalog",
+                            "regenerate the table of settings", "upstream check"]
     assert 'ORCA_VERSION="2.5.1"' in runner.staged[0]           # the install got the new pin
     assert 'ORCA_VERSION="2.5.1"' in install.read_text()
+    assert f'SHA_SOURCE="{SOURCE_SHA}"' in install.read_text()       # the source's checksum, as downloaded
     assert (root / "tools" / "orca" / "VERSION").read_text() == "2.5.1"
-    assert sorted(p.name for p in (root / "tools").iterdir()) == ["orca"]       # nothing previous, nothing next
+    assert (root / "tools" / "orca-source" / "VERSION").read_text() == "2.5.1"
+    assert sorted(p.name for p in (root / "tools").iterdir()) == ["orca", "orca-source"]   # nothing previous or next
     assert sorted(p.name for p in install.parent.iterdir()) == ["install-orca.sh"]     # no staged script left
 
 
@@ -141,14 +159,38 @@ def test_a_failed_download_changes_nothing(tree):
     assert sorted(p.name for p in install.parent.iterdir()) == ["install-orca.sh"]
 
 
-@pytest.mark.parametrize("step", ["regenerate profiles and catalog", "upstream check"])
+def test_a_failed_fetch_of_the_source_changes_nothing(tree):
+    root, install = tree
+    before = install.read_text()
+    runner = Installs()
+    with pytest.raises(UpgradeError, match=r"the source of 2.5.1 could not be fetched \(download of the archive "
+                                           r"failed.*\); nothing was changed \(the pin is still 2.4.2\)"):
+        run_upgrade(tree, runner, fetches_source(fail=True))
+    assert runner.steps == [] and install.read_text() == before
+    assert sorted(p.name for p in (root / "tools").iterdir()) == ["orca"]
+
+
+def test_the_real_fetcher_reports_its_failure_as_the_upgrades(tmp_path, monkeypatch):
+    import fetch_orca_source
+    import upgrade_orca
+
+    def fails(version, sha, dest, cache=None):
+        raise fetch_orca_source.FetchError("checksum mismatch")
+    monkeypatch.setattr(fetch_orca_source, "fetch", fails)
+    with pytest.raises(UpgradeError, match="checksum mismatch"):
+        upgrade_orca.fetch_source("2.5.1", tmp_path / "s")
+
+
+@pytest.mark.parametrize("step", ["regenerate profiles and catalog", "regenerate the table of settings",
+                                  "upstream check"])
 def test_a_failed_check_after_the_swap_says_how_to_go_back(tree, step):
     root, install = tree
     with pytest.raises(UpgradeError, match=rf"{step} failed \(exit 1\)\. Orca 2.5.1 is installed and pinned; 2.4.2 "
                                            r"is kept at .*orca.previous\. Each failing test of the upstream check "
                                            r"names.*what to fix \(for Orca's debug log: slicer.LOG_WARNING_RE and "
-                                           r"tests/fake_orca.py's LOG_WARNING\)\. To go back: make upgrade-orca "
-                                           r"VERSION=2.4.2"):
+                                           r"tests/fake_orca.py's LOG_WARNING\); the table's generator names each "
+                                           r"new setting to classify in src/penguin_slice/settings/"
+                                           r"classification.json\. To go back: make upgrade-orca VERSION=2.4.2"):
         run_upgrade(tree, Installs(fail=step))
     assert (root / "tools" / "orca.previous" / "VERSION").read_text() == "2.4.2"
     assert (root / "tools" / "orca" / "VERSION").read_text() == "2.5.1"

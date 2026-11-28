@@ -16,6 +16,9 @@ ORCA_VERSION="2.4.2"
 SHA_LINUX_X86_64="d12fb8c8eac1aecd2dfb6377acd48f994f8fa439ed5292fa532dd82880f029fd"
 SHA_LINUX_AARCH64="e1a07275a25f176626c55a5df39e91bc4476d8c28ee4a3192ff758e29dd5c3ba"
 SHA_MACOS="e15e7bb1b66214ec6e96b169b388004179c4f5f705effcdaf8c80d4992ee0366"
+# GitHub's archive of the tag's source, for the table of settings (scripts/fetch_orca_source.py
+# reads this line; this script does not download the source).
+SHA_SOURCE="d97244baf15eb9377aa86714cb042d537ff3b1db13b7c2657cf865b820701cf0"
 RELEASE_URL="https://github.com/OrcaSlicer/OrcaSlicer/releases/download/v${ORCA_VERSION}"
 
 # The slice/ project directory: this script sits in slice/scripts/.

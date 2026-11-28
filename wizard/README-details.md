@@ -875,7 +875,7 @@ advanced mode writes it, and chosen.
 
 Advanced mode fills the panel (`#advanced` in the mockup, "advanced mode" in
 `css/panel.css`) and offers every entry of the table of settings, which is every setting of
-Orca's that is a parameter with a value (about 295 at the pinned Orca), and no other: the
+Orca's that is a parameter with a value (338 at the pinned Orca 2.4.2), and no other: the
 programmatic settings are not in the table, and the slice service refuses them. It shows
 Orca's own `label`, `section`, `group` and `explanation` for each, in the table's order, and
 draws each setting's control from its `kind`: a menu of `choices` (an on-and-off setting has
@@ -1992,7 +1992,6 @@ or is not yet in a contract:
 | Needed | From | For |
 |---|---|---|
 | A general rotation for an instance, so that a part laid on any hull face can be sliced; in [the contract](../contracts/plate-configuration.md#an-instance-in-phase-2) | The slice service, phase 2 | [Laying an instance on a face](#laying-an-instance-on-a-face) |
-| Every parameter setting accepted as a change, and the table of settings supplied; as built, four overrides are accepted | The slice service, phase 2 | Advanced mode |
 | Parts uploaded alone and kept in the part store by user key, hash and units; plate configurations naming parts by hash; `plate_id` and `submission_id`; `slice.stopping`; `cancel_reason`; `ahead`; `orca_sentence`; a slice ended when its file would be over 50 MB; as built, a plate configuration arrives with its STL files | The slice service, phase 2 | Parts, the Preview step, coming back |
 | The shared set of plates for the two placement checks, kept with the contracts | The slice service, with the wizard | [Arrange and the placement check](#arrange-and-the-placement-check) |
 | Sentences that say "a new plate" and never "a second plate" | The slice service, phase 2 | [Who writes the sentences of a failure](#who-writes-the-sentences-of-a-failure) |

@@ -73,6 +73,25 @@ def test_names_match_passes_with_the_slice_jobs_own_process_file(configuration, 
     assert merged == dict(original, wall_loops='4')
 
 
+def test_a_setting_of_each_kind_and_form_reaches_the_process_file(configuration, scratch):
+    """Checked by the table (settings_table.validate_overrides), each value reaches the process
+    file Orca is given exactly as it was sent."""
+    from penguin_slice.settings_table import validate_overrides
+    one_of_each = {'wall_loops': '5', 'layer_height': '0.28', 'sparse_infill_density': '35%',
+                   'initial_layer_line_width': '120%', 'outer_wall_line_width': '0.65',
+                   'sparse_infill_pattern': 'gyroid', 'enable_support': '1', 'extra_solid_infills': '7'}
+    configuration.overrides = validate_overrides(one_of_each)
+    calls = []
+    with mock.patch.object(plate_configuration, 'slice_plate',
+                           fake_slice_plate(['Peg #1', 'Box #2', 'Box #1'], calls)):
+        run_plate_configuration(configuration, scratch)
+    written = json.loads(calls[0][1].process.read_text())
+    assert {name: written[name] for name in one_of_each} == one_of_each
+    original = json.loads(DEFAULT_PROFILES.process.read_text())
+    assert {k: v for k, v in written.items() if k not in one_of_each} == \
+        {k: v for k, v in original.items() if k not in one_of_each}       # only those replaced
+
+
 @pytest.mark.parametrize('names', [['Box #1', 'Box #2'], ['Box #1', 'Box #2', ''],
                                    ['Box #1', 'Box #2', 'Peg #1', 'Peg #1']])
 def test_missing_name_fails_left_off(configuration, scratch, names):
