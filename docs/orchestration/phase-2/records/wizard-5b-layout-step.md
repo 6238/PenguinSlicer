@@ -123,6 +123,20 @@ and, in plain words, in the guide's [What is to be built, by phase](../../../../
     5). The view never sends one; taking it ended in a layout_failed notification beside a
     status line still green. Dropping it keeps the plate as it was and says nothing, since no
     user can make one. To overrule: `place` in `wizard/src/layout.js`.
+25. **Waiting beside the plate is what the wizard did, not where the instance is** (second
+    review, blocking finding 1). The guide's table gives an instance across the plate's edge
+    "Drag it inward, or press Arrange.", and limits the wizard's own message of decision 3 to an
+    instance nothing accounts for; the documents do not say how to tell such an instance from
+    one the user dragged to the same place. Chosen: the Layout step keeps a mark on each
+    instance Arrange, a lay-down or a joining part left beside the plate, and `place` clears it;
+    an instance is beside the plate only when it is marked and wholly to the right of the
+    plate. One the user drags there is told it crosses the right edge, and Arrange's message
+    does not count it. The stored plate's shape is unchanged, so a page opened again marks
+    every stored instance: one the user had dragged wholly off the right edge before the page
+    was opened again is then told it waits beside the plate, until it is moved. The middle at
+    which joining instances are put still leaves out every instance wholly to the right of the
+    plate. To overrule: `parked`, `markParked` and `besideIndex` in `wizard/src/layout.js`; to
+    keep the mark across a reopening, a field of the stored plate's instances (decision 13).
 
 ## Review of pull request #43, findings and what became of them
 
@@ -150,13 +164,35 @@ Every finding of the review was checked against the code and found real; none wa
   guide, the details and below, with one more run of `measure-layout`. Minor 7: a test of the
   transport seam's body of bytes sent as a Blob, which fails without `bodyOf`.
 
+## Second review of pull request #43, findings and what became of them
+
+- Blocking 1 (an instance dragged wholly off the right edge told it waits beside the plate):
+  real, reproduced by two new tests (a drag off the right on an otherwise empty plate, and one
+  while Arrange's partial message is shown) that failed with the reviewer's sentence; fixed by
+  decision 25. Taking the unmarking out of `place` fails the second test.
+- Blocking 2 (decision 21 untested): real; a test lays the slab on its end, a third face, and
+  sees "Put back as modelled", then "Lay it the best way" once it is put back. The reviewer's
+  mutation (returning "Lay it the best way" first) now fails it, checked by hand.
+- Minor 1 (one run held 458 ms on 150 spacers): the range is widened to 0.22 to 0.46 s in the
+  guide, the details and below; on a machine shared by four builders a single run's worst hold
+  moves that much.
+- Minor 2 (`fit.angle !== sent.angle` equivalent): agreed; the condition is now `fit.fits`
+  alone, with a comment saying why.
+- Minor 3 (the too-close filter's second instance): reachable since decision 25, when the user
+  drags an instance up against one waiting beside the plate; the second new test does that,
+  and checking only the pair's first instance now fails it.
+- Minor 4 (the camera does not follow an instance dragged across the edge in the look pairs):
+  declined as a code change; it is the camera difference already listed under "Targets missed"
+  (the built camera stays where the user left it).
+
 ## Targets missed
 
 - **The main thread held over 250 ms during a drag at 150 instances**: 0.39 to 0.49 s on the
-  real mix, 0.22 to 0.30 s on 150 spacers and 0.10 to 0.28 s on 150 of `hub-150k.stl`
+  real mix, 0.22 to 0.46 s on 150 spacers and 0.10 to 0.28 s on 150 of `hub-150k.stl`
   (`make -C wizard measure-layout`, six runs on an aarch64 Linux machine of 8 processors shared
   with three other builders: the builder's four, the reviewer's and the fixer's on Sat
-  2026-11-28, which gave 411 ms, 300 ms and 284 ms). The frame rates of those runs: the real
+  2026-11-28, which gave 411 ms, 300 ms and 284 ms; the second reviewer's run gave 458 ms on
+  the spacers, with a worst frame of 283 ms). The frame rates of those runs: the real
   mix dragged at 16 to 19 and turned at 17 to 20 frames a second, the target of 10 met. A CPU profile shows over 95 % of the main thread's time outside the page's
   JavaScript, in Chromium's own work (drawing, most likely); which frame holds it was not found.
 - **The look, against the mockup** (pairs in [look/wizard-5b](../look/wizard-5b/index.html)):

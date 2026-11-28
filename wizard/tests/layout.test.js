@@ -339,6 +339,47 @@ test('an instance across the plate\'s edge names the edge it crosses', async () 
   assert.deepEqual(problemWhats(page), ['Spacer #1 is not fully on the plate: it crosses the right and back edges.']);
 });
 
+test('an instance the user drags wholly off the plate\'s right edge crosses that edge; it does not wait beside the plate', async () => {
+  const page = await openPage();
+  await addParts(page, [['Spacer.stl', contractPart('spacer.stl')]]);
+  await enterLayout(page);
+  const [a] = page.layout.model().instances;
+  await moveTo(page, a.id, 420, 160);
+  assert.deepEqual(problemWhats(page), ['Spacer #1 is not fully on the plate: it crosses the right edge.']);
+  assert.equal(page.layout.model().problems[0].todo, 'Drag it inward, or press Arrange.');
+  assert.equal(inst(page, 0).beside, false);
+  assert.deepEqual(page.layout.model().selection, { text: '1 instance on the plate.' });
+  assert.equal(statusOf(page).first, problemWhats(page)[0]);
+});
+
+test('an instance the user drags wholly off the right edge while Arrange\'s message is shown has its own message, which Arrange\'s does not count', async () => {
+  const page = await openPage();
+  await addParts(page, [['Slab.stl', boxPart('slab', [10, 250, 200])]]);
+  page.parts.setQuantity(page.parts.rows()[0].key, 2);
+  await enterLayout(page);                     // flat, 200 by 250: one placed, one beside the plate
+  const [note] = page.layout.model().notes;
+  assert.equal(note.what, 'Arrange placed 1 of 2 instances; 1 instance does not fit and waits beside the plate.');
+  const placed = page.layout.model().instances.find((i) => !i.beside);
+  const waiting = page.layout.model().instances.find((i) => i.beside);
+  await moveTo(page, placed.id, 700, 160);     // wholly to the right of the 340 mm plate
+  const m = page.layout.model();
+  assert.deepEqual(m.notes.map((n) => n.what), [note.what]);
+  assert.deepEqual(m.problems.map((p) => [p.what, p.instances]), [[`${placed.label} is not fully on the plate: it crosses the right edge.`, [placed.id]]]);
+  assert.equal(m.instances.find((i) => i.id === placed.id).beside, false);
+  assert.equal(m.instances.find((i) => i.id === waiting.id).beside, true);
+  assert.equal(m.status.first, m.problems[0].what);
+  assert.equal(m.status.more, '+1 more ↓');
+  // dragged up against the one waiting beside the plate, 2 mm to its right: too close, but the pair is
+  // not told so, since the one waiting is accounted for by Arrange's message
+  const w = m.instances.find((i) => i.id === waiting.id);
+  await moveTo(page, placed.id, w.bounds[2] + 2 + (placed.bounds[2] - placed.bounds[0]) / 2, 160);
+  assert.deepEqual(problemWhats(page), [`${placed.label} is not fully on the plate: it crosses the right edge.`]);
+  // the one waiting, once the user drags it, is the user's too
+  await moveTo(page, waiting.id, w.x + 600, 160);
+  assert.deepEqual(problemWhats(page).sort(), [placed.label, w.label].map((l) => `${l} is not fully on the plate: it crosses the right edge.`).sort());
+  assert.equal(page.layout.model().instances.every((i) => !i.beside), true);
+});
+
 test('the status line counts the other problems: "+1 more ↓"', async () => {
   const page = await openPage();
   await addParts(page, [['Spacer.stl', contractPart('spacer.stl')]]);
@@ -711,6 +752,23 @@ test('the link: nothing when the instance lies as modelled and that is its best 
   await enterLayout(page);
   page.layout.select(ids(page)[0]);
   assert.equal(page.layout.model().link, null);
+});
+
+test('the link: "Put back as modelled" for an instance laid on a third face, neither as modelled nor its best way', async () => {
+  const page = await openPage();
+  await addParts(page, [['Slab.stl', boxPart('slab', [10, 250, 200])]]);
+  await enterLayout(page);                     // flat on its 200 by 250 face, its best way
+  const [a] = ids(page);
+  page.layout.select(a);
+  assert.equal(page.layout.model().link.label, 'Put back as modelled');
+  await page.layout.layOnNormal(a, [0, 1, 0]); // on its end, 10 by 200: neither way
+  await settleAll(page);
+  page.layout.select(a);
+  assert.equal(page.layout.model().link.label, 'Put back as modelled');
+  await page.layout.model().link.run();
+  await settleAll(page);
+  assert.ok(Math.abs(downOf(inst(page, 0).lay)[2]) > 0.999, 'as modelled');
+  assert.equal(page.layout.model().link.label, 'Lay it the best way');
 });
 
 test('the patches of a selected instance\'s part, found once', async () => {

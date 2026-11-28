@@ -97,6 +97,7 @@ export function createLayout({ geometry, storage, store, parts, panel }) {
   const info = new Map();          // part key -> {best: {lay, normal}, patches, height}
   let checked = { problems: [], bounds: [], heights: [], fits: new Map(), at: -1 };
   let notes = { lay: null, arrange: null };
+  const parked = new Set();        // ids of the instances the wizard put beside the plate
   let version = 0;                 // moves on with every change of the instances
   let checking = null;             // the check in flight
   let queue = Promise.resolve();
@@ -220,14 +221,15 @@ export function createLayout({ geometry, storage, store, parts, panel }) {
         checked = { problems: [], bounds: [], heights: [], fits: new Map(), at };
       } else {
         const result = await ask(geometry.check(message));
-        // what each instance too long for the plate as it is turned would need
+        // what each instance too long for the plate as it is turned would need: whether some
+        // turn fits it (never its own angle, at which it is too long)
         const fits = new Map();
         for (const problem of result.problems) {
           if (problem.rule !== 'off_plate') continue;
           const i = problem.instances[0];
           if (!tooLong(problem.size, message.printer)) continue;
           const fit = await ask(geometry.fit(message, i));
-          fits.set(i, { turns: fit.fits && fit.angle !== message.plateConfiguration.instances[i].angle });
+          fits.set(i, { turns: fit.fits });
         }
         checked = { ...result, fits, at };
       }
@@ -241,7 +243,17 @@ export function createLayout({ geometry, storage, store, parts, panel }) {
     const [w, d] = frameOf(p);
     return size[0] > w + 1e-6 || size[1] > d + 1e-6;
   }
-  const besideIndex = (n) => checked.bounds[n] && printer() && checked.bounds[n][0] > printer().max[0];
+  // Wholly to the right of the plate, where the wizard puts an instance it finds no spot for.
+  const rightOfPlate = (n) => Boolean(checked.bounds[n] && printer() && checked.bounds[n][0] > printer().max[0]);
+  // Beside the plate: put there by the wizard (Arrange, a lay-down, a part joining the plate, or
+  // a page opened again) and not moved by the user since. One the user drags there is across
+  // the plate's right edge, like one dragged off any other edge.
+  const besideIndex = (n) => Boolean(instances[n] && parked.has(instances[n].id) && rightOfPlate(n));
+  // Marks those of `list` the worker left beside the plate (`left(instance, k)`), and unmarks
+  // the others.
+  function markParked(list, left) {
+    list.forEach((instance, k) => { if (left(instance, k)) parked.add(instance.id); else parked.delete(instance.id); });
+  }
 
   // ---- the messages, from the check and the notes
   function problemMessages() {
@@ -431,6 +443,7 @@ export function createLayout({ geometry, storage, store, parts, panel }) {
         const message = plateMessage();
         const outcome = await ask(geometry.settle(message, last));
         instances[last] = fromAnswer(instances[last], outcome.instance, message.plateConfiguration.instances[last]);
+        markParked([instances[last]], () => outcome.how === 'beside');
       }
       await recheck();
     }
@@ -439,7 +452,7 @@ export function createLayout({ geometry, storage, store, parts, panel }) {
 
   function middleOfPlaced() {
     const p = printer();
-    const boxes = checked.bounds.filter((b, n) => b && !besideIndex(n));
+    const boxes = checked.bounds.filter((b, n) => b && !rightOfPlate(n));
     if (!boxes.length) return p ? [(p.min[0] + p.max[0]) / 2, (p.min[1] + p.max[1]) / 2] : [170, 160];
     const x0 = Math.min(...boxes.map((b) => b[0])), x1 = Math.max(...boxes.map((b) => b[2]));
     const y0 = Math.min(...boxes.map((b) => b[1])), y1 = Math.max(...boxes.map((b) => b[3]));
@@ -452,6 +465,7 @@ export function createLayout({ geometry, storage, store, parts, panel }) {
     const message = plateMessage();
     const result = await ask(geometry.arrange(message));
     instances = instances.map((i, n) => fromAnswer(i, result.plateConfiguration.instances[n], message.plateConfiguration.instances[n]));
+    markParked(instances, (_, n) => !result.placed[n]);
     await recheck();
     // Those left beside the plate, less any too long for it as it is turned, which have their
     // own message: Arrange's message counts the others.
@@ -525,6 +539,7 @@ export function createLayout({ geometry, storage, store, parts, panel }) {
       const message = plateMessage();
       const outcome = await ask(geometry.settle(message, n));
       instances[n] = fromAnswer(instance, outcome.instance, message.plateConfiguration.instances[n]);
+      markParked([instances[n]], () => outcome.how === 'beside');
       outcomes.push(outcome.how);
     }
     const label = labels()[instances.findIndex((i) => i.id === changed[0].id)];
@@ -622,6 +637,7 @@ export function createLayout({ geometry, storage, store, parts, panel }) {
       instance.x = m.x;
       instance.y = m.y;
       if (m.angle !== undefined) instance.angle = m.angle;
+      parked.delete(instance.id);  // the user has moved it: no longer the wizard's to account for
     }
     recheck();
     tell();
@@ -666,6 +682,9 @@ export function createLayout({ geometry, storage, store, parts, panel }) {
     resume() {
       const kept = (storage.plate().instances || []).filter(usableStored);
       instances = kept.map((i) => ({ id: nextId++, ...stored(i) }));
+      // the stored plate keeps no mark of who put an instance where it is: one found wholly to
+      // the right of the plate is taken to be waiting beside it
+      for (const instance of instances) parked.add(instance.id);
       loaded = true;
       if (on()) track(inTurn(join));
     },

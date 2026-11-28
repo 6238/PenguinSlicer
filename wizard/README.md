@@ -950,7 +950,10 @@ the instances' outlines as they are turned. Next is off while any rule is broken
 | An instance too tall | "Shooter Hood Rib #1 stands 352.7 mm (13.885 in) tall; the printer prints up to 340 mm. Lay it down another way, or press Auto-orient." | Auto-orient |
 
 An instance that Arrange left beside the plate gets no message of its own; Arrange's
-message already counts it. The exception is an instance too long or too wide for the plate
+message already counts it. An instance the user drags off the plate is across the plate's
+edge, the third row above, even when it ends wholly beside the plate where the wizard puts
+those it finds no spot for: only an instance the wizard put there, and the user has not moved
+since, waits beside the plate. The exception is an instance too long or too wide for the plate
 as it is turned: it has its own message, the row above, and Arrange's message does not
 count it. A click on a message selects the instances it names.
 
@@ -1923,7 +1926,7 @@ card are confirmed.
 | One attempt of a request | 15 seconds for the answer to begin (60 for adding a part), and the same for any silence while the rest arrives; an answer that keeps arriving has no limit on its length | A stalled answer being tried again, while a sliced file of up to 50 MB still downloads on a slow connection | Set here. Met | A test with a clock the test moves, the answer arriving in parts |
 | Sending a part | The whole part within 60 seconds: about 1 Mbit/s of upload speed for a part of 7.5 MB | Adding a part not hanging on a lost connection | Set here. Not met below that speed: the largest parts cannot be added, since a browser does not tell the page how much of an upload has gone | Arithmetic from the two figures; unmeasured on a real connection |
 | A progress stream treated as failed | After 20 seconds of failing to reopen, or after 45 seconds open with nothing carried | A card never looking current when the server is lost | Set here; 45 seconds is three times the fifteen at which the front server keeps a stream alive | The same |
-| The main thread held | Never for more than 250 milliseconds, on any step, with any plate up to the limits, on the machine without a graphics card | A panel that never reads as frozen | Set here. Measured in Chrome's engine on the machine without a graphics card: reading a part and drawing its picture, at most 12 milliseconds, the largest part allowed included; a malformed file of the largest size, under 250 milliseconds to its notification; dragging an instance on the Layout step at 150 instances, missed: 0.39 to 0.49 seconds on the robot's real parts, 0.22 to 0.30 on 150 small spacers and 0.10 to 0.28 on 150 of the largest part | Measured by the page itself in tests and in real use ([What the wizard reports about itself](#what-the-wizard-reports-about-itself)) |
+| The main thread held | Never for more than 250 milliseconds, on any step, with any plate up to the limits, on the machine without a graphics card | A panel that never reads as frozen | Set here. Measured in Chrome's engine on the machine without a graphics card: reading a part and drawing its picture, at most 12 milliseconds, the largest part allowed included; a malformed file of the largest size, under 250 milliseconds to its notification; dragging an instance on the Layout step at 150 instances, missed: 0.39 to 0.49 seconds on the robot's real parts, 0.22 to 0.46 on 150 small spacers and 0.10 to 0.28 on 150 of the largest part | Measured by the page itself in tests and in real use ([What the wizard reports about itself](#what-the-wizard-reports-about-itself)) |
 | A part's row says it is slow | After 4 seconds | Knowing the click registered | Accepted in the mockup. The moment is met by the code that makes every request; the row comes with the Parts step | The same |
 | One part | 7.5 MB, 150,000 triangles | The slice service | Someone else's | A file one byte over is refused with the sentence above |
 | Different parts on a plate | 25 | The slice service's disk | Someone else's | A twenty-sixth part |
@@ -2322,7 +2325,7 @@ itself, the selected instances whole at rest; without a graphics card, 150 insta
 robot's real parts were dragged at 16 to 19 frames a second and turned at 17 to 20, and 150
 of the largest part allowed dragged at 14 to 41 (the target is 10). The page was still held
 longer than its quarter of a second during a drag: 0.39 to 0.49 s on the plate of real parts,
-0.22 to 0.30 s on a plate of 150 small spacers and up to 0.28 s on 150 of the largest part,
+0.22 to 0.46 s on a plate of 150 small spacers and up to 0.28 s on 150 of the largest part,
 which the record of the build lists as missed. Pictures of the built step beside the
 mockup's, at four widths and in each state the mockup shows, are kept with the build records. Pictures of the built
 panel beside the mockup's, at four widths, are kept with the build records. For the two trials, the eight real parts
