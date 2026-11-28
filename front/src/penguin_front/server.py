@@ -60,6 +60,9 @@ def serve(args, *, environ=None, stdout, stderr, clock=None, on_listening=None):
             server.run()
     finally:
         server.task_dispatcher.shutdown()
+        # The slice jobs being followed are left to run; a front server started later
+        # follows them again.
+        app.extensions[EXTENSION]["follower"].stop()
         log.write("stop")
         log.stop()
     return 0

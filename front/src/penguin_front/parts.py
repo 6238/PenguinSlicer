@@ -21,7 +21,7 @@ from flask import Response, request
 from .context import context
 from .errors import FrontError, PassedReport
 from .identity import acts_for_group, current_group, signed_in
-from .slice_client import SliceUnreachable, refusal, user_key_header
+from .slice_client import SliceUnreachable, json_object, refusal, user_key_header
 
 #: The largest part, in bytes: the plate configuration's limit for one part (150,000
 #: triangles of a binary STL).
@@ -103,11 +103,7 @@ def _pieces(stream, length):
 def _log_upload(log, user_key, group, body, length):
     """The `part_uploaded` line, from the record as the slice service gave it; a field the
     record lacks is written as null, since the record itself passes to the page unchanged."""
-    try:
-        record = json.loads(body)
-    except ValueError:
-        record = None
-    record = record if isinstance(record, dict) else {}
+    record = json_object(body) or {}
     measurements = record.get("measurements")
     measurements = measurements if isinstance(measurements, dict) else {}
     warnings = record.get("warnings")

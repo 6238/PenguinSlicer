@@ -91,13 +91,19 @@ def user_key_header(user_key):
     return {USER_KEY_HEADER: user_key}
 
 
-def slice_report(body):
-    """The slice service's error report in `body`, or None."""
+def json_object(body):
+    """`body` read as one JSON object, or None when it is not one."""
     try:
-        report = json.loads(body)
+        value = json.loads(body)
     except ValueError:
         return None
-    if isinstance(report, dict) and isinstance(report.get("code"), str) \
+    return value if isinstance(value, dict) else None
+
+
+def slice_report(body):
+    """The slice service's error report in `body`, or None."""
+    report = json_object(body)
+    if report is not None and isinstance(report.get("code"), str) \
             and report["code"].startswith("slice."):
         return report
     return None

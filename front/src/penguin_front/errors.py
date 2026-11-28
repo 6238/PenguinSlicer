@@ -58,6 +58,13 @@ FRONT_REPORTS = {
                    "sliced files.",
         "remedy": "Your work is kept; try again in a moment.",
     },
+    "front.sliced_file_too_large": {
+        # Never an answer's status: it reaches a page as the `error` of a `failed` report.
+        "status": None, "retryable": False,
+        "message": "This plate's sliced file is larger than 50 MB, too large to keep.",
+        "remedy": "Put fewer instances on the plate, or split its parts over two plates, and "
+                  "slice again.",
+    },
     "front.too_many_requests": {
         "status": 429, "retryable": True,
         "message": "This browser sent parts or plates faster than the server takes them.",

@@ -237,6 +237,15 @@ def test_a_success_of_another_shape_passes_unchanged_and_its_line_has_nulls(clie
     assert line["sha256"] is None and line["triangles"] is None and line["warnings"] == 0
 
 
+def test_a_body_that_ends_short_without_the_servers_notice_is_front_bad_request():
+    # The web framework raises on a body cut short; were it ever to give an empty piece
+    # instead, the upload stops there rather than looping.
+    from penguin_front.errors import FrontError
+
+    with pytest.raises(FrontError, match="short of its Content-Length"):
+        list(parts._pieces(io.BytesIO(b"abc"), 10))
+
+
 # Passed in pieces.
 
 def test_the_part_passes_in_pieces_never_held_whole(tmp_path, clock, log):
