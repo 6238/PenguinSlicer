@@ -255,7 +255,7 @@ def test_a_stream_that_fails_halfway_leaves_nothing_written(bucket):
 
 @pytest.mark.parametrize("name", ["", "/abs", "a//b", "a/../b", "..", "a/./b", ".hidden",
                                   "a/.tmp-x", "a\\b", "a\0b", "a/", "x" * 1025, "x" * 256,
-                                  "a/" + "y" * 256, "é" * 128 + "/b"])
+                                  "a/" + "y" * 256, "é" * 128 + "/b", "a/\udc80"])
 def test_a_name_of_the_wrong_form_is_refused_before_any_file_is_touched(bucket, name):
     with pytest.raises(BadName):
         bucket.put(name, b"x")

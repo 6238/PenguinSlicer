@@ -56,6 +56,8 @@ def read_record(bucket, name, kind, log):
         record = json.loads(body)
     except ValueError as exc:
         record, why = None, f"not JSON: {exc}"
+    except RecursionError:  # Python's reader raises it, not ValueError, past its depth
+        record, why = None, "not JSON: nested deeper than the reader goes"
     if why is None and not isinstance(record, dict):
         why = "not a JSON object"
     if why is None:

@@ -419,10 +419,26 @@ def test_the_log_pages_drops_and_restarts(standin, http):
     assert restarted["process"] != process and restarted["lines"] == []
 
 
-@pytest.mark.parametrize("after", ["", "x", "-1"])
+@pytest.mark.parametrize("after", ["", "x", "-1", "+1", "1.0", "%201", "%C2%B2"])
 def test_the_log_refuses_an_after_that_is_not_a_whole_number(http, after):
     answer = http.get(f"/log?after={after}")
     assert answer.status_code == 400 and answer.json()["code"] == "slice.bad_request"
+    assert answer.json()["message"] == ("The slicer was asked for its log after a line that "
+                                        "is not a whole number.")
+
+
+def test_the_log_takes_an_after_left_out_as_0_and_any_run_of_digits(standin, http):
+    # As the slice service's own route does: left out it is 0 (the contract's words), leading
+    # zeros are dropped, and one far past any line (past Python's 4,300-digit limit) is read
+    # as past every line, answered 200.
+    for n in range(3):
+        standin.log_line("e", job=f"j{n}")
+    assert [line["n"] for line in http.get("/log").json()["lines"]] == [1, 2, 3]
+    assert [line["n"] for line in http.get("/log?after=0002").json()["lines"]] == [3]
+    far = http.get("/log?after=" + "9" * 5000)
+    assert far.status_code == 200
+    assert far.json() == {"process": standin.process, "lines": [], "dropped": 0,
+                          "more": False}
 
 
 def test_a_path_not_offered_and_a_method_not_taken(http):

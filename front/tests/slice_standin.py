@@ -528,13 +528,17 @@ class SliceStandIn:
         return Response(self.settings_table, 200, mimetype="application/json")
 
     def _log(self):
-        after = request.args.get("after", "")
+        # As the slice service's route: left out it is 0; any run of ASCII digits is taken,
+        # leading zeros dropped, and one of more than 18 digits is past every line.
+        after = request.args.get("after", "0")
         if not after.isascii() or not after.isdigit():
             raise Refusal(400, _report(
-                "slice.bad_request", "The slicer was sent a request it does not take.",
+                "slice.bad_request",
+                "The slicer was asked for its log after a line that is not a whole number.",
                 "Try again; if it happens again, the server needs fixing.",
-                f"after {after!r} is not a whole number"))
-        after = int(after)
+                f"GET /log with after {after[:40]!r}"))
+        digits = after.lstrip("0") or "0"
+        after = int(digits) if len(digits) <= 18 else 10 ** 18 - 1
         with self._lock:
             lines = [line for line in self._log_lines if line["n"] > after]
             oldest = self._log_lines[0]["n"] if self._log_lines else self._log_count + 1

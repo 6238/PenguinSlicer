@@ -820,14 +820,22 @@ connection cut, or nothing for `SLICE_TIMEOUT_S` (30 s, *proposed*) is `SliceUnr
 own `slice.*` report passed byte for byte with its status, or, for `slice.no_user_key` and
 for an answer that is not the slice service's report, a failure answered `500`
 `front.unexpected`. A test passes an httpx `transport` in place of the network, which raises
-what a silent slice service makes the network raise, so that no test waits out the 30 s.
+what a silent slice service makes the network raise, so that no test waits out the 30 s;
+another wraps the network of the client the application builds for itself and sees each
+request it sends carry 30 s for connecting, reading, writing and waiting for a pooled
+connection
+(`test_the_front_servers_own_requests_to_the_slice_service_carry_slice_timeout_s`).
 
 ### Tests
 
 - The stand-in for the slice service answers as [its contract](../contracts/slice-http-interface.md)
   says, its answers checked against the contract's examples, and lets a test put its events
   in an exact order; it records every request it receives (built:
-  `tests/test_slice_standin.py`).
+  `tests/test_slice_standin.py`). Its `GET /log` reads `after` as the slice service's own
+  route does: left out it is 0, any run of ASCII digits is taken with leading zeros dropped
+  and one of more than 18 digits is past every line, and anything else is `400`
+  `slice.bad_request` with the slice service's sentence; the joined suite runs the
+  gathering against the real route.
 - No request of the whole fast suite reaches the stand-in's cancel.
 - The stand-in not answering gives `503` `front.slice_unreachable` on each request that
   calls it.
@@ -1462,11 +1470,16 @@ clock):
   due while the front server was down goes at once, then every `SWEEP_INTERVAL_S`. An
   application built for a test sweeps only when the test calls `sweep()`.
 - A slice job the front server follows is left alone, since its storing may be under way;
-  so is a record this front server cannot read (a newer format) and any name it does not
-  make (`sliced/<user_key>/<slice>.json` and `.gcode.3mf` only).
+  so is a record this front server cannot read (a newer format, no format, not a JSON
+  object), with its `record_unreadable` line at every sweep, and any name it does not
+  make (`sliced/<user_key>/<slice>.json` and `.gcode.3mf` only; a folder at such a name
+  holds names of another form and is passed over).
 - A record of a format the front server reads but with a field missing or malformed (no
-  `slice_ended_at` on a `stored` record, a `submitted_at` or `expired_at` that is not an
-  RFC 3339 time) is counted `failed` and written as `sweep_item_failed` with `why`
+  `slice_ended_at` on a `stored` record, a `slice_ended_at` of a `stored` or `failed`
+  record or a `submitted_at` or `expired_at` that is not an RFC 3339 time (a list, a
+  number, a year past 9999), a `state` that is a list or an object, a due record with no
+  `slice`) is
+  counted `failed` and written as `sweep_item_failed` with `why`
   `the record is malformed: <the fault>`; the record and its file are left as they are,
   and fail the same way at every sweep until somebody looks. The sweep goes on to every
   other file.
@@ -1698,7 +1711,8 @@ A file not there is `NotFound`; a conditional write whose condition does not hol
 may have is `BadName`, a fault of the code. A name is 1 to 1,024 bytes (`MAX_NAME_BYTES`) of
 parts separated by `/`, each at most 255 bytes (`MAX_PART_BYTES`, a file system's limit on
 one file's name), none empty, `.` or `..`, none starting with `.`, with no `\` and no NUL,
-so no name leaves its bucket and both forms take the same names. A name that is a folder of other
+and no lone surrogate (which no form can encode, and which a user key read from another
+component's JSON can hold: such an entry or line is skipped as one of another form), so no name leaves its bucket and both forms take the same names. A name that is a folder of other
 files' names in the folder form is not found and its delete is harmless, and a listing under
 a file is empty, as R2 answers. One difference remains and the layout never meets it: R2
 can hold a file `a` beside a file `a/b`, the folder form cannot, and a write that would make
@@ -1723,7 +1737,9 @@ log's gathering of the slice service's lines stopped, [The log](#the-log)), what
 `read_record(bucket, name, kind, log)` gives the record and its marker when its `format` is a
 whole number from 1 to the front server's, and otherwise raises `UnreadableRecord` and writes
 one line, `record_unreadable`, with the record's name, its kind, the format found and the
-newest read. A file that is not a JSON object is refused the same way. From phase 5 the same
+newest read. A file that is not a JSON object is refused the same way: one that is empty,
+not UTF-8, not JSON, nested deeper than Python's reader goes (which raises
+`RecursionError`, not `ValueError`), or JSON of another kind than an object. From phase 5 the same
 interface, on the state bucket, is the store the front server gives the relay.
 
 The configurations and the paired-printer records have no second copy; if the bucket is
