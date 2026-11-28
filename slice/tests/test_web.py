@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from helpers import (CONTRACTS, PLATE_ID, SUBMISSION_ID, USER_KEY, box_stl, install_fake_orca, part_entry, sha256,
-                     submit, upload)
+from helpers import (CONTRACTS, PLATE_ID, SUBMISSION_ID, USER_KEY, ManualTicks, box_stl, install_fake_orca,
+                     part_entry, sha256, submit, upload)
 from penguin_slice import limits
 from penguin_slice.errors import error_report
 from penguin_slice.jobs import FINAL, JobPool, RepeatedSubmission
@@ -1147,15 +1147,22 @@ def test_a_start_empties_the_part_store(work):
 
 
 def test_the_sweeper_sweeps_the_part_store(work, monkeypatch):
+    """The sweeper's interval passes on the test's clock (ManualTicks): the part store is
+    swept once that interval has passed, and the sweeper ends at the shutdown."""
     from penguin_slice import jobs
-    swept = threading.Event()
+    swept, ticks = threading.Event(), ManualTicks()
     store = PartStore(work / "store", 1024)
     monkeypatch.setattr(store, "sweep", swept.set)
     pool = JobPool(slice_worker)
-    pool.start_sweeper(interval_s=0, also=(store.sweep,))           # no real interval: it waits on the event
+    thread = pool.start_sweeper(also=(store.sweep,), wait=ticks)
+    assert not swept.is_set()
+    ticks.tick()
     assert swept.wait(FAILSAFE_S)
+    assert ticks.intervals[0] == jobs.SWEEP_INTERVAL_S == 10
     pool.shutdown()
-    assert jobs.SWEEP_INTERVAL_S == 10
+    ticks.tick()
+    thread.join(FAILSAFE_S)
+    assert not thread.is_alive()
 
 
 def test_default_work_dir_is_a_new_folder(monkeypatch, tmp_path):

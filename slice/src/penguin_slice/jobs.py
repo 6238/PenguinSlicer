@@ -301,11 +301,15 @@ class JobPool:
             self._cleanup(payload)
         return len(expired)
 
-    def start_sweeper(self, interval_s=SWEEP_INTERVAL_S, also=()):
+    def start_sweeper(self, interval_s=SWEEP_INTERVAL_S, also=(), wait=None):
         """A daemon thread that sweeps every `interval_s` until shutdown(), calling each of
-        `also` after each sweep (the part store's sweep)."""
+        `also` after each sweep (the part store's sweep). `wait(interval_s)` lets one interval
+        pass and returns True to end the sweeper: the pool's closing by default, a test's
+        clock in the fast suite; the sweeper also ends once the pool closes."""
+        wait = wait or self._closing.wait
+
         def loop():
-            while not self._closing.wait(interval_s):
+            while not wait(interval_s) and not self._closing.is_set():
                 try:
                     self.sweep()
                     for sweep in also:

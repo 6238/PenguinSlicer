@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from helpers import CONTRACTS
+from helpers import CONTRACTS, ManualTicks
 from penguin_slice import jobs
 from penguin_slice.errors import error_report
 from penguin_slice.jobs import FINAL, STAGES, JobFailure, JobPool, QueueFull
@@ -899,27 +899,49 @@ class TestExpiry:
 
 
 class TestSweeperAndShutdown:
-    def test_sweeper_runs_until_shutdown(self):
-        swept = threading.Event()
-        pool, _ = make_pool()
-        pool.sweep = lambda: swept.set()
-        thread = pool.start_sweeper(interval_s=0)
-        assert swept.wait(FAILSAFE_S)
+    """The sweeper on its own thread, its intervals passed by the test (ManualTicks): it
+    waits on events, never on a duration."""
+
+    def test_the_sweeper_expires_records_on_the_fake_clock_once_per_interval_until_shutdown(self):
+        clock, ticks = FakeClock(), ManualTicks()
+        pool, logs = make_pool(clock=clock)
+        job_id = pool.submit()
+        expired = threading.Event()
+        pool._log = lambda entry: entry.get("state") == "expired" and expired.set()
+        thread = pool.start_sweeper(wait=ticks)
+        clock.now += jobs.RECORD_TTL_S
+        ticks.tick()
+        assert expired.wait(FAILSAFE_S)
+        assert pool.get(job_id) is None
+        assert ticks.intervals[0] == jobs.SWEEP_INTERVAL_S == 10
         pool.shutdown()
+        ticks.tick()                     # an interval passes after the shutdown: the sweeper ends
+        thread.join(FAILSAFE_S)
+        assert not thread.is_alive()
+
+    def test_without_a_test_clock_the_sweeper_waits_on_the_pools_closing(self):
+        pool, _ = make_pool()
+        pool.sweep = lambda: pytest.fail("swept after the shutdown")
+        pool.shutdown()
+        thread = pool.start_sweeper()              # the closing is set: its wait returns at once
         thread.join(FAILSAFE_S)
         assert not thread.is_alive()
 
     def test_sweeper_survives_a_failing_sweep(self):
-        calls = []
+        calls, ticks, second = [], ManualTicks(), threading.Event()
         pool, logs = make_pool()
 
         def sweep():
             calls.append(1)
             if len(calls) == 1:
                 raise RuntimeError("disk")
-            pool._closing.set()
+            second.set()
         pool.sweep = sweep
-        thread = pool.start_sweeper(interval_s=0)
+        thread = pool.start_sweeper(wait=ticks)
+        ticks.tick()
+        ticks.tick()
+        assert second.wait(FAILSAFE_S)
+        ticks.stop()
         thread.join(FAILSAFE_S)
         assert len(calls) == 2 and logs[-1]["event"] == "slice_sweeper_error"
 
@@ -1005,16 +1027,21 @@ class TestALogThatFails:
         assert pool.get(unfollowed)["state"] == "queued" and pool.get(queued) is None
 
     def test_the_sweeper_survives_a_log_that_fails_while_it_reports_a_failing_sweep(self):
-        calls = []
+        calls, ticks, second = [], ManualTicks(), threading.Event()
         pool = JobPool(good_worker, executor=ImmediateExecutor(), log=BrokenLog())
 
         def sweep():
             calls.append(1)
             if len(calls) == 1:
                 raise RuntimeError("disk")
-            pool._closing.set()
+            second.set()
         pool.sweep = sweep
-        pool.start_sweeper(interval_s=0).join(FAILSAFE_S)
+        thread = pool.start_sweeper(wait=ticks)
+        ticks.tick()
+        ticks.tick()
+        assert second.wait(FAILSAFE_S)
+        ticks.stop()
+        thread.join(FAILSAFE_S)
         assert len(calls) == 2 and pool.log_failures() == 1
 
     def test_a_healthy_log_counts_nothing(self):
