@@ -83,11 +83,11 @@ def test_slicing_draws_the_ring_the_stage_the_times_and_the_current_stage(page, 
     assert no_sideways_scroll(page) == []
 
 
-def test_a_sliced_plate_shows_its_placeholder_and_next_goes_to_the_send_step(page, front_server):
+def test_a_sliced_plate_shows_its_result_and_next_goes_to_the_send_step(page, front_server):
     w = open_preview(page, front_server)          # the default stream ends with the example's done report
     w.until("return wizard.slicing.model().kind === 'done';")
     assert not w.page.locator("#slice-card").is_visible()
-    assert w.page.locator("#preview-result").inner_text() == "The plate is sliced. Its print time, filament and layer preview will show here."
+    assert w.page.locator("#preview-stats .stat strong").all_inner_texts() == ["36 min", "16 g PETG"]
     assert not w.page.locator("#btn-next").is_disabled()
     w.page.click("#btn-next")
     w.until("return wizard.store.get().step === 'send';")

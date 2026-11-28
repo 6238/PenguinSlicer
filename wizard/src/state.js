@@ -21,6 +21,8 @@
 //   advanced      whether advanced mode is open, over the Settings step (settings.js)
 //   layoutProblem the Layout step's first problem, which holds Next, or null
 //   sliced        whether the plate has a sliced file
+//   expired       whether the plate's sliced file has expired, the expired message shown in place of
+//                 the result and of Send (slicing.js)
 export function createStore() {
   let state = {
     step: 'parts',
@@ -37,6 +39,7 @@ export function createStore() {
     advanced: false,
     layoutProblem: null,
     sliced: false,
+    expired: false,
   };
   const listeners = new Set();
   return {

@@ -120,7 +120,8 @@ export function createPanel(root, { api, clock, store }) {
     $('#btn-back').disabled = state.step === STEPS[0].id;
     $('#btn-next').hidden = last;
     $('#btn-next').disabled = Boolean(why(state.step));
-    $('#final-action').hidden = !last;
+    // the expired message takes the place of Send (A sliced plate that expires)
+    $('#final-action').hidden = !last || Boolean(state.expired);
     $('#wiz-nav').classList.toggle('on-send', last);
     $('#btn-do').disabled = !state.sliced;
   }
