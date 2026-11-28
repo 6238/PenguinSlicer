@@ -1,8 +1,8 @@
 """A small fake front server for the browser tests: it serves the built page from wizard/dist/
 as the contract says the front server does (`GET /` with the version filled in and the
 content security policy, `GET /assets/<file>` as found), and answers the contract's requests in
-the contract's shapes, its default answers taken whole from contracts/examples/, on a port the
-system chooses. Every answer carries `X-PenguinSlicer-Version`; every answer but the page
+the contract's shapes, its default answers taken whole from contracts/examples/ (but for an
+upload, answered with the record of the bytes sent), on a port the system chooses. Every answer carries `X-PenguinSlicer-Version`; every answer but the page
 files carries `Cache-Control: no-store`.
 
 A test sets what the next requests to a path meet with `script(method, path, *answers)`: each
@@ -10,8 +10,10 @@ answer is `(status, body)` or `(status, body, headers)`, the body a dict sent as
 requests are recorded with their headers and their bodies. `files` maps a path to bytes that a
 test's own code fetches (a part's STL file, which in use comes from the user's disk).
 """
+import hashlib
 import json
 import threading
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -36,7 +38,16 @@ def error_report(code, **fields):
             "retryable": False, "detail": f"fake detail for {code}, never shown", **fields}
 
 
-def default_answer(method, path):
+def part_record_of(path, body):
+    """The part's record a front server answers for an upload: the example's, with the hash of the
+    bytes sent and the units label of the query, and no warning; a test that wants a warning or a
+    refusal scripts it."""
+    units = urllib.parse.parse_qs(urllib.parse.urlsplit(path).query).get("units", [None])[0]
+    return {**example("wizard-front/part-record.json"), "sha256": hashlib.sha256(body).hexdigest(),
+            "units": units, "warnings": []}
+
+
+def default_answer(method, path, body=b""):
     route = path.split("?")[0]
     if method == "GET" and route == "/api/me":
         return 200, example("wizard-front/me.json")
@@ -48,7 +59,7 @@ def default_answer(method, path):
     if method == "GET" and route == "/api/settings-table":
         return 200, example("settings-table.json")
     if method == "POST" and route == "/api/parts":
-        return 201, example("wizard-front/part-record.json")
+        return 201, part_record_of(path, body)
     if method == "POST" and route == "/api/slices":
         return 202, example("wizard-front/slice-accepted.json")
     if method == "GET" and route.startswith("/api/slices/") and route.endswith("/summary"):
@@ -103,7 +114,7 @@ class FakeFrontServer:
                     status, body, *rest = scripted
                     self.json(status, body, rest[0] if rest else {})
                     return
-                self.json(*default_answer(method, self.path))
+                self.json(*default_answer(method, self.path, body))
 
             def do_GET(self):
                 self.handle_any("GET")

@@ -1,8 +1,9 @@
 // The fake front server: the transport seam's shape (src/seams/transport.js), answering in the
 // contract's shapes (contracts/wizard-front-server.md), with its default answers taken whole
-// from contracts/examples/. A test sets, for each request in turn, whether it is answered,
+// from contracts/examples/, but for an upload, answered with the record of the bytes sent. A test sets, for each request in turn, whether it is answered,
 // held, dropped, or answered without the front server's version, so that it puts the events in
 // an exact order. Every request is recorded with its headers.
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -112,8 +113,25 @@ export const steps = {
   },
 };
 
+// The bytes of a request's body, whatever form the page sent them in.
+function bodyBytes(body) {
+  if (body === undefined || body === null) return new Uint8Array(0);
+  if (body instanceof ArrayBuffer) return new Uint8Array(body);
+  if (ArrayBuffer.isView(body)) return new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
+  return new TextEncoder().encode(String(body));
+}
+
+// The part's record a front server answers for an upload: the example's, with the hash of the
+// bytes sent and the units label of the query, as the slice service keeps them, and no warning;
+// a test that wants a warning or a refusal scripts it.
+export function partRecordOf(path, body) {
+  const record = example('wizard-front/part-record.json');
+  const units = new URLSearchParams(path.split('?')[1] ?? '').get('units');
+  return { ...record, sha256: createHash('sha256').update(bodyBytes(body)).digest('hex'), units, warnings: [] };
+}
+
 // The default answer to each request of the contract that phase 2 makes, from its examples.
-function defaultStep(method, path) {
+function defaultStep(method, path, body) {
   const route = path.split('?')[0];
   if (method === 'GET' && route === '/api/me') return steps.answer(200, example('wizard-front/me.json'));
   if (method === 'GET' && route === '/api/configuration') {
@@ -121,7 +139,7 @@ function defaultStep(method, path) {
   }
   if (method === 'PUT' && route === '/api/configuration') return steps.answer(200, example('wizard-front/configuration-written.json'));
   if (method === 'GET' && route === '/api/settings-table') return steps.answer(200, example('settings-table.json'));
-  if (method === 'POST' && route === '/api/parts') return steps.answer(201, example('wizard-front/part-record.json'));
+  if (method === 'POST' && route === '/api/parts') return steps.answer(201, partRecordOf(path, body));
   if (method === 'POST' && route === '/api/slices') return steps.answer(202, example('wizard-front/slice-accepted.json'));
   if (method === 'GET' && /^\/api\/slices\/[\w-]+\/summary$/.test(route)) return steps.answer(200, example('wizard-front/slice-summary.json'));
   if (method === 'GET' && /^\/api\/slices\/[\w-]+$/.test(route)) return steps.answer(200, example('wizard-front/slice-done.json'));
@@ -156,11 +174,11 @@ export class FakeFrontServer {
     return this.requests.filter((r) => r.method === method && matches(path, r.path));
   }
 
-  stepFor(method, path) {
+  stepFor(method, path, body) {
     for (const script of this.scripts) {
       if (script.method === method && matches(script.path, path) && script.steps.length) return script.steps.shift();
     }
-    return defaultStep(method, path);
+    return defaultStep(method, path, body);
   }
 
   receive({ method, path, headers = {}, body, signal }) {
@@ -168,7 +186,7 @@ export class FakeFrontServer {
     const record = { method, path, headers: lower, body, at: this.requests.length + 1, held: null };
     this.requests.push(record);
     this.waiters = this.waiters.filter((w) => (this.requests.length >= w.count ? (w.resolve(this.requests[w.count - 1]), false) : true));
-    return this.play(this.stepFor(method, path), record, signal);
+    return this.play(this.stepFor(method, path, body), record, signal);
   }
 
   play(step, record, signal) {
@@ -176,7 +194,7 @@ export class FakeFrontServer {
     if (step.kind === 'drop') return Promise.reject(new TypeError('Failed to fetch'));
     if (step.kind === 'hold') {
       return new Promise((resolve, reject) => {
-        record.held = { release: (next) => resolve(this.play(next ?? defaultStep(record.method, record.path), record, signal)) };
+        record.held = { release: (next) => resolve(this.play(next ?? defaultStep(record.method, record.path, record.body), record, signal)) };
         if (signal) signal.addEventListener('abort', () => reject(abortError()), { once: true });
       });
     }

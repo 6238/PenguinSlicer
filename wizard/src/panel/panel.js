@@ -15,8 +15,10 @@ import { MAX_INSTANCES } from '../geometry/constants.js';
 export function whyNotLeave(step, state) {
   const { plate } = state;
   if (step === 'parts') {
-    if (plate.parts === 0) return 'add a part.';
-    if (plate.instances > MAX_INSTANCES) return `a plate holds up to ${MAX_INSTANCES} instances.`;
+    // a part still arriving never holds Next; its instances will join the plate
+    const arriving = plate.arriving ?? 0;
+    if (plate.parts === 0 && arriving === 0) return 'add a part.';
+    if (plate.instances + (plate.arrivingInstances ?? 0) > MAX_INSTANCES) return `a plate holds up to ${MAX_INSTANCES} instances.`;
   }
   if (step === 'layout') {
     if (plate.instances === 0) return 'there are no instances.';

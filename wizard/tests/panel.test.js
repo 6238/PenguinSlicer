@@ -56,6 +56,12 @@ test('the Parts step lets a plate of exactly 150 instances go on, and holds one 
   assert.equal(whyNotLeave('parts', at({ parts: 2, instances: 151 })), 'a plate holds up to 150 instances.');
 });
 
+test('a part still arriving never holds Next, and its instances count towards the 150', () => {
+  assert.equal(whyNotLeave('parts', at({ parts: 0, instances: 0, arriving: 1, arrivingInstances: 1 })), null);
+  assert.equal(whyNotLeave('parts', at({ parts: 1, instances: 150, arriving: 1, arrivingInstances: 1 })), 'a plate holds up to 150 instances.');
+  assert.equal(whyNotLeave('parts', at({ parts: 1, instances: 149, arriving: 1, arrivingInstances: 1 })), null);
+});
+
 test('the Layout step holds a click with no instances', () => {
   assert.equal(whyNotLeave('layout', at({ parts: 1, instances: 0 })), 'there are no instances.');
 });
