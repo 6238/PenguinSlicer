@@ -1,5 +1,5 @@
 // Fakes of the browser's storage, its per-tab storage and its locks, with the shapes of the seams
-// in src/seams/storage.js and src/seams/locks.js, so that several pages (several tabs) run on one
+// in src/seams/browser-storage.js and src/seams/locks.js, so that several pages (several tabs) run on one
 // storage in one test, and a test makes the browser refuse a write or clear the site's storage
 // on purpose.
 //

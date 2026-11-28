@@ -3,7 +3,7 @@
 // plate a tab shows"). The browser's storage is the record of a user's parts and plate; nothing on
 // a server is. Each change is written at once, so a refresh at any moment loses nothing.
 //
-// The records, each under its key in the storage seam (src/seams/storage.js):
+// The records, each under its key in the storage seam (src/seams/browser-storage.js):
 //   owner                                  the user.id the stored work belongs to
 //   uploadUnits, currentGroup              the user's two small choices
 //   plates/<plate_id>                      a plate: its user and group, its parts (each part's

@@ -1,0 +1,48 @@
+// The main thread's side of the worker (wizard/README-details.md, "The geometry, in a worker"):
+// each question is one message of geometry/messages.js, named by an id, and resolves to its own
+// reply, {ok: true, result} or {ok: false, error} with an error report of the wizard's own,
+// whatever order the replies come in. A part's bytes are copied to the worker, never transferred:
+// the page still keeps them in the browser's storage and uploads them. A worker that fails as a
+// whole (a script that cannot load, an error the worker did not catch) answers every question
+// waiting, and every later one, with wizard.layout_failed, so no question waits for ever.
+import { LAYOUT_FAILED, errorReport } from './geometry/errors.js';
+
+// createGeometryClient(port): `port` is the worker seam's ({post(message, transfer),
+// listen(onReply, onFailure)}).
+export function createGeometryClient(port) {
+  const waiting = new Map();
+  let next = 0;
+  let failed = null;
+
+  port.listen((reply) => {
+    const resolve = waiting.get(reply.id);
+    if (!resolve) return;
+    waiting.delete(reply.id);
+    resolve(reply.ok ? { ok: true, result: reply.result } : { ok: false, error: reply.error });
+  }, (error) => {
+    failed = errorReport(LAYOUT_FAILED, `the worker failed: ${error && error.message ? error.message : String(error)}`);
+    for (const resolve of waiting.values()) resolve({ ok: false, error: failed });
+    waiting.clear();
+  });
+
+  function ask(op, fields = {}, transfer = []) {
+    if (failed) return Promise.resolve({ ok: false, error: failed });
+    next += 1;
+    const id = next;
+    return new Promise((resolve) => {
+      waiting.set(id, resolve);
+      port.post({ id, op, ...fields }, transfer);
+    });
+  }
+
+  return {
+    ask,
+    // Reads a binary STL under `key`: its triangles, its box and its corners for drawing.
+    read: (key, buffer, units) => ask('read', { key, buffer, units }),
+    // The part's picture for its row: px by px RGBA pixels in `colour` (0xrrggbb).
+    picture: (key, px, colour) => ask('picture', { key, px, colour }),
+    forget: (key) => ask('forget', { key }),
+    // How many questions are waiting for their reply.
+    waiting: () => waiting.size,
+  };
+}
