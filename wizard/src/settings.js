@@ -225,14 +225,24 @@ export function createSettings({ store, storage }) {
     });
   }
 
+  let published = '[]';
   function tell() { for (const listener of listeners) listener(); }
-  function publish() { store.set({ plate: { changes: lines() } }); tell(); }
+  function publish() {
+    const now = lines();
+    published = JSON.stringify(now);
+    store.set({ plate: { changes: now } });
+    tell();
+  }
   // A store change heard while the store tells its listeners is published after they are told, so
-  // that no listener is handed an older state after a newer one.
+  // that no listener is handed an older state after a newer one; and only when the lines differ
+  // from those last published.
   function publishSoon() {
     if (pending) return;
     pending = true;
-    queueMicrotask(() => { pending = false; publish(); });
+    queueMicrotask(() => {
+      pending = false;
+      if (JSON.stringify(lines()) !== published) publish();
+    });
   }
   // Writes the changes into the stored plate, with the chosen filament and profile when given.
   function write(chosen = {}) {
