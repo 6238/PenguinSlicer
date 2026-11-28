@@ -159,6 +159,55 @@ on how full the server is. Written Fri 2026-11-27, Pacific time.
     when its stream fails, is one list call per ask; phase 3 may replace it with a cheaper
     check or drop it, at the cost of a file removed by hand being found only when it is
     fetched. Item 15 not written test first stays under "Targets missed".
+23. **The second review's findings, Sat 2026-11-28.** Both blocking findings were real: the
+    code was right, and nothing held it. Each new test passed on the code as built and was
+    seen to fail under the reviewer's mutation, then the code restored.
+    - `threads_in_use` counting waitress's busy threads (decision 18):
+      `test_threads_in_use_counts_the_request_thread_a_progress_stream_holds` signs in and
+      opens one page's progress stream over HTTP on a running server (`run_served`) against
+      a running stand-in slice job, and finds the minute's line giving `threads_in_use` 2
+      (the stream's request thread and the following's). With `busy=lambda: 0` it gives 1
+      and fails. To wait until the sign-in's thread has gone idle again, without looking
+      again after a pause, the test wraps waitress's `queue_cv` so that each thread going
+      idle announces it (waitress lowers `active_count` just before), and waits on that.
+      This leans on waitress's own attribute names (`queue_cv`, `active_count`); a waitress
+      upgrade that renames them fails the test loudly rather than passing it.
+    - The running server's stop ending the pages' streams (decision 16):
+      `test_the_running_servers_stop_ends_each_pages_progress_stream_before_its_stop_line`
+      finds `stream_closed` `why` `stopping` before the `stop` line. Without the call it
+      fails: the stream is closed only after waitress's shutdown gives up at 5 s, as
+      `following_ended`, so it also shows the deploy's stop made slower.
+    - Minor, fixed: the guide's "How many users at once", "The figures for users at once"
+      and "The fifth progress stream" now say a fifth stream is refused only on a slice the
+      user does not already follow, and that one on a slice already followed replaces the
+      oldest stream on it. The guide's table of answers for a page that comes back now has
+      the contract's seven rows (expired split from ended in an error), and its built list
+      says seven.
+    - Minor, fixed: `sweep_item_failed` carries `group`, the record's once the record has
+      been read, `null` before that or for a file with no record. Decided: a sweep serves no
+      request, so for its lines "the current group" of "The log" can only be the group the
+      slice was submitted under, which `sliced_record_deleted` and `sliced_file_expired`
+      already carry; `sliced_file_deleted` deletes a file that has no record, so it has no
+      group to carry. Tested by three tests in `tests/test_two_hours.py`, seen to fail first.
+      To overrule: `Sweeper.sweep` and `_record`.
+    - Minor, decided and written down: `sliced_file_served` carries the request's current
+      group, not the record's. Reason: it is written for a request, and "The log" says every
+      line carries the current group; the request's group is also the one that tells who
+      fetched the file. The two are equal in honest use. The details file, "Two hours, the
+      sweep, and the backstop", now says which group each line carries. To overrule: the
+      line in `asking.file`.
+    - Minor, written down rather than tested: removing `sweeper.stop()` or
+      `load_loop.stop()` from `serve` passes, since both loops run on daemon threads; the
+      details file's "Stopping" now says this is not checked.
+    - Declined, minor: the mutation of `expires_in_s` from `max(0, ...)` to `max(1, ...)` in
+      `sliced.details` survives because the value 0 is never reached: a file that is due is
+      refused before its details are made. A test would have to call the function on a
+      record the code never hands it; the `max` is a guard, and is left as it is.
+    - Declined, minor: the keep-alive test's "none before fifteen seconds", as decision 22
+      says.
+    The fast suite after these fixes: 891 tests, 7.5 s on one worker with other builders
+    running on the machine; the new tests in `tests/test_server.py` take about 0.3 s for the
+    whole file, and passed twenty runs in a row.
 
 ## Targets missed
 

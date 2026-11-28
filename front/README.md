@@ -639,13 +639,14 @@ A page that has lost its state (a refresh, a reopened panel) still has, in the
 browser's storage, the id of its plate's slice job and the time it submitted it. It
 asks the front server about that slice job. The front server asks the slice service,
 which remembers a slice job for two hours after it ends, and looks in the state bucket.
-It gives one of six answers.
+It gives one of seven answers.
 
 | The front server answers | When |
 |---|---|
 | Still waiting or running, with the latest progress report | The slice service says so; also when the slice has ended but its sliced file is not yet stored |
-| Finished | The sliced file is in the state bucket |
-| Ended in an error, with the error report | The slice service says so; also when the sliced file was stored and has since expired, in which case the error is that it has expired |
+| Finished | The sliced file is in the state bucket and has not expired |
+| Ended in an error, with the error report | The slice failed |
+| Expired, as an error saying so | The sliced file was stored and has since expired |
 | Replaced by a later slice job of the same plate | The slice service says so |
 | Ended because the slice service was asked to stop | The slice service says so; the page submits the plate again by itself |
 | Unknown | Neither the slice service nor the state bucket knows it, or it is another user's |
@@ -1158,9 +1159,13 @@ with a printer each, is far below it.
 
 **One user may hold at most four progress streams,** which is this guide's proposal as
 well. Without a limit, one user with fifty tabs open would hold fifty threads; with it,
-ten users with four streams each fill the forty. A fifth stream is refused, with an
-answer that says the user has too many open; what that page then shows is the wizard's
-to design ([The fifth progress stream](#the-fifth-progress-stream)).
+ten users with four streams each fill the forty. A fifth stream on a slice the user
+does not already follow is refused, with an answer that says the user has too many open;
+what that page then shows is the wizard's to design
+([The fifth progress stream](#the-fifth-progress-stream)). A fifth stream on a slice the
+user already follows is accepted, and closes the user's oldest stream on that slice in
+its place, so that a page reconnecting at once is never refused on account of its own
+dropped stream.
 
 The three proposed figures are listed, with what depends on them, under
 [The figures for users at once](#the-figures-for-users-at-once).
@@ -1407,7 +1412,7 @@ The phases are the plan's.
   is not stored and the page is told the slice failed, with a sentence of the front
   server's own. Each following runs on a thread of its own, counted among the 100, the web
   server serving with one fewer while it lasts;
-- answering a page that comes back, with each of the six answers: the state bucket is
+- answering a page that comes back, with each of the seven answers: the state bucket is
   looked in first and the slice service asked only when it holds no answer, so a finished
   slice is answered after the slice service has forgotten it; a slice job that a front
   server started since its submission does not yet follow is followed from that moment;
@@ -1673,7 +1678,8 @@ front server's own following of slice jobs + 7 for uploads, downloads and short
 requests = 100
 ([How many users at once](#how-many-users-at-once-and-what-happens-when-the-threads-run-out)).
 Why it matters: past the target a request waits for a free thread, which a user sees
-as a slow server, and a user's fifth stream is refused, so the figures decide when a
+as a slow server, and a user's fifth stream on a slice not already followed is refused,
+so the figures decide when a
 user first meets a limit; the use intended at first is far below all three. What depends on them: the test that holds the target
 open, the refusal of a fifth stream, and what the fifth tab shows
 ([The fifth progress stream](#the-fifth-progress-stream)). Changing a figure changes
@@ -1714,7 +1720,11 @@ with the send.
 
 #### The fifth progress stream
 
-The front server refuses a user's fifth progress stream. With a plate for each tab, a
+The front server refuses a user's fifth progress stream when it is on a slice the user
+does not already follow (one on a slice already followed replaces the user's oldest
+stream on that slice, as
+[How many users at once](#how-many-users-at-once-and-what-happens-when-the-threads-run-out)
+says). With a plate for each tab, a
 user with several tabs slicing or following a print could meet that limit, and what the
 fifth tab shows is not designed. The item is the wizard's to settle
 ([its guide](../wizard/README.md#open-items-of-the-other-guides-that-would-change-the-panel)).

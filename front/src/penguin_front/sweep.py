@@ -19,7 +19,8 @@ Once at start and then every `SWEEP_INTERVAL_S` on the front server's clock, the
 
 A slice job the front server follows is left alone: its storing may be under way. A record
 this front server cannot read (a newer format) is left alone, as is any name the front server
-does not make. A failure on one file writes `sweep_item_failed` and the sweep goes on; a
+does not make. A failure on one file writes `sweep_item_failed` (with the record's group once
+the record is read, else none: a sweep has no current group) and the sweep goes on; a
 listing that fails writes `sweep_failed`. Each sweep ends with the line `sweep` and its
 counts.
 """
@@ -74,24 +75,26 @@ class Sweeper:
             if job in followed:
                 continue
             counts["checked"] += 1
+            seen = {}  # the record's group, once the record is read
             try:
                 if (user_key, job) in records:
-                    outcome = self._record(user_key, job, now)
+                    outcome = self._record(user_key, job, now, seen)
                 else:
                     outcome = self._lone_file(user_key, job, files[(user_key, job)], now)
             except BucketUnavailable as exc:
                 counts["failed"] += 1
-                self._log.write("sweep_item_failed", user_key=user_key, slice=job,
-                                why=str(exc))
+                self._log.write("sweep_item_failed", user_key=user_key,
+                                group=seen.get("group"), slice=job, why=str(exc))
                 continue
             if outcome is not None:
                 counts[outcome] += 1
         self._log.write("sweep", **counts)
         return counts
 
-    def _record(self, user_key, job, now):
+    def _record(self, user_key, job, now, seen):
         record = sliced.read(self._bucket, user_key, job, self._log)
         state = record.get("state") if record is not None else None
+        seen["group"] = record.get("group") if record is not None else None
         if state == "stored":
             if sliced.due(record, now):
                 sliced.expire(self._bucket, user_key, record, now, self._log, by="sweep",

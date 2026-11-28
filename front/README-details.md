@@ -1470,6 +1470,13 @@ clock):
   the listing fails; and at the end of each sweep `sweep` with its counts (`checked`,
   `files_expired`, `records_deleted`, `files_deleted`, `failed`). A fault inside a loop
   writes `loop_failed` (`loop`, `trace`) and the loop goes on.
+- The group on these lines: a sweep serves no request, so it has no current group, and its
+  lines carry the record's `group` (the one the slice was submitted under).
+  `sweep_item_failed` carries it once the record has been read and `null` before, or for a
+  file with no record; `sliced_file_deleted` deletes a file that has no record, so it
+  carries none. The lines of a request (`sliced_file_served`, `stream_opened`,
+  `stream_closed`, and `refused` with `reason` `slice_unknown`) carry the request's current
+  group.
 
 ### Tests
 
@@ -1976,7 +1983,10 @@ Guide: [Restarts and deploys](README.md#restarts-and-deploys). Phase 3. Built in
 when the running server's serving ends, it stops following, ends every page's progress
 stream (`stream_closed` `why` `stopping`), stops the sweep and the once-a-minute line, and
 writes the `stop` line and what the log has gathered; it does not yet let downloads in
-progress finish.
+progress finish. Tested in `tests/test_server.py`: a page's stream open over HTTP on the
+running server is closed `why` `stopping` before the `stop` line. That the sweep and the
+once-a-minute line are stopped is not checked: both run on daemon threads that end with the
+process.
 
 Asked to stop (`SIGTERM`, as at every deploy), the front server takes no new requests, lets
 uploads and downloads in progress finish, closes its progress streams and, from phase 5,
@@ -2035,7 +2045,10 @@ forty and four; build the four as a constant and the test below against fifty an
 
 - The once-a-minute line reports the threads in use and the connections held open, checked
   with a known number of open progress streams and followings (built: `tests/test_load.py`,
-  and in `tests/test_server.py` the running server's line at start and a minute later).
+  and in `tests/test_server.py` the running server's line at start and a minute later, and
+  its line a minute later with one page's progress stream open over HTTP on a following,
+  which must give `threads_in_use` 2: the stream's request thread, counted from waitress's
+  busy threads, and the following's).
 - With every thread held by the tests' streams, a further request waits and is served when
   one closes (event-ordered, no sleep).
 - Forty progress streams and three followings held open against the stand-ins, with short

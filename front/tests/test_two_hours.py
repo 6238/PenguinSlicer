@@ -185,8 +185,33 @@ def test_a_file_that_cannot_be_deleted_is_counted_failed_and_tried_at_the_next_s
     assert sweeper(app).sweep()["failed"] == 1
     [line] = log.events("sweep_item_failed")
     assert line["slice"] == JOB and line["user_key"] == USER and "refuses" in line["why"]
+    assert line["group"] == GROUP  # the record's: a sweep has no current group
     bucket.refuse_writes = False
     assert sweeper(app).sweep()["files_expired"] == 1
+
+
+def test_an_item_whose_record_cannot_be_read_fails_without_a_group(app, bucket, clock, log,
+                                                                   monkeypatch):
+    from penguin_front.buckets import BucketUnavailable
+
+    write_stored(bucket)
+
+    def unreadable(*_args):
+        raise BucketUnavailable("the state bucket refuses reads, by the test")
+
+    monkeypatch.setattr(sliced, "read", unreadable)
+    assert sweeper(app).sweep()["failed"] == 1
+    [line] = log.events("sweep_item_failed")
+    assert line["slice"] == JOB and line["group"] is None
+
+
+def test_a_lone_file_that_cannot_be_deleted_fails_without_a_group(app, bucket, clock, log):
+    bucket.put(sliced.file_name(USER, JOB), FILE)
+    at(clock, START + 7200)
+    bucket.refuse_deletes = True
+    assert sweeper(app).sweep()["failed"] == 1
+    [line] = log.events("sweep_item_failed")
+    assert line["slice"] == JOB and line["group"] is None
 
 
 def test_a_record_is_never_expired_beside_a_file_still_there(app, bucket, clock):
