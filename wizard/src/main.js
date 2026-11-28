@@ -9,6 +9,10 @@ import { createApi } from './api.js';
 import { browserEnvironment, randomId } from './environment.js';
 import { createGeometryClient } from './geometry-client.js';
 import { createHoldMeter } from './hold-meter.js';
+import { createLayout } from './layout.js';
+import { createLayoutStep } from './panel/layout-step.js';
+import { createLayoutView } from './panel/layout-view.js';
+import { realFrames } from './seams/frames.js';
 import { endOpening, openWizard } from './opening.js';
 import { createPanel } from './panel/panel.js';
 import { createPartsStep } from './panel/parts-step.js';
@@ -38,11 +42,19 @@ const holdMeter = createHoldMeter(realClock);
 
 const parts = createParts({ api, storage, geometry, store, panel, report: (what, fields) => reports.failure(what, fields) });
 const partsStep = createPartsStep(document.querySelector('section.step[data-step="parts"]'), { parts, geometry, panel, window });
+const layout = createLayout({ geometry, storage, store, parts, panel });
+const layoutStep = createLayoutStep(document.querySelector('section.step[data-step="layout"]'), {
+  layout, parts, geometry, frames: realFrames, store, createView: createLayoutView,
+});
 
 // The opening, then the stored plate's parts taken up: their rows, and an upload again for each
-// part whose upload had not been answered.
+// part whose upload had not been answered; then the stored layout, which joins the parts on the
+// Layout step.
 const opened = openWizard({ api, store, panel, storage }).then(async (outcome) => {
-  if (outcome.opened) await parts.resume();
+  if (outcome.opened) {
+    await parts.resume();
+    layout.resume();
+  }
   return outcome;
 });
 const opening = endOpening(opened, {
@@ -50,7 +62,7 @@ const opening = endOpening(opened, {
   mark: (how) => { document.documentElement.dataset.opened = how; },
 });
 
-export const wizard = { version, store, api, panel, storage, reports, geometry, holdMeter, parts, partsStep, opening };
+export const wizard = { version, store, api, panel, storage, reports, geometry, holdMeter, parts, partsStep, layout, layoutStep, opening };
 
 document.documentElement.dataset.version = version;
 document.documentElement.dataset.started = 'true';

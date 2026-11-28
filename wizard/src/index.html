@@ -65,6 +65,33 @@
     </section>
     <section class="step" data-step="layout" hidden>
       <h2>Layout</h2>
+      <!-- the mockup's Layout step, filled by panel/layout-step.js: the toolbar with the list of
+           gestures behind "?", the status line, the view and its buttons, the selection line and
+           its link, the messages and the figures line -->
+      <div id="layout-toolbar">
+        <button type="button" class="btn small" id="btn-arrange"></button>
+        <button type="button" class="btn small" id="btn-orient"></button>
+        <span class="spacer"></span>
+        <button type="button" class="icon-btn help-btn" id="btn-layout-help" aria-expanded="false" aria-controls="layout-help">?</button>
+        <div id="layout-help" class="help-pop" role="dialog" hidden>
+          <p id="layout-gestures"></p>
+          <ul id="layout-more"></ul>
+        </div>
+      </div>
+      <button type="button" id="layout-alert" class="layout-alert ok" disabled></button>
+      <div id="layout-view" class="gl-view">
+        <div class="view-btns" aria-label="View">
+          <button type="button" id="btn-view"></button>
+          <button type="button" id="btn-view-plate"></button>
+          <button type="button" id="btn-top"></button>
+        </div>
+      </div>
+      <div id="layout-selrow" class="layout-selrow">
+        <div id="layout-selection" class="hint"></div>
+      </div>
+      <div id="layout-orient" class="layout-orient hint" hidden></div>
+      <div id="layout-errors" aria-live="polite"></div>
+      <p class="hint" id="layout-info"></p>
     </section>
     <section class="step" data-step="preview" hidden>
       <h2>Preview</h2>

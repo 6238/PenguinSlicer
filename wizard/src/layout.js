@@ -585,6 +585,7 @@ export function createLayout({ geometry, storage, store, parts, panel }) {
     if (how === 'none') selected = [];
     else if (how === 'all') selected = instances.map((i) => i.id);
     else if (how === 'toggle') selected = selected.includes(id) ? selected.filter((s) => s !== id) : [...selected, id];
+    else if (how === 'set') selected = id.filter((s) => byId(s));
     else selected = byId(id) ? [id] : [];
     tell();
   }
