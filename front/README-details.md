@@ -2604,7 +2604,7 @@ order, any number of times. A test that fails once is fixed at its cause, never 
   8 ms); one context now serves them all. With that and the stand-ins' faster stop, the
   suite went from about 10 s on one worker (6 s on two) to about 3.8 s (2.7 s on two), Fri
   2026-11-27, Pacific time, on 776 tests; on 1,028 tests, with the search for secrets after
-  each, it was about 7 s on one worker and 5 to 6 s on two, Fri 2026-11-27, Pacific time,
+  each, it was 7 to 12 s on one worker and 5 to 6 s on two, Fri 2026-11-27, Pacific time,
   on a machine shared with three other builds. What remains of an application's cost is mostly the web
   framework compiling its routes, about 2.5 ms. A test of the following
   waits for its next wait on the fake clock by a clock that notes each wait

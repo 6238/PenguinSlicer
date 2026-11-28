@@ -112,7 +112,7 @@ batch's. Written Fri 2026-11-27, Pacific time.
 
 ## Targets missed
 
-- The fast suite now takes about 7 s on one worker and 5 to 6 s on two (1,028 tests, on a
+- The fast suite now takes 7 to 12 s on one worker and 5 to 6 s on two (1,028 tests, on a
   machine shared with three other builds), against the 3.8 s and 2.7 s measured on 776
   tests before this batch. It still "finishes in seconds"; the search for secrets after
   each test and the running-server tests account for the rise. Not measured apart.
