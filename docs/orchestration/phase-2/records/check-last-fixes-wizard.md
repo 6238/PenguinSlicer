@@ -8,8 +8,11 @@ For each finding: the fix was found on `main`, the fix was undone by hand, the s
 and seen to fail, and the fix was restored (the working tree checked clean with `git status` after
 each). "Fixed and tested as found" means the code was right and a test fails without it. The
 browser tests were run in Chromium 159 with `wizard/tests_browser`, after `make -C wizard build`.
-At the end the fast suite passed twice in random order (921 and 184 tests, seeds 706388085 and
-229716422 for Node) and the whole browser suite once (191 passed in 102 s).
+At the end of the first round the fast suite passed twice in random order (921 and 184 tests,
+seeds 706388085 and 229716422 for Node) and the whole browser suite once (191 passed in 102 s).
+After the fixes for the review of #48 it passed three times in random order (924 Node tests and
+184 tool tests each; Node seeds 2111700516, 766168280 and the third given at the end of this
+record).
 
 ## The findings
 
@@ -104,14 +107,31 @@ At the end the fast suite passed twice in random order (921 and 184 tests, seeds
 
 ### Pull request 46 (wizard-8-result-expiry-send, [its record](wizard-8-result-expiry-send.md), decisions 36 and 37)
 
-12. **A followed stored slice's plate configuration had no test: fixed and tested as found.**
-    With `resume(kept)` in place of `resume(kept, built.configuration)` in `comeBack`, "a page that
-    follows the plate's stored slice to done has the Send step's card, and Download saves and
-    notifies once" fails.
+12. **A followed stored slice's plate configuration had no test: fixed and tested as found on the
+    step's entering; tested in this batch on coming back (the review of #48).** A page takes up the
+    plate's stored slice by two paths. When the Preview step is entered with the slice kept in the
+    stored plate, `enter` calls `resume(kept, built.configuration)`; with `resume(kept)` there, "a
+    page that follows the plate's stored slice to done has the Send step's card, and Download saves
+    and notifies once" fails. When the page opens again on its stored plate (a refresh),
+    `comeBack` does not call `resume` and builds `current` itself, with
+    `body: built.configuration`; no test held that body, and without it the Send step's card was
+    null and Download answered `{ ok: false }` with nothing saved. Two new tests in
+    `tests/coming-back.test.js`, "coming back to a finished slice: the Send step has its card, and
+    Download saves and notifies once" and "coming back to a slice still running that then
+    finishes: …", each fail with `body: built.configuration` dropped in `comeBack` (the card is
+    null) and pass with it.
 13. **The summary asked after a bare done report was not set aside once a new slice had begun:
-    fixed and tested as found.** With `mine !== run ||` removed from `askDetails`, "a summary asked
-    after a bare done report and arriving after a new slice has ended is set aside…" fails. A new
-    slice still running when the old summary arrives is set aside by `view.kind !== 'done'`.
+    fixed and tested as found; the second guard tested in this batch (the review of #48).** With
+    `mine !== run ||` removed from `askDetails`, "a summary asked after a bare done report and
+    arriving after a new slice has ended is set aside…" fails. Every new slice raises `run`, so
+    `mine !== run` sets aside the old summary whether the new slice is still running or done. The
+    second guard, `view.kind !== 'done'`, is for the same slice no longer done with no new slice
+    begun: another request about it (the file for the layer preview, a Download) refused as
+    expired while the summary was on its way. Without it a late refusal of the summary, or an
+    answer without valid details, turned the expired message into a failure. It had no test; the
+    new test "a summary asked after a bare done report and arriving after the same slice has
+    expired is set aside: the expired message stays" (`tests/result.test.js`) fails without it
+    (`'failed'` in place of `'expired'`) and passes with it.
 
 ### Pull request 47 (wizard-9-back-reload-reports-whole, [its record](wizard-9-back-reload-reports-whole.md))
 
@@ -165,6 +185,24 @@ At the end the fast suite passed twice in random order (921 and 184 tests, seeds
    no new case to pin with a test. To overrule: commit the comparison as a test of the slice
    project that reads poses the wizard writes, which would add the slice service's environment
    to a wizard check.
+4. **Wholly off the plate stays a test of the footprint's box, and the guide now says so** (the
+   review of #48, minor finding 3). The reviewer is right that a turned instance whose footprint
+   lies past a plate corner while its box still overlaps that corner is counted on the plate. The
+   details said "footprint's box"; the guide said "wholly off" without qualification. The page's
+   main thread holds only each instance's box from the worker's check (`checked.bounds`), not its
+   footprint, so a test of the footprint itself would add the footprints, or a flag per instance,
+   to the worker's answer for a line of words. I chose to keep the box and say it in the guide in
+   plain words: the error is one way only (such an instance is counted on the plate, never the
+   reverse), applies only near a corner at a slant, and the instance's own message still names it.
+   To overrule: have the geometry worker's check answer, for each instance, whether its footprint
+   touches the plate, and use that in `whollyOffPlate` of `wizard/src/layout.js`, with a test of a
+   long instance turned 45 degrees just past a corner.
+5. **The Auto-orient rows carry the hub's figures measured again beside the trial's** (minor
+   finding 2). The details' row kept "at most 236 ms for `hub-150k.stl`" from the second trial; it
+   now also gives this batch's 163 to 211 ms on Node and 153 to 669 ms in Chromium, and the guide's
+   row the Chromium range in seconds. The trial's figure stays, since it is the one measured under
+   the trial's conditions; the slowest Chromium run is taken as a spike of the shared machine, as
+   item 5 says. To overrule: replace the trial's figure with the fresh range in both rows.
 
 ## Targets missed
 

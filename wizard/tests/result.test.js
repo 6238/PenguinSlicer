@@ -466,6 +466,32 @@ test('a summary asked after a bare done report and arriving after a new slice ha
   }
 });
 
+test('a summary asked after a bare done report and arriving after the same slice has expired is set aside: the expired message stays', async () => {
+  for (const late of [
+    steps.report(errorReport('front.slice_unknown')),
+    steps.answer(200, {}),
+    steps.answer(200, { sliced_file: details() }),
+  ]) {
+    const page = await openPage();
+    const { sliced_file: _gone, ...bare } = doneReport();
+    page.server.script('GET', SUMMARY, steps.hold());
+    feedStream(page, events.progress(bare));
+    await page.enter();
+    const [asked] = page.server.made('GET', SUMMARY);
+    assert.ok(asked.held);
+    // another request about the same sliced plate (the file for the layer preview) was refused as
+    // expired while the summary was on its way; no new slice has begun
+    const gone = errorReport('front.sliced_file_expired');
+    page.slicing.expire(gone, JOB);
+    assert.equal(page.view().kind, 'expired');
+    asked.held.release(late);
+    await page.clock.advance(0);
+    assert.equal(page.view().kind, 'expired');
+    assert.equal(page.view().what, gone.message);
+    assert.equal(page.store.get().sliced, false);
+  }
+});
+
 test('a page that follows the plate\'s stored slice to done has the Send step\'s card, and Download saves and notifies once', async () => {
   const page = await openPage();
   feedStream(page, events.progress(progress()));
