@@ -11,8 +11,8 @@ from shapely.geometry import MultiPoint, Polygon
 
 from helpers import corrupt_entry, l_prism_stl, make_part, part_from_stl, write_names_archive
 from penguin_slice import plate_3mf
-from penguin_slice.mesh import MeshError
-from penguin_slice.plate import ORIENTATIONS, instance_hull
+from penguin_slice.mesh import MeshError, orientation_footprints, read_binary_stl, turned_footprint
+from penguin_slice.plate import ORIENTATIONS, instance_hull, quaternion_matrix
 from penguin_slice.plate_3mf import LEFT_OFF_MESSAGE, LOCAL_TIME_RE, check_plate_names, delivered_file_name, \
     write_plate_3mf
 from penguin_slice.slicer import UNREADABLE_MESSAGE, SliceCancelled, SliceError, Stop, plate_object_names
@@ -122,6 +122,33 @@ class TestWriter:
             assert written.symmetric_difference(expected).area < 0.05, placed_instance['orientation']
             assert placed[:, 2].min() == pytest.approx(0.0, abs=1e-3)
 
+    def test_a_rotation_is_written_where_the_placement_check_sees_it(self, tmp_path, stls):
+        """An instance laid by a `rotation`: the hull of its written vertices is the footprint
+        the check uses for that turn, after the angle (contracts/plate-configuration.md)."""
+        part = part_from_stl(stls, 'Ell', l_prism_stl(origin=(7.0, -4.0, 3.0)))
+        rotation = (0.707106781, -0.588348405, 0.39223227, 0.0)
+        mesh = read_binary_stl(l_prism_stl(origin=(7.0, -4.0, 3.0)), 'Ell')
+        part['footprints'][rotation] = turned_footprint(mesh, quaternion_matrix(rotation))
+        placed_instance = {'ref': 'a', 'rotation': list(rotation), 'angle': 15, 'x': 120.0, 'y': 140.0}
+        write_plate_3mf(tmp_path / 'plate.3mf', [placed_instance], {'a': part})
+        _entries, root = read_model(tmp_path / 'plate.3mf')
+        ((_item, placed),) = placed_vertices(root)
+        written = MultiPoint(placed[:, :2].tolist()).convex_hull
+        expected = Polygon(instance_hull(placed_instance, part['footprints'][rotation]))
+        assert expected.area > 100
+        assert written.symmetric_difference(expected).area < 0.05
+        assert placed[:, 2].min() == pytest.approx(0.0, abs=1e-3)
+
+    def test_a_part_in_inches_is_written_in_millimetres(self, tmp_path, stls):
+        part = make_part(stls, 'Block', (1, 2, 0.5))
+        mesh = read_binary_stl(part['stl_path'].read_bytes(), 'Block', scale=25.4)
+        part.update(scale=25.4, footprints=orientation_footprints(mesh))
+        write_plate_3mf(tmp_path / 'plate.3mf', [instance('a', 100.0, 80.0)], {'a': part})
+        _entries, root = read_model(tmp_path / 'plate.3mf')
+        ((_item, placed),) = placed_vertices(root)
+        assert (placed.max(axis=0) - placed.min(axis=0)).tolist() == pytest.approx([25.4, 50.8, 12.7], abs=1e-3)
+        assert ((placed.max(axis=0) + placed.min(axis=0)) / 2)[:2].tolist() == pytest.approx([100.0, 80.0], abs=1e-3)
+
     def test_names_xml_escaped_and_sanitized(self, tmp_path, stls):
         parts = {'a': make_part(stls, 'A&B "q" <x>', (10, 10, 10))}
         assert write_plate_3mf(tmp_path / 'plate.3mf', [instance('a', 50, 50)], parts) == ['A_B__q___x_ #1']
@@ -170,10 +197,10 @@ class TestStopDuringTheWrite:
         stop, built = Stop(), []
         real_mesh_xml = plate_3mf._mesh_xml
 
-        def mesh_then_cancel(stl_path, name):
+        def mesh_then_cancel(stl_path, name, scale):
             built.append(name)
             stop.set("cancel")
-            return real_mesh_xml(stl_path, name)
+            return real_mesh_xml(stl_path, name, scale)
 
         monkeypatch.setattr(plate_3mf, '_mesh_xml', mesh_then_cancel)
         instances = [instance(ref, 30 + 30 * n, 50) for n, ref in enumerate('abcabc')]
@@ -227,9 +254,9 @@ class TestStopDuringTheWrite:
                                                                                               ('c', 'C')))}
         real_mesh_xml, built, alive_at_each_build = plate_3mf._mesh_xml, [], []
 
-        def tracked_mesh_xml(stl_path, name):
+        def tracked_mesh_xml(stl_path, name, scale):
             alive_at_each_build.append([ref() is not None for ref in built])
-            text = memoryview(real_mesh_xml(stl_path, name))
+            text = memoryview(real_mesh_xml(stl_path, name, scale))
             built.append(weakref.ref(text))
             return text
 

@@ -2,9 +2,10 @@
 (contracts/error-report.md).
 
 Each exception the slice service raises carries its error code (`error_code`), its
-sentence for the student (`message`), the evidence for the log (`details`) and, when
+sentence for the user (`message`), the evidence for the log (`details`) and, when
 known, the part, instance or height (`where`). The adapter adds the `remedy`, the `action`,
-`retryable` and the stage from CODES. Orca's return codes and their error codes are in
+`retryable` and the stage from CODES. The remedies of CODES are a slice's; an upload
+(POST /parts) answers with service.UPLOAD_REMEDIES instead, and no action. Orca's return codes and their error codes are in
 slicer.ORCA_RETURN_CODES, the one table of them.
 """
 from .jobs import GENERIC_FAILURE, JobFailure, QueueFull, exception_text
@@ -23,6 +24,8 @@ REEXPORT_REMEDY = "Export the part again and send a new slice."
 # slice/README-details.md lists the same codes in this order, and tests/test_errors.py produces
 # each on purpose and states what its report must say.
 CODES = {
+    "slice.no_user_key": ("checking", False, None,
+                          "Try again; if it happens again, the server needs fixing."),
     "slice.bad_plate_configuration": ("checking", False, None,
                                       "Lay out the plate again and send a new slice."),
     "slice.too_many_instances": ("checking", False, "lower_quantities",
@@ -40,6 +43,8 @@ CODES = {
                                  "pinned version writes them again."),
     "slice.part_missing": ("checking", False, "refresh_parts",
                            "Load the parts again and send a new slice."),
+    "slice.bad_units": ("checking", False, None,
+                        "Choose millimetres or inches for the part and add it again."),
     "slice.part_unreadable": ("checking", False, "refresh_parts", REEXPORT_REMEDY),
     "slice.part_not_binary": ("checking", False, None,
                               "Export the part again as a binary STL and send a new slice."),
@@ -118,9 +123,10 @@ CODES = {
 _OWN = (PlateConfigurationRefused, MeshError, ProfileError, OverrideError, SliceError, SliceCancelled)
 
 
-def report_for_code(code, message, detail="", where=None):
-    """The error report for `code` with its sentence and evidence (the HTTP interface's own)."""
-    return _report(code, message, detail, where)
+def report_for_code(code, message, detail="", where=None, remedy=None):
+    """The error report for `code` with its sentence and evidence (the HTTP interface's own),
+    and its own remedy when the code's is for another failure (an upload's, for one)."""
+    return _report(code, message, detail, where, remedy)
 
 
 def _report(code, message, detail="", where=None, remedy=None, no_action=False):
@@ -141,7 +147,7 @@ def error_report(exc):
         return _report(exc.error_code, exc.message, detail, exc.where, exc.remedy, exc.no_action)
     if isinstance(exc, _OWN):
         return _report(exc.error_code, exc.message, exc.details, getattr(exc, "where", None),
-                       getattr(exc, "remedy", None))
+                       getattr(exc, "remedy", None), getattr(exc, "no_action", False))
     if isinstance(exc, QueueFull):
         return _report("slice.busy", BUSY_MESSAGE, "the job queue is full")
     if isinstance(exc, JobFailure) and exc.__cause__ is not None:

@@ -11,11 +11,11 @@ import zipfile
 
 import pytest
 
-from helpers import CONTRACTS, SLICE_ROOT, install_fake_orca
+from helpers import CONTRACTS, PLATE_ID, SLICE_ROOT, SUBMISSION_ID, Parts, install_fake_orca, sha256
 from penguin_slice import limits, plate, service
 from penguin_slice.errors import CODES
 from penguin_slice.print_config import OVERRIDE_CHOICES
-from penguin_slice.service import read_plate_configuration, slice_plate_configuration
+from penguin_slice.service import slice_plate_configuration
 from penguin_slice.slicer import GCODE_ENTRY, PLATE_JSON_ENTRY, SLICE_INFO_ENTRY
 
 PLATE_CONFIGURATION_DOC = (CONTRACTS / "plate-configuration.md").read_text()
@@ -42,11 +42,37 @@ def names(doc, heading):
     return [re.fullmatch(r"`([^`]+)`", row[0]).group(1) for row in table(doc, heading)]
 
 
+def phase_2_of_the_example():
+    """examples/plate-configuration.json, the plate of the contract's Example, in its phase 2
+    form: each part named by the hash of its file and "mm", with a plate id and a submission."""
+    data = json.loads(PLATE_CONFIGURATION_EXAMPLE.read_text())
+    for part in data["parts"].values():
+        part.update(sha256=sha256((EXAMPLE_PARTS / part.pop("stl")).read_bytes()), units="mm")
+    return {"plate_id": PLATE_ID, "submission_id": SUBMISSION_ID, **data}
+
+
+def example_parts(tmp_path):
+    parts = Parts(tmp_path)
+    for path in EXAMPLE_PARTS.glob("*.stl"):
+        parts.add(path.read_bytes())
+    return parts
+
+
 class TestPlateConfigurationDocument:
     def test_fields(self):
-        assert names(PLATE_CONFIGURATION_DOC, "## Fields") == list(service.PLATE_CONFIGURATION_FIELDS)
-        assert names(PLATE_CONFIGURATION_DOC, "### Part") == list(service.PART_FIELDS)
-        assert names(PLATE_CONFIGURATION_DOC, "### Instance") == list(service.INSTANCE_FIELDS)
+        assert names(PLATE_CONFIGURATION_DOC, "### Fields in phase 2") == list(service.PLATE_CONFIGURATION_FIELDS)
+        assert names(PLATE_CONFIGURATION_DOC, "### A part in phase 2") == list(service.PART_FIELDS)
+        assert names(PLATE_CONFIGURATION_DOC, "### An instance in phase 2") == list(service.INSTANCE_FIELDS)
+
+    def test_the_limit_on_the_whole_plate_configuration(self):
+        rows = {row[0].strip("`"): row[1] for row in table(PLATE_CONFIGURATION_DOC, "### Limits in phase 2")}
+        assert rows["MAX_PLATE_CONFIGURATION_BYTES"].startswith(f"{limits.MAX_PLATE_CONFIGURATION_BYTES:,} ")
+
+    def test_the_http_interfaces_codes_are_codes(self):
+        named = set(re.findall(r"`(slice\.[a-z_]+)`", (CONTRACTS / "slice-http-interface.md").read_text()))
+        built = {"slice.no_user_key", "slice.bad_request", "slice.bad_units", "slice.bad_plate_configuration",
+                 "slice.part_missing", "slice.unknown_job", "slice.not_ready", "slice.file_gone"}
+        assert built <= set(CODES) and built <= named
 
     def test_orientations_and_their_matrices(self):
         rows = table(PLATE_CONFIGURATION_DOC, "## Coordinates")
@@ -84,18 +110,28 @@ class TestPlateConfigurationDocument:
 
 
 class TestPlateConfigurationExample:
-    def test_example_is_a_plate_configuration_the_service_accepts(self):
-        configuration = read_plate_configuration(json.loads(PLATE_CONFIGURATION_EXAMPLE.read_text()), EXAMPLE_PARTS,
-                                                 confine_to=EXAMPLE_PARTS)
+    def test_example_is_a_plate_configuration_the_service_accepts(self, tmp_path):
+        configuration = example_parts(tmp_path).read(phase_2_of_the_example())
         assert [c["ref"] for c in configuration.instances] == ["bracket", "bracket", "spacer"]
         assert configuration.profiles.printer.name == "Bambu_Lab_H2S_0.4_nozzle.json"
         assert configuration.overrides == {"sparse_infill_density": "20%", "wall_loops": "3", "enable_support": "0",
                                            "brim_type": "auto_brim"}
         assert configuration.delivered_name == "Bracket_plus1-20261009-1432.gcode.3mf"
 
-    def test_example_uses_every_field(self):
+    def test_the_phase_2_example_names_the_examples_parts_by_hash(self):
+        example = json.loads((CONTRACTS / "examples" / "plate-configuration-phase-2.json").read_text())
+        assert list(example) == list(service.PLATE_CONFIGURATION_FIELDS)
+        hashes = {sha256(p.read_bytes()) for p in EXAMPLE_PARTS.glob("*.stl")}
+        assert {(p["sha256"] in hashes, p["units"]) for p in example["parts"].values()} == {(True, "mm")}
+
+    def test_the_phase_2_example_is_the_example_with_a_fourth_instance(self):
+        example = json.loads((CONTRACTS / "examples" / "plate-configuration-phase-2.json").read_text())
+        built = phase_2_of_the_example()
+        assert example["parts"] == built["parts"] and example["instances"][:3] == built["instances"]
+        assert "rotation" in example["instances"][3]
+
+    def test_example_uses_every_field_of_the_overrides_as_built(self):
         data = json.loads(PLATE_CONFIGURATION_EXAMPLE.read_text())
-        assert list(data) == list(service.PLATE_CONFIGURATION_FIELDS)
         assert set(data["overrides"]) == set(OVERRIDE_CHOICES)
 
     def test_example_parts_are_small(self):
@@ -107,8 +143,8 @@ class TestSlicedFile:
     @pytest.fixture
     def sliced(self, tmp_path, monkeypatch):
         install_fake_orca(tmp_path, monkeypatch, "ok")
-        return slice_plate_configuration(json.loads(PLATE_CONFIGURATION_EXAMPLE.read_text()), tmp_path / "out",
-                                         base_dir=EXAMPLE_PARTS)
+        configuration = example_parts(tmp_path).read(phase_2_of_the_example())
+        return slice_plate_configuration(configuration, tmp_path / "out")
 
     def test_summary_fields(self, sliced):
         assert names(SLICED_FILE_DOC, "## Summary") == list(service.SUMMARY_FIELDS) == list(sliced.summary)

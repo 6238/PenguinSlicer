@@ -58,12 +58,34 @@ def _cos_sin(angle):
     return math.cos(radians), math.sin(radians)
 
 
-def instance_matrix(orientation, angle, offset, x, y):
-    """The instance's 3x4 [M | t]: M = Rz(angle) R_o, t = (x, y, 0) - Rz(angle) offset, so that
-    p_plate = M p_part + t puts the footprint's centre at (x, y) and its lowest point at z 0."""
+def quaternion_matrix(rotation):
+    """The row-major matrix of a rotation [w, x, y, z] (contracts/plate-configuration.md, "An
+    instance in phase 2"), the quaternion divided by its length first."""
+    length = math.sqrt(sum(v * v for v in rotation))
+    w, x, y, z = (v / length for v in rotation)
+    return ((1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)),
+            (2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)),
+            (2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)))
+
+
+def turn_of(instance):
+    """An instance's turn out of its part's coordinates: its orientation's name, or its
+    rotation as a tuple. A part's footprints are kept under this key."""
+    return instance['orientation'] if 'orientation' in instance else tuple(instance['rotation'])
+
+
+def turn_matrix(turn):
+    """The matrix M of a turn (turn_of): an orientation's, or a rotation's."""
+    return ORIENTATION_MATRICES[turn] if isinstance(turn, str) else quaternion_matrix(turn)
+
+
+def instance_matrix(turn, angle, offset, x, y):
+    """The instance's 3x4 [M | t]: M = Rz(angle) R, t = (x, y, 0) - Rz(angle) offset, so that
+    p_plate = M p_part + t puts the footprint's centre at (x, y) and its lowest point at z 0.
+    `turn` is an orientation's name or a rotation (turn_of), R its matrix."""
     c, s = _cos_sin(angle)
     rz = ((c, -s, 0), (s, c, 0), (0, 0, 1))
-    r_o = ORIENTATION_MATRICES[orientation]
+    r_o = turn_matrix(turn)
     m = [[sum(rz[i][k] * r_o[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
     moved = [sum(rz[i][k] * offset[k] for k in range(3)) for i in range(3)]
     t = (x - moved[0], y - moved[1], -moved[2])
@@ -107,7 +129,7 @@ def check_placement(instances, parts, plate):
     """The placement's problems: every off_plate, then every too_tall, then every too_close
     pair (i, j), i < j. Each is {'rule', 'instances', 'message'}; an empty list passes."""
     labels = instance_labels([parts[instance['ref']]['name'] for instance in instances])
-    footprints = [parts[instance['ref']]['footprints'][instance['orientation']] for instance in instances]
+    footprints = [parts[instance['ref']]['footprints'][turn_of(instance)] for instance in instances]
     hulls = [instance_hull(instance, footprint) for instance, footprint in zip(instances, footprints)]
     lo = [plate['min'][i] + plate['margin'] - EPS_MM for i in (0, 1)]
     hi = [plate['max'][i] - plate['margin'] + EPS_MM for i in (0, 1)]
