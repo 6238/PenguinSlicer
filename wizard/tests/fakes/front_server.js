@@ -111,7 +111,37 @@ export const steps = {
     };
     return { kind: 'answer', status, body: chunks.join(''), headers: { 'Content-Type': contentType }, trickle: feed };
   },
+  // A progress stream (server-sent events): its headers arrive, then each piece of text the test
+  // sends with `step.feed.send(text)`, in order; `feed.end()` closes it as the front server does,
+  // `feed.cut()` breaks it as a restart does. `chunks` are sent at once, and `end` closes it after
+  // them. `feed.reading` is true while the page reads it; `feed.aborted` once the page gave up on it.
+  stream: (chunks = [], { end = false } = {}) => {
+    const feed = {
+      queued: [...chunks],
+      ended: end,
+      broken: false,
+      aborted: false,
+      reader: null,
+      get reading() { return feed.reader !== null; },
+      send(text) { if (feed.reader) feed.reader.onChunk(text); else feed.queued.push(text); },
+      end() { feed.ended = true; if (feed.reader) { const r = feed.reader; feed.reader = null; r.resolve(); } },
+      cut() { feed.broken = true; if (feed.reader) { const r = feed.reader; feed.reader = null; r.reject(new TypeError('network error')); } },
+    };
+    return { kind: 'answer', status: 200, body: '', headers: { 'Content-Type': 'text/event-stream' }, feed };
+  },
 };
+
+// The text of server-sent events, as the front server writes them (contracts/wizard-front-server.md,
+// "Progress streams").
+export const events = {
+  version: (version = VERSION) => `event: version\ndata: ${JSON.stringify({ version })}\n\n`,
+  progress: (report) => `event: progress\nid: ${report.sequence}\ndata: ${JSON.stringify(report)}\n\n`,
+  keepAlive: () => ': keep-alive\n\n',
+};
+
+export function exampleEvents() {
+  return readFileSync(join(EXAMPLES, 'wizard-front', 'slice-events.txt'), 'utf8');
+}
 
 // The bytes of a request's body, whatever form the page sent them in.
 function bodyBytes(body) {
@@ -141,6 +171,7 @@ function defaultStep(method, path, body) {
   if (method === 'GET' && route === '/api/settings-table') return steps.answer(200, example('settings-table.json'));
   if (method === 'POST' && route === '/api/parts') return steps.answer(201, partRecordOf(path, body));
   if (method === 'POST' && route === '/api/slices') return steps.answer(202, example('wizard-front/slice-accepted.json'));
+  if (method === 'GET' && /^\/api\/slices\/[\w-]+\/events$/.test(route)) return steps.stream([exampleEvents()], { end: true });
   if (method === 'GET' && /^\/api\/slices\/[\w-]+\/summary$/.test(route)) return steps.answer(200, example('wizard-front/slice-summary.json'));
   if (method === 'GET' && /^\/api\/slices\/[\w-]+$/.test(route)) return steps.answer(200, example('wizard-front/slice-done.json'));
   if (method === 'POST' && /^\/api\/reports\/(failure|drawing)$/.test(route)) return { kind: 'answer', status: 204, body: '', headers: {} };
@@ -222,9 +253,27 @@ export class FakeFrontServer {
       }
       return Promise.resolve().then(() => parse(step.body));
     };
+    // A progress stream's body, piece by piece, as the transport seam's chunks(onChunk) reads it.
+    const chunks = (onChunk) => new Promise((resolve, reject) => {
+      const feed = step.feed;
+      if (!feed) { Promise.resolve().then(() => { if (step.body) onChunk(step.body); resolve(); }); return; }
+      if (signal && signal.aborted) { feed.aborted = true; reject(abortError()); return; }
+      for (const text of feed.queued.splice(0)) onChunk(text);
+      if (signal && signal.aborted) { feed.aborted = true; reject(abortError()); return; }
+      if (feed.broken) { reject(new TypeError('network error')); return; }
+      if (feed.ended) { resolve(); return; }
+      feed.reader = { onChunk, resolve, reject };
+      if (signal) {
+        signal.addEventListener('abort', () => {
+          feed.aborted = true;
+          if (feed.reader) { feed.reader = null; reject(abortError()); }
+        }, { once: true });
+      }
+    });
     return Promise.resolve({
       status: step.status,
       header: (name) => lower[name.toLowerCase()] ?? null,
+      chunks,
       json: () => read((body) => JSON.parse(body)),
       text: (onProgress) => read((body) => body, onProgress),
       bytes: (onProgress) => read((body) => new TextEncoder().encode(body).buffer, onProgress),

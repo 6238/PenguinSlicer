@@ -25,6 +25,23 @@ export const RETRY_SPREAD = 0.1;
 export const ATTEMPT_TIMEOUT_S = 15;
 export const UPLOAD_ATTEMPT_TIMEOUT_S = 60;
 
+// Progress streams (the guide, "When the server is slow or cannot be reached"): a stream failing
+// to reopen this long, or open and carrying nothing this long, counts as a failed request; asking
+// in place of a stream, every POLL_S (proposed: "every second or two").
+export const STREAM_REOPEN_FAIL_S = 20;
+export const STREAM_SILENT_S = 45;
+export const POLL_S = 2;
+
+// Submitting a plate (wizard/README-details.md, "Submitting a plate"): one submission's body at
+// most; the times a submission's missing parts are uploaded again before a third slice.part_missing
+// is shown as a failure (proposed); the two hours a sliced file is kept, by which the page tells
+// a slice service that restarted from a sliced file that expired; the Reconnected line's time on
+// the slicing card (proposed: the mockup's 5 s).
+export const MAX_PLATE_CONFIGURATION_BYTES = 1_048_576;
+export const PART_MISSING_TRIES = 2;
+export const SLICED_FILE_KEEP_S = 7_200;
+export const RECONNECTED_LINE_S = 5;
+
 // The browser's storage (the guide, "What the browser keeps"): PLATE_UNUSED_H is in storage.js.
 
 // A part's picture on its row (decision 18): the mockup's 44 px, and the mockup's colours for the
