@@ -145,6 +145,15 @@ export function createRetryBoard(clock) {
       if (entry) { wake(entry); entries.delete(entry); }
     },
 
+    // The entry's request was stopped by its caller: it wakes, leaves the board, and the line
+    // follows the requests still failing.
+    stop(entry) {
+      if (!entry) return;
+      wake(entry);
+      entries.delete(entry);
+      changed();
+    },
+
     // Any request of the page's was answered.
     answered() {
       hidden = true;
