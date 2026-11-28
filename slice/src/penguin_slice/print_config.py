@@ -1,16 +1,18 @@
-"""The profile choice and the four setting overrides of a plate configuration, read against
-the profile catalog.
+"""The profile choice of a plate configuration, read against the profile catalog, and its
+overrides written over the process profile.
 
 A plate configuration names its printer, filament and process by Orca's own profile names
 (profiles/catalog/index.json lists them). A plate configuration with no printer prints with the
 default set in profiles/. A printer name the catalog does not know fails closed: no
 fallback. A filament or process the catalog does not know, or that does not fit the
-printer, is refused.
+printer, is refused. Its overrides are checked against the table of settings
+(settings_table.validate_overrides) and replace values of the process profile only.
 """
 import functools
 import json
 from pathlib import Path
 
+from .settings_table import OverrideError, per_variant, validate_overrides  # noqa: F401 - the plate's checks
 from .slicer import DEFAULT_PROFILES, PROFILE_DIR, SliceProfiles
 
 PKG = Path(__file__).resolve().parent      # the penguin_slice package directory
@@ -18,7 +20,6 @@ CATALOG_DIR = PKG / 'profiles' / 'catalog'
 
 UNKNOWN_PRINTER_MESSAGE = "The printer '{name}' is not one the slicer knows."
 CHOOSE_PROFILES_MESSAGE = "Choose a filament and print settings from the list."
-BAD_OVERRIDES_MESSAGE = "These print settings could not be read; choose them from the lists."
 
 SHOWN_CHARS = 120     # a value a caller sent, as a sentence or a detail shows it, at most
 
@@ -35,15 +36,6 @@ def _shown(value, quoted=True):
 
 # Catalog kind -> index.json list name.
 _LISTS = {'printer': 'printers', 'filament': 'filaments', 'process': 'processes'}
-
-OVERRIDE_CHOICES = {
-    'infill': [10, 15, 20, 30, 40, 60, 100],
-    'walls': [2, 3, 4, 6],
-    'supports': ['off', 'on'],
-    'brim': ['auto', 'off', 'outer'],
-}
-_SUPPORTS = {'off': {'enable_support': '0'}, 'on': {'enable_support': '1', 'support_type': 'tree(auto)'}}
-_BRIM = {'auto': 'auto_brim', 'off': 'no_brim', 'outer': 'outer_only'}
 
 
 class Catalog:
@@ -131,52 +123,9 @@ def printer_profile(profiles):
         return json.load(fh)
 
 
-class OverrideError(Exception):
-    """Overrides the slice service will not use. `details` names the override for the log."""
-
-    error_code = "slice.bad_overrides"
-
-    def __init__(self, message, details=""):
-        super().__init__(message)
-        self.message = message
-        self.details = details
-
-
-def _choice(raw, key):
-    """The value for `key` if it is exactly one of the listed choices (type included)."""
-    value = raw[key]
-    for allowed in OVERRIDE_CHOICES[key]:
-        if type(value) is type(allowed) and value == allowed:
-            return value
-    raise OverrideError(BAD_OVERRIDES_MESSAGE, f"override {key!r} is {_shown(value)}, not one of "
-                                               f"{OVERRIDE_CHOICES[key]}"[:300])
-
-
-def validate_overrides(raw):
-    """A plate configuration's overrides as Orca process keys. Only the four keys and their listed
-    values."""
-    if raw is None:
-        return {}
-    if not isinstance(raw, dict):
-        raise OverrideError(BAD_OVERRIDES_MESSAGE, f"overrides is not an object: {_shown(raw)}")
-    unknown = [key for key in raw if key not in OVERRIDE_CHOICES]
-    if unknown:
-        raise OverrideError(BAD_OVERRIDES_MESSAGE, f"unknown overrides {unknown!r}, only {list(OVERRIDE_CHOICES)}"[:300])
-    orca = {}
-    if 'infill' in raw:
-        orca['sparse_infill_density'] = f"{_choice(raw, 'infill')}%"
-    if 'walls' in raw:
-        orca['wall_loops'] = str(_choice(raw, 'walls'))
-    if 'supports' in raw:
-        orca.update(_SUPPORTS[_choice(raw, 'supports')])
-    if 'brim' in raw:
-        orca['brim_type'] = _BRIM[_choice(raw, 'brim')]
-    return orca
-
-
 def supports_on(profiles, overrides):
-    """Whether the plate is sliced with supports: the override when there is one, else the
-    chosen process profile's enable_support."""
+    """Whether the plate is sliced with supports: `enable_support` of the overrides when they
+    set it, else the chosen process profile's own value."""
     if 'enable_support' in overrides:
         return overrides['enable_support'] == '1'
     with open(profiles.process, encoding='utf-8') as fh:
@@ -184,10 +133,14 @@ def supports_on(profiles, overrides):
 
 
 def write_process_with_overrides(process_path, overrides, out_path):
-    """The process profile with `overrides` merged over it, written to `out_path`."""
+    """The process profile with `overrides` (checked by validate_overrides) written over it,
+    to `out_path`. A setting Orca keeps for each extruder variant takes the one value for
+    every variant the profile lists."""
     with open(process_path, encoding='utf-8') as fh:
         process = json.load(fh)
-    process.update(overrides)
+    variants = max(1, len(process.get('print_extruder_variant') or []))
+    for name, value in overrides.items():
+        process[name] = [value] * variants if per_variant(name) else value
     out_path = Path(out_path)
     out_path.write_text(json.dumps(process, indent=4, ensure_ascii=False, sort_keys=True) + '\n', encoding='utf-8')
     return out_path

@@ -5,9 +5,8 @@ plate's expected answer, and the set is exactly what scripts/make_placement_part
 Each plate goes through the slice service's front door, as any plate does: its parts are
 uploaded with POST /parts and the plate is submitted with POST /slices, whose answer is
 compared with the plate's `expected`; an instance with a `rotation` is placed by the code's
-own placement of a rotation. One thing is turned on the way in: until every setting under
-Orca's own name is built (item 6 of README-details.md's phase 2), the plate's
-`enable_support` is given as the `supports` override the code as built reads.
+own placement of a rotation. Each plate is sent exactly as it is, its `enable_support` among
+its overrides under Orca's own name.
 """
 import hashlib
 import json
@@ -91,16 +90,6 @@ def quaternion_product(a, b):
             aw * bz + ax * by - ay * bx + az * bw]
 
 
-def with_overrides_as_built(plate_configuration):
-    """The plate with `enable_support` as the `supports` override the code as built reads
-    (see the module's text); every other field as the plate has it."""
-    configuration = json.loads(json.dumps(plate_configuration))
-    overrides = configuration.pop("overrides", {})
-    if "enable_support" in overrides:
-        configuration["overrides"] = {"supports": "on" if overrides["enable_support"] == "1" else "off"}
-    return configuration
-
-
 def front_door(directory):
     """A slice service's HTTP interface with every part of contracts/examples/parts/ uploaded
     through it under USER_KEY, its slice jobs held (never run)."""
@@ -114,7 +103,7 @@ def front_door(directory):
 
 def answer(plate_configuration, directory):
     """The answer of POST /slices to the plate, in the form of a plate's `expected`."""
-    reply = submit(front_door(directory), with_overrides_as_built(plate_configuration))
+    reply = submit(front_door(directory), plate_configuration)
     if reply.status_code == 202:
         return {"accepted": True}
     report = reply.get_json()

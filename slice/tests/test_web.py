@@ -315,8 +315,7 @@ class TestSubmit:
 
     def test_the_contracts_phase_2_example_is_accepted_after_its_two_parts_are_uploaded(self, work):
         client, _pool, _logs = app_with(work, executor=HeldExecutor(), upload_box=False)
-        example = json.loads((EXAMPLES / "plate-configuration-phase-2.json").read_text())
-        example["overrides"] = {"infill": 20, "walls": 3, "supports": "off", "brim": "auto"}   # until item 6
+        example = json.loads((EXAMPLES / "plate-configuration-phase-2.json").read_text())      # sent as it is
         refused = submit(client, example)
         assert refused.status_code == 422
         assert refused.get_json() == json.loads((EXAMPLES / "error-report-parts-missing.json").read_text())
@@ -949,3 +948,52 @@ def test_default_work_dir_is_a_new_folder(monkeypatch, tmp_path):
 
 def test_remove_job_files_without_a_folder():
     remove_job_files(None)
+
+
+class TestSettingsTable:
+    """Item 5: GET /settings-table answers the table whole, compressed when asked, for any
+    caller: it answers for the whole slice service, so the user key is not looked at."""
+
+    def test_the_table_whole_without_a_user_key(self, work):
+        from penguin_slice.settings_table import TABLE_PATH
+        client, _pool, _logs = app_with(work, upload_box=False)
+        answer = client.get("/settings-table")
+        assert answer.status_code == 200
+        assert answer.mimetype == "application/json" and "Content-Encoding" not in answer.headers
+        assert answer.data == TABLE_PATH.read_bytes()
+        assert answer.headers["Cache-Control"] == "no-store" and answer.headers["Vary"] == "Accept-Encoding"
+        assert client.get("/settings-table", headers=HEADERS).data == TABLE_PATH.read_bytes()   # a key changes nothing
+
+    @pytest.mark.parametrize("accept", ["gzip", "gzip, deflate, br", "br;q=1.0, gzip;q=0.8", "*"])
+    def test_compressed_when_the_request_accepts_it(self, work, accept):
+        import gzip
+        from penguin_slice.settings_table import TABLE_PATH
+        client, _pool, _logs = app_with(work, upload_box=False)
+        answer = client.get("/settings-table", headers={"Accept-Encoding": accept})
+        assert answer.status_code == 200 and answer.headers["Content-Encoding"] == "gzip"
+        assert int(answer.headers["Content-Length"]) == len(answer.data) < len(TABLE_PATH.read_bytes()) // 5
+        assert gzip.decompress(answer.data) == TABLE_PATH.read_bytes()
+
+    @pytest.mark.parametrize("accept", ["identity", "gzip;q=0", "deflate", "br"])
+    def test_plain_when_the_request_does_not_accept_gzip(self, work, accept):
+        from penguin_slice.settings_table import TABLE_PATH
+        client, _pool, _logs = app_with(work, upload_box=False)
+        answer = client.get("/settings-table", headers={"Accept-Encoding": accept})
+        assert "Content-Encoding" not in answer.headers and answer.data == TABLE_PATH.read_bytes()
+
+    def test_another_method_is_not_offered(self, work):
+        client, _pool, _logs = app_with(work, upload_box=False)
+        answer = client.post("/settings-table", data=b"{}")
+        assert answer.status_code == 405
+        assert_error_report(answer.get_json(), "slice.bad_request")
+
+    def test_what_it_answers_is_what_the_service_accepts(self, work):
+        """A setting of the answered table, set to a process profile's value, is accepted; one
+        the table leaves out is refused."""
+        client, _pool, _logs = app_with(work, upload_box=True)
+        table = json.loads(client.get("/settings-table").data)
+        name = table["settings"][0]["name"]
+        value = table["process_values"]["0.24mm Balanced Quality @BBL H2S 0.6 nozzle"][name]
+        assert submit(client, plate_configuration(overrides={name: value})).status_code == 202
+        refused = submit(client, plate_configuration(overrides={"post_process": "true"}))
+        assert refused.status_code == 422 and refused.get_json()["code"] == "slice.bad_overrides"

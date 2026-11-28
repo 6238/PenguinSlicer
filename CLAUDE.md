@@ -73,7 +73,7 @@ on [contracts/](contracts/README.md).
 
 | Component | Fast suite | Other targets |
 |---|---|---|
-| `slice/` | `make -C slice test` | `install`, `test-parallel`, `test-flakes RUNS=20 WORKERS=2`, `coverage`, `test-upstream` (real Orca Slicer; `test-orca` is the same), `upgrade-orca VERSION=x.y.z` |
+| `slice/` | `make -C slice test` | `install`, `test-parallel`, `test-flakes RUNS=20 WORKERS=2`, `coverage`, `test-upstream` (real Orca Slicer; `test-orca` is the same), `upgrade-orca VERSION=x.y.z`, `orca-source` (the pinned Orca's source, for the table of settings), `settings-table` |
 | `delivery/` | `make -C delivery test` | `install`, `test-parallel`, `test-repeat`, `slowest`, `coverage`, `test-properties`, `test-sim` (simulated printer), `test-upstream`, `upgrade-printer-library`, `test-together`, `together`, `daemon-tarball`, `hardware-smoke` |
 | `wizard/` (phase 2: its project, tools and the trials' inputs built; the page to be built) | `make -C wizard test` | `install`, `test-browser`, `build` (writes `wizard/dist/`), `trials` (runs `trials-preview` and `trials-geometry`), `trials-parts`, `trials-serve` |
 | `front/` (phase 2, being built: the project, the buckets' folder form, the rules for every request, the log's writer, the development identity and the cookie, the pages, the current group's check, the configuration, the table of settings, the user key, uploading a part, submitting a plate configuration and following every slice job to its stored sliced file exist) | `make -C front test` | `install`, `test-parallel`, `coverage`; outside the fast suite `test-r2` and `test-hosted` (phase 3, to be built) |

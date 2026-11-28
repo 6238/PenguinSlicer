@@ -1,4 +1,5 @@
-"""print_config.py: the profile choice against the catalog, and the four overrides. No Orca run."""
+"""print_config.py: the profile choice against the catalog, and the overrides written over
+the process profile. No Orca run."""
 import json
 from unittest import mock
 
@@ -6,8 +7,8 @@ import pytest
 
 from helpers import pinned_orca_version
 from penguin_slice import print_config
-from penguin_slice.print_config import (BAD_OVERRIDES_MESSAGE, CHOOSE_PROFILES_MESSAGE, OVERRIDE_CHOICES,
-                                        UNKNOWN_PRINTER_MESSAGE, Catalog, OverrideError, ProfileError,
+from penguin_slice.print_config import (CHOOSE_PROFILES_MESSAGE, UNKNOWN_PRINTER_MESSAGE, Catalog, OverrideError,
+                                        ProfileError,
                                         choose_profiles, default_names, load_catalog, printer_profile,
                                         validate_overrides, write_process_with_overrides)
 from penguin_slice.slicer import DEFAULT_PROFILES
@@ -98,36 +99,19 @@ class TestChooseProfiles:
 
 
 class TestOverrides:
-    def test_overrides_mapped_to_orca_keys(self):
-        assert OVERRIDE_CHOICES == {"infill": [10, 15, 20, 30, 40, 60, 100], "walls": [2, 3, 4, 6],
-                                    "supports": ["off", "on"], "brim": ["auto", "off", "outer"]}
-        assert validate_overrides({"infill": 40, "walls": 4, "supports": "on", "brim": "off"}) == {
-            "sparse_infill_density": "40%", "wall_loops": "4", "enable_support": "1",
-            "support_type": "tree(auto)", "brim_type": "no_brim"}
-        assert validate_overrides({"supports": "off", "brim": "auto"}) == {"enable_support": "0",
-                                                                           "brim_type": "auto_brim"}
-        assert validate_overrides({"brim": "outer"}) == {"brim_type": "outer_only"}
-        assert validate_overrides(None) == {}
-        assert validate_overrides({}) == {}
+    """The overrides' check is settings_table.py's (tests/test_settings_table.py); here, that
+    the plate's checks use it and how the overrides are written over the process profile."""
 
-    @pytest.mark.parametrize("raw, detail", [
-        ({"infill": 25}, "override 'infill' is 25, not one of [10, 15, 20, 30, 40, 60, 100]"),
-        # The type is part of the choice: 20.0 equals 20, but Orca would be given "20.0%".
-        ({"infill": 20.0}, "override 'infill' is 20.0, not one of [10, 15, 20, 30, 40, 60, 100]"),
-        ({"walls": 3.0}, "override 'walls' is 3.0, not one of [2, 3, 4, 6]"),
-        ({"walls": "3"}, "override 'walls' is '3', not one of [2, 3, 4, 6]"),
-        ({"infill": True}, "override 'infill' is True, not one of [10, 15, 20, 30, 40, 60, 100]"),
-        ({"supports": 1}, "override 'supports' is 1, not one of ['off', 'on']"),
-        ({"brim": None}, "override 'brim' is None, not one of ['auto', 'off', 'outer']"),
-        ({"colour": "red"}, "unknown overrides ['colour'], only ['infill', 'walls', 'supports', 'brim']"),
-        ([1], "overrides is not an object: [1]"),
-        ("infill=20", "overrides is not an object: 'infill=20'"),
-    ])
-    def test_override_outside_list_refused(self, raw, detail):
+    def test_the_plate_checks_take_the_table_check(self):
+        from penguin_slice import settings_table
+        assert validate_overrides is settings_table.validate_overrides
+        assert OverrideError is settings_table.OverrideError
+
+    def test_the_four_settings_as_built_are_refused_now(self):
+        # Once the only overrides; now they are no setting of Orca's.
         with pytest.raises(OverrideError) as caught:
-            validate_overrides(raw)
-        assert caught.value.message == BAD_OVERRIDES_MESSAGE
-        assert caught.value.details == detail
+            validate_overrides({"infill": 20})
+        assert caught.value.message == "The setting infill is not a print setting the slicer knows."
 
     def test_write_process_with_overrides(self, tmp_path):
         out = write_process_with_overrides(DEFAULT_PROFILES.process, {"wall_loops": "4"}, tmp_path / "process.json")

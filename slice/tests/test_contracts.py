@@ -14,7 +14,6 @@ import pytest
 from helpers import CONTRACTS, PLATE_ID, SLICE_ROOT, SUBMISSION_ID, Parts, install_fake_orca, sha256
 from penguin_slice import limits, plate, service
 from penguin_slice.errors import CODES
-from penguin_slice.print_config import OVERRIDE_CHOICES
 from penguin_slice.service import slice_plate_configuration
 from penguin_slice.slicer import GCODE_ENTRY, PLATE_JSON_ENTRY, SLICE_INFO_ENTRY
 
@@ -42,12 +41,20 @@ def names(doc, heading):
     return [re.fullmatch(r"`([^`]+)`", row[0]).group(1) for row in table(doc, heading)]
 
 
+# The four overrides of the form before phase 2 (the contract's "Overrides"), under Orca's names.
+OLD_OVERRIDES = {"infill": lambda v: ("sparse_infill_density", f"{v}%"), "walls": lambda v: ("wall_loops", str(v)),
+                 "supports": lambda v: ("enable_support", "1" if v == "on" else "0"),
+                 "brim": lambda v: ("brim_type", {"auto": "auto_brim", "off": "no_brim", "outer": "outer_only"}[v])}
+
+
 def phase_2_of_the_example():
     """examples/plate-configuration.json, the plate of the contract's Example, in its phase 2
-    form: each part named by the hash of its file and "mm", with a plate id and a submission."""
+    form: each part named by the hash of its file and "mm", with a plate id and a submission,
+    and its overrides under Orca's own names."""
     data = json.loads(PLATE_CONFIGURATION_EXAMPLE.read_text())
     for part in data["parts"].values():
         part.update(sha256=sha256((EXAMPLE_PARTS / part.pop("stl")).read_bytes()), units="mm")
+    data["overrides"] = dict(OLD_OVERRIDES[key](value) for key, value in data["overrides"].items())
     return {"plate_id": PLATE_ID, "submission_id": SUBMISSION_ID, **data}
 
 
@@ -79,11 +86,16 @@ class TestPlateConfigurationDocument:
         documented = {row[0].strip("`"): ast.literal_eval(row[1].strip("`")) for row in rows}
         assert documented == plate.ORIENTATION_MATRICES
 
-    def test_overrides(self):
+    def test_the_overrides_before_phase_2_are_the_examples_and_go_under_orcas_names(self):
         rows = table(PLATE_CONFIGURATION_DOC, "## Overrides")
-        documented = {row[0].strip("`"): [ast.literal_eval(v.strip()) for v in row[1].replace("`", "").split(",")]
-                      for row in rows}
-        assert documented == OVERRIDE_CHOICES
+        assert [row[0].strip("`") for row in rows] == list(OLD_OVERRIDES)
+        assert set(json.loads(PLATE_CONFIGURATION_EXAMPLE.read_text())["overrides"]) == set(OLD_OVERRIDES)
+
+    def test_the_settings_in_phase_2_example_is_accepted(self):
+        from penguin_slice.settings_table import validate_overrides
+        block = re.search(r"```json\n(.*?)\n```", section(PLATE_CONFIGURATION_DOC, "### Settings in phase 2"), re.S)
+        example = json.loads(block.group(1))
+        assert validate_overrides(example) == example
 
     def test_limits(self):
         rows = table(PLATE_CONFIGURATION_DOC, "## Limits")
@@ -129,10 +141,6 @@ class TestPlateConfigurationExample:
         built = phase_2_of_the_example()
         assert example["parts"] == built["parts"] and example["instances"][:3] == built["instances"]
         assert "rotation" in example["instances"][3]
-
-    def test_example_uses_every_field_of_the_overrides_as_built(self):
-        data = json.loads(PLATE_CONFIGURATION_EXAMPLE.read_text())
-        assert set(data["overrides"]) == set(OVERRIDE_CHOICES)
 
     def test_example_parts_are_small(self):
         for part in json.loads(PLATE_CONFIGURATION_EXAMPLE.read_text())["parts"].values():

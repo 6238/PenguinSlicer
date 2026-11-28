@@ -11,8 +11,11 @@
     DELETE /slices/<job>          cancel the slice job: {"cancel": cancelled|cancelling|finished}
     GET    /slices/<job>/file     the sliced file of a done slice job, and nothing else
     GET    /slices/<job>/summary  the sliced file's summary (contracts/sliced-file.md), as JSON
+    GET    /settings-table        the table of settings (contracts/settings-table.md) whole,
+                                  gzip-encoded when the request accepts it
 
-Every one of these requests carries the user key in the header X-Penguin-User-Key: the
+Every one of these requests but the table of settings, which answers for the whole slice
+service, carries the user key in the header X-Penguin-User-Key: the
 front server's word for whose part or slice job it is. A request without it, or with an
 empty one, is refused (slice.no_user_key). A part is kept, and a slice job held, under the
 user key that sent it; a request about another user key's slice job is answered exactly as
@@ -50,7 +53,7 @@ from pathlib import Path
 from flask import Flask, Response, jsonify, request, send_file
 from werkzeug.exceptions import HTTPException
 
-from . import limits, part_store
+from . import limits, part_store, settings_table
 from .errors import error_report, report_for_code
 from .jobs import FINAL, JobPool, QueueFull, SafeLog, exception_text
 from .mesh import MeshError
@@ -387,6 +390,25 @@ def create_app(work_dir=None, pool=None, *, log=None, start_sweeper=True, enviro
 
     def gone(job_id, exc):
         return _report("slice.file_gone", FILE_GONE_MESSAGE, f"job {job_id}: {type(exc).__name__}: {exc}", 410)
+
+    @app.get("/settings-table")
+    def settings():
+        """The table of settings whole, gzip-encoded when the request accepts it. It answers
+        for the whole slice service, so the user key is not looked at."""
+        try:
+            table = settings_table.load()
+        except settings_table.TableUnreadable as exc:
+            body = error_report(exc)
+            log({"event": "slice_http_error", "path": request.path, "user_key": _logged(asked_key()),
+                 "error_code": body["code"], "error_detail": body["detail"]})
+            return jsonify(body), 500
+        if request.accept_encodings["gzip"] > 0:
+            answer = Response(table.gzipped, mimetype="application/json")
+            answer.headers["Content-Encoding"] = "gzip"
+        else:
+            answer = Response(table.raw, mimetype="application/json")
+        answer.headers["Vary"] = "Accept-Encoding"
+        return answer
 
     @app.get("/slices/<job_id>")
     def progress(job_id):

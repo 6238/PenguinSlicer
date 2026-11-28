@@ -12,7 +12,9 @@ from helpers import SLICE_ROOT
 PACKAGE = SLICE_ROOT / "src" / "penguin_slice"
 ALLOWED = set(sys.stdlib_module_names) | {"numpy", "shapely", "penguin_slice"}
 WEB_ALLOWED = ALLOWED | {"flask", "werkzeug"}         # werkzeug: Flask's own HTTP layer (its errors)
-SOURCES = sorted(PACKAGE.rglob("*.py")) + sorted((SLICE_ROOT / "scripts").glob("*.py"))
+SCRIPTS = sorted((SLICE_ROOT / "scripts").glob("*.py"))
+SOURCES = sorted(PACKAGE.rglob("*.py")) + SCRIPTS
+SCRIPT_MODULES = {p.stem for p in SCRIPTS}          # a script may import another script beside it
 
 
 def imported_roots(path):
@@ -25,7 +27,7 @@ def imported_roots(path):
 
 @pytest.mark.parametrize("path", SOURCES, ids=lambda p: p.relative_to(SLICE_ROOT).as_posix())
 def test_imports_stay_inside_the_slice_service(path):
-    allowed = WEB_ALLOWED if path == PACKAGE / "web.py" else ALLOWED
+    allowed = WEB_ALLOWED if path == PACKAGE / "web.py" else ALLOWED | (SCRIPT_MODULES if path in SCRIPTS else set())
     outside = sorted(set(imported_roots(path)) - allowed)
     assert outside == [], f"{path.name} imports {outside}"
 

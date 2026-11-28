@@ -729,7 +729,8 @@ no "Reset all"; that lives in advanced mode.
 
 Advanced mode is the view that keeps every slicing setting reachable. It fills the panel.
 It offers every setting of Orca's that is a parameter with a value (a choice from a list,
-a number, a piece of text): all of Orca's about 295 settings, less the programmatic ones.
+a number, a piece of text): 338 of the pinned Orca's 355 process settings, all but the
+programmatic ones and those Orca itself does not offer.
 Settings that run a program, name a file on the slice service's machine or hold custom
 G-code are not shown, and the slice service refuses them, since they would let a user run
 something on that machine.
