@@ -1638,7 +1638,11 @@ rules of PenguinSlicer's own for round parts.
    default first layer. Which side of the outline is the part is found as the slice service
    finds it, by counting the outline's crossings, not from the direction the part's file
    says each triangle faces, so a part exported inside out, which the slice service slices
-   with a warning, loses the same faces. The rule is not applied to the bounding-box patches of step 6, and a
+   with a warning, loses the same faces. The outline is joined into closed loops as the slice
+   service joins it, and a loop left open by a triangle missing from the file, or broken by
+   one written twice, is no part of it for either, so a damaged file loses the same faces in
+   both. The search costs in proportion to the outline, also for a part whose sides are cut
+   into thousands of thin strips. The rule is not applied to the bounding-box patches of step 6, and a
    face it drops does not count as covering a side, so a side left empty gets a
    bounding-box patch, which can itself rest on edges: a bar shaped as a twelve-pointed star,
    whose every long hull face spans two sharp tips, loses those twelve faces and is offered
@@ -1927,7 +1931,7 @@ card are confirmed.
 | Storage in the browser | 25 parts of 7.5 MB for each tab's plate | A full plate surviving a refresh | Follows from the two limits. Met for one tab in Chrome's engine on the machine without a graphics card, nothing refused; several tabs at once, and Chrome on the Mac, unmeasured | A full plate stored, the page reloaded |
 | A stored plate | Dropped after 12 hours unused, once no tab holds it | The storage not filling with plates nobody will open again, and yesterday's plate not greeting today's user | Set here. Met | A test with a clock the test moves |
 | Faces found for a part | Patches appear within 100 ms of selecting an instance | Selecting feeling direct | Set here. Met: about a millisecond for the largest part allowed, its faces found when it arrived; about a quarter of a second (0.24 s) to find them from nothing | Timed on the real exported parts and the largest part allowed, in Chrome on the machine without a graphics card |
-| Auto-orient | A part lies its best way within one second of arriving | Parts arriving laid down, not jumping later | Set here. Met: at most 0.24 s for the largest part allowed as tried (a round hub of 150,000 triangles), at most 0.17 s for a real part. A part as large on which step 5 drops faces costs more, since the test for a first layer reads the whole part once for each face it drops: a twelve-pointed star bar of 144,000 triangles took about two thirds of a second on Node, still within the second | The same |
+| Auto-orient | A part lies its best way within one second of arriving | Parts arriving laid down, not jumping later | Set here. Met: at most 0.24 s for the largest part allowed as tried (a round hub of 150,000 triangles), at most 0.17 s for a real part. A part as large on which step 5 drops faces costs more, since the test for a first layer reads the whole part once for each face it drops: a twelve-pointed star bar of 144,000 triangles, its sides cut into thousands of thin strips, took at most 0.39 s on Node, and an L-shaped bar as large at most 0.3 s; neither was measured in a browser | The same |
 | Arrange | Under 2 seconds for 150 instances | A button that feels like a button; anything longer would need progress and a way to cancel | Set here. Met: at most 0.06 s for 150 instances | The same |
 | The placement check | Keeps up with a drag, with 150 instances on the plate | The status line telling the truth while the user moves things | Set here. Met: at most 5 ms for each check, against a frame's 100 ms at 10 frames a second | The same |
 | The Layout view | At least 30 frames a second while an instance is dragged or the view turned, on the machine with a graphics card, and at least 10 on the one without, at the largest plate allowed: 150 instances of parts of up to 150,000 triangles | Dragging an instance feeling joined to the hand | Set here, with no measurement behind it: the same figures as the layer preview, since the same hand does the dragging | Timed in Chrome on both machines, and reported by the page in real use |

@@ -109,7 +109,8 @@ function ring(deg, R = 30, steps = 360) {
   const h = 10 * Math.tan((deg * Math.PI) / 180);
   const profile = [[R, 0], [R + 10, h], [R - 10, h]];
   const at = ([r, y], k) => {
-    const t = (2 * Math.PI * k) / steps;
+    // The last step back at the first corners exactly (sin 2π is not 0), so the ring is closed.
+    const t = (2 * Math.PI * (k % steps)) / steps;
     return [r * Math.cos(t), y, r * Math.sin(t)];
   };
   const tris = [];
@@ -183,6 +184,91 @@ test('a face is on the plate when every corner is within 0.001 mm of it, and not
   const tilted = (rise) => turned(box(20, 20, 10), rotationX((Math.asin(rise / 20) * 180) / Math.PI));
   assert.equal(contactArea(tilted(0.005), [0, 0, -1]), 0);
   assert.ok(Math.abs(contactArea(tilted(0.0008), [0, 0, -1]) - 400) < 1e-6);
+});
+
+// The L, `long` mm long, with each of its sides cut into `strips` strips along its length, as a
+// finely meshed export has them.
+function stripped(strips, long = 100) {
+  const outline = [[10, 10], [10, 40], [0, 40], [0, 0], [40, 0], [40, 10]];
+  const tris = [];
+  for (let i = 1; i < outline.length - 1; i++) {
+    const [a, b, c] = [outline[0], outline[i], outline[i + 1]];
+    tris.push([[...a, long], [...b, long], [...c, long]]);
+    tris.push([[...a, 0], [...c, 0], [...b, 0]]);
+  }
+  for (let i = 0; i < outline.length; i++) {
+    const p = outline[i], q = outline[(i + 1) % outline.length];
+    for (let s = 0; s < strips; s++) {
+      const z0 = (long * s) / strips, z1 = (long * (s + 1)) / strips;
+      tris.push([[...p, z0], [...q, z0], [...q, z1]]);
+      tris.push([[...p, z0], [...q, z1], [...p, z1]]);
+    }
+  }
+  return meshOf(tris);
+}
+
+test('the inside of a section of long finely cut strips is found with work in proportion to it', () => {
+  // The L 100 mm long with its sides cut into 600 strips, on the face across its open corner: the
+  // section is two strips along the L's length made of 4800 segments, in one row of the plate's
+  // directions. A ray along the strips would look at about 2400 segments for each of them (11
+  // million); across them it looks at a few dozen.
+  const mesh = stripped(600);
+  const work = { looked: 0 };
+  assert.equal(firstLayerHoldsALine(mesh, ACROSS, work), false);
+  assert.ok(work.looked > 4800 && work.looked < 100 * 4800, `${work.looked} segments looked at`);
+  assert.equal(restsOnNoFace(mesh, ACROSS), true);
+});
+
+// The L as an STL file with the triangle numbered t written twice, or left out.
+const doubled = (mesh, t) => ({ ...mesh, triangles: mesh.triangles + 1,
+  positions: new Float64Array([...mesh.positions, ...mesh.positions.slice(9 * t, 9 * t + 9)]) });
+const without = (mesh, t) => ({ ...mesh, triangles: mesh.triangles - 1,
+  positions: new Float64Array([...mesh.positions.slice(0, 9 * t), ...mesh.positions.slice(9 * t + 9)]) });
+
+test('a triangle doubled or missing near the plate breaks a ring of the section, as the slice service takes it', () => {
+  // The slice service joins the cuts into lines and keeps the closed ones only: where a triangle
+  // is doubled, three cuts meet and the ring is broken; where one is missing, the ring is open.
+  // Either way that ring is no part of the section, and the L on the face across its open corner
+  // holds no line, whichever of its 20 triangles it is.
+  const mesh = ell();
+  for (let t = 0; t < mesh.triangles; t++) {
+    assert.equal(restsOnNoFace(doubled(mesh, t), ACROSS), true, `triangle ${t} doubled`);
+    assert.equal(restsOnNoFace(without(mesh, t), ACROSS), true, `triangle ${t} missing`);
+  }
+  // A box with a side triangle missing has no ring left at all, and so no line, though it stands
+  // on its whole bottom; doubled, every ring of the L is broken.
+  assert.equal(firstLayerHoldsALine(without(box(20, 20, 10), 4), [0, 0, -1]), false);
+  assert.equal(firstLayerHoldsALine(union(mesh, mesh), ACROSS), false);
+  assert.equal(firstLayerHoldsALine(union(rods(), rods()), DOWN_Y), false);
+  // Rings that only touch at a point (two boxes meeting at a corner) are both kept.
+  const corner = union(box(10, 10, 10), moved(box(10, 10, 10), [10, 10, 0]));
+  assert.equal(firstLayerHoldsALine(corner, [0, 0, -1]), true);
+});
+
+test('a segment with the section on neither side of it is no edge to lay a line against', () => {
+  // Two boxes standing as one part, one 10 mm square and one as wide reaching 0.1 mm past it at
+  // front and back, their sides along x = 0 and x = 10 in one plane. By the even-odd rule the
+  // section is the two strips 0.1 mm wide where they differ, which hold no line; the sides they
+  // share have outside both boxes on one hand and inside both on the other, so the section on
+  // neither. Taken as an edge, either side of them would hold a line.
+  const two = (flip) => {
+    const mesh = union(box(10, 10, 10), moved(prism([[0, 0], [10, 0], [10, 10.2], [0, 10.2]], 0, 10), [0, -0.1, 0]));
+    return flip ? rewound(mesh) : mesh;
+  };
+  assert.equal(firstLayerHoldsALine(two(false), [0, 0, -1]), false);
+  assert.equal(firstLayerHoldsALine(two(true), [0, 0, -1]), false);
+});
+
+test('a segment\'s inside is looked for just off it, so a thin gap beside it does not hide it', () => {
+  // Three nested boxes as one part: a 2 mm square, a gap 0.15 mm wide all round it, and a wall
+  // 0.4 mm thick round the gap, under a line. A line fits only in the square, so it is found from
+  // the square's own sides, whose inside must be looked for nearer than the gap is wide; looked
+  // for 0.2 or 0.5 mm off, one side lands in the wall and the other in the square, both inside,
+  // and whichever way the triangles are wound one of the two meshes takes the wrong one.
+  const square = (lo, hi) => moved(box(hi - lo, hi - lo, 10), [lo, lo, 0]);
+  const nested = union(square(0, 2), square(-0.15, 2.15), square(-0.55, 2.55));
+  assert.equal(firstLayerHoldsALine(nested, [0, 0, -1]), true);
+  assert.equal(firstLayerHoldsALine(rewound(nested), [0, 0, -1]), true);
 });
 
 test('a line is looked for every 0.02 mm along the section\'s edge, not only at its corners', () => {

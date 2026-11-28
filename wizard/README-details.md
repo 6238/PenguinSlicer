@@ -1393,14 +1393,30 @@ with two rules of PenguinSlicer's own for round parts
    (`restsOnNoFace` in `geometry/first-layer.js`): the part's triangles with every corner within
    `ON_THE_PLATE_MM` (0.001 mm) of the face's plane add up, seen from above, to less than
    `REST_AREA_MM2` (0.01 mm²), and no disc `FIRST_LINE_MM` (0.62 mm) across fits in its section
-   half `FIRST_LAYER_MM` (0.3 mm) above the plane. The section is cut from the part's triangles;
-   discs are tried touching its edge from inside, every 0.02 mm along it. A segment's inside is
-   the side on which a point 0.00001 mm off its middle is inside the section by the even-odd
-   rule, as the slice service's `first_layer_section` takes it, never the triangles' winding:
-   the slice service slices a part wound inside out, or partly so, with only the warning
-   `slice.part_inside_out`, and the face across such a part's hollow is dropped as for the
-   part wound outwards (`first-layer.test.js` turns the L inside out, and turns each of its
-   triangles in turn). The figures are the default process's first
+   half `FIRST_LAYER_MM` (0.3 mm) above the plane. The section is taken as the slice service's
+   `first_layer_section` takes it: each triangle crossing that height gives one segment, an
+   edge two triangles share cut from the same end so that both give the same point to the last
+   bit; the segments are chained end to end through every point where exactly two meet, and
+   only a chain that closes, of three segments or more, is a ring of the section. A chain left
+   open (a triangle missing near the plate) and one broken where three or four segments meet (a
+   triangle doubled) are no part of it, as shapely's `linemerge` followed by `is_ring` has it;
+   so a part doubled whole has no section, as the slice service's symmetric difference of two
+   equal rings is empty (`first-layer.test.js` doubles and removes each of the L's 20
+   triangles in turn, and doubles the L and the rods). Discs are tried touching the rings'
+   edge from inside, every 0.02 mm along it. A segment's inside is the side on which a point
+   0.00001 mm (`SIDE_MM`) off its middle is inside the section by the even-odd rule, as the
+   slice service takes it, never the triangles' winding: the slice service slices a part wound
+   inside out, or partly so, with only the warning `slice.part_inside_out`, and the face across
+   such a part's hollow is dropped as for the part wound outwards (`first-layer.test.js` turns
+   the L inside out, and turns each of its triangles in turn). A segment with the section on
+   neither side (two rings along one line, the part's inside both ways) is no edge (the test of
+   two boxes along one plane). The even-odd ray runs across the segment, along whichever plate
+   direction is nearer its normal, and looks only at the segments of its own row or column,
+   each as wide as a segment is long on average and no narrower than 0.0001 mm
+   (`RAY_CELL_MM`): on a section of long strips cut finely along their length a ray along the
+   strips would meet every segment of the strip, once for each segment (the test of the L cut
+   into 600 strips bounds the segments looked at to under 100 for each segment). The figures
+   are the default process's first
    layer, since faces are found once for each part whatever the settings. Such a face is a hull
    face across a hollow whose rims meet the plane in edges, not faces: the real Orca refuses the
    part laid there for its empty first layer, and the slice service names it
@@ -2434,7 +2450,7 @@ or is not yet in a contract:
 | Storage in the browser | 25 parts of 7.5 MB for each tab's plate | Met for one tab in headless Chromium on the machine without a graphics card: stored and read back after a refresh, none refused; several tabs' full plates, and Chrome on the Mac, unmeasured | A full plate stored and reloaded |
 | A stored plate | Dropped after 12 hours unused, once no tab holds it | Set | Fake clock |
 | Faces found | Patches within 100 ms of selecting | Met: at most 1.1 ms for `hub-150k.stl` in the worker in Chromium on the machine without a graphics card, the faces having been found on arrival; found from nothing, 241 ms for it and at most 92 ms for a real part (the trial run again on Sat 2026-11-28 with step 5 of finding the faces, which adds up to about 17 ms on Node for a real part) | The second trial, `make -C wizard trials-geometry` |
-| Auto-orient | Best way within 1 s of arriving | Met: at most 236 ms for `hub-150k.stl` from the file to its best way, faces included; at most 170 ms for a real part. Not measured in Chromium for a part as large on which step 5 drops faces, which reads the whole part once for each: a 144,000-triangle twelve-pointed star prism took up to 660 ms on Node, from the file to its best way; the guide's row allows for it | The same |
+| Auto-orient | Best way within 1 s of arriving | Met: at most 236 ms for `hub-150k.stl` from the file to its best way, faces included; at most 170 ms for a real part. Not measured in Chromium for a part as large on which step 5 drops faces, which reads the whole part once for each. On Node, from the mesh to its best way, on a machine shared with other builders (Sat 2026-11-28): a twelve-pointed star prism (radii 50 and 30 mm, 100 mm long) with its sides cut into 3,000 strips along its length (144,048 triangles, 12 faces dropped) 311 to 390 ms, into 600 strips (28,848) 59 to 113 ms; the L of `first-layer.test.js` 100 mm long cut into 12,000 strips (144,008, one face dropped) 204 to 299 ms; `hub-150k.stl` 248 to 330 ms | The same; the L cut into 600 strips in `first-layer.test.js` bounds the work of step 5's even-odd search |
 | Arrange | Under 2 s for 150 instances | Met: at most 30 ms for 150 of `hex-spacer.stl` (all placed) and 44 ms for a mix of 150 real parts (104 placed, the rest beside the plate) | The same |
 | The placement check | Keeps up with a drag at 150 instances | Met: at most 4.1 ms for each check of a drag at 150 instances, against one frame of 100 ms at 10 frames a second | The same |
 | The Layout view | 30 frames a second with a graphics card, 10 without, while dragging or turning, at 150 instances of parts up to 150,000 triangles | Set, no measurement | Timed in Chrome on both machines; reported in real use |

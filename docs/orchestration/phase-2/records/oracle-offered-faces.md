@@ -192,6 +192,51 @@ What was built, by the task's items:
     none. A checked test that the wizard's chosen pose has `orient_rank` 1 was tried and is
     wrong: auto-orient keeps a part as modelled within 5% of the best cost, so the chosen
     patch can rank 2 (one real part does).
+16. **Third review, blocking findings 1 to 3: the section joined into rings as the slice
+    service joins it, and the even-odd ray cast across each segment.** The reviewer showed that
+    the even-odd search of decision 14 was quadratic on a section of long finely cut strips
+    (its ray ran along the strips through every segment of their row): auto-orient took 29.5 s
+    on a 144,048-triangle star prism cut into 3,000 strips and 19.8 s on the L cut into 12,000,
+    so decision 14's "no difference to see" and the 1 s target claimed met were false for such
+    parts, as were the guide's and details' Auto-orient rows. The reviewer also showed that the
+    wizard counted every cut while the slice service's `first_layer_section` keeps only closed
+    rings from `linemerge` and takes their symmetric difference, so with one of the L's 20
+    triangles doubled (4 cases) or removed (6 cases) the wizard kept the face across its open
+    corner and the slice service named it; and that the guard "inside on neither side" had no
+    test. The documents were silent on how the wizard joins the cuts; the reviewer offered (a)
+    building rings as the slice service does or (b) adding "triangles doubled or missing near
+    the plate" to every list of cases. I chose (a), so that the lists of cases where the code
+    can still come stay complete without a new case: the cuts are chained through every point
+    where exactly two meet (an edge two triangles share is cut from the same end, by the
+    corners' coordinates in order, so both give the same point to the last bit, which is the
+    order of the slice service's vertex indices too), and only chains that close with three
+    segments or more are kept, which is what shapely's `linemerge` and `is_ring` give (checked
+    with the slice service's environment: a square with a side doubled gives three open lines,
+    a figure of eight two rings, a cut of no length nothing). For speed the even-odd ray runs
+    along whichever plate direction is nearer the segment's normal, in rows and columns as wide
+    as a segment is long on average (at least 0.0001 mm, `RAY_CELL_MM`), and the disc test
+    compares squared distances. Measured on Node, from the mesh to the best way, five runs each
+    on the shared machine: the 3,000-strip star 311 to 390 ms (0.77 s at 299c49c), the
+    600-strip star 59 to 113 ms, the 12,000-strip L 204 to 299 ms (0.58 s at 299c49c),
+    `hub-150k.stl` 248 to 330 ms. The reviewer's 40 STL files of the doubled and removed L,
+    and seven more shapes (nested boxes, two boxes along one plane, boxes meeting at a corner,
+    boxes overlapping by 5 mm and by 0.3 mm, a rod, a rod doubled), give the same verdict in
+    the wizard and in the slice service's own code. New tests, each seen to fail: the L doubled
+    and with each triangle doubled or removed (failed before the fix);
+    the L cut into 600 strips bounding the segments the rays look at to under 100 for each
+    segment (failed with the counter absent, and at 8,664,016 with the ray kept along x); two
+    boxes along one plane, whose shared sides have the section on neither side (fails when the
+    guard keeps the first normal); three nested boxes with a 0.15 mm gap and a 0.4 mm wall
+    (fails with `SIDE_MM` at 0.2 and at 0.5 mm, minor finding 1). The test's ring standing on a
+    circular ridge was not closed (its last step's sine is not 0), which the rings now see as
+    a broken file, as the slice service would; the test now closes it. The committed poses
+    file, the trial's results and the real parts' tests are unchanged. Minor finding 2 (open
+    chains counted by the wizard and not by the slice service) is gone with the rings, and the
+    details say how the section is joined. Minor finding 3 (`time.monotonic()` in
+    `tests_orca/test_offered_faces.py`) is declined again as in decision 13: it only prints
+    each pose's time. To overrule: go back to counting every cut and add "triangles doubled or
+    missing near the plate" to the contract's row, both wizard documents' "When a slice fails"
+    rows and the guide's step 5.
 
 ## Targets missed
 
@@ -214,10 +259,13 @@ What was built, by the task's items:
   wizard still offers a pose the slice service refuses on such a part; none of the real parts
   is one. A sharp 20-spike urchin is offered only bounding-box patches, all resting on tips.
   `tests/geometry/first-layer.test.js` pins the star's case.
-- Step 5's cost on a part whose faces it drops, measured by the reviewer on Node: a
-  144,000-triangle star prism takes 660 ms to find its faces, against 198 ms for the blunt
-  version on which nothing is dropped (each face dropped reads the whole part for its
-  section). The auto-orient target of 1 s is met on Node; in Chromium it was not measured.
+- Step 5's cost on a part whose faces it drops: each face dropped reads the whole part for its
+  section. On Node (decision 16) a 144,048-triangle star prism cut into 3,000 strips takes 311
+  to 390 ms from the mesh to its best way and the 12,000-strip L 204 to 299 ms, within the
+  auto-orient target of 1 s; in Chromium neither was measured. Until decision 16 the even-odd
+  search was quadratic on such parts (29.5 s and 19.8 s), and decision 14's figures did not
+  show it.
+- The fixes of the third review (decision 16) were merged without a further review.
 
 ## Not done
 
