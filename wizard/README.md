@@ -1879,13 +1879,13 @@ card are confirmed.
 | One attempt of a request | 15 seconds for the answer to begin (60 for adding a part), and the same for any silence while the rest arrives; an answer that keeps arriving has no limit on its length | A stalled answer being tried again, while a sliced file of up to 50 MB still downloads on a slow connection | Set here. Met | A test with a clock the test moves, the answer arriving in parts |
 | Sending a part | The whole part within 60 seconds: about 1 Mbit/s of upload speed for a part of 7.5 MB | Adding a part not hanging on a lost connection | Set here. Not met below that speed: the largest parts cannot be added, since a browser does not tell the page how much of an upload has gone | Arithmetic from the two figures; unmeasured on a real connection |
 | A progress stream treated as failed | After 20 seconds of failing to reopen, or after 45 seconds open with nothing carried | A card never looking current when the server is lost | Set here; 45 seconds is three times the fifteen at which the front server keeps a stream alive | The same |
-| The main thread held | Never for more than 250 milliseconds, on any step, with any plate up to the limits, on the machine without a graphics card | A panel that never reads as frozen | Set here; unmeasured | Measured by the page itself in tests and in real use ([What the wizard reports about itself](#what-the-wizard-reports-about-itself)) |
+| The main thread held | Never for more than 250 milliseconds, on any step, with any plate up to the limits, on the machine without a graphics card | A panel that never reads as frozen | Set here. Measured so far only for reading a part and drawing its picture: at most 11 milliseconds, the largest part allowed included, in Chrome's engine on the machine without a graphics card | Measured by the page itself in tests and in real use ([What the wizard reports about itself](#what-the-wizard-reports-about-itself)) |
 | A part's row says it is slow | After 4 seconds | Knowing the click registered | Accepted in the mockup. The moment is met by the code that makes every request; the row comes with the Parts step | The same |
 | One part | 7.5 MB, 150,000 triangles | The slice service | Someone else's | A file one byte over is refused with the sentence above |
 | Different parts on a plate | 25 | The slice service's disk | Someone else's | A twenty-sixth part |
 | Instances on a plate | 150 | The slice service | Someone else's | A hundred-and-fifty-first instance |
-| Storage in the browser | 25 parts of 7.5 MB for each tab's plate | A full plate surviving a refresh | Follows from the two limits | A full plate stored, the page reloaded |
-| A stored plate | Dropped after 12 hours unused, once no tab holds it | The storage not filling with plates nobody will open again, and yesterday's plate not greeting today's user | Set here | A test with a clock the test moves |
+| Storage in the browser | 25 parts of 7.5 MB for each tab's plate | A full plate surviving a refresh | Follows from the two limits. Met for one tab in Chrome's engine on the machine without a graphics card, nothing refused; several tabs at once, and Chrome on the Mac, unmeasured | A full plate stored, the page reloaded |
+| A stored plate | Dropped after 12 hours unused, once no tab holds it | The storage not filling with plates nobody will open again, and yesterday's plate not greeting today's user | Set here. Met | A test with a clock the test moves |
 | Faces found for a part | Patches appear within 100 ms of selecting an instance | Selecting feeling direct | Set here. Met: at most 4 ms for the largest part allowed, its faces found when it arrived; about 0.2 s to find them from nothing | Timed on the real exported parts and the largest part allowed, in Chrome on the machine without a graphics card |
 | Auto-orient | A part lies its best way within one second of arriving | Parts arriving laid down, not jumping later | Set here. Met: at most 0.27 s for the largest part allowed, at most 0.18 s for a real part | The same |
 | Arrange | Under 2 seconds for 150 instances | A button that feels like a button; anything longer would need progress and a way to cancel | Set here. Met: at most 0.06 s for 150 instances | The same |
@@ -1895,7 +1895,7 @@ card are confirmed.
 | The first layer drawn | Within 5 seconds of opening the Preview step on a sliced plate, with the print time and filament shown at once | The numbers a user plans around not waiting for the picture | Set here. Measured in the first trial without a graphics card: 1.5 to 2.7 seconds from fetching the sliced file to the first layers on the screen, the full look 2.4 to 8.5 seconds | The same |
 | The page's memory | Under 1 GB for the page at the largest plate, with the layer preview of a 14.1 MB sliced file open | A laptop with 8 GB of memory, of which the browser has a share, not closing the page | Set here. Measured in the first trial: 839 MB at the heaviest plate. Twenty-five parts of 7.5 MB are about 190 MB before anything is drawn | Measured in Chrome at that plate |
 | Time since the user last interacted before a self-reload | 120 seconds, unless the user moves between steps | The page never refreshing under a person who is looking at it or touching it | Set here | A test with a clock the test moves |
-| The wizard's reports about itself | At most a few a minute from one page | The log not filling from one broken page | Set here; the front server sets its own limit as well | A test that makes failures faster than the limit |
+| The wizard's reports about itself | At most a few a minute from one page | The log not filling from one broken page | Set here at four a minute; the front server sets its own limit as well. Met for the reports of failures; the drawing summaries are not built yet | A test that makes failures faster than the limit |
 | A sliced file | At most 50 MB; 8.8 to 14.1 MB on the plates measured | The time to the first picture, and the download | Someone else's: the limit is the slice service's and the front server's; the range is measured by the slice service | A slice whose file would be larger ends with the slice service's sentence |
 | A silent progress stream | Kept alive at least every fifteen seconds by the front server; reopened by the page whenever it closes | Progress surviving the hosts' time limits (125 seconds without data at Cloudflare, five minutes without data and fifteen minutes in all at Railway) | Someone else's | A test that closes the connection at chosen moments |
 
@@ -2226,8 +2226,20 @@ why), the plate summary with its pill and the change details, Back and Next, the
 of telling, and the panel's own tooltip. Every request goes through one place, which adds
 what the front server needs to every request and retries as
 [When the server is slow](#when-the-server-is-slow-or-cannot-be-reached) says, with the
-line under the tabs counting down. What a step holds, and what fills the header (who the
-user is, the configuration), comes with the later items of phase 2. Pictures of the built
+line under the tabs counting down. When the page opens it asks who the user is, finds the
+tab's plate in the browser's storage, and reads the configuration of the current group and
+the list of settings; the header names the configuration in use, and the reload glyph reads
+it again, saying which filament or profile was replaced when the chosen one has gone. The
+browser's storage keeps a plate for each tab, through a refresh, with a lock the browser
+releases when a tab closes so that the next tab takes up the plate; it drops a plate nobody
+has used for 12 hours, clears every plate for a different user, and reports a refused or
+cleared storage to the server's log. A full plate of 25 parts of the largest size was
+stored and read back in Chromium on the machine without a graphics card with nothing
+refused. The worker reads a part's file and draws the small picture of it that its row
+will show, in software, so that even the largest part holds the page for no more than a
+hundredth of a second or so. What a step holds comes with the later items of phase 2: the
+rows that show those pictures, the amber line of a part that could not be saved, and the
+notification of a part the page cannot draw come with the Parts step. Pictures of the built
 panel beside the mockup's, at four widths, are kept with the build records. For the two trials, the eight real parts
 of the Popcorn Penguins' robot are kept beside the contracts, and two made parts beside
 the trials: a round hub at the largest size a part may have (150,000 triangles) and the
