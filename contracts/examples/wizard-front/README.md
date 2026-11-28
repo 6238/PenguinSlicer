@@ -43,6 +43,7 @@ files.
 | [slice-events.txt](slice-events.txt) | `GET /api/slices/<slice>/events`: the `version` event, a running report, a comment line and the final `done` report | 2 |
 | [slice-summary.json](slice-summary.json) | The `200` answer to `GET /api/slices/<slice>/summary`: the sliced file's details, later than the `done` report and so with fewer seconds to expiry | 2 |
 | [report-failure-request.json](report-failure-request.json) | The body of `POST /api/reports/failure`: a part the page cannot draw | 2 |
+| [report-drawing-request.json](report-drawing-request.json) | The body of `POST /api/reports/drawing`: one summary of the Preview step, with its Preview fields | 2 |
 | [signout.json](signout.json) | The `200` answer to `POST /api/signout` | 3 |
 | [signin-window-signed-in.json](signin-window-signed-in.json) | The message the callback's small window sends its opener after a sign-in | 4 |
 | [printer-pairing-request.json](printer-pairing-request.json) | The body of `POST /api/printer/pairing` | 5 |

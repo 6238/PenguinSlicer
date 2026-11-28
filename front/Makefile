@@ -10,7 +10,11 @@ WORKERS ?= 2
 RUN_LIMIT_S ?= 600
 RUN_MEMORY ?= 4G
 PYTHON = $(CURDIR)/.venv/bin/python
-BOUNDED = timeout --kill-after=10 $(RUN_LIMIT_S) prlimit --as=$$(numfmt --from=iec $(RUN_MEMORY)) --
+# glibc reserves 64 MB of address space for each thread's own malloc arena, up to eight per
+# processor, which the limit on the address space counts: the test of forty progress
+# streams holds about seventy threads, and with an arena each the run passes 4G and fails
+# to start threads. Two arenas bound it; the memory used is unchanged.
+BOUNDED = MALLOC_ARENA_MAX=2 timeout --kill-after=10 $(RUN_LIMIT_S) prlimit --as=$$(numfmt --from=iec $(RUN_MEMORY)) --
 PYTEST = $(BOUNDED) $(PYTHON) -m pytest -c $(CURDIR)/pyproject.toml --rootdir=$(CURDIR)
 
 # The front server's Python environment, with its test tools.

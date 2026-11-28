@@ -88,6 +88,13 @@ FRONT_REPORTS = {
         "remedy": "Close another tab that is slicing, or wait for one of its slices to "
                   "finish.",
     },
+    "front.too_many_reports": {
+        # The page drops the report; no user is shown it.
+        "status": 429, "retryable": False,
+        "message": "This page sent more reports about itself than the server takes in a "
+                   "minute.",
+        "remedy": "Nothing needs doing: the page goes on without sending this one.",
+    },
     "front.too_many_requests": {
         "status": 429, "retryable": True,
         "message": "This browser sent parts or plates faster than the server takes them.",
