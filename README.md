@@ -16,7 +16,7 @@ holds everything someone changing the component needs.
 |---|---|---|
 | [slice/](slice/README.md) | Slice service | Takes a plate configuration, runs Orca Slicer, returns a sliced file, through its HTTP interface |
 | [delivery/](delivery/README.md) | Printer delivery | Sends a sliced file to a printer and reports how the print goes |
-| [wizard/](wizard/README.md) | Wizard | The step-by-step user interface: the code in the browser (not started) |
+| [wizard/](wizard/README.md) | Wizard | The step-by-step user interface: the code in the browser (being built in phase 2: its build, both opening trials, the Layout step's geometry, retrying and the panel as a whole; the steps' contents to come) |
 | [front/](front/README.md) | Front server | Serves the wizard's pages, signs users in, calls the slice service, keeps sliced files and configurations, runs the relay (not started) |
 | `onshape/` | Onshape integration | Makes PenguinSlicer work inside Onshape: the Onshape app and its panel, what is selected, and the export of the selected parts with the document's units to the wizard (not started) |
 

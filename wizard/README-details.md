@@ -2,11 +2,14 @@
 
 This is the builder's document for the wizard. The guide beside it,
 [README.md](README.md), is what the owner reads and decides from; where the two differ, the
-guide is right and this file is to be corrected. Of the wizard, only
-[The project and its tools](#the-project-and-its-tools), the inputs of
-[the trials](#how-the-trials-and-measurements-are-run), the second trial and the geometry it
-tried ([The geometry, in a worker](#the-geometry-in-a-worker)) are built, and those sections
-say what is true of them as built; everything else here is the design to build: every screen, state and message of the guide, in
+guide is right and this file is to be corrected. Of the wizard, these are built, and their
+sections say what is true of them as built:
+[The project and its tools](#the-project-and-its-tools), with the build and the seams;
+the inputs of [the trials](#how-the-trials-and-measurements-are-run), both trials and the
+geometry the second tried ([The geometry, in a worker](#the-geometry-in-a-worker));
+[The panel as a whole](#the-panel-as-a-whole); and
+[Every request: headers, answers and retrying](#every-request-headers-answers-and-retrying).
+Everything else here is the design to build: every screen, state and message of the guide, in
 the builder's terms, with the names the guide leaves out (requests, fields, error codes,
 constants, stored records, tests), the figures, the tests each part needs, and an order in
 which to build phase 2.
@@ -140,7 +143,9 @@ file leans on:
 
 Every figure the page's code uses, in one place, read through the fake clock where it is a
 time. The names are the builder's (*proposed*) except those the plate configuration's
-contract fixes (`MAX_*`, `MARGIN_MM`, `SPACING_*`).
+contract fixes (`MAX_*`, `MARGIN_MM`, `SPACING_*`). As built, the figures of the panel and of
+retrying (`PANEL_MIN_PX` to `PANEL_LINE_PASSING_S`, `ROW_SLOW_S` to `ATTEMPT_TIMEOUT_S`) are in
+`wizard/src/page-constants.js`, and the geometry's in `wizard/src/geometry/constants.js`.
 
 | Name | Figure | What it bounds | From |
 |---|---|---|---|
@@ -149,13 +154,13 @@ contract fixes (`MAX_*`, `MARGIN_MM`, `SPACING_*`).
 | `TOOLTIP_DELAY_MS` | 150 | Rest before a tooltip shows | [decision 63](../docs/mockups/print-wizard/DECISIONS.md#whole-panel) |
 | `TOOLTIP_EDGE_PX` | 6 | Least gap between a tooltip and the panel's edge | [decision 63](../docs/mockups/print-wizard/DECISIONS.md#whole-panel) |
 | `DETAILS_OPEN_MS`, `DETAILS_CLOSE_MS` | 150, 300 | The printer details opening on rest, closing after the pointer leaves | [decision 44](../docs/mockups/print-wizard/DECISIONS.md#the-printer-status-icon) |
-| `PANEL_LINE_PASSING_S` | *proposed* 4 | The panel line's passing use, when the user does not move ("a few seconds") | [decision 3](../docs/mockups/print-wizard/DECISIONS.md#whole-panel) |
+| `PANEL_LINE_PASSING_S` | 8 | The panel line's passing use, when the user does not move ("a few seconds"; the mockup's own 8) | [decision 3](../docs/mockups/print-wizard/DECISIONS.md#whole-panel) |
 | `ROW_SLOW_S` | 4 | A part's row says "Taking longer than usual; still trying…" | [decision 17](../docs/mockups/print-wizard/DECISIONS.md#parts-step-step-1) |
 | `RETRY_QUIET_S` | 20 | Failed retries before the panel line shows | The guide |
 | `RETRY_TOTAL_S` | 300 | Retrying in all, before "could not be reached"; also the resubmitting while the slice service stops | The guide |
 | `RETRY_FIRST_WAIT_S`, `RETRY_MAX_WAIT_S` | 1, 30 | The waits between attempts, doubling from the first to the cap | The guide |
-| `RETRY_SPREAD` | *proposed* 0.1 | A random spread on each wait, so that many pages do not retry in step after a restart | This file |
-| `ATTEMPT_TIMEOUT_S`, `UPLOAD_ATTEMPT_TIMEOUT_S` | *proposed* 15, 60 | An attempt with no answer in this time counts as failed ("the time the builder sets" in the contract) | This file |
+| `RETRY_SPREAD` | 0.1 | A random spread on each wait, up to a tenth either way, so that many pages do not retry in step after a restart | This file |
+| `ATTEMPT_TIMEOUT_S`, `UPLOAD_ATTEMPT_TIMEOUT_S` | 15, 60 | An attempt whose headers do not arrive in this time from sending, or whose body then brings no bytes for this time, counts as failed ("the time the builder sets" in the contract) | This file |
 | `STREAM_REOPEN_FAIL_S` | 20 | A progress stream failing to reopen this long counts as a failed request | The guide |
 | `STREAM_SILENT_S` | 45 | An open progress stream carrying nothing, not even a comment line, this long counts as failed | The guide; three times the front server's 15 seconds |
 | `POLL_S` | *proposed* 2 | Asking for the latest progress report in place of a stream ("every second or two") | The guide |
@@ -254,6 +259,31 @@ of `index.html` and its style the matching section of `css/panel.css`.
 
 ## The panel as a whole
 
+**As built.** `wizard/src/index.html` is the mockup's markup from `#wizard` down, as far as the
+panel as a whole (`#wiz-header` with `.brand`, `#config-info`, `#stepbar`, `#step-why`;
+`#wiz-body` with `.summary-wrap`, `#wiz-summary`, `#chg-pop`, `#notices` and one
+`section.step` for each step holding only its title; `#wiz-nav` with `#btn-back`, `#btn-next`
+and `#final-action`). The printer-status icon (`#pstat`, `#pstat-pop`) waits for phase 5,
+advanced mode (`#advanced`) for the Settings step, and each step's body for its step;
+`tests/page.test.js` checks every id of the page is one of the mockup's, in the mockup's order,
+apart from the configuration line's three (`#config-status`, `#config-name`,
+`#config-refresh`), which the mockup's script made without ids. `wizard/src/css/panel.css` is
+the mockup's style sheet byte for byte (the same test checks it), and
+`wizard/src/css/wizard.css` holds only what the mockup never drew: the page's own background,
+the panel line's amber and its link and button, the configuration's name as plain text, the
+Send step's one button with both corners rounded, and the confirmation. The panel is drawn by
+`wizard/src/panel/panel.js` from one store, `wizard/src/state.js` (the step, the current group,
+the configuration's `name`, the plate summary's figures, the Layout step's first problem and
+whether the plate is sliced), so every part shows the same state; the later items fill the
+store. Its parts are `panel/steps.js` (the five steps and the rule for a held click),
+`panel/panel-line.js`, `panel/summary.js`, `panel/tooltips.js` and `panel/telling.js` (the six
+ways of telling). `main.js` exports the running wizard (`wizard`: the version, the store, the
+module that makes every request and the panel), which the browser tests reach by importing
+the page's own entry module, never through a global. Tests: `tests/panel.test.js` without a
+browser window (the passing line, the held click, the summary's lines, the tooltip's timing
+and place) and `tests_browser/test_panel.py` in Chromium, on Playwright's fake clock
+(`page.clock`), for everything below.
+
 ### Width, look and the three widths
 
 - The panel is fluid, measured on the panel by container queries and never on the window,
@@ -277,7 +307,12 @@ of `index.html` and its style the matching section of `css/panel.css`.
 
 Tests: each width at its own figure and one pixel under it (320, 479, 480, 519, 520, 679,
 680), every step rendered and checked for no sideways scroll; a panel resized across 480 px
-keeps advanced mode's open and closed sections.
+keeps advanced mode's open and closed sections (with advanced mode, item 9 of
+[By phase](#by-phase)). As built, every step's panel as a whole is checked at the seven
+widths, with no element reaching past the panel's right edge, and the step tabs below and
+from 480 px and across a widening; `make -C wizard look` writes pictures of the panel beside
+the mockup's at 320, 480, 520 and 680 px into `docs/orchestration/phase-2/look/wizard-2/`, with
+an `index.html` that shows each pair side by side, for a person to look at.
 
 ### The header
 
@@ -323,16 +358,37 @@ defines it.
 step saying why; a part still arriving never holds Next; Back off on the Parts step
 ([decision 5](../docs/mockups/print-wizard/DECISIONS.md#whole-panel)).
 
+As built: the configuration line is hidden until the store has the configuration's `name`;
+the name is plain text in the line's own colour (item 5 of [By phase](#by-phase) reads it and
+wires the reload glyph through `panel.onReloadConfiguration`). The reasons a step gives for a
+held click are, until each step brings its own rules, the mockup's: the Parts step "add a
+part." with no part and "a plate holds up to 150 instances." over the limit; the Layout step
+"there are no instances." and its first problem; the Preview step "the plate is not sliced
+yet."; Next follows the same rules. Tests reach each reason, a plate of exactly 150
+instances going on and one of 151 held. The user's next move is the next pointer press or key in
+the panel, or a move to another step. Each tab is worked by Enter or Space as well as a click.
+Every `title` in the panel, a title set later included, becomes the panel's own tooltip and,
+unless the element's name already says it, its accessible description, as the mockup does.
+
 Tests: the summary updates on every change; the pill opens and closes the change details by
 each of its three ways; a long profile name is cut and has its tooltip; nothing below the
 summary moves when the pill comes or goes; a held tab click shows the passing line, which
 goes at the next move and after `PANEL_LINE_PASSING_S` on the fake clock; with the retry
-message showing, a held click shows no passing line.
+message showing, a held click shows no passing line. Built, with the change details kept
+inside a 320 px panel and a hostile configuration name shown as text.
 
 ### How the panel tells the user something
 
-Each kind of news always uses the same way. The page's code has one component for each
-(*proposed*), and every screen below names which it uses.
+Each kind of news always uses the same way. The page's code has one builder for each, in
+`wizard/src/panel/telling.js` (`notification`, `message`, `card`, `joinedBox`, `line`,
+`confirmation`), each setting every sentence as text, and every screen below names which it
+uses. The panel keeps the notifications of the step it is on (`panel.notify`,
+`panel.dropNotice`), and drops them all when the user leaves the step. A message's four
+colours are the mockup's classes `error`, `warn`, `info` and `ok`; "grey when it only
+informs" is the mockup's `info`, a grey box with the accent's edge. A confirmation is placed
+under its control, inside the panel by 6 px, with the button that keeps things first and
+focused, so Enter never drops work by accident; its look is that of the panel's other boxes
+(`.confirm-pop` in `css/wizard.css`).
 
 | Way | What it is | Used for | Mockup |
 |---|---|---|---|
@@ -359,7 +415,9 @@ nothing a user needs is in a tooltip alone.
 
 Tests: a tooltip at 150 ms of rest and not at 149 on the fake clock; at once on keyboard
 focus; at a panel edge it stays 6 px inside a 320 px panel; an element whose text shows in
-full has none; each confirmation keeps things on Escape and on a click elsewhere.
+full has none; each confirmation keeps things on Escape and on a click elsewhere, and opens
+with its keep button first and focused, so that Enter keeps things. Built,
+with each of the six ways drawn and a hostile sentence shown as text.
 
 ### The words it uses
 
@@ -418,7 +476,7 @@ Settings). The page acts on a report's `code` and `retryable`, never on the stat
 | Printer delivery's, from phase 5: a send refused, a print that failed or waits for a person, a wrong pairing code, a limit passed | `delivery.*` | Printer delivery | Shows them as they are |
 | The front server's own: a sign-in that could not be made, a group the user is not in, a sliced file that has expired or would be too large | `front.*` ([its list](../contracts/wizard-front-server.md#the-front-servers-error-reports)) | The front server | Shows them as they are |
 | The Onshape integration's, from phase 4: a part Onshape cannot export | Named in phase 4 | The Onshape integration | Shows them as they are |
-| In the browser: no answer from the front server, the page's own checks before sending (a file over the size limit, a twenty-sixth part, a plate over 150 instances), every placement problem on the Layout step, a file the page itself cannot read, a 3D view that is lost, storage that fails | None: the wizard's own, gathered in one module (*proposed* `messages`) | The wizard | Writes them |
+| In the browser: no answer from the front server, an answer of the front server the page cannot read, the page's own checks before sending (a file over the size limit, a twenty-sixth part, a plate over 150 instances), every placement problem on the Layout step, a file the page itself cannot read, a 3D view that is lost, storage that fails | `wizard.*` (`wizard.bad_answer`, `wizard.layout_failed`, …): the wizard's own, gathered in `wizard/src/sentences.js` and, for the geometry, `wizard/src/geometry/errors.js` (not `messages.js`, a name the worker's module has) | The wizard | Writes them |
 
 States that are not failures are the wizard's to put into words, from the figures it is
 sent: a slice waiting behind others or waiting while the slicer restarts, a busy printer, a
@@ -440,13 +498,17 @@ codes, under Details; a code the page does not know is shown as the last row of
 ### What every request carries
 
 The contract's [Rules for every request](../contracts/wizard-front-server.md#rules-for-every-request)
-hold for every request the page makes; one module (*proposed* `api`) makes every request, so
-that each rule is written once.
+hold for every request the page makes; one module, `wizard/src/api.js`, makes every request,
+so that each rule is written once. It reaches the network only through the transport seam
+(`wizard/src/seams/transport.js`, `fetch` with the page's own cookie and `cache: 'no-store'`)
+and the time only through the clock seam (`wizard/src/seams/clock.js`). A request resolves to
+`{ok: true, status, body}` or `{ok: false, status, report}`, the report shown as it is; a
+report about the page itself (`once`) to `{ok: false, dropped: true}` on any failure.
 
 | Header | Sent | Meaning |
 |---|---|---|
 | `X-PenguinSlicer-Page` | On every request | The page's own version, from the `<meta name="penguinslicer-version">` of the page it loaded |
-| `X-PenguinSlicer-Group` | On every request that acts for a group | The current group's `id`, exactly as `GET /api/me` gives it. For a plain download link, the query parameter `group` instead |
+| `X-PenguinSlicer-Group` | On every request that acts for a group: as built, every request once the current group is known, except `GET /api/me`, `GET /api/settings-table` and `POST /api/signout` | The current group's `id`, exactly as `GET /api/me` gives it. For a plain download link, the query parameter `group` instead (`api.link`) |
 | `X-PenguinSlicer-Wizard: 1` | On every `POST`, `PUT` and `DELETE`, from phase 2 | The wizard's mark. The front server checks it, and the origin, from phase 3 |
 | `X-PenguinSlicer-In: onshape`, `X-PenguinSlicer-Onshape-Document`, `X-PenguinSlicer-Onshape-User` | From the page in Onshape's panel, phase 4 | See [Inside Onshape's panel](#inside-onshapes-panel-phase-4) |
 
@@ -454,7 +516,11 @@ The page never reads the cookie or `Set-Cookie`; the browser attaches the cookie
 answer of the front server carries `X-PenguinSlicer-Version`; the page compares it with its
 own and acts as [Reloading for a new version](#reloading-for-a-new-version) says. A
 successful answer is JSON except the sliced file and the progress streams; the page ignores
-any field it does not know. A time is RFC 3339 in UTC; a length of time is whole seconds in a
+any field it does not know. An answer of the front server that the page cannot read (a body
+that is not JSON where JSON is due, or a failure whose body is not an error report) is the
+wizard's own report `wizard.bad_answer` ("The server gave an answer this page cannot read.",
+"Reload the page to try again.", `retryable` false, its `detail` the path, the status and the
+first `BAD_ANSWER_BODY_CHARS` (200) characters of the body), shown and not retried. A time is RFC 3339 in UTC; a length of time is whole seconds in a
 field ending `_s`; where the page must act at a moment the front server reckons, it counts the
 answer's seconds on its own clock from the moment the answer arrived.
 
@@ -485,12 +551,46 @@ reports about itself are never retried, and a progress stream is reopened, not r
 - **Waits** between attempts: 1, 2, 4, 8, 16, then 30 seconds, capped at `RETRY_MAX_WAIT_S`,
   each with a random spread of up to `RETRY_SPREAD`. So attempts fall at about 1, 3, 7, 15,
   31, 61, 91 … 271 seconds after the first failure; the message appears at 20 seconds,
-  counting down to the attempt at 31; no attempt is made after 300.
-- **Retry now** makes the next attempt at once and does not restart the 300 seconds; the
-  countdown then runs to the following wait.
+  counting down to the attempt at 31. A wait that would pass the 300 seconds is shortened
+  to end at them, so the last attempt is at 300 seconds and the line always counts down to
+  an attempt that will be made; no attempt is made after 300.
+- **A `Retry-After`** is whole seconds or an HTTP date, reckoned on the page's clock from the
+  moment the answer arrived; one the page cannot read is ignored. When it holds the next
+  attempt past the 300 seconds, no attempt is left to count down to: the request waits for
+  Try again at once, and from `RETRY_QUIET_S` the line is the red one.
+- **The attempt time covers the body by its silence, not its length:** `ATTEMPT_TIMEOUT_S`
+  (`UPLOAD_ATTEMPT_TIMEOUT_S`) runs from sending until the headers arrive, and then starts
+  afresh each time bytes of the body arrive (the transport seam's `text(onProgress)` and
+  `bytes(onProgress)` tell `attemptOnce` of each part). A body that brings no bytes for that
+  time is aborted, and one cut off partway (a restart) fails at once; both are quiet retries,
+  never `wizard.bad_answer`, which is for a whole body the page cannot read. A body that keeps
+  arriving is read to its end however long it takes, so a sliced file of up to 50 MB loads
+  on any connection that delivers some of it every 15 seconds. A body that declares its
+  length (`Content-Length`) is written into one buffer of that length as it arrives, so it is
+  held once and not again in parts; a declared length the body overruns falls back to
+  keeping the parts. Tests run both the fake transport and the browser's own
+  (`fetchTransport`, with `fetch` replaced) on the fake clock, and one holds the headers
+  10 s and the first bytes 12 s more and expects one attempt.
+- **An upload's sending has no such allowance:** the browser's `fetch` tells nothing of a
+  request body's progress, so the 60 s of `POST /api/parts` cover sending the whole part.
+  A part of 7.5 MB (the most allowed) needs about 1 Mbit/s of upload speed
+  (7.5 MB × 8 / 60 s); below that every attempt of the largest parts fails and is retried
+  quietly ([Targets missed](../docs/orchestration/phase-2/records/wizard-2-skeleton-panel.md#targets-missed)).
+- **Retry now** makes the next attempt of every waiting request at once and does not restart
+  the 300 seconds; the countdown then runs to the following wait. It never wakes a request
+  that waits for Try again. **Try again** makes an
+  attempt at once of every request past its 300 seconds, each starting its count afresh at
+  its next failure; a request whose last attempt is still being made when Try again is
+  pressed is sent again the moment that attempt fails.
 - **The 300 seconds are counted for each request;** the panel line shows the countdown of
   the request that failed earliest, and goes the moment any request of the page's is
-  answered.
+  answered. Since the server has then answered, every request still waiting makes its next
+  attempt at once (as Retry now, its count kept), and every request past its 300 seconds as
+  Try again; one that fails again brings the line back at that failure.
+- While an attempt of the request shown is being made, the line says "The server is being
+  slow. Your browser is retrying now." in place of a countdown at 0.
+- A request is never dropped: past 300 seconds it waits, pending, for Try again or for
+  another request's answer.
 - The message is the wizard's own, since no component answered to write one; "the server"
   is the front server. It is on the panel line, not a notification, because it concerns the
   whole panel and must stay as the user moves between steps.
@@ -507,16 +607,38 @@ its side: a part is uploaded again with the same bytes and units; a submission i
 with the same `submission_id`; a pairing or a send repeated after a lost answer is
 recovered as [Pairing a printer](#pairing-a-printer) and [After Send](#after-send) say.
 
-Tests (fake clock; the fake front server dropping, holding or refusing answers):
+As built: the waits, the quiet-retry codes and the retry board that gives the panel line its
+state are `wizard/src/retry.js`; the board is `api.board` (`state()`, `subscribe`,
+`retryNow()`, `tryAgain()`), and `panel/panel-line.js` draws it. A caller's `onSlow` is told
+once, `ROW_SLOW_S` after its request first failed, for the part's row (the row comes with the
+Parts step). `api.pending()` counts the requests not yet answered, for reloading for a new
+version, and `api.waiting()` those waiting between attempts.
+
+Tests (fake clock; the fake front server dropping, holding or refusing answers), in
+`tests/retry.test.js` and `tests/api.test.js`, and the line's look in
+`tests_browser/test_panel.py`; all built except the three that need the Parts step, the
+storage and slice jobs (the row's text, the stored work after 300 s, a repeated request's one
+row and one slice job):
 
 - A request that fails once and succeeds on the attempt at 1 s shows nothing.
 - At 19.9 s of failures the panel line is empty; at 20 s the amber line shows, counting down
   to the attempt at 31 s, the figure falling by one each second the clock moves.
-- The waits are 1, 2, 4, 8, 16, 30, 30 … seconds within the spread; no attempt after 300 s.
+- The waits are 1, 2, 4, 8, 16, 30, 30 … seconds within the spread, the last one shortened
+  to end at 300 s; no attempt after 300 s.
+- From the attempt at 271 s the line counts down to the attempt at 300 s (20 s at 280 s, 1 s
+  at 299 s), and Retry now at 280 s or 299 s makes an attempt at once.
 - At 300 s the red line and Try again; Try again attempts at once and restarts the count (a
   further 20 s of failures shows the amber line again). Retry now attempts at once and does
-  not restart the count.
-- `Retry-After: 7` holds the next attempt for 7 s.
+  not restart the count, and never wakes a request past its 300 s. Try again pressed while a
+  request is still within its 300 s leaves that request's count alone. Try again pressed while
+  the attempt at 300 s is still being made sends the request again when that attempt fails.
+- `Retry-After: 7` holds the next attempt for 7 s; a `Retry-After` given as an HTTP date
+  holds it until that moment; one that cannot be read is ignored; `Retry-After: 400` gives
+  no line before 20 s and the red line with Try again from 20 s.
+- A body that stalls after the headers counts as failed at 15 s (an upload's at 60 s), a
+  JSON body and a sliced file's bytes alike; one that stops after some bytes counts as
+  failed 15 s after its last bytes; a body that keeps arriving, a part every 14 s for
+  168 s, is read to its end in one attempt; a body cut off partway is retried quietly.
 - An answer without `X-PenguinSlicer-Version` is retried; each quiet-retry code is retried;
   `slice.busy`, a `delivery.*` refusal and an unknown code are shown at once.
 - A part's row says "Taking longer than usual; still trying…" at 4 s and not at 3.9 s; after
@@ -2049,12 +2171,12 @@ the other components are: `wizard/` is a `uv` project of its own, with its own
 
 | Folder | What it holds |
 |---|---|
-| `wizard/src/` | The page: `index.html`, its modules, the workers' modules, the style sheets taken over from the mockup's `css/panel.css`, fonts and pictures. As built, `index.html` and `main.js`, which reads the version from the page's `<meta>` and marks the document started; the worker `geometry.worker.js` and the geometry in `geometry/` ([The geometry, in a worker](#the-geometry-in-a-worker)) |
-| `wizard/src/seams/` | The seams: the only modules that may call `setTimeout`, `setInterval`, `Date.now` or `fetch` (the clock and the transport; from the skeleton, item 2 of [By phase](#by-phase)) |
+| `wizard/src/` | The page: `index.html`, its modules, the workers' modules, the style sheets taken over from the mockup's `css/panel.css`, fonts and pictures. As built, `index.html` (the panel's markup), `favicon.svg`, `css/panel.css` and `css/wizard.css`, `main.js` (reads the version from the page's `<meta>`, joins the seams to `api.js` and the panel, exports the running wizard, marks the document started), `api.js`, `retry.js`, `sentences.js`, `state.js`, `page-constants.js`, the panel in `panel/` ([The panel as a whole](#the-panel-as-a-whole)), and the worker `geometry.worker.js` with the geometry in `geometry/` ([The geometry, in a worker](#the-geometry-in-a-worker)). The build puts every file flat in `assets/`, so no two files may share a name and an extension |
+| `wizard/src/seams/` | The seams: the only modules that may read the time or reach the network. `clock.js` (`now`, `after`, `cancel`) and `transport.js` (`send`) |
 | `wizard/vendor/` | Third-party code kept as files, each with its release, licence and SHA-256 in [wizard/vendor/README.md](vendor/README.md) |
-| `wizard/tests/` | The tests without a browser window on Node's runner (`*.test.js`), with their fakes in `wizard/tests/fakes/` (from the skeleton) |
+| `wizard/tests/` | The tests without a browser window on Node's runner (`*.test.js`), with their fakes in `wizard/tests/fakes/`: `clock.js`, the fake clock (`advance(ms)` fires each timer at its moment and lets the page's promises settle between), and `front_server.js`, the fake front server (each request answered, held, dropped or answered without the version, in the order the test sets; its default answers the contract's examples, whole, which `tests/fake_front_server.test.js` checks) |
 | `wizard/tests/python/` | The tools' tests, on pytest: the build, Node's version check, the trials' server and made parts, the first trial's plates, slicing client and verdicts, the vendored files' hashes and the real parts' hashes. Not `tests/tools/`: the repository's `.gitignore` ignores every folder named `tools/` |
-| `wizard/tests_browser/` | The tests that drive Chromium, with the fake front server in Python (`fake_front_server.py`) |
+| `wizard/tests_browser/` | The tests that drive Chromium, with the fake front server in Python (`fake_front_server.py`, its default answers the contract's examples, which `tests/python/test_fake_front_server.py` checks in the fast suite), and `look.py`, the pictures of the panel beside the mockup's (`make -C wizard look`) |
 | `wizard/scripts/check_node.py` | Node's version check |
 | `wizard/trials/` | The two opening trials of phase 2, their pages, scripts, plates and results ([wizard/trials/README.md](trials/README.md)) |
 | `wizard/build.py` | The build ([The wizard's built files](../contracts/wizard-front-server.md#the-wizards-built-files)) |
@@ -2074,17 +2196,20 @@ the contract's shapes and checked against the contract's examples); the browser'
 (the storage module sits on a small interface over IndexedDB, which a fake in memory
 implements); the browser's locks (`navigator.locks`, faked with the same interface); and the
 worker (run in the same thread by the tests, through the same messages). A page module that
-calls `setTimeout`, `setInterval`, `Date.now` or `fetch` directly fails the suite:
-`tests/seams.test.js` searches every `.js` and `.mjs` file under `wizard/src/` outside
-`wizard/src/seams/` for those names, reached directly or through the global object
-(`globalThis.fetch`, `self['fetch']`, `Date['now']`), skipping comments but not strings or
-regular expression literals, and names each file and line. It does not see a name built from
-pieces (`'set' + 'Timeout'`, `Date[n]`), and it does not search for the other ways to reach
-the time or the network (`new Date()`, `performance.now`, `requestAnimationFrame`,
-`XMLHttpRequest`, `EventSource`, `WebSocket`), which the skeleton (item 2 of
-[By phase](#by-phase)) decides when it builds the seams. So the suite needs no network and never waits. `tests/page.test.js` holds
-`index.html` to the contract's rules: one version placeholder, no inline script, no `style`
-element or attribute, nothing loaded from another site. The tools' tests in
+reads the time or reaches the network directly fails the suite: `tests/seams.test.js`
+searches every `.js` and `.mjs` file under `wizard/src/` outside `wizard/src/seams/` for
+`setTimeout`, `setInterval`, `Date.now`, `new Date()` and `new Date` without a figure,
+`Date()`, `performance.now`, `requestAnimationFrame`, `requestIdleCallback`, `fetch`,
+`XMLHttpRequest`, `EventSource`, `WebSocket` and `sendBeacon`, reached directly or through the
+global object (`globalThis.fetch`, `self['fetch']`, `Date['now']`), skipping comments but not
+strings or regular expression literals, and names each file and line. A date made from a
+figure (`new Date(ms)`, `Date.parse`, `Date.UTC`) reads no clock and is allowed. It does not
+see a name built from pieces (`'set' + 'Timeout'`, `Date[n]`); review catches that. A later
+item that needs a frame clock or a progress stream adds it to the seams. So the suite needs
+no network and never waits. `tests/page.test.js` holds `index.html` to the contract's rules
+(one version placeholder, no inline script, no `style` element or attribute, nothing loaded
+from another site), `css/panel.css` to the mockup's byte for byte, and the page's ids to the
+mockup's. The tools' tests in
 `wizard/tests/python/` run in the same target, on pytest in a random order (pytest-randomly
 prints the seed in pytest's header, `Using --randomly-seed=<seed>`, and passing that
 option repeats an order; the target runs pytest without `-q`, which would
@@ -2100,7 +2225,13 @@ graphics card Chromium draws 3D in software. Like the other suite, they wait on 
 on a duration. As built, the fake front server serves `GET /` with the version filled in and
 the contract's exact content security policy, and `GET /assets/<file>`; the tests check the
 page runs with no error under that policy, that an inline script would be reported, that the
-page reads its version, and that it asks only for itself and its assets. Playwright's browsers
+page reads its version, and that it asks only for itself and its assets. It also answers
+every request of phase 2 with the contract's examples (a test may set the next answers to a
+path), and marks each answer with the version and `Cache-Control` as the contract says. Time in
+the page is Playwright's fake clock (`page.clock`), installed before the page loads and paused
+once it has, so a test moves it; the spread of the retry waits is held at its middle, so the
+waits are exact; and a test that waits for the page to reach a state asks the page again,
+each ask a round trip, never a wait of a number of seconds. Playwright's browsers
 go where `PLAYWRIGHT_BROWSERS_PATH` says, unless that folder cannot be written (the agents'
 machine has a read-only `/opt/ms-playwright` holding an older revision); then into
 `~/.cache/ms-playwright`, shared by every checkout.
@@ -2114,21 +2245,35 @@ modules with a one-file core: the core and the example files the trials are like
 own paths, as [wizard/vendor/README.md](vendor/README.md) lists with each file's SHA-256,
 which the fast suite checks. The example files import the core by the bare name `three`: a
 trial's page maps it with an import map; the wizard's page, which may have no inline script,
-gets the name rewritten by the build (from the skeleton). A drawing method of the first trial
+gets the name rewritten by the build. A drawing method of the first trial
 that needs other code is held to the same rule.
 
 **The build, as built.** `build.py` writes `wizard/dist/index.html` and puts every other file
-of `wizard/src/` flat in `wizard/dist/assets/` as
-`<name>.<first 12 hexadecimal characters of its SHA-256>.<extension>`, bytes unchanged, and
-rewrites each `src` and `href` of `index.html` that names one of them, its value in double
-quotes, single quotes or none, to `/assets/<that name>`, keeping its quotes; a link within the
-page (`href="#..."`) is left as it is. It refuses, with a sentence that says why: no
-`index.html`; no version placeholder, or more than one; a reference to another site or to a
-file not in `wizard/src/`; two files that would get the same built name. Only `src` and
-`href` are read: an address in another attribute (`srcset`, `poster`, `data`) is neither
-rewritten nor refused, and the content security policy is what stops it loading. Not yet built (the skeleton, item 2 of
-[By phase](#by-phase)): rewriting the names inside an asset (a module's or a worker's
-imports, a style sheet's addresses) and building in `wizard/vendor/`.
+of `wizard/src/`, and every module (`.js`) of `wizard/vendor/` (not its `README.md`,
+`.gitignore` or `LICENSE`; three.js's core keeps its own licence line), flat in
+`wizard/dist/assets/` as `<name>.<first 12 hexadecimal characters of its SHA-256>.<extension>`.
+It rewrites each `src` and `href` of `index.html` that names a file of `wizard/src/`, its value
+in double quotes, single quotes or none, to `/assets/<that name>`, keeping its quotes; a link
+within the page (`href="#..."`) is left as it is. Inside a module it rewrites each static
+`import` and `export ... from` (one line or several), each `import('...')` and each
+`new URL('...', import.meta.url)`, the way a page starts a worker, found outside comments and
+strings; the bare name `three` is the vendored core, `vendor/three/build/three.module.min.js`,
+and a page module names a vendored file by its path from itself
+(`'../vendor/three/examples/jsm/controls/OrbitControls.js'`), which also works where
+`wizard/src/` and `wizard/vendor/` are served side by side, as `make -C wizard trials-serve`
+does. Inside a style sheet it rewrites each `@import` and `url(...)` outside comments, leaving
+`data:` addresses. A file's hash is taken of its bytes after its names are rewritten, so a change to a
+module changes the name of every module that imports it and a browser that keeps an asset
+for a year never mixes an old importer with a new import; a file with nothing to rewrite keeps
+its bytes. It refuses, with a sentence that says why: no `index.html`; no version
+placeholder, or more than one; a reference to another site; a reference to a file not in
+`wizard/src/` (or, from a module, `wizard/vendor/`); an absolute address; a bare module name
+other than `three`; a dynamic import whose name is not one quoted string (a template literal
+or an expression, which the build cannot rewrite), or that has a second argument
+(`import('./a.js', { with: ... })`, which the page has no use for); modules that import each other in a circle (no name could carry the hash
+of what it imports); two files that would get the same built name. Only `src` and `href` are
+read in `index.html`: an address in another attribute (`srcset`, `poster`, `data`) is neither
+rewritten nor refused, and the content security policy is what stops it loading.
 
 **Make targets,** each run as `make -C wizard <target>`:
 
@@ -2137,7 +2282,8 @@ imports, a style sheet's addresses) and building in `wizard/vendor/`.
 | `install` | The `uv` environment and Playwright's Chromium; fails naming the version when Node is older than 24 ("Node 22.3.0 is older than 24: the wizard's tests need Node 24 or later.") |
 | `test` | The tests without a browser window: the fast suite (Node's check, then `test-page`, the page's tests on Node, then `test-tools`, the tools' tests on pytest) |
 | `test-browser` | The tests in Chromium, after `build` |
-| `build` | `wizard/dist/` from `wizard/src/` (and, from the skeleton, `wizard/vendor/`) |
+| `build` | `wizard/dist/` from `wizard/src/` and `wizard/vendor/` |
+| `look` | After `build`: pictures of the panel as a whole beside the mockup's, at 320, 480, 520 and 680 px, into `docs/orchestration/phase-2/look/wizard-2/` with an `index.html` showing the pairs |
 | `trials` | Both opening trials' measurements, as [How the trials and measurements are run](#how-the-trials-and-measurements-are-run) says: runs `trials-preview` and `trials-geometry`, the second even when the first fails, and fails when either does |
 | `trials-preview` | The first trial: `wizard/trials/preview/run.py` (needs the three sliced files in `wizard/trials/sliced/`, made by `wizard/trials/make_sliced_files.py`) |
 | `trials-geometry` | The second trial: `wizard/trials/geometry/run.py` |
@@ -2311,19 +2457,14 @@ The page opened directly in a browser, with the development identity and no sign
    ([wizard/trials/preview/README.md](trials/preview/README.md)), and the second,
    [the geometry on real parts](README.md#the-risks-to-try-first-in-phase-2), with the geometry it
    tried ([The geometry, in a worker](#the-geometry-in-a-worker)).
-2. **The skeleton:** the build of `wizard/dist/` as
-   [The wizard's built files](../contracts/wizard-front-server.md#the-wizards-built-files) fixes
-   it (hashed asset names, the version placeholder, nothing the content security policy
-   forbids); the page served by `GET /` and `GET /assets/<file>`, its version read from its
-   `<meta>`; `css/panel.css` taken over; the fake clock and the fake front server; the module that
-   makes every request with `X-PenguinSlicer-Page`, `X-PenguinSlicer-Group` and the wizard's mark
-   ([Every request](#every-request-headers-answers-and-retrying);
-   [Rules for every request](../contracts/wizard-front-server.md#rules-for-every-request)).
-3. **Retrying and the panel line**
-   ([When the server is slow](README.md#when-the-server-is-slow-or-cannot-be-reached);
-   [Retrying](../contracts/wizard-front-server.md#retrying-and-why-every-request-is-safe-to-repeat)).
-4. **The panel as a whole:** the widths, the header, the step tabs, the plate summary, Back and Next,
-   the six ways of telling, the tooltips ([The panel as a whole](README.md#the-panel-as-a-whole)).
+2. **The skeleton.** Built: the build and the seams
+   ([The project and its tools](#the-project-and-its-tools)), the page, the fake clock and the
+   fake front server, and the module that makes every request
+   ([Every request](#every-request-headers-answers-and-retrying)).
+3. **Retrying and the panel line.** Built ([Retrying](#retrying)); a part's row says it is slow
+   with the Parts step.
+4. **The panel as a whole.** Built ([The panel as a whole](#the-panel-as-a-whole)), but for
+   advanced mode's sections across 480 px, which come with advanced mode.
 5. **Who the user is and the configuration:** `GET /api/me`, `GET /api/configuration` with the
    header naming `name`, the reload glyph, `GET /api/settings-table` when the page opens
    ([The current group](README.md#the-current-group);

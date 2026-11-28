@@ -1,5 +1,7 @@
-// The search behind tests/seams.test.js: which page modules name setTimeout, setInterval,
-// Date.now or fetch outside the seams (wizard/src/seams/).
+// The search behind tests/seams.test.js: which page modules reach the time or the network
+// outside the seams (wizard/src/seams/): setTimeout, setInterval, Date.now, new Date(),
+// Date(), performance.now, requestAnimationFrame, requestIdleCallback, fetch,
+// XMLHttpRequest, EventSource, WebSocket and sendBeacon.
 //
 // Comments are not searched; strings and regular expression literals are, so that
 // `globalThis['fetch']` is caught, and `Date['now']` is matched as Date.now. The scan knows
@@ -9,11 +11,23 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 
+// The clock's names and the network's. A date made from a figure (`new Date(ms)`,
+// `Date.parse`, `Date.UTC`) reads no clock and is allowed; `new Date()`, `new Date` and
+// `Date()` read the wall clock.
 const FORBIDDEN = [
   ['setTimeout', /\bsetTimeout\b/g],
   ['setInterval', /\bsetInterval\b/g],
   ['Date.now', /\bDate\s*(?:\.\s*now\b|\[\s*(['"`])now\1\s*\])/g],
+  ['new Date()', /\bnew\s+Date\b(?:\s*\(\s*\)|(?!\s*\())/g],
+  ['Date()', /(?<!\bnew\s+)(?<![.\w$])Date\s*\(/g],
+  ['performance.now', /\bperformance\s*(?:\.\s*now\b|\[\s*(['"`])now\1\s*\])/g],
+  ['requestAnimationFrame', /\brequestAnimationFrame\b/g],
+  ['requestIdleCallback', /\brequestIdleCallback\b/g],
   ['fetch', /\bfetch\b/g],
+  ['XMLHttpRequest', /\bXMLHttpRequest\b/g],
+  ['EventSource', /\bEventSource\b/g],
+  ['WebSocket', /\bWebSocket\b/g],
+  ['sendBeacon', /\bsendBeacon\b/g],
 ];
 
 const MODULE = /\.(?:js|mjs)$/;
