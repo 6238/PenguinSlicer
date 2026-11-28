@@ -1,0 +1,264 @@
+# Batch wizard-3-identity-storage-worker: the record
+
+Items 5, 6 and 7 of [the wizard's details, "By phase", phase 2](../../../../wizard/README-details.md#phase-2-one-machine):
+who the user is and the configuration, the browser's storage, and the worker reading a binary STL
+and drawing a part's picture. Built on Sat 2026-11-28 by one builder, with no one to ask. What is
+built is described in the details file's sections
+[The current group](../../../../wizard/README-details.md#the-current-group),
+[The configuration and the table of settings](../../../../wizard/README-details.md#the-configuration-and-the-table-of-settings),
+[What the browser keeps](../../../../wizard/README-details.md#what-the-browser-keeps),
+[The geometry, in a worker](../../../../wizard/README-details.md#the-geometry-in-a-worker) and
+[What the wizard reports about itself](../../../../wizard/README-details.md#what-the-wizard-reports-about-itself).
+
+## Decisions made
+
+1. **The configuration's name is plain text for every user in phase 2.** To decide: what the
+   header shows for a user in several groups, which the development identity's `/api/me` example
+   is. The documents put the group details and choosing a group in phase 3 and say nothing of phase
+   2's header for such a user. Chosen: plain text, the current group being the first of the user's
+   groups. Reason: the button would open group details that phase 3 builds. To overrule: build the
+   group details in phase 2.
+2. **Which group a tab works in.** To decide: the order among the tab's own plate's group, the
+   stored `currentGroup` and the first group. The documents say a refreshed tab "goes on with its
+   own group" and a new tab starts in the stored choice; they give no order. Chosen: the tab's own
+   plate's group while `/api/me` lists it, then the stored `currentGroup` while listed, then the
+   first. Reason: a refresh must not move a tab to another group's plate. To overrule: change
+   `begin` in `wizard/src/storage.js`.
+3. **A part's bytes are a record of their own.** To decide: how the *proposed* record
+   `plates/<plate_id>` holds the parts' bytes. The details put the bytes inside the plate's record.
+   Chosen: `part-bytes/<plate_id>/<sha256>.<units>`, one record a part, beside the plate's record.
+   Reason: every change of layout or settings is written at once, and rewriting up to 190 MB of
+   bytes each time would be slow and wasteful. To overrule: fold the bytes back into the plate's
+   record in `wizard/src/storage.js`.
+4. **The storage's names, settled.** The details marked them *proposed*. Chosen: IndexedDB database
+   `penguinslicer`, object store `records`; keys `owner`, `uploadUnits`, `currentGroup`,
+   `plates/<plate_id>`, `part-bytes/…`; the tab's `sessionStorage` key `penguinslicer.plate_id`; the
+   lock `penguinslicer-plate/<plate_id>`. A plate record carries `format` 1 and `last_used_ms`.
+   Reason: short, and nothing else on the address uses them. To overrule: rename in
+   `wizard/src/storage.js` before any real user stores a plate.
+5. **The storage module is `storage.js` (`createStorage`), not `store`.** The details proposed
+   `store`. Reason: `wizard/src/state.js` already has `createStore`, the panel's store, and one name
+   must mean one thing. The seam is `wizard/src/seams/browser-storage.js`, since the build puts
+   every file flat and two `storage.js` would collide. To overrule: rename both.
+6. **A plate of an unknown `format` is left alone.** The documents are silent on a stored plate a
+   later release wrote. Chosen: never taken up and never dropped by a page that cannot read it.
+   Reason: an older page must not destroy a newer page's work. To overrule: drop such plates.
+7. **A part whose bytes were refused is gone after a refresh.** The guide says "a refresh will lose
+   it" and no more. Chosen: the plate keeps the part's entry marked `saved: false` while the page
+   lives, and a page taking up the plate drops entries without bytes. To overrule: keep the entry
+   and ask the user to add the file again.
+8. **A browser that will not open its storage.** The documents speak of a refused write, not of a
+   storage that will not open. Chosen: the page works from its memory, with one `storage_refused`
+   report, and every later write is silently not made. Reason: the page stays usable. To
+   overrule: show a message.
+9. **A refused write of the plate itself** gives one `storage_refused` report for the page,
+   however many writes fail; a refused part gives one report for that part. The documents speak
+   only of a refused part. Reason: the log should not fill from one full disk.
+10. **No Web Locks.** A page served over plain HTTP from another machine has no `navigator.locks`;
+    the documents are silent. Chosen: the tab keeps its own plate through a refresh and never
+    takes up another, and plates are dropped after 12 hours with no way to see they are held.
+    Reason: two tabs must never share a plate. To overrule: serve the page only over HTTPS or
+    localhost.
+11. **A duplicated tab begins a plate of its own.** Chrome copies `sessionStorage` when it
+    duplicates a tab; the documents are silent. Chosen: the copy finds the plate's lock held by
+    the original and begins a new plate. Reason: "one tab never writes over another's work".
+12. **Taking up a plate counts as using it.** The documents speak of "the time last used". Chosen:
+    `last_used_ms` moves on when a tab takes the plate up and at each change. Known gap: during a
+    refresh the browser releases the tab's lock for a moment; a second tab opening in exactly that
+    moment could take the plate up, and the refreshed tab would then begin a new one. Reason: the
+    window is a fraction of a second and the cure (a lock held across navigations) does not exist.
+13. **The words of a choice gone from the configuration.** The guide says "a notification says
+    which" and gives no sentence. Chosen, in amber: "PETG-CF is no longer in the configuration." or
+    "Fine is no longer offered for PETG.", then "The plate now uses PETG · Standard." The same
+    notification shows when a page opens on a stored plate whose choice has gone. The user's
+    changes are kept. To overrule: change the three sentences in `wizard/src/sentences.js`.
+14. **A failure on opening is a notification.** The documents say how phase 3 handles
+    `front.not_signed_in`, not how phase 2 shows a failure of `/api/me`, the configuration or the
+    table. Chosen: the report's sentences as a red notification on the Parts step; an answer of a
+    shape the page cannot use is `wizard.bad_answer` with the fault in `detail`; when `/api/me`
+    fails nothing is stored and nothing is asked for a group. To overrule: show a message in place
+    of the step, as phase 3 does for a failed sign-in.
+15. **The table of settings is asked before `/api/me`, at once.** The contract says "when the page
+    opens, beside the configuration". Chosen: the table first, `/api/me` straight after, the
+    configuration once the group is known. Reason: the table acts for no group and is the
+    largest answer.
+16. **The failure reports are built now, ahead of item 18.** The storage's two failures need them.
+    Chosen: `wizard/src/reports.js` with the failure reports only, `REPORTS_PER_MIN` settled at 4 in
+    any 60 seconds (the details' proposal), `software_3d` known by whether a WebGL context asked to
+    fail on a major performance caveat is refused, `browser` from the brands or the user agent. The
+    drawing summaries are left to item 18. To overrule: change the figure in `reports.js`.
+17. **A part's picture is drawn in the worker, in software.** The documents say the worker reads a
+    part for drawing and the row shows its picture; the mockup draws pictures with WebGL on the main
+    thread. Chosen: a small rasteriser in `wizard/src/geometry/picture.js`, the mockup's camera,
+    lights and colours, a fixed exposure of 0.72 so a lit face is near the part's colour rather
+    than white, 2 by 2 samples a pixel, a transparent ground. Reason: a browser gives a page only
+    a few WebGL contexts, and drawing 150,000 triangles on the main thread could hold it; this takes
+    18 ms in the worker. To overrule: draw with three.js in an `OffscreenCanvas` in the worker.
+18. **The picture shows the part as modelled,** not as auto-orient lays it. The documents are
+    silent. Reason: the row names the file the user added; how it lies is the Layout step's. To
+    overrule: pass the turn to the `picture` message.
+19. **A part's colour is the mockup's palette by its place on the plate,** in turn (`PART_COLOURS`).
+    The documents are silent. To overrule: change the palette.
+20. **A part's bytes are copied to the worker, never transferred.** The page keeps them for the
+    storage and the upload. Cost: one copy of up to 7.5 MB for each part read.
+21. **A worker that fails as a whole** answers every question waiting, and every later one, with
+    `wizard.layout_failed`. The documents are silent. Reason: no question may wait for ever.
+22. **The page is marked `data-opened`** once the opening ends, and the browser tests and the
+    `look` script wait for it; the requests the opening made are counted apart. Reason: the opening
+    sets the store, and a test that set it first would race with it.
+
+### Decisions of the review round (finding numbers are the reviewer's on pull request #37)
+
+23. **The heartbeat counts the gap still open when it is read or stopped** (blocking finding 1).
+    The details defined the hold as "the longest gap between two beats", which leaves out a hold
+    after the last beat and before the measuring stops: in the worker's browser test that is the
+    stretch where the picture goes on the page. Chosen: `longest()` and `stop()` count the open
+    gap too; a stopped meter keeps the figure it had at the stop. Re-measured with
+    `make -C wizard look-parts` over all ten kept parts: at most 12 ms (`clamp-plate-inner.stl`;
+    `hub-150k.stl` 11 ms), so the figure in the details file and the guide went from 11 to 12 ms.
+    The reviewer's mutation (a 400 ms busy wait after `putImageData`) now fails both reading
+    tests (409 and 403 ms). To overrule: measure only between beats, and accept that the end of
+    a measured stretch is unseen.
+24. **The duplicated tab is tested in Chromium** (blocking finding 2) by a second page whose
+    `sessionStorage` is set, by an init script, to name the open first page's plate. With
+    `ifAvailable` removed from the locks seam the test fails (the copy never opens); restored, it
+    passes and the first plate's record is unchanged. No code change was needed.
+25. **A stored plate of this page's format whose shape the page cannot use** (minor finding 1) is
+    never taken up and is dropped, unless a tab holds it, with one `page_failed` report for the
+    opening naming how many. The documents are silent. Readable means: `plate_id` equal to its
+    key's, `user` and `group` strings, `parts` a list of objects with string `sha256` and `units`,
+    `instances` a list, `settings` an object with a `changes` object and a `filament` and
+    `profile` each a string or null, `step` one of the five steps (round 2, decision 33) and
+    `last_used_ms` a finite number. Reason: the page knows its own format, so such a plate is a
+    fault, not a later release's work, and keeping it would break every opening until it aged
+    out (which it never would, its time being unreadable). `page_failed` because it is the page's
+    own writing gone wrong; the contract's list has no closer `what`. To overrule: change
+    `readable` in `wizard/src/storage.js`, or leave such plates alone as for an unknown format.
+26. **An opening that throws** (minor finding 2) is caught by `endOpening` in
+    `wizard/src/opening.js`: one `page_failed` report, and the document marked
+    `data-opened="failed"`, so the rejection is never unhandled and a test waiting for the
+    opening stops. The user is shown nothing new: the documents give no sentence for a page that
+    cannot open, and inventing an error code is not this batch's to do; the general handler
+    for uncaught errors comes with item 18. To overrule: give the failure a notification with
+    its own code and sentences in `wizard/src/sentences.js`.
+27. **New plate deletes the old plate's records while still holding its lock** (minor finding
+    3), and lets the lock go only then. Reason: a tab opening between the release and the
+    deletion could take up a plate half deleted. To overrule: nothing; there is no gain in the
+    old order.
+28. **The kept parts' pictures are made by `make -C wizard look-parts`**
+    (`wizard/tests_browser/look_parts.py`, minor finding 4): the page's own worker in Chromium,
+    the first of the parts' colours, at twice the density (88 pixels), with each part's hold
+    printed. The pictures were made again by it; they differ from the first ones only in their
+    PNG encoding.
+29. **The bounds of the picture message, `MIN_PICTURE_PX` 16 and `MAX_PICTURE_PX` 512** (minor
+    finding 5), in `wizard/src/geometry/picture.js`. The documents are silent. Chosen: 16 is
+    below any picture the rows draw (44 at the lowest density) and 512 is far above the largest
+    (132 at three times), while bounding the worker's buffer at 1 MB of pixels. A `px` outside
+    them, or not whole, is the page's fault, `wizard.layout_failed`. To overrule: change the two
+    figures.
+30. **The *proposed* way of knowing a cleared storage is settled as built** (minor finding 5):
+    an `owner` record gone while the tab's `sessionStorage` still names a plate and holds
+    `penguinslicer.owner_stored` (round 2, decision 34), reported once as `storage_cleared`,
+    since the opening writes `owner` again at once. Reason: `owner` is written on every opening
+    that opens the storage, so its absence while the tab says an earlier load found it stored
+    can only mean the storage was cleared under the tab. It misses a storage cleared while no tab of the site was
+    open (no tab then names a plate), which is indistinguishable from a first visit. Tested in
+    the fast suite and in Chromium with the real IndexedDB deleted. To overrule: keep a
+    second marker outside IndexedDB (for example in `localStorage`) and compare the two.
+31. **A worker that fails as a whole sends one `layout_failed` report** (minor finding 6), the
+    first time only, with the failure in `detail`. The details file says a `wizard.layout_failed`
+    answer is reported as `layout_failed` when the geometry's code failed; a worker failing as a
+    whole is its own code failing. To overrule: report it as `page_failed`.
+
+No finding of the review was declined: each was checked against the code and reproduced.
+
+### Decisions of the review round 2 (finding numbers are the reviewer's second review of #37)
+
+32. **Every condition of `readable()` has a fast test of its own** (blocking finding 1). The
+    finding was right: removing `Array.isArray(p.instances)`, `Number.isFinite(p.last_used_ms)`
+    or `p.plate_id === plateId` left every test green. `tests/storage.test.js` now holds one
+    stored plate for each way a plate can be unreadable (15 ways, the table `UNREADABLE`), all at
+    once in the "cannot read" test and each on its own in a test of its own, each used more
+    recently than the readable plate so that a plate taken up by mistake is the one the tab
+    opens. Checked by removing each of the 14 conditions in turn from a scratch copy of
+    `storage.js` and running `storage.test.js` with `opening.test.js`: every removal fails at
+    least one test (most fail three). To overrule: nothing; a condition without a test is one a
+    later change can lose unseen.
+33. **A stored `step` must be one of the five steps, and `filament` and `profile` a name or
+    null** (minor finding 4). The finding was right: a `step` of "checkout" opened a panel with
+    every section hidden, and a `filament` of 7 reached the summary. Chosen: such a plate is
+    unreadable like the others (decision 25), dropped with the one `page_failed` report.
+    `storage.js` takes the steps from `panel/steps.js` (`stepIndex`), so the list is never
+    written twice. To overrule: open such a plate on its first step instead, keeping its parts.
+34. **A missing `owner` means a cleared storage only after the tab once found it stored**
+    (minor finding 3). The finding was right: a load on which the browser would not open the
+    storage left the tab naming a plate with no `owner` written, and the next load that opened
+    the storage reported `storage_cleared` falsely. Chosen: the tab's `sessionStorage` holds
+    `penguinslicer.owner_stored` from the first load that wrote or found `owner`, and the report
+    needs it. Kept in the tab, not in IndexedDB, because a storage cleared by the browser loses
+    everything in IndexedDB. A tab opened before this change has no marker and would miss one
+    clearing: the page is not yet released, so no such tab exists. To overrule: drop the marker
+    and accept the false report after a refused opening.
+35. **A different user's sign-in clears the plates other open tabs hold** (minor finding 5).
+    This was the behaviour and is now stated in the details file, "When a plate is dropped", and
+    in the guide, with a fast test. Reason: those plates are the previous user's work, and a page
+    for the new user must never show it; an open tab of the previous user keeps its plate in
+    memory and writes it again on its next change, as that user's, which the new user's tabs
+    never take up (it is not theirs) and which is dropped at 12 hours. To overrule: keep plates
+    held by open tabs until those tabs close.
+36. **The locks seam's "never waits" is proved by a fast test on an event** (minor finding 1).
+    `tests/locks.test.js` runs `webLocks()` over a fake of `navigator.locks` that, like the
+    standard, queues a request for a held lock made without `ifAvailable` and resolves a
+    `queued` promise when it does; the test races the copy's `tryHold` against it. With
+    `ifAvailable` removed the test fails in about 1 ms with "queued". The Chromium test of the
+    duplicated tab stays as the proof with the real locks, without its own 10 s bound (the
+    page's 10 s bound of `conftest.py` remains, as for every wait there).
+37. **The report wiring of `main.js` is reached in Chromium** (minor finding 2). Two tests:
+    `test_page.py` makes the opening throw (an init script replaces `structuredClone`, which only
+    the storage module uses, with one that throws) and sees one `page_failed` report sent and the
+    page marked failed; `test_worker.py` serves the worker's script as a file that is no script
+    and sees one `layout_failed` report, and every later question answered
+    `wizard.layout_failed`. With either report removed from `main.js` the matching test fails.
+    These two wait for a request that, when the wiring is lost, never comes, so they fail at
+    Playwright's 10 s bound: a positive event has no earlier proof of its absence. To overrule:
+    give the reports module an event a test can await, and fail on it.
+
+No finding of review round 2 was declined.
+
+## Targets missed
+
+None.
+
+## Not done
+
+- The amber line on a part's row when its bytes could not be saved: the rows are item 8. The
+  storage module gives the row its `saved` flag and the sentence `PART_NOT_SAVED`.
+- The notification of a part the page cannot draw, and its `part_not_drawable` report: item 8. The
+  worker's report and the main thread's never being held while it arrives are built and tested.
+- Choosing a group, the group details and the fall-back on `front.group_not_allowed`: phase 3.
+- The records `signInTrip` and `selfReload`: phase 3 and item 17.
+- The drawing summaries of the page's reports, and the handler that reports every uncaught error
+  and rejected promise as `page_failed`: item 18.
+- Reporting a `wizard.layout_failed` answer of the worker (its code failing on one part, the
+  worker still running), and the notification of a worker that fails: they belong to the steps
+  that ask the worker and show its answers, items 8 and 10, and need the worker to tell its own
+  failure from the page asking wrongly. Only the worker failing as a whole is reported now.
+- A notification for a page whose opening throws (decision 26): no sentence for it exists.
+- How often a browser refuses or clears the storage with several tabs' full plates, in Chrome on the
+  Mac and in real use: only one tab's full plate was stored, in headless Chromium.
+- The second run of the browser tests in Edge.
+
+## For the owner to look at
+
+- The pictures of each kept part as its row will show it, at 88 pixels (44 at twice the density):
+  [docs/orchestration/phase-2/look/wizard-3/](../../look/wizard-3/), made again by
+  `make -C wizard look-parts`, which also prints the main thread's longest hold for each part.
+- `make -C wizard test` and `make -C wizard test-browser`; the new tests are
+  `wizard/tests/storage.test.js`, `wizard/tests/opening.test.js`, `wizard/tests/reports.test.js`,
+  `wizard/tests/geometry/picture.test.js`, `wizard/tests/geometry-client.test.js`,
+  `wizard/tests/locks.test.js`, `wizard/tests_browser/test_storage.py`,
+  `wizard/tests_browser/test_worker.py` and `wizard/tests_browser/test_page.py`.
+- With the three components started as
+  [Running phase 2 on one machine](../../../../front/README-details.md#running-phase-2-on-one-machine)
+  says: the header reads "Config: PenguinSlicer default"; a second tab gets its own plate; a
+  refreshed tab keeps its step; a closed tab's plate is taken up by the next tab opened.

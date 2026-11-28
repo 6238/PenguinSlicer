@@ -7,8 +7,13 @@ sections say what is true of them as built:
 [The project and its tools](#the-project-and-its-tools), with the build and the seams;
 the inputs of [the trials](#how-the-trials-and-measurements-are-run), both trials and the
 geometry the second tried ([The geometry, in a worker](#the-geometry-in-a-worker));
-[The panel as a whole](#the-panel-as-a-whole); and
-[Every request: headers, answers and retrying](#every-request-headers-answers-and-retrying).
+[The panel as a whole](#the-panel-as-a-whole);
+[Every request: headers, answers and retrying](#every-request-headers-answers-and-retrying);
+who the user is and the configuration, as phase 2 has them ([The current group](#the-current-group),
+[The configuration and the table of settings](#the-configuration-and-the-table-of-settings));
+[What the browser keeps](#what-the-browser-keeps), but for what the later items put in it; the
+worker's reading of a part and its picture ([The geometry, in a worker](#the-geometry-in-a-worker));
+and the failure reports of [What the wizard reports about itself](#what-the-wizard-reports-about-itself).
 Everything else here is the design to build: every screen, state and message of the guide, in
 the builder's terms, with the names the guide leaves out (requests, fields, error codes,
 constants, stored records, tests), the figures, the tests each part needs, and an order in
@@ -143,9 +148,12 @@ file leans on:
 
 Every figure the page's code uses, in one place, read through the fake clock where it is a
 time. The names are the builder's (*proposed*) except those the plate configuration's
-contract fixes (`MAX_*`, `MARGIN_MM`, `SPACING_*`). As built, the figures of the panel and of
-retrying (`PANEL_MIN_PX` to `PANEL_LINE_PASSING_S`, `ROW_SLOW_S` to `ATTEMPT_TIMEOUT_S`) are in
-`wizard/src/page-constants.js`, and the geometry's in `wizard/src/geometry/constants.js`.
+contract fixes (`MAX_*`, `MARGIN_MM`, `SPACING_*`). As built, the figures of the panel, of
+retrying and of a part's picture (`PANEL_MIN_PX` to `PANEL_LINE_PASSING_S`, `ROW_SLOW_S` to
+`ATTEMPT_TIMEOUT_S`, `PICTURE_CSS_PX`, `PART_COLOURS`, `MAIN_THREAD_HOLD_MS`) are in
+`wizard/src/page-constants.js`; `PLATE_UNUSED_H` is in `wizard/src/storage.js`, `REPORTS_PER_MIN`
+in `wizard/src/reports.js`, `HEARTBEAT_MS` in `wizard/src/hold-meter.js`; and the geometry's in
+`wizard/src/geometry/constants.js` and, for the picture, `wizard/src/geometry/picture.js`.
 
 | Name | Figure | What it bounds | From |
 |---|---|---|---|
@@ -182,7 +190,10 @@ retrying (`PANEL_MIN_PX` to `PANEL_LINE_PASSING_S`, `ROW_SLOW_S` to `ATTEMPT_TIM
 | `FPS_GRAPHICS_CARD`, `FPS_SOFTWARE` | 30, 10 | The Layout view and the layer preview while moving | The guide |
 | `FIRST_LAYER_S` | 5 | The first layer drawn after the Preview step opens on a sliced plate | The guide |
 | `PAGE_MEMORY_MB` | 1,024 | The page at the largest plate with the layer preview of a 14.1 MB sliced file | The guide ("under 1 GB") |
-| `REPORTS_PER_MIN` | *proposed* 4 | The page's reports about itself ("a few a minute") | The guide; the front server has its own limit |
+| `REPORTS_PER_MIN` | 4 | The page's reports about itself ("a few a minute"), in any 60 seconds | The guide; the front server has its own limit |
+| `HEARTBEAT_MS` | 10 | The heartbeat that measures the main thread's longest hold | The second trial |
+| `PICTURE_CSS_PX` | 44 | A part's picture on its row; drawn at the screen's density, up to three times (132 pixels) | [decision 18](../docs/mockups/print-wizard/DECISIONS.md#parts-step-step-1), the mockup's `.part-item .thumb` |
+| `PART_COLOURS` | `#9fb4c8`, `#b7a6d6`, `#9cc9b0`, `#d6c08f`, `#c9a0a0`, `#8fc3d6`, `#b0b0b0` | A part's colour in its picture, by its place on the plate, in turn | The mockup's parts |
 | `POINTER_LINE_PX` | 11 | The pointer line's text, the one text under 14 px | [The Terms](../docs/mockups/print-wizard/DECISIONS.md#terms) |
 | `HULL_EPS_MM` | 1e-6 | A corner this close to the hull is on it: far below the rounding of a single-precision STL coordinate, so that no corner of a real part is left outside its hull (1e-3 mm left corners up to 0.006 mm out) | The second trial |
 | `FACE_JOIN_DEG` | 0.06 | Hull triangles joined into one flat face ("a fraction of a degree") | [The note on hull faces](../docs/research/2026-11-21-lay-on-face-hull-faces.md) |
@@ -359,8 +370,8 @@ step saying why; a part still arriving never holds Next; Back off on the Parts s
 ([decision 5](../docs/mockups/print-wizard/DECISIONS.md#whole-panel)).
 
 As built: the configuration line is hidden until the store has the configuration's `name`;
-the name is plain text in the line's own colour (item 5 of [By phase](#by-phase) reads it and
-wires the reload glyph through `panel.onReloadConfiguration`). The reasons a step gives for a
+the name is plain text in the line's own colour, filled when the page opens and wired to the
+reload glyph through `panel.onReloadConfiguration` ([The current group](#the-current-group)). The reasons a step gives for a
 held click are, until each step brings its own rules, the mockup's: the Parts step "add a
 part." with no part and "a plate holds up to 150 instances." over the limit; the Layout step
 "there are no instances." and its first problem; the Preview step "the plate is not sliced
@@ -792,6 +803,30 @@ every request that acts for a group
 | Changing the current group with work to lose (parts on the plate, or a slice job) | A confirmation: "Change to FRC 1678? Your parts, layout and settings are cleared." Going ahead clears everything: the parts, the layout, the settings and the slice, and starts a new plate with a new `plate_id` ([What the browser keeps](#what-the-browser-keeps)). With nothing to lose, no confirmation. A plate already sent goes on printing at its own printer; the printer-status icon now shows the new group's printer |
 | A group the user no longer belongs to: a request answered `403` `front.group_not_allowed` | The page takes the first of the user's groups from `GET /api/me`, with an empty plate as after any change of group, and says so in a notification: the front server's sentence ("You are no longer in 6238 (Popcorn Penguins).") then the wizard's own, "PenguinSlicer now uses FRC 1678's configuration and printer." |
 
+**As built, for phase 2.** `wizard/src/opening.js` opens the page: `GET /api/settings-table` and
+`GET /api/me` at once (neither acts for a group), then the tab's plate from the browser's storage
+for `user.id` ([What the browser keeps](#what-the-browser-keeps)), then `GET /api/configuration`
+with `X-PenguinSlicer-Group`, after which the document is marked `data-opened`. The current group
+is the tab's own plate's group while `/api/me` still lists it (a refreshed tab goes on in its
+group), otherwise the stored `currentGroup` when listed, otherwise the first of the user's groups;
+nothing writes `currentGroup` until choosing a group is built in phase 3, so in phase 2 it is the
+first. The configuration's name is plain text for every user, also one in several groups, until the
+group details are built in phase 3. The store (`wizard/src/state.js`) holds `user`, `groups`,
+`group`, `plateId`, `configuration`, `configSource`, `configName`, `settingsTable` and `printer`
+(the table's catalog entry of the configuration's printer, from `catalogPrinter` in
+`wizard/src/configuration.js`). The reload glyph reads the configuration again, once however often
+it is pressed while the read is under way, and the table of settings again only when the
+configuration names a printer the table lacks. The chosen filament and profile are compared by name
+(`settleChoice`); one gone is replaced by the first filament with its first profile, or by the
+filament's first profile, and a notification in amber says which, in the wizard's own words: "PETG-CF
+is no longer in the configuration." or "Fine is no longer offered for PETG.", then "The plate now
+uses PETG · Standard." The same holds when a page opens on a stored plate whose choice has gone from
+the configuration since. A shown failure of any of the three reads (a report that is not a quiet
+retry, or an answer of a shape the page cannot use, which is `wizard.bad_answer` with the fault in
+its `detail`) is a notification in red with the report's sentences; when it is `/api/me`'s, the page
+asks nothing for a group and stores nothing. Tests: `tests/opening.test.js` and
+`tests/configuration.test.js` on Node, `tests_browser/test_storage.py` in Chromium.
+
 Tests: a user with one group sees plain text and no button; a user with two sees the button,
 and the group details by each of their ways; changing group with parts shows the
 confirmation and, confirmed, clears parts, layout, settings and slice and makes a new
@@ -828,6 +863,11 @@ printer the table it holds lacks
 ([`GET /api/settings-table`](../contracts/wizard-front-server.md#get-apisettings-table)). It
 keeps the table in the page's memory only. `503`
 `front.slice_unreachable` is a quiet retry.
+
+As built: both are read as [The current group](#the-current-group) says and held in the store; a
+new plate starts with the first filament and its first profile, which the plate summary shows and
+the stored plate keeps by name. The menus, `upload_units` on the switch and the profile's value come
+with the Parts and Settings steps (items 8 and 9 of [By phase](#by-phase)).
 
 ### The profile's value of a setting
 
@@ -1200,7 +1240,8 @@ needs no worker. Every result arrives a moment after it was asked for, so each j
 yet" state (a row without its picture, an instance selected before its patches appear); a
 part's geometry is handed to the main thread as transferable buffers, so it is not copied
 twice. The page measures the longest stretch the main thread was held by a heartbeat: a 10 ms
-timer on the main thread, the hold being the longest gap between two beats, for its tests and
+timer on the main thread, the hold being the longest gap between two beats, the gap still open
+since the last beat counted too (a hold just before the measuring stops is a hold), for its tests and
 its reports ([What the wizard reports about itself](#what-the-wizard-reports-about-itself)).
 The browser's long-task timing is not the measure: in the second trial Chromium reported long
 tasks of 0.1 to 0.9 s during steps whose answers all came back in under 0.3 s while the
@@ -1208,6 +1249,33 @@ heartbeat never went more than about 15 ms between beats
 ([the trial's notes](trials/geometry/README.md)).
 Open: why Chromium's long-task timing reports those tasks; until it is known, a long-task
 figure is reported beside the heartbeat's and never counted against `MAIN_THREAD_HOLD_MS`.
+
+As built: the page starts its one worker through the worker seam (`geometryWorker` in
+`wizard/src/seams/worker.js`, a module worker from the page's own built files), and asks it
+everything through `createGeometryClient` in `wizard/src/geometry-client.js`: each question one
+message with an id, answered by its own reply whatever order the replies come in; a part's bytes
+copied to the worker and never transferred, since the page keeps them in the browser's storage and
+uploads them; and a worker that fails as a whole (its script cannot load, an error it did not catch)
+answers every question waiting, and every later one, with `wizard.layout_failed`, so no question
+waits for ever, and sends one `layout_failed` report the first time it fails
+([What the wizard reports about itself](#what-the-wizard-reports-about-itself)). The heartbeat is `createHoldMeter` in `wizard/src/hold-meter.js` (`start`, `longest`,
+`stop`), on the clock seam. The running wizard exports both (`wizard.geometry`, `wizard.holdMeter`).
+
+**A part's picture** on its row is drawn in the worker (`drawPicture` in
+`wizard/src/geometry/picture.js`), in software, without a WebGL context of its own, of which a
+browser gives a page only a few: the part as modelled, in millimetres, flat shaded in its colour
+(`PART_COLOURS`, by its place on the plate), seen as the mockup's pictures are (a camera of 30
+degrees from the direction (0.55, −0.7, 0.45), the bounding sphere fitted with a twentieth to spare,
+the mockup's sky, ground and two lights, brought down by a fixed exposure of 0.72 so a face lit by
+both is near the part's own colour rather than white), each pixel the average of 2 by 2 samples, on
+a transparent ground. It is drawn at `PICTURE_CSS_PX` (44) times the screen's density, up to three,
+and put on the page as a canvas of class `thumb`, which the mockup's style sheet sizes as
+`.part-item .thumb` (`partPicture` in `wizard/src/part-picture.js`). It takes 18 ms for
+`hub-150k.stl` on Node; in Chromium, reading a part, drawing its picture and putting it on the page
+held the main thread at most 12 ms (the heartbeat's longest gap, the open gap up to the heartbeat's
+stop included) for every kept part, `hub-150k.stl` included. Pictures of each kept part, at 88
+pixels, are in `docs/orchestration/phase-2/look/wizard-3/`, made again with `make -C wizard
+look-parts`, which prints each part's hold.
 
 All of it is written fresh: an implementer may read Orca's source to understand a method,
 and no Orca code, comment or constant name enters the repository.
@@ -1325,7 +1393,9 @@ same messages in their own thread): `read` (`key`, `buffer`, `units`; answers th
 box and the corners for drawing as a transferred `Float32Array`), `faces`, `orient` (with the
 contract's fields for the turn), `arrange` and `check` (`plateConfiguration`, `geometry` mapping
 each of its part keys to the key a part was read under, `printer` with `min`, `max` and `height`,
-and `supports`), and `forget`. Each answer is `{id, ok: true, result}` or `{id, ok: false, error}`,
+and `supports`), `picture` (`key`, `px` a whole number from `MIN_PICTURE_PX` 16 to `MAX_PICTURE_PX`
+512, `colour` a whole number `0xrrggbb`; answers `width`, `height` and `pixels`, RGBA not
+premultiplied, as a transferred `Uint8ClampedArray`), and `forget`. Each answer is `{id, ok: true, result}` or `{id, ok: false, error}`,
 the error an error report of the wizard's own:
 
 | Code | When | `message`; `remedy` |
@@ -1346,9 +1416,17 @@ close front to back in either order, and a part key that comes to point at anoth
 laying an instance on a face keeps its turn about the vertical; the sentences of each error
 report are the guide's; Arrange never changes an orientation, keeps the spacing with supports on and
 off, centres the pile, and leaves beside the plate what does not fit; each of the reader's
-refusals and each error report through the worker's messages. To be built with the page (items 7
-and 10 of [By phase](#by-phase)): a malformed STL ends in a notification the main thread shows,
-with the panel never held past 250 ms.
+refusals and each error report through the worker's messages; a part's picture (its size, its
+transparent corners, the part filling it uncut, three shades on a cube's three faces in sight, the
+same picture for a part read in inches as in millimetres, and the `picture` message's refusals), in
+`tests/geometry/picture.test.js`; the client's questions and replies, a worker failing as a whole,
+the picture's size at each density and the heartbeat, in `tests/geometry-client.test.js`, with the
+worker run in the test's own thread (`InThreadWorker` in `tests/fakes/worker.js`). In Chromium
+(`tests_browser/test_worker.py`), the page's own worker reads `pulley-v3.stl` and `hub-150k.stl` and
+draws each picture, and a malformed file of the largest size ends in `wizard.part_not_drawable`,
+each with the main thread held under 250 ms by the heartbeat on the real clock. To be built with the
+Parts step (item 8 of [By phase](#by-phase)): that report shown as the notification of a part the
+page cannot draw.
 
 ## The Preview step
 
@@ -1927,24 +2005,32 @@ shows; a page loaded from the previous release's code runs against the new fake 
 ## What the browser keeps
 
 The browser's storage is the record of a user's parts and plate; nothing on a server is. It is
-IndexedDB (*proposed*), since a page's simple key-value storage holds only a few megabytes, and every
-read and write goes through one module (*proposed* `store`) so that a refusal is handled in one
-place. Each change is written at once, so a refresh at any moment loses nothing.
+IndexedDB, since a page's simple key-value storage holds only a few megabytes: the database
+`penguinslicer`, one object store `records` keyed by strings, reached only through the storage seam
+(`openIndexedDb` in `wizard/src/seams/browser-storage.js`). Every read and write goes through one
+module, the storage module (`createStorage` in `wizard/src/storage.js`), so that a refusal is handled
+in one place. Each change is written at once, in the order asked, so a refresh at any moment loses
+nothing and the last change is the one kept.
 
 **A plate for each tab.** Each tab works with its own stored plate, keyed by its `plate_id`; a part
 added in one tab never appears in another, and one tab never writes over another's work.
 
-| Record (*proposed* names) | What it holds | Kept until |
+| Record | What it holds | Kept until |
 |---|---|---|
-| `plates/<plate_id>` | The user's `user.id` and the `group` id the plate was made in; the parts (each part's bytes exactly as they arrived, its name, units, hash and part record); the layout (each instance's part, rotation and position); the settings (filament and profile by name, every change); the slice job's id, `submission_id`, fingerprint and the time submitted; the step, and whether advanced mode is open; the time last used | The plate is dropped |
+| `plates/<plate_id>` | `format` (1); the user's `user.id` and the `group` id the plate was made in; the parts (each part's `sha256`, `units`, `name`, part `record` and whether its bytes are `saved`); the layout (`instances`: each instance's part, rotation and position); the `settings` (`filament` and `profile` by name, every change in `changes`); the `slice` (the slice job's id, `submission_id`, fingerprint and the time submitted); the `step`, and whether `advanced` mode is open; `last_used_ms` | The plate is dropped |
+| `part-bytes/<plate_id>/<sha256>.<units>` | One part's bytes, exactly as they arrived | The part is removed, or its plate dropped |
 | `uploadUnits` | How STL files are read | The user changes it; cleared with the user's work |
 | `currentGroup` | For a user in several groups outside Onshape, the current group | The same |
-| `owner` | The `user.id` the stored work belongs to | A different user signs in |
+| `owner` | The `user.id` the stored work belongs to, written at the first opening | A different user signs in |
 | `signInTrip`, `selfReload` | That a trip to Onshape, or a reload, is the page's own | The next load |
 
-A refreshed tab finds its own plate through the browser's per-tab storage (*proposed*:
-`sessionStorage` holding the `plate_id`), which survives a refresh and the page's own reload and
-dies with the tab.
+A part's bytes are a record of their own so that a change to the layout or the settings rewrites a
+few kilobytes and never the plate's parts, which may reach 190 MB. A plate whose `format` the page
+does not know, which a later release's page wrote, is left alone: never taken up, never dropped.
+
+A refreshed tab finds its own plate through its `sessionStorage` (the tab seam, `sessionTab`), whose
+`penguinslicer.plate_id` names it; it survives a refresh and the page's own reload and dies with the
+tab. A part whose bytes were not saved (below) is gone from the plate after a refresh.
 
 ### Which plate a tab shows
 
@@ -1952,22 +2038,43 @@ A newly opened tab, or a panel opened again, takes up the user's most recently u
 its current group, if it was used less than `PLATE_UNUSED_H` (12 hours) ago and no other open tab
 holds it; otherwise it starts an empty plate with a new `plate_id`. So a user who closes the panel
 and opens it again finds their plate, and a second tab beside the first gets a new plate. The tabs
-know which plates are held through a lock the browser releases when a tab closes or crashes
-(*proposed*: the Web Locks API, one lock named by each `plate_id`), so a dead tab never holds a plate
-for ever.
+know which plates are held through a lock the browser releases when a tab closes or crashes (the Web
+Locks API, through the locks seam `webLocks` in `wizard/src/seams/locks.js`: one lock,
+`penguinslicer-plate/<plate_id>`, held for as long as the tab has the plate, asked for without
+waiting), so a dead tab never holds a plate for ever. Its own plate comes first to a refreshed tab,
+unless another tab holds it, as the original of a duplicated tab does (Chrome copies the
+`sessionStorage` of a tab it duplicates): the copy then begins a plate of its own. A page served
+where the browser gives no Web Locks (plain HTTP from another machine) keeps its own plate through a
+refresh and never takes up another, since it cannot tell which are held.
 
 **When a plate is dropped.** A stored plate that no tab holds and that has not been used for 12 hours
-is dropped, checked when any page opens; a plate an open tab holds is never dropped under it. A plate
-is also dropped when the user presses New plate in its tab or changes the current group, and every
+is dropped, checked when any page opens; a plate an open tab holds is never dropped under it. A stored
+plate of the page's own format whose shape the page cannot use (its `user` or `group` not a string;
+its parts not a list, or a part not an object with a string `sha256` and `units`; its instances not a
+list; its settings missing, their `changes` not an object, or their `filament` or `profile` neither
+a name nor null; its `step` not one of the five steps; its `last_used_ms` missing or not a finite
+number; its `plate_id` not its key's) is never taken up and is dropped, unless a tab holds it, with
+one `page_failed` report for the opening; a plate of a format the page does not know, which a later
+release's page wrote, is left alone. A plate
+is also dropped when the user presses New plate in its tab or changes the current group (its records
+deleted while the tab still holds its lock, which is let go only then, so no tab opening meanwhile
+takes up a plate half deleted), and every
 stored plate, with `uploadUnits` and `currentGroup`, is cleared when `/api/me` names a different user
-from `owner`.
+from `owner`: the plates other open tabs hold are cleared too, since they are the previous user's
+work, which a page for the new user never shows.
 
 **When storage fails.** The storage must hold 25 parts of up to 7.5 MB, about 190 MB, for each tab's
 plate. When the browser refuses to store a part, because the site's allowance is full, the part is
 still added and can be sliced, with an amber line on its row: "This part could not be saved in this
-browser, so a refresh will lose it.", and a `storage_refused` report. When the browser has cleared the
-storage, the wizard opens with an empty plate and sends a `storage_cleared` report (*proposed*: known
-by an `owner` record gone while `sessionStorage` still names a plate). Open: how often either happens
+browser, so a refresh will lose it." (`PART_NOT_SAVED` in `wizard/src/sentences.js`), and one
+`storage_refused` report naming the part by its hash; its bytes are kept in the page's memory. A
+refused write of the plate itself gives one `storage_refused` report for the page, however many
+fail. A browser that will not open the storage at all gives one `storage_refused` report, and the
+page works from its memory. When the browser has cleared the
+storage, the wizard opens with an empty plate and sends a `storage_cleared` report, known by an
+`owner` record gone while the tab's `sessionStorage` still names a plate and says, by
+`penguinslicer.owner_stored`, that an earlier load of the tab found `owner` stored; so a storage the
+browser would not open on one load and opens on the next is not taken for a cleared one. Open: how often either happens
 ([Whether the browser's storage reliably holds a full plate](README.md#whether-the-browsers-storage-reliably-holds-a-full-plate));
 if refusals are common, the 12 hours or the number of plates kept may come down.
 
@@ -1982,7 +2089,33 @@ clock); a closed tab's lock is released and its plate can be taken up; a plate n
 at 12 hours and one an open tab holds is not; a different user's sign-in clears every plate; a full
 plate of 25 parts of 7.5 MB stored, the page reloaded, everything back; a refused write, caused on
 purpose by a fake storage, gives the amber line and one report; a cleared storage opens empty with one
-report.
+report; a stored plate the page cannot read is dropped with one report and never taken up; New plate
+deletes the old plate's records while still holding its lock. In Chromium, a duplicated tab (a second
+page whose `sessionStorage` names the open first page's plate) opens at once with a plate of its own,
+the first plate untouched, which proves the lock is asked for without waiting.
+
+As built, `tests/storage.test.js` runs several pages on one fake storage (`FakeRecords`), each tab
+with its own fake `sessionStorage` (`FakeTab`) and all with one fake of the browser's locks
+(`FakeLocks`, whose `closeTab` is a tab closing or crashing), in `tests/fakes/storage.js`; it reaches
+each of the tests above but the amber line, which is drawn with the part's row (item 8 of
+[By phase](#by-phase)); the module gives the row its `saved` flag and the sentence. It also reaches
+a duplicated tab, a refused write of the plate, a storage that will not open (and one that opens on
+the next load, not reported as cleared), a page without locks, each way a plate can be unreadable on
+its own and all of them at once, a different user's sign-in clearing a plate an open tab holds,
+a plate of a later format, New plate (`newPlate`, which drops the plate, bytes and all, and keeps
+the settings when asked) and a part removed with its bytes. `tests_browser/test_storage.py` runs the
+same in Chromium with the real IndexedDB, `sessionStorage` and Web Locks: several tabs of one
+browser, a refresh, a closed tab's plate taken up, `owner` stored from the start, a storage cleared
+by the browser reported once, and the full plate of 25 parts of 7,500,084 bytes stored and read back
+after a refresh (1.35 s for the test in headless Chromium on the machine without a graphics card,
+none refused). The 12 hours are the fast suite's alone, on its fake clock. That the locks seam never
+waits for a held lock is proved on an event by `tests/locks.test.js`, over a fake of
+`navigator.locks` that queues a request without `ifAvailable` as the standard does and says so; the
+duplicated tab in Chromium shows the same with the real locks. The page's entry point (`main.js`)
+joining the worker's failure and the opening's failure to the reports is reached in Chromium by
+`tests_browser/test_worker.py` (a worker script that cannot run, one `layout_failed` report) and
+`tests_browser/test_page.py` (an opening that throws, one `page_failed` report and the page marked
+failed).
 
 ## Inside Onshape's panel and in a tab
 
@@ -2082,10 +2215,19 @@ window from another origin is ignored.
 
 The page tells the front server two kinds of thing about itself, which the front server writes to the
 log ([The page's reports about itself](../contracts/wizard-front-server.md#the-pages-reports-about-itself)).
-Both go through one module (*proposed* `reports`) that holds the page to `REPORTS_PER_MIN`, sends each
-report once, and drops a report that cannot be sent or is refused (`429` `front.too_many_reports`),
-never retrying it. Each carries `page`, a random id the page makes when it loads. A page that is not
-signed in drops its reports.
+Both go through one module (`createReports` in `wizard/src/reports.js`) that holds the page to
+`REPORTS_PER_MIN` in any 60 seconds, sends each report once (one attempt, the module that makes every
+request's `once`), and drops a report that cannot be sent or is refused (`429`
+`front.too_many_reports`), never retrying it. Each carries `page`, a random id the page makes when it
+loads (a version 4 UUID, `randomId` in `wizard/src/environment.js`). A page that is not signed in
+drops its reports. As built: the failure reports, with `browser` and `browser_version` from the
+browser's brands or its user agent and `software_3d` from whether a WebGL context asked to fail on a
+major performance caveat is refused (`browserEnvironment`), asked once when the first report needs
+it; the storage's two failures send them, a stored plate the page cannot read and an opening that
+throws (`endOpening` in `wizard/src/opening.js`, which then marks the document `data-opened="failed"`)
+send `page_failed`, and a worker that fails as a whole sends `layout_failed`. The handler for every
+uncaught error and rejected promise and the drawing summaries come with item 18 of
+[By phase](#by-phase).
 
 **Failures in the browser,** `POST /api/reports/failure`: `what` one of `part_not_drawable`,
 `storage_refused`, `storage_cleared`, `drawing_context_lost`, `layout_failed` (the layout code failing
@@ -2140,10 +2282,10 @@ or is not yet in a contract:
 | Tooltip delay; printer details close | 150 ms; 300 ms | The mockup | Fake clock |
 | Quiet retrying; retrying in all | 20 s; 300 s, waits doubling 1 to 30 s | The guide | Fake clock |
 | A progress stream counted as failed | 20 s failing to reopen, 45 s open and silent | The guide | Fake clock, fake front server |
-| The main thread held | Never over 250 ms, any step, any plate up to the limits, on the machine without a graphics card | Set; unmeasured | Measured by the page in tests and real use |
+| The main thread held | Never over 250 ms, any step, any plate up to the limits, on the machine without a graphics card | Set; measured so far only for reading a part and drawing its picture: at most 12 ms in Chromium on that machine, `hub-150k.stl` included | Measured by the page in tests and real use |
 | A part's row says it is slow | 4 s | The mockup | Fake clock |
 | One part; different parts; instances | 7.5 MB (150,000 triangles); 25; 150 | The slice service's | One over each |
-| Storage in the browser | 25 parts of 7.5 MB for each tab's plate | Follows from the limits | A full plate stored and reloaded |
+| Storage in the browser | 25 parts of 7.5 MB for each tab's plate | Met for one tab in headless Chromium on the machine without a graphics card: stored and read back after a refresh, none refused; several tabs' full plates, and Chrome on the Mac, unmeasured | A full plate stored and reloaded |
 | A stored plate | Dropped after 12 hours unused, once no tab holds it | Set | Fake clock |
 | Faces found | Patches within 100 ms of selecting | Met: at most 4.1 ms for `hub-150k.stl` in the worker in Chromium on the machine without a graphics card, the faces having been found on arrival; found from nothing, 215 ms for it and at most 84 ms for a real part | The second trial, `make -C wizard trials-geometry` |
 | Auto-orient | Best way within 1 s of arriving | Met: at most 272 ms for `hub-150k.stl` from the file to its best way, faces included; at most 177 ms for a real part | The same |
@@ -2171,10 +2313,10 @@ the other components are: `wizard/` is a `uv` project of its own, with its own
 
 | Folder | What it holds |
 |---|---|
-| `wizard/src/` | The page: `index.html`, its modules, the workers' modules, the style sheets taken over from the mockup's `css/panel.css`, fonts and pictures. As built, `index.html` (the panel's markup), `favicon.svg`, `css/panel.css` and `css/wizard.css`, `main.js` (reads the version from the page's `<meta>`, joins the seams to `api.js` and the panel, exports the running wizard, marks the document started), `api.js`, `retry.js`, `sentences.js`, `state.js`, `page-constants.js`, the panel in `panel/` ([The panel as a whole](#the-panel-as-a-whole)), and the worker `geometry.worker.js` with the geometry in `geometry/` ([The geometry, in a worker](#the-geometry-in-a-worker)). The build puts every file flat in `assets/`, so no two files may share a name and an extension |
-| `wizard/src/seams/` | The seams: the only modules that may read the time or reach the network. `clock.js` (`now`, `after`, `cancel`) and `transport.js` (`send`) |
+| `wizard/src/` | The page: `index.html`, its modules, the workers' modules, the style sheets taken over from the mockup's `css/panel.css`, fonts and pictures. As built, `index.html` (the panel's markup), `favicon.svg`, `css/panel.css` and `css/wizard.css`, `main.js` (reads the version from the page's `<meta>`, joins the seams to `api.js`, the storage module, the worker and the panel, exports the running wizard, marks the document started, opens the wizard and marks it opened), `api.js`, `retry.js`, `sentences.js`, `state.js`, `page-constants.js`, `opening.js` and `configuration.js` ([The current group](#the-current-group)), `storage.js` ([What the browser keeps](#what-the-browser-keeps)), `reports.js` and `environment.js` ([What the wizard reports about itself](#what-the-wizard-reports-about-itself)), `geometry-client.js`, `part-picture.js` and `hold-meter.js`, the panel in `panel/` ([The panel as a whole](#the-panel-as-a-whole)), and the worker `geometry.worker.js` with the geometry in `geometry/` ([The geometry, in a worker](#the-geometry-in-a-worker)). The build puts every file flat in `assets/`, so no two files may share a name and an extension |
+| `wizard/src/seams/` | The seams: the only modules that may read the time or reach the network, or touch what a test replaces with a fake. `clock.js` (`now`, `after`, `cancel`), `transport.js` (`send`), `browser-storage.js` (IndexedDB's records and the tab's `sessionStorage`), `locks.js` (the Web Locks) and `worker.js` (the worker's port) |
 | `wizard/vendor/` | Third-party code kept as files, each with its release, licence and SHA-256 in [wizard/vendor/README.md](vendor/README.md) |
-| `wizard/tests/` | The tests without a browser window on Node's runner (`*.test.js`), with their fakes in `wizard/tests/fakes/`: `clock.js`, the fake clock (`advance(ms)` fires each timer at its moment and lets the page's promises settle between), and `front_server.js`, the fake front server (each request answered, held, dropped or answered without the version, in the order the test sets; its default answers the contract's examples, whole, which `tests/fake_front_server.test.js` checks) |
+| `wizard/tests/` | The tests without a browser window on Node's runner (`*.test.js`), with their fakes in `wizard/tests/fakes/`: `clock.js`, the fake clock (`advance(ms)` fires each timer at its moment and lets the page's promises settle between); `front_server.js`, the fake front server (each request answered, held, dropped or answered without the version, in the order the test sets; its default answers the contract's examples, whole, which `tests/fake_front_server.test.js` checks); `storage.js`, the fakes of the browser's storage, a tab's `sessionStorage` and the browser's locks; and `worker.js`, the worker run in the test's own thread |
 | `wizard/tests/python/` | The tools' tests, on pytest: the build, Node's version check, the trials' server and made parts, the first trial's plates, slicing client and verdicts, the vendored files' hashes and the real parts' hashes. Not `tests/tools/`: the repository's `.gitignore` ignores every folder named `tools/` |
 | `wizard/tests_browser/` | The tests that drive Chromium, with the fake front server in Python (`fake_front_server.py`, its default answers the contract's examples, which `tests/python/test_fake_front_server.py` checks in the fast suite), and `look.py`, the pictures of the panel beside the mockup's (`make -C wizard look`) |
 | `wizard/scripts/check_node.py` | Node's version check |
@@ -2225,7 +2367,13 @@ graphics card Chromium draws 3D in software. Like the other suite, they wait on 
 on a duration. As built, the fake front server serves `GET /` with the version filled in and
 the contract's exact content security policy, and `GET /assets/<file>`; the tests check the
 page runs with no error under that policy, that an inline script would be reported, that the
-page reads its version, and that it asks only for itself and its assets. It also answers
+page reads its version, and that it asks only for itself, its assets and the three reads it opens
+with (`/api/me`, `/api/configuration`, `/api/settings-table`); a test starts once the page is marked
+`data-opened`, and the requests the opening made are counted apart (`opening_requests`). The fake
+front server keeps each request's body, and serves `files` that a test's own code fetches (a part's
+STL file, which in use comes from the user's disk). A test that measures the main thread's hold
+leaves the page on the real clock (`Wizard(..., fake_clock=False)`) and waits on the worker's answer,
+an event. It also answers
 every request of phase 2 with the contract's examples (a test may set the next answers to a
 path), and marks each answer with the version and `Cache-Control` as the contract says. Time in
 the page is Playwright's fake clock (`page.clock`), installed before the page loads and paused
@@ -2284,6 +2432,7 @@ rewritten nor refused, and the content security policy is what stops it loading.
 | `test-browser` | The tests in Chromium, after `build` |
 | `build` | `wizard/dist/` from `wizard/src/` and `wizard/vendor/` |
 | `look` | After `build`: pictures of the panel as a whole beside the mockup's, at 320, 480, 520 and 680 px, into `docs/orchestration/phase-2/look/wizard-2/` with an `index.html` showing the pairs |
+| `look-parts` | After `build`: the picture of each kept part as its row will show it, at 88 pixels, drawn by the page's own worker in Chromium, into `docs/orchestration/phase-2/look/wizard-3/` (`wizard/tests_browser/look_parts.py`), printing the main thread's longest hold for each part |
 | `trials` | Both opening trials' measurements, as [How the trials and measurements are run](#how-the-trials-and-measurements-are-run) says: runs `trials-preview` and `trials-geometry`, the second even when the first fails, and fails when either does |
 | `trials-preview` | The first trial: `wizard/trials/preview/run.py` (needs the three sliced files in `wizard/trials/sliced/`, made by `wizard/trials/make_sliced_files.py`) |
 | `trials-geometry` | The second trial: `wizard/trials/geometry/run.py` |
@@ -2465,16 +2614,13 @@ The page opened directly in a browser, with the development identity and no sign
    with the Parts step.
 4. **The panel as a whole.** Built ([The panel as a whole](#the-panel-as-a-whole)), but for
    advanced mode's sections across 480 px, which come with advanced mode.
-5. **Who the user is and the configuration:** `GET /api/me`, `GET /api/configuration` with the
-   header naming `name`, the reload glyph, `GET /api/settings-table` when the page opens
-   ([The current group](README.md#the-current-group);
-   [the configuration](../contracts/configuration.md),
-   [the table of settings](../contracts/settings-table.md)).
-6. **The browser's storage:** a plate for each tab, the locks, the 12 hours, `owner` stored from the
-   start, refused and cleared storage
-   ([What the browser keeps](README.md#what-the-browser-keeps-and-why-it-is-the-record)).
-7. **The worker,** reading a binary STL and drawing a part's picture
-   ([Keeping the page answering](README.md#keeping-the-page-answering)).
+5. **Who the user is and the configuration.** Built ([The current group](#the-current-group),
+   [The configuration and the table of settings](#the-configuration-and-the-table-of-settings)).
+6. **The browser's storage.** Built ([What the browser keeps](#what-the-browser-keeps)); a refused
+   part's amber line comes with its row, in item 8.
+7. **The worker,** reading a binary STL and drawing a part's picture. Built
+   ([The geometry, in a worker](#the-geometry-in-a-worker)); the notification of a part the page
+   cannot draw comes with item 8.
 8. **The Parts step:** the upload area and its switch, part sets, one part one row, the page's own
    limits, `POST /api/parts` and each refusal and warning, a part the page cannot draw, New plate
    ([The Parts step](README.md#the-parts-step); [Parts](../contracts/wizard-front-server.md#parts),
