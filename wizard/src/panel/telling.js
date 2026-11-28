@@ -109,7 +109,8 @@ export function joinedBox({ anchor, box, within, width = 380, onClose }) {
 }
 
 // A confirmation joined to `anchor`, inside the panel `root`: resolves true when the user goes
-// ahead, false when they keep things (its button, Escape, or a click elsewhere).
+// ahead, false when they keep things (its button, Escape, or a click elsewhere). It is under its
+// control, or above it where the panel ends below.
 export function confirmation(root, anchor, { question, go, keep }) {
   return new Promise((resolve) => {
     const box = el('div', 'confirm-pop');
@@ -136,6 +137,12 @@ export function confirmation(root, anchor, { question, go, keep }) {
     box.style.width = `${width}px`;
     box.style.left = `${Math.max(6, Math.min(a.left - outer.left, outer.width - width - 6))}px`;
     box.style.top = `${a.bottom - outer.top + 4}px`;
+    // a control near the panel's foot (New plate under a long list) gets its question above it,
+    // so that the box never reaches past the panel
+    const height = box.getBoundingClientRect().height;
+    if (a.bottom + 4 + height > outer.bottom - 6 && a.top - 4 - height >= outer.top + 6) {
+      box.style.top = `${a.top - outer.top - 4 - height}px`;
+    }
     document.addEventListener('click', outside, true);
     document.addEventListener('keydown', escape, true);
     box.querySelector('.btn').focus();

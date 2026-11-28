@@ -625,10 +625,10 @@ usually refused on this step; one that passes fails the height or plate checks o
 Layout step. A row has no switch of its own: a part read in the wrong units is removed
 and added again.
 
-**New plate.** A **New plate** button on this step empties the plate: the parts, the
-layout and the slice go, and the filament, the profile and the changes stay, since the
-next plate is usually printed the same way. When the plate holds parts it asks first, in
-a confirmation: "Start a new plate? The parts and layout of this one are cleared." A
+**New plate.** A **New plate** button on this step, under the list while the plate holds
+parts, empties the plate: the parts, the layout and the slice go, and the filament, the
+profile and the changes stay, since the next plate is usually printed the same way. It asks
+first, in a confirmation: "Start a new plate? The parts and layout of this one are cleared." A
 plate that is printing goes on printing; it is then shown as a print, in the
 printer-status icon and the printer details, and no longer as this tab's plate. No count
 of plates is kept or shown.
@@ -665,6 +665,7 @@ failure of the same part replaces its notification.
 | The file is a text STL | The slice service's | That a binary STL is needed, naming the file: an STL file can be written as text or as binary, and the slice service reads only the binary kind, whose length it can check exactly. The remedy is to export the part again as a binary STL | The same |
 | The slice service's check refuses the part: too small or flat, nothing to print, or too large for the printer | The slice service's | Which part and what is wrong with it. For an uploaded file refused as too large, the notification is followed by the wizard's own reminder of how the file was read ("STL files are being read in inches."), since a file in millimetres read as inches is the likeliest cause, and the switch is beside the upload area | The same |
 | The part is over the size limit | The wizard's, since the page checks before sending | See [The limits on a plate](#the-limits-on-a-plate) | The same |
+| The browser cannot read the chosen file at all: it was moved, deleted or locked after it was chosen | The wizard's, since nothing was sent | That the file could not be read, naming it as it was chosen, so it was not added, and to check that the file is still there and add it again. The other files dropped or chosen with it are added as usual | The same |
 
 A part the slice service copes with but warns about is added, and the warning stays on its
 row, in amber, without holding Next. The warning's sentences are the slice service's. The
@@ -697,9 +698,9 @@ sentence is shown.
 
 | Limit | What it protects | What the user sees |
 |---|---|---|
-| A part is at most 7.5 MB, which is 150,000 triangles | The slice service's memory and time for one part, and the size of one upload | A notification, and the part is not added: "bracket.stl is 9.1 MB. PenguinSlicer takes parts up to 7.5 MB (150,000 triangles), so it was not added. Export it again from your CAD program at a coarser resolution." The page checks the size before uploading, so nothing is sent |
+| A part is at most 7.5 MB, which is 150,000 triangles | The slice service's memory and time for one part, and the size of one upload | A notification, and the part is not added: "bracket.stl is 9.1 MB. PenguinSlicer takes parts up to 7.5 MB (150,000 triangles), so it was not added. Export it again from your CAD program at a coarser resolution." The page checks the file's size before it even reads the file, so nothing is read or sent |
 | A plate uses at most 25 different parts | The slice service's disk, which no one plate may fill | The twenty-sixth is not added, and a notification says "A plate takes up to 25 different parts, so Gusset Plate was not added. Remove a part, or print it on a new plate." Raising the quantity of a part already in the list still works |
-| A plate holds at most 150 instances | The slice service's limit on placements | One part's quantity cannot be typed or clicked past 150. When the parts together pass it, a red message under the list says "This plate would hold 163 instances. Up to 150 instances per plate; print the rest on a new plate.", and Next is off |
+| A plate holds at most 150 instances | The slice service's limit on placements | One part's quantity cannot be typed or clicked past 150. When the parts together pass it, those still arriving counted, a red message under the list says "This plate would hold 163 instances. Up to 150 instances per plate; print the rest on a new plate.", and Next is off |
 
 For a part picked in Onshape that comes out over 7.5 MB, the notification names the part
 and says it is too detailed to slice here. Whether the Onshape integration then exports it
@@ -2238,7 +2239,8 @@ The screens designed here follow the decisions recorded in the body.
 
 ## What is to be built, by phase
 
-Of what a user sees, the panel as a whole is built, and none of the steps' contents. The
+Of what a user sees, the panel as a whole and the Parts step are built, and none of the
+other steps' contents. The
 mockup is kept in the repository as the reference for the look, and its style sheet for the
 panel is taken over whole, unchanged, as the cheap way to match it; its scripts were faked,
 and the wizard's behaviour is built from this guide
@@ -2276,9 +2278,23 @@ cleared storage to the server's log. A full plate of 25 parts of the largest siz
 stored and read back in Chromium on the machine without a graphics card with nothing
 refused. The worker reads a part's file and draws the small picture of it that its row
 will show, in software, so that even the largest part holds the page for no more than a
-hundredth of a second or so. What a step holds comes with the later items of phase 2: the
-rows that show those pictures, the amber line of a part that could not be saved, and the
-notification of a part the page cannot draw come with the Parts step. Pictures of the built
+hundredth of a second or so.
+
+The Parts step is built as this guide describes it: the upload area, taking files dropped
+or chosen, with the switch beside it that says how they are read and remembers the user's
+choice; one row for each part, with its picture, name, size in its own units, quantity and
+remove button, a thin moving bar while it is uploaded and the slow sentence after four
+seconds without an answer; the page's own three limits, checked before anything is sent; every
+refusal of the slice service shown with its own sentences, naming the part, and every warning
+on its row in amber; a part the page cannot draw refused with the wizard's own sentences and
+reported to the server's log; the amber line of a part the browser could not save; the line
+counting the plate and the red message past 150 instances; the notification of a part that
+arrives after the user has moved on; and New plate with its confirmation. A part removed, or a
+plate emptied, while its upload is still being retried has that upload stopped. A page opened
+again takes up its stored parts and uploads again any part whose upload was never answered.
+Only the joining of a part's instances to the plate waits for the Layout step. Pictures of the
+built step beside the mockup's, at four widths and in each state the mockup shows, are kept
+with the build records. Pictures of the built
 panel beside the mockup's, at four widths, are kept with the build records. For the two trials, the eight real parts
 of the Popcorn Penguins' robot are kept beside the contracts, and two made parts beside
 the trials: a round hub at the largest size a part may have (150,000 triangles) and the

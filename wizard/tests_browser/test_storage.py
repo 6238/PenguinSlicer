@@ -14,6 +14,27 @@ DEFAULT = example("configuration-default.json")
 HAND = example("configuration-hand-written.json")
 
 
+# stlOf(i): the bytes of a binary STL of 150,000 triangles, 7,500,084 bytes, a 20 by 10 by 5 mm
+# box's twelve triangles over and over, its header's first byte and its last byte `i`.
+STL_OF = """
+    const BOX = [[0,0,0, 20,10,0, 20,0,0], [0,0,0, 0,10,0, 20,10,0], [0,0,5, 20,0,5, 20,10,5], [0,0,5, 20,10,5, 0,10,5],
+                 [0,0,0, 20,0,0, 20,0,5], [0,0,0, 20,0,5, 0,0,5], [0,10,0, 20,10,5, 20,10,0], [0,10,0, 0,10,5, 20,10,5],
+                 [0,0,0, 0,0,5, 0,10,5], [0,0,0, 0,10,5, 0,10,0], [20,0,0, 20,10,0, 20,10,5], [20,0,0, 20,10,5, 20,0,5]];
+    const stlOf = (i) => {
+        const bytes = new Uint8Array(84 + 50 * 150000);
+        const view = new DataView(bytes.buffer);
+        view.setUint32(80, 150000, true);
+        for (let t = 0; t < 150000; t += 1) {
+            const tri = BOX[t % 12];
+            for (let k = 0; k < 9; k += 1) view.setFloat32(84 + 50 * t + 12 + 4 * k, tri[k], true);
+        }
+        bytes[0] = i;
+        bytes[bytes.length - 1] = i;
+        return bytes;
+    };
+"""
+
+
 def open_tab(page, server):
     return Wizard(page, server, fake_clock=False)
 
@@ -123,28 +144,36 @@ def test_a_storage_the_browser_cleared_opens_an_empty_plate_and_reports_it_once(
 
 def test_a_full_plate_of_25_parts_of_7_5_mb_is_stored_and_back_after_a_refresh(page, front_server):
     a = open_tab(page, front_server)
-    added = a.run("""
+    # Each part is a binary STL of 150,000 triangles (a box's twelve over and over), told apart by
+    # its header's first byte and its last byte, stored with its record as an uploaded part is,
+    # so that the page opening again takes all 25 up as parts that have arrived.
+    added = a.run(STL_OF + """
         const saved = [];
         for (let i = 0; i < 25; i += 1) {
-            const bytes = new Uint8Array(7500084);
-            for (let j = 0; j < bytes.length; j += 4096) bytes[j] = (i + j) & 0xff;
-            bytes[bytes.length - 1] = i;
-            saved.push((await wizard.storage.addPart({sha256: 'h' + i, units: 'mm', name: 'part ' + i}, bytes.buffer)).saved);
+            const bytes = stlOf(i);
+            const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+            const sha256 = Array.from(digest, (b) => b.toString(16).padStart(2, '0')).join('');
+            const record = {sha256, units: 'mm', measurements: {triangles: 150000, size_mm: [20, 10, 5], volume_mm3: 1000}, warnings: []};
+            saved.push((await wizard.storage.addPart({sha256, units: 'mm', name: 'part ' + i, record, quantity: 1}, bytes.buffer)).saved);
         }
         return saved;""")
     assert added == [True] * 25
     a.reload()
-    back = a.run("""
+    back = a.run(STL_OF + """
         const parts = wizard.storage.plate().parts;
         const checks = [];
         for (let i = 0; i < parts.length; i += 1) {
             const bytes = new Uint8Array(await wizard.storage.partBytes(parts[i].sha256, parts[i].units));
-            let same = bytes.length === 7500084 && bytes[bytes.length - 1] === i;
-            for (let j = 0; same && j < bytes.length; j += 4096) same = bytes[j] === ((i + j) & 0xff);
-            checks.push(same);
+            const made = stlOf(i);
+            let same = bytes.length === 7500084;
+            for (let j = 0; same && j < bytes.length; j += 4096) same = bytes[j] === made[j];
+            checks.push(same && bytes[0] === i && bytes[bytes.length - 1] === i);
         }
-        return {count: parts.length, checks, refused: parts.filter((p) => !p.saved).length};""")
-    assert back == {"count": 25, "checks": [True] * 25, "refused": 0}
+        await wizard.parts.idle();
+        return {count: parts.length, checks, refused: parts.filter((p) => !p.saved).length,
+                rows: wizard.parts.rows().filter((r) => !r.arriving && r.drawn).length};""")
+    assert back == {"count": 25, "checks": [True] * 25, "refused": 0, "rows": 25}
+    assert [path for (_, path, _) in front_server.bodies if path.startswith("/api/parts")] == []
     assert [path for (_, path, _) in front_server.bodies if path == "/api/reports/failure"] == []
 
 

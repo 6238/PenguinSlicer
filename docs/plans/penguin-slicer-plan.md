@@ -312,7 +312,8 @@ As of Fri 2026-11-27:
   and the panel as a whole (header, step tabs, panel line, plate summary, Back and Next, the
   six ways of telling, tooltips), matched to the mockup at each width; who the user is and
   the configuration, the browser's storage with a plate for each tab, and the worker's
-  reading of a part and its picture; none of the five steps' contents yet. Its state is in [its guide](../../wizard/README.md).
+  reading of a part and its picture; and the Parts step, but for its parts joining the Layout
+  step; none of the other four steps' contents yet. Its state is in [its guide](../../wizard/README.md).
 - **The front server** is being built in phase 2 (its guide says how far), and **the Onshape
   integration** has no code.
 

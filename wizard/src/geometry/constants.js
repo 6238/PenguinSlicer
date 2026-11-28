@@ -6,6 +6,7 @@
 export const MAX_PART_BYTES = 7500084;
 export const MAX_PART_TRIANGLES = 150000;
 export const MAX_INSTANCES = 150;
+export const MAX_PARTS = 25;
 
 // The placement rules (the same).
 export const MARGIN_MM = 3;

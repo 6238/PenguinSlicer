@@ -14,7 +14,9 @@
 //   settingsTable the table of settings from /api/settings-table, or null
 //   printer       the table's catalog entry of the configuration's printer (its printable area
 //                 and height), or null
-//   plate         {parts, instances, filament, filamentFull, profile, changes}
+//   plate         {parts, instances, arriving, arrivingInstances, filament, filamentFull, profile,
+//                 changes}: parts and instances count the parts that have arrived, arriving and
+//                 arrivingInstances those still arriving (parts.js)
 //   layoutProblem the Layout step's first problem, which holds Next, or null
 //   sliced        whether the plate has a sliced file
 export function createStore() {
@@ -29,7 +31,7 @@ export function createStore() {
     configName: null,
     settingsTable: null,
     printer: null,
-    plate: { parts: 0, instances: 0, filament: null, filamentFull: null, profile: null, changes: [] },
+    plate: { parts: 0, instances: 0, arriving: 0, arrivingInstances: 0, filament: null, filamentFull: null, profile: null, changes: [] },
     layoutProblem: null,
     sliced: false,
   };
