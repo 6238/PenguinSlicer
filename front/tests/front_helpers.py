@@ -86,3 +86,22 @@ def sign_in(client):
     answer = client.get("/signin")
     assert answer.status_code == 302, answer.get_data(as_text=True)
     return answer
+
+
+#: The headers of a page's request that acts for the development identity's group.
+DEV_GROUP = {"X-PenguinSlicer-Group": "dev-group", "X-PenguinSlicer-Wizard": "1"}
+
+
+def shut(app, standin=None):
+    """End what an application started: its following of slice jobs, then the stand-in's
+    streams (which ends a following thread blocked on one), then wait for the following
+    threads to end, and close the client for the slice service."""
+    ctx = app.extensions["penguin_front"]
+    follower = ctx.get("follower")
+    if follower is not None:
+        follower.stop()
+    if standin is not None:
+        standin.stop()
+    if follower is not None:
+        follower.join()
+    ctx["slice"].close()
