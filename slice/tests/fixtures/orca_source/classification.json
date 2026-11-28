@@ -1,0 +1,13 @@
+{
+    "orca_version": "9.9.9",
+    "parameters": ["layer_height", "wall_loops", "infill_density", "first_line_width", "infill_pattern", "support_on",
+                   "outer_speed", "template_text", "variant_speed", "solid_pattern", "wall_order"],
+    "programmatic": {
+        "end_gcode": "custom G-code"
+    },
+    "not_offered": {
+        "ironing_inset": "on no page of Orca's process settings",
+        "extruder_slots": "a list of values",
+        "inherits": "the profile's own bookkeeping"
+    }
+}
