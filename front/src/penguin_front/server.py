@@ -54,6 +54,32 @@ def serve(args, *, environ=None, stdout, stderr, clock=None, on_listening=None):
     follower = app.extensions[EXTENSION]["follower"]
     follower.on_count = lambda followed: server.task_dispatcher.set_thread_count(
         max(1, settings.threads - followed))
+    ctx = app.extensions[EXTENSION]
+    dispatcher = server.task_dispatcher
+    load = Load(follower=follower, streams=ctx["streams"], threads=settings.threads,
+                busy=lambda: dispatcher.active_count, log=log)
+    ctx["load_loop"] = Every(clock, LOAD_LINE_S, load.write, log, "load")
+    # The signals are taken before the start line, which is what tells a watcher the front
+    # server listens: a stop sent at that moment ends the serving as every stop does, with
+    # the stop line and what the log gathered, never by the signal's default action.
+    with _stop_on_signals() as signals:
+        try:
+            _begin(args, settings, app, log, ctx, server, on_listening)
+            server.run()
+        except KeyboardInterrupt:
+            # A stop asked before the web server ran (which takes one itself, and closes).
+            server.close()
+        finally:
+            # Once stopping, a second stop is ignored, so that the stop line and the log's
+            # writing out of what it gathered always happen; a host that will not wait ends
+            # the process outright.
+            signals.ignore()
+            _end(follower, ctx, server, log)
+    return 0
+
+
+def _begin(args, settings, app, log, ctx, server, on_listening):
+    """The start line, and everything that runs beside the web server, started."""
     log.write("start", version=app.extensions[EXTENSION]["version"], host=args.host,
               port=int(server.effective_port), threads=settings.threads,
               dev_identity=settings.dev_identity)
@@ -62,36 +88,30 @@ def serve(args, *, environ=None, stdout, stderr, clock=None, on_listening=None):
                   "in memory only, so after a restart the development identity signs in "
                   "again")
     log.start()
-    ctx = app.extensions[EXTENSION]
-    dispatcher = server.task_dispatcher
-    load = Load(follower=follower, streams=ctx["streams"], threads=settings.threads,
-                busy=lambda: dispatcher.active_count, log=log)
-    ctx["load_loop"] = Every(clock, LOAD_LINE_S, load.write, log, "load")
     ctx["collector"].start()
     ctx["gatherer"].start()
     ctx["sweeper"].start()
     ctx["load_loop"].start()
     (on_listening or _nothing)(server)
-    try:
-        with _stop_on_signals():
-            server.run()
-    finally:
-        # The slice jobs being followed are left to run; a front server started later
-        # follows them again. The web server's threads are no longer adjusted, so that a
-        # following ending now starts none after the shutdown. The pages' progress streams
-        # end, and each page opens its stream again on the front server started next; they
-        # end first, so that each is closed as `stopping`, not as its following's end.
-        follower.on_count = None
-        ctx["collector"].stop()
-        ctx["streams"].stop()
-        follower.stop()
-        ctx["sweeper"].stop()
-        ctx["gatherer"].stop()
-        ctx["load_loop"].stop()
-        server.task_dispatcher.shutdown()
-        log.write("stop")
-        log.stop()
-    return 0
+
+
+def _end(follower, ctx, server, log):
+    """The stop: everything beside the web server ended, the stop line, the log written."""
+    # The slice jobs being followed are left to run; a front server started later follows
+    # them again. The web server's threads are no longer adjusted, so that a following ending
+    # now starts none after the shutdown. The pages' progress streams end, and each page
+    # opens its stream again on the front server started next; they end first, so that each
+    # is closed as `stopping`, not as its following's end.
+    follower.on_count = None
+    ctx["collector"].stop()
+    ctx["streams"].stop()
+    follower.stop()
+    ctx["sweeper"].stop()
+    ctx["gatherer"].stop()
+    ctx["load_loop"].stop()
+    server.task_dispatcher.shutdown()
+    log.write("stop")
+    log.stop()
 
 
 def _nothing(_server):
@@ -113,6 +133,12 @@ class _stop_on_signals:
         if threading.current_thread() is threading.main_thread():  # pragma: no cover
             for sig in self.SIGNALS:
                 self._previous[sig] = signal.signal(sig, _interrupt)
+        return self
+
+    def ignore(self):
+        """From now until the block ends, `SIGINT` and `SIGTERM` do nothing."""
+        for sig in self._previous:  # pragma: no cover - the main thread only
+            signal.signal(sig, signal.SIG_IGN)
 
     def __exit__(self, *_exc):
         for sig, old in self._previous.items():  # pragma: no cover - the main thread only

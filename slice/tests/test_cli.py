@@ -27,8 +27,9 @@ class FakeServer:
 
     made = []
 
-    def __init__(self, host, port, app, threaded=False, on_serve=None):
+    def __init__(self, host, port, app, threaded=False, on_serve=None, request_handler=None):
         self.host, self.port, self.app, self.threaded = host, port, app, threaded
+        self.request_handler = request_handler
         self.server_port = port or 43210
         self.on_serve = on_serve
         self.ended = threading.Event()

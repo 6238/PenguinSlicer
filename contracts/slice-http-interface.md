@@ -82,7 +82,11 @@ process knows none of the slice jobs of the process before it, and answers them
 
 **While stopping.** From the moment the slice service is asked to stop, `POST /slices`
 answers `503` `slice.stopping` (except a repeat of a remembered submission, which is answered
-with its slice job); every other request is answered as usual until the process exits
+with its slice job, and a body that cannot be read as JSON at all — a multipart form (`400`,
+whatever its size), a body over the size cap (`413`) or one that is not JSON, nested too
+deep to read included (`400`), looked at in that order — which is refused
+`slice.bad_plate_configuration` as at any other time, since the body is read before the
+repeat is looked for); every other request is answered as usual until the process exits
 ([the slice service's details, item 14](../slice/README-details.md#phase-2-one-machine)).
 
 **Old and new versions together.** From phase 3 the front server and the slice service are
@@ -152,7 +156,7 @@ phase 2 form, `Content-Type: application/json`, at most 1,048,576 bytes, with no
 | `job` | string | The slice job's id |
 | `plate_id` | string | The plate configuration's `plate_id`, as sent |
 | `submission_id` | string | The plate configuration's `submission_id`, as sent |
-| `progress` | object | The slice job's latest [progress report](progress-report.md): for a new slice job its first, `queued` with `ahead`; for a repeat, whatever is latest |
+| `progress` | object | The slice job's latest [progress report](progress-report.md) at the moment of the answer: for a new slice job its first, `queued` with `ahead`, unless the slice has already started, as it does at once when nothing is ahead of it, and then a later one; for a repeat, whatever is latest |
 | `part_warnings` | array | The warnings found on the plate's parts when each was uploaded, in the shape of the sliced file's `part_warnings` (with `where` naming the part) |
 
 See [examples/slice-http/slice-accepted.json](examples/slice-http/slice-accepted.json).
@@ -301,7 +305,7 @@ checks and of a slice, are listed in the slice service's details file
 | `slice.no_user_key` | `400` | A request that needs the user key arrived without it, or with an empty one. A fault of the front server's; the front server answers its page `500` `front.unexpected` |
 | `slice.bad_request` | `400`, `404`, `405` | No `Content-Length` on an upload; an `after` on `GET /log` that is not a whole number; a path the interface does not offer; a method a path does not take |
 | `slice.bad_units` | `400` | An upload whose units label is missing or is neither `mm` nor `in` |
-| `slice.bad_plate_configuration` | `400`, `413` | A plate configuration that is not JSON, is multipart, breaks its form, or is over 1,048,576 bytes (`413`) |
+| `slice.bad_plate_configuration` | `400`, `413` | A plate configuration that is not JSON, is multipart, breaks its form, or is over 1,048,576 bytes (`413`; a multipart body is `400` whatever its size) |
 | `slice.stopping` | `503` | A new plate configuration while the slice service has been asked to stop; `retryable` true. Never `slice.busy` |
 | `slice.output_too_large` | in a `failed` report | The sliced file would be over 50 MB; stage `saving`, `retryable` false; its sentence is the slice service's own, and its remedy fewer instances or a new plate |
 | `slice.file_gone` | `410` | The sliced file or its summary after the sliced file was deleted, or a sliced file gone from the disk |

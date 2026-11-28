@@ -3,6 +3,8 @@ port the system chooses."""
 
 import io
 import json
+import os
+import signal
 import socket
 import threading
 
@@ -321,6 +323,99 @@ def test_a_start_with_a_cookie_key_makes_none(tmp_path, clock):
                                  PENGUIN_COOKIE_KEY="a-cookie-key-only-the-tests-use-7f3a"),
         lambda port: None)
     assert "cookie_key_made" not in [line["event"] for line in lines]
+
+
+class _NotingHandler(io.StringIO):
+    """Standard output that notes, when the `start` line is written, what a `SIGTERM` would
+    then do."""
+
+    def __init__(self):
+        super().__init__()
+        self.at_start = None
+
+    def write(self, text):
+        if self.at_start is None and '"event": "start"' in text:
+            self.at_start = signal.getsignal(signal.SIGTERM)
+        return super().write(text)
+
+
+def test_a_stop_is_heard_from_before_the_start_line(tmp_path, clock):
+    # A stop sent the moment the start line appears (a deploy, or the joined suite) must end
+    # the serving as every stop does, with its stop line and what the log gathered: so the
+    # signals are taken before the start line is written. Run in the main thread, where the
+    # front server takes them; nothing here sends a signal.
+    stdout = _NotingHandler()
+    before = signal.getsignal(signal.SIGTERM)
+    status = serve(parse_args(["serve", "--port", "0"]),
+                   environ=environ(tmp_path, PENGUIN_FRONT_THREADS="2"), stdout=stdout,
+                   stderr=io.StringIO(), clock=clock,
+                   on_listening=lambda server: threading.Thread(
+                       target=stop_server, args=(server,)).start())
+    assert status == 0
+    assert stdout.at_start not in (signal.SIG_DFL, signal.SIG_IGN, None, before)
+    assert signal.getsignal(signal.SIGTERM) == before
+    assert [json.loads(line)["event"] for line in stdout.getvalue().splitlines()][-1] == "stop"
+
+
+def test_a_stop_before_the_serving_begins_still_writes_the_stop_line(tmp_path, clock):
+    # The signal's handler raises KeyboardInterrupt wherever the main thread is; before the
+    # web server runs, that is outside it, and the stop is the same.
+    def interrupted(_server):
+        raise KeyboardInterrupt
+
+    stdout = io.StringIO()
+    try:
+        status = serve(parse_args(["serve", "--port", "0"]),
+                       environ=environ(tmp_path, PENGUIN_FRONT_THREADS="2"), stdout=stdout,
+                       stderr=io.StringIO(), clock=clock, on_listening=interrupted)
+    except KeyboardInterrupt:
+        pytest.fail("the stop escaped the front server, which wrote no stop line")
+    assert status == 0
+    events = [json.loads(line)["event"] for line in stdout.getvalue().splitlines()]
+    assert events[0] == "start" and events[-1] == "stop"
+    written = [json.loads(line)["event"] for path in sorted((tmp_path / "log").rglob("*.jsonl"))
+               for line in path.read_text().splitlines()]
+    assert written[-1] == "stop"
+
+
+class _SecondStop(io.StringIO):
+    """Standard output that, when the `stop` line is written, sends the process a second
+    `SIGTERM`, as a host or a person pressing Ctrl-C again does during a stop."""
+
+    def write(self, text):
+        written = super().write(text)
+        if '"event": "stop"' in text:
+            os.kill(os.getpid(), signal.SIGTERM)
+        return written
+
+
+def test_a_second_stop_during_the_stop_still_writes_what_the_log_gathered(tmp_path, clock, monkeypatch):
+    # The stop takes up to a few seconds (the progress streams, the followings, the web
+    # server's threads). A second SIGTERM or Ctrl-C in that time must not cut it short: the
+    # stop line and the log's writing out of what it gathered still happen. Run in the main
+    # thread, where the front server takes the signals. A second stop is sent both as the
+    # stop begins (before the first thing it ends) and at its stop line.
+    import penguin_front.server as server_module
+
+    real_end = server_module._end
+
+    def end_after_a_second_stop(*args):
+        os.kill(os.getpid(), signal.SIGTERM)
+        return real_end(*args)
+    monkeypatch.setattr(server_module, "_end", end_after_a_second_stop)
+    stdout = _SecondStop()
+    try:
+        status = serve(parse_args(["serve", "--port", "0"]),
+                       environ=environ(tmp_path, PENGUIN_FRONT_THREADS="2"), stdout=stdout,
+                       stderr=io.StringIO(), clock=clock,
+                       on_listening=lambda server: threading.Thread(
+                           target=stop_server, args=(server,)).start())
+    except KeyboardInterrupt:
+        pytest.fail("the second stop cut the stop short")
+    assert status == 0
+    written = [json.loads(line)["event"] for path in sorted((tmp_path / "log").rglob("*.jsonl"))
+               for line in path.read_text().splitlines()]
+    assert written[-1] == "stop"
 
 
 @pytest.fixture

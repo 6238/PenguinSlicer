@@ -560,10 +560,25 @@ the stopping answer of [Submitting a plate configuration](../contracts/wizard-fr
    be collected; such a file is lost with the process (`files_lost` in the last log line), and
    its slice runs again when its page submits again. A third stop changes nothing.
 
+4. **Before it exits,** after either way of stopping, `serve` waits for the answers being
+   written to finish, at most `STOP_ANSWERS_S` (10 s, *proposed*): above all the answer to
+   the `DELETE /slices/<job>/file` that drained it, which tells the front server its copy is
+   deleted; without it, the front server would ask again until a new slice service answered.
+   The count is
+   kept by the web server's request handler (`__main__.InFlight.handler`), from a
+   connection's acceptance to the end of its handling, since the development server closes
+   each connection after one answer and skips the app's `close` when its client has gone
+   away. The wait ends when the last answer ends, woken by the handler, not at the bound.
+   Answers still being written at the bound are cut, with a line
+   `slice_service_answers_cut` naming them (`answering`, `waited_s`). Tests:
+   `tests/test_serve_stop.py`, the answer that drains it (with the bound set far beyond
+   the test's backstop, so a wait that only the bound ends fails, and no
+   `slice_service_answers_cut` line) and the answer cut at the bound.
+
 The log lines: `slice_service_stopping` with `stop` 1, the ids of the waiting slice jobs it
 ended (`waiting_ended`) and whether the pool was drained at once; `slice_service_stopping`
-with `stop` 2 at a second stop; and `slice_service_stopped` with `how` (`drained` or
-`second_stop`) and `files_lost`. Past the time Railway gives a stopping container, Railway
+with `stop` 2 at a second stop; `slice_service_stopped` with `how` (`drained` or
+`second_stop`) and `files_lost`; and `slice_service_answers_cut` when answers are cut. Past the time Railway gives a stopping container, Railway
 kills the process and Orca dies with it (`PR_SET_PDEATHSIG`). Open: how long Railway gives a
 stopping container, whether it starts the new one first, and how long a new slice service
 takes to start ([Unmeasured](README.md#unmeasured)). Tests: `tests/test_jobs.py`
@@ -608,7 +623,7 @@ their stand-ins, and the whole row, all three together, in the joined suite.
 | Request | Answer |
 |---|---|
 | `POST /parts?units=mm` or `?units=in`, one binary STL as the body | 201 with the part's record (see [The part store](#the-part-store)) |
-| `POST /slices`, a phase 2 plate configuration as a JSON body | 202 with `job`, `plate_id`, `submission_id`, the first progress report (`progress`, `queued` with `ahead`) and the `part_warnings`, each naming its part; for a repeat, the same with the latest report (see [A plate's slice jobs: repeats, replacement and the places](#a-plates-slice-jobs-repeats-replacement-and-the-places)) |
+| `POST /slices`, a phase 2 plate configuration as a JSON body | 202 with `job`, `plate_id`, `submission_id`, the latest progress report when the answer is made (`progress`: its first, `queued` with `ahead`, unless the slice has already started, as it does at once when nothing is ahead of it) and the `part_warnings`, each naming its part; for a repeat, the same with the latest report (see [A plate's slice jobs: repeats, replacement and the places](#a-plates-slice-jobs-repeats-replacement-and-the-places)) |
 | `GET /slices` | `{"slices": [...]}`, every slice job this slice service process remembers, of every user key, in the order accepted; the user key is not looked at (see "The list of slice jobs" under [Progress, cancellation and cleanup](#progress-cancellation-and-cleanup)) |
 | `GET /slices/<job>` | The latest progress report |
 | `GET /slices/<job>/events` | The progress reports as `text/event-stream`, the latest first, ending with the final one |

@@ -153,6 +153,11 @@ contracts.
   that tells the wizard which document and element it is in and what is selected; and the
   export of the selected parts and the document's units, delivered to the wizard as a part
   set. Signing in is not part of it; that is the front server's.
+- **The joined suite**, in `together/`, is not a component: it runs the real front server
+  and the real slice service together on one machine, through their start commands and
+  interfaces alone. Its first half, which drives the front server's requests as the wizard
+  makes them, and one walk with the real Orca are built; its browser half waits for the
+  wizard's steps ([its README](../../together/README.md)).
 
 ```mermaid
 flowchart TB
@@ -408,8 +413,11 @@ in the wizard; the rest of it waits for phase 5.
   - The joined suite, which runs the front server and the slice service together on one
     machine and drives the wizard in a browser, through the phase's "Done when" and each
     row of the table "The slice container restarts"
-    ([Keeping it true](../architecture.md#keeping-it-true)). The front server's builder
-    writes it last.
+    ([Keeping it true](../architecture.md#keeping-it-true)). Its first half is built: the
+    two servers run together and driven over HTTP as the wizard drives them, through the
+    same walk and every row that needs no page, and one walk with the real Orca; what the
+    joining found is in [the record of the seam](../orchestration/phase-2/seam-front-slice.md).
+    The browser half is written last.
 - **Run on one machine** as
   [Running phase 2 on one machine](../../front/README-details.md#running-phase-2-on-one-machine)
   says: the start commands, each setting's default and the development identity's values.

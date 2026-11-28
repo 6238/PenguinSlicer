@@ -111,6 +111,22 @@ def test_the_answer_has_the_contracts_shape_with_the_first_progress_report(clien
     assert got["slice"]["progress"]["ahead"] == 0
 
 
+def test_a_slice_job_that_started_before_the_answer_reaches_the_page_with_its_latest_report(
+        app, client, standin):
+    # The slice service answers with its latest report, already `running` when the slice
+    # started at once (docs/orchestration/phase-2/seam-front-slice.md, mismatch 1): the page
+    # is given that report, and the following passes on only what comes after it.
+    standin.starts_at_once = True
+    got = submit(client).get_json()["slice"]
+    job = standin.jobs[got["id"]]
+    assert got["progress"] == job.progress
+    assert (got["progress"]["state"], got["progress"]["sequence"]) == ("running", 2)
+    standin.changes.wait_for(lambda: standin.open_streams(got["id"]) == 1, "the following's stream")
+    standin.report(got["id"], dict(job.progress, stage="slicing", sequence=3))
+    asked = client.get(f"/api/slices/{got['id']}", headers=DEV_GROUP).get_json()["progress"]
+    assert asked["sequence"] in (2, 3) and asked["state"] == "running"
+
+
 def test_a_user_key_in_the_body_or_headers_is_never_read(client, standin):
     answer = submit(client, plate(user_key="someone-else"),
                     headers={"X-Penguin-User-Key": "someone-else"})

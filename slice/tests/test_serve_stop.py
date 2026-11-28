@@ -83,9 +83,10 @@ def plate(submission):
             "instances": [{"ref": "box", "orientation": "+z", "angle": 0, "x": 50.0, "y": 50.0}]}
 
 
-def serve_with(tmp_path, monkeypatch, drive):
+def serve_with(tmp_path, monkeypatch, drive, on_return=lambda: None):
     """Run serve in this thread while `drive(client, log, returned)` runs in another: (exit
-    status, the log, the driver's error or None)."""
+    status, the log, the driver's error or None). `on_return` runs on the line straight after
+    serve returns, before `returned` is set and before the driver is joined."""
     servers, returned, log, failure = queue.SimpleQueue(), threading.Event(), LogWatch(), []
     real = cli.make_server
 
@@ -109,6 +110,7 @@ def serve_with(tmp_path, monkeypatch, drive):
         thread = threading.Thread(target=driver, daemon=True)
         thread.start()
         code = cli.main(["serve", "--work", str(tmp_path / "work"), "--port", "0"], stderr=log)
+        on_return()
         returned.set()
         thread.join(FAILSAFE_S)
     finally:
@@ -154,6 +156,105 @@ def test_a_stop_while_orca_runs_finishes_the_slice_and_exits_once_its_file_is_de
     assert (seen["file"], seen["listed"], seen["still_serving"]) == (200, True, True)
     assert seen["deleted"] == (200, {"job": seen["job"], "file": "deleted"})
     assert log.lines[-1] == {**log.lines[-1], "event": "slice_service_stopped", "how": "drained", "files_lost": []}
+
+
+def test_the_answer_to_the_delete_that_ends_the_drain_is_written_before_serve_returns(tmp_path, monkeypatch):
+    # Found by the joined suite: the front server's DELETE of the last sliced file drained
+    # the slice service, which exited before that DELETE's answer was written, so the front
+    # server never heard its file was stored. Here that answer is held past the drain's last
+    # line until serve either starts waiting for the answers being written or has returned,
+    # whichever comes first. A serve that waits writes it first; a serve that does not returns
+    # with it unwritten, which `on_return` sees on the line straight after serve returns.
+    #
+    # The wait must also end when that answer ends, not at its bound: the bound is set far
+    # beyond FAILSAFE_S, and the answer is released while serve holds the wait's lock, so the
+    # handler can end the answer only once serve is waiting. Only the handler's wake-up then
+    # ends the wait; without it the driver's backstop wakes serve and the test fails.
+    install_fake_orca(tmp_path, monkeypatch, "ok")
+    monkeypatch.setattr(cli, "STOP_ANSWERS_S", 3600)
+    written, release, watch, at_return, waits = threading.Event(), threading.Event(), [], [], []
+    real, real_wait_idle = cli.make_server, cli.InFlight.wait_idle
+
+    def holding(host, port, app, **kwargs):
+        def held(environ, start_response):
+            body = app(environ, start_response)
+            if environ["REQUEST_METHOD"] == "DELETE" and environ["PATH_INFO"].endswith("/file"):
+                watch[0].wait_for(event("slice_service_stopped"))
+                assert release.wait(FAILSAFE_S), "serve neither waited for the answer nor returned"
+                return _Closing(body, written)
+            return body
+        return real(host, port, held, **kwargs)
+    monkeypatch.setattr(cli, "make_server", holding)
+
+    def waiting(self, seconds):
+        waits.append(self)
+        with self._changed:                   # the handler cannot end the answer until serve waits
+            release.set()
+            return real_wait_idle(self, seconds)
+    monkeypatch.setattr(cli.InFlight, "wait_idle", waiting)
+
+    def on_return():
+        at_return.append(written.is_set())
+        release.set()
+
+    def drive(client, log, returned):
+        watch.append(log)
+        job = submitted(client, "s1")
+        client.until(job, lambda r: r["state"] == "done")
+        os.kill(os.getpid(), signal.SIGTERM)
+        log.wait_for(event("slice_service_stopping", stop=1))
+        assert client.json("DELETE", f"/slices/{job}/file") == (200, {"job": job, "file": "deleted"})
+        if not returned.wait(FAILSAFE_S):
+            with waits[0]._changed:           # the backstop: wake serve so that the test can fail
+                waits[0]._changed.notify_all()
+            raise AssertionError("serve's wait did not end when the last answer ended")
+    monkeypatch.setattr(jobs.JobPool, "start_sweeper", lambda self, *args, **kwargs: None)
+    code, log, failure = serve_with(tmp_path, monkeypatch, drive, on_return)
+    assert at_return == [True], "serve returned before the answer that drained it was written"
+    assert failure is None, failure
+    assert code == 0
+    assert not [line for line in log.lines if line.get("event") == "slice_service_answers_cut"]
+
+
+def test_an_answer_still_being_written_past_the_bound_is_cut_and_logged(tmp_path, monkeypatch):
+    install_fake_orca(tmp_path, monkeypatch, "ok")
+    monkeypatch.setattr(cli, "STOP_ANSWERS_S", 0)
+    held, releases = threading.Event(), []
+    real = cli.make_server
+
+    def holding(host, port, app, **kwargs):
+        def slow(environ, start_response):
+            if environ["PATH_INFO"] == "/settings-table":
+                held.set()
+                releases[0].wait(FAILSAFE_S)        # until serve has returned
+            return app(environ, start_response)
+        return real(host, port, slow, **kwargs)
+    monkeypatch.setattr(cli, "make_server", holding)
+
+    def drive(client, log, returned):
+        releases.append(returned)
+        threading.Thread(target=client.request, args=("GET", "/settings-table"), daemon=True).start()
+        assert held.wait(FAILSAFE_S)
+        os.kill(os.getpid(), signal.SIGTERM)
+    code, log, failure = serve_with(tmp_path, monkeypatch, drive)
+    assert failure is None, failure
+    assert code == 0
+    cut = log.wait_for(event("slice_service_answers_cut"))
+    assert (cut["answering"], cut["waited_s"]) == (["GET /settings-table"], 0)
+
+
+class _Closing:
+    """An answer's body that, once written and closed, sets `written`, then closes the body."""
+
+    def __init__(self, body, written):
+        self._body, self._written = body, written
+
+    def __iter__(self):
+        return iter(self._body)
+
+    def close(self):
+        self._written.set()
+        getattr(self._body, "close", lambda: None)()
 
 
 def test_a_waiting_slice_job_ends_with_shutdown_at_the_stop(tmp_path, monkeypatch):
