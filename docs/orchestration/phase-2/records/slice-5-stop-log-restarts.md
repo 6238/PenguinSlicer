@@ -289,7 +289,8 @@ and in [the guide](../../../../slice/README.md).
    `test_orca_names_the_pair_whose_supports_meet`, which still expected "second plate"
    (decision 6); after the fix it passed whole: 63 tests in 121 s. After the review's fixes
    and the merge of `main` it passed whole at the first run: 64 tests in 157 s, and again
-   after the second review's fixes: 64 tests in 121 s.
+   after the second review's fixes: 64 tests in 121 s, and after the third review's fixes
+   and the merge of `main`: 64 tests in 123 s.
 4. **The third review's fixes were merged without a further review.** Decisions 29 to 32
    were checked only by their own tests, the hand mutation of decision 29, the fast suite
    run twice in random order and again after merging `main`, and the real-Orca suite.
