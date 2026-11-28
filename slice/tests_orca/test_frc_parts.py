@@ -244,5 +244,5 @@ def test_orca_names_the_pair_whose_supports_meet(tmp_path, monkeypatch):
     assert report["message"] == ("Elevator_Block_Top #1 and Elevator_Block_Top #2 are too close together: the slicer "
                                  "found that their paths would meet, most likely their supports, which need more "
                                  "room between instances.")
-    assert "turn supports off" in report["remedy"] and "second plate" in report["remedy"]
+    assert "turn supports off" in report["remedy"] and "a new plate" in report["remedy"]
     assert "orca debug log: paths meet between Elevator_Block_Top #1 and Elevator_Block_Top #2" in report["detail"]
