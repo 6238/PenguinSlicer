@@ -27,7 +27,7 @@ import { createSlicing } from './slicing.js';
 import { createSettingsStep } from './panel/settings-step.js';
 import { createParts } from './parts.js';
 import { createSettings } from './settings.js';
-import { createReports } from './reports.js';
+import { createReports, watchUncaught } from './reports.js';
 import { createReloader } from './reloading.js';
 import { realClock } from './seams/clock.js';
 import { reloadPage } from './seams/location.js';
@@ -48,6 +48,9 @@ const reports = createReports({
   api, clock: realClock, page: randomId(), environment: browserEnvironment(),
   step: () => (store.get().advanced ? 'advanced' : store.get().step),
 });
+// Every error the page's code did not catch and every rejected promise nobody handled.
+watchUncaught(window, reports);
+const reportDrawing = (summary) => { reports.drawing(summary).catch(() => {}); };
 const storage = createStorage({
   openRecords: () => openIndexedDb(), locks: webLocks(), tab: sessionTab, clock: realClock, newId: () => randomId(),
   report: (what, fields) => reports.failure(what, fields),
@@ -59,8 +62,8 @@ const parts = createParts({ api, storage, geometry, store, panel, report: (what,
 const partsStep = createPartsStep(document.querySelector('section.step[data-step="parts"]'), { parts, geometry, panel, window });
 const layout = createLayout({ geometry, storage, store, parts, panel });
 const layoutStep = createLayoutStep(document.querySelector('section.step[data-step="layout"]'), {
-  layout, parts, geometry, frames: realFrames, store,
-  createView: (container, options) => createLayoutView(container, { ...options, software: softwareDrawing() }),
+  layout, parts, geometry, frames: realFrames, store, reportDrawing,
+  createView: (container, options) => createLayoutView(container, { ...options, software: softwareDrawing(), clock: realClock }),
 });
 const settings = createSettings({ store, storage });
 const settingsStep = createSettingsStep({ root: document.getElementById('wizard'), settings, store, window });
@@ -91,7 +94,7 @@ const slicing = createSlicing({
 // The result around the layer preview, and the Send step with Download as its one button.
 const result = createResult({ api, slicing, store, panel, geometry, save: saveLink });
 const previewStep = createPreviewStep(document.querySelector('section.step[data-step="preview"]'), {
-  slicing, store, clock: realClock, result, frames: realFrames,
+  slicing, store, clock: realClock, result, frames: realFrames, reportDrawing,
   createView: (container, options) => createLayerPreview(container, {
     ...options, frames: realFrames, clock: realClock, startWorker: startPreviewWorker, software: softwareDrawing(),
     printer: printerOf(store.get()) ?? undefined,

@@ -74,6 +74,15 @@ test('a move between steps reloads at once', async () => {
   assert.deepEqual(p.reloads, [0]);
 });
 
+test('the reload is marked after every listener of the move between steps has run, so the step moved to is written first', async () => {
+  const p = page();
+  await p.api.get('/api/me');
+  p.store.subscribe((state, before) => { if (state.step !== before.step) p.order.push(`written ${state.step}`); });
+  p.store.set({ step: 'layout' });
+  await p.clock.advance(0);
+  assert.deepEqual(p.order, ['written layout', 'marked', 'reload']);
+});
+
 test('a move between steps before any newer version is heard reloads nothing', async () => {
   const p = page({ serverVersion: OWN });
   await p.api.get('/api/me');

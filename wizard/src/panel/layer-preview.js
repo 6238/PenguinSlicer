@@ -371,6 +371,24 @@ export function createLayerPreview(element, {
         sliced_file_lines: data ? data.stats.sliced_file_lines : null,
       };
     },
+    // A new use of a view already shown (the Preview step opened again on the same sliced plate,
+    // at `opened` on the frame seam's clock): its frame rates and longest hold are measured afresh,
+    // and its first layer from that opening to the next frame that draws toolpaths. A view whose
+    // sliced file is still being read measures its first use already.
+    beginUse(opened = frames.now()) {
+      if (!data || failed) return;
+      stats = createFrameStats();
+      if (holds) holds.start();
+      firstLayerMs = null;
+      since = opened;
+      const first = (now, r) => {
+        if (r.segments <= 0) return;
+        watchers.delete(first);
+        firstLayerMs = frames.now() - since;
+      };
+      watchers.add(first);
+      invalidate();
+    },
     // Stops any preparation and drawing, and lets the canvas go.
     destroy() {
       destroyed = true;

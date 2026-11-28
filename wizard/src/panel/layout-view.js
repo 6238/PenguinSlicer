@@ -16,8 +16,10 @@
 import * as THREE from 'three';
 import { OrbitControls } from '../../vendor/three/examples/jsm/controls/OrbitControls.js';
 
+import { createHoldMeter } from '../hold-meter.js';
 import { PART_COLOURS } from '../page-constants.js';
 import * as W from '../layout-sentences.js';
+import { createFrameStats } from '../preview/frame-stats.js';
 
 // PenguinCAM's light theme, as the mockup's view has it.
 const COL = { background: 0xf2f4f7, accent: 0x2f81f7, danger: 0xd1242f, plate: 0xdde2e8, grid: 0xc7cfd8, grid5: 0xa9b3be, margin: 0x7d8894, volume: 0x9aa5b1, front: 0x8a96a3 };
@@ -112,7 +114,9 @@ function lights(scene) {
 //   colourOf(partKey)  the part's colour, by its place on the plate
 //   software   whether the browser draws 3D in software: then without antialiasing, which costs
 //              a software renderer several times the work of each frame
-export function createLayoutView(container, { layout, geometry, frames, colourOf, software = false }) {
+//   clock      the clock seam, for the heartbeat that measures the main thread's longest hold in
+//              each use of the view (its drawing summary)
+export function createLayoutView(container, { layout, geometry, frames, colourOf, software = false, clock = null }) {
   const canvas = document.createElement('canvas');
   canvas.className = 'gl-canvas';
   canvas.tabIndex = 0;
@@ -192,7 +196,15 @@ export function createLayoutView(container, { layout, geometry, frames, colourOf
     placeOverlays();
     renderer.render(scene, camera);
     drawn += 1;
+    stats.frame(frames.now(), moving);
   }
+
+  // ---- its drawing summary: the frames drawn while the view moves (a drag, a turn, the camera
+  // turning) and the main thread's longest hold, for each use of the view, measured as the layer
+  // preview measures its own (preview/frame-stats.js, hold-meter.js)
+  let stats = createFrameStats();
+  const holds = clock ? createHoldMeter(clock) : null;
+  let using = false;
 
   function resize() {
     const w = container.clientWidth, h = container.clientHeight;
@@ -799,6 +811,25 @@ export function createLayoutView(container, { layout, geometry, frames, colourOf
     viewPlate,
     topView,
     frames: () => drawn,
+    // A use of the view begins (the Layout step shown): its frame rates and longest hold are
+    // measured afresh.
+    beginUse() {
+      stats = createFrameStats();
+      if (holds) holds.start();
+      using = true;
+    },
+    // The use ends (the step left): the drawing summary of it (contracts/wizard-front-server.md,
+    // "POST /api/reports/drawing"), with what the view itself knows; the caller adds the
+    // machine's. Null when no use was begun.
+    endUse() {
+      if (!using) return null;
+      using = false;
+      const s = stats.summary();
+      return {
+        view: 'layout', fps_typical: s.fps_typical, fps_worst: s.fps_worst,
+        longest_hold_ms: holds ? holds.stop() : null, instances: model.instances.length,
+      };
+    },
     // The picture drawn now, read back at once (the drawing buffer is not kept between frames):
     // {width, height, pixels}, RGBA from the bottom row up.
     snapshot() {

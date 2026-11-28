@@ -105,6 +105,48 @@ test('a worker that fails as a whole sends one layout_failed report to the serve
   assert.deepEqual(reports, [{ what: 'layout_failed', detail: 'the worker failed: Failed to load the worker script' }]);
 });
 
+// The worker's answer tells its own failure from the page asking wrongly, and the client reports
+// each once: layout_failed when the geometry's code failed on a part, page_failed when the page
+// asked for something wrong; a part it cannot read is the Parts step's part_not_drawable.
+const SHA = 'a'.repeat(64);
+
+test('a question the page asked wrongly is reported as page_failed, naming the part by its hash', async () => {
+  const worker = new InThreadWorker();
+  const reports = [];
+  const geometry = createGeometryClient(worker.port, { report: (what, fields) => reports.push({ what, ...fields }) });
+  const answer = await geometry.faces(`${SHA}.mm`);
+  assert.equal(answer.ok, false);
+  assert.equal(answer.error.code, 'wizard.layout_failed');
+  assert.deepEqual(reports, [{ what: 'page_failed', part_sha256: SHA, detail: `faces: ${answer.error.detail}` }]);
+  const unknown = await geometry.ask('nothing-of-the-sort');
+  assert.equal(unknown.ok, false);
+  assert.equal(reports.at(-1).what, 'page_failed');
+  assert.equal('part_sha256' in reports.at(-1), false, 'no part concerned');
+});
+
+test('the geometry\'s code failing on a part is reported as layout_failed, the worker still answering', async () => {
+  const worker = new InThreadWorker();
+  const reports = [];
+  const geometry = createGeometryClient(worker.port, { report: (what, fields) => reports.push({ what, ...fields }) });
+  // a buffer that is no ArrayBuffer: the reading's own code throws, an error it did not foresee
+  const answer = await geometry.read(`${SHA}.in`, 'not bytes', 'in');
+  assert.equal(answer.ok, false);
+  assert.equal(answer.error.code, 'wizard.layout_failed');
+  assert.equal(reports.length, 1);
+  assert.equal(reports[0].what, 'layout_failed');
+  assert.equal(reports[0].part_sha256, SHA);
+  assert.match(reports[0].detail, /^read: TypeError: /);
+  assert.equal((await geometry.read('p-1', pulley(), 'mm')).ok, true, 'the worker goes on answering');
+});
+
+test('a part the worker cannot read is not reported by the client: the Parts step reports it as part_not_drawable', async () => {
+  const worker = new InThreadWorker();
+  const reports = [];
+  const geometry = createGeometryClient(worker.port, { report: (what, fields) => reports.push({ what, ...fields }) });
+  await geometry.read(`${SHA}.mm`, new ArrayBuffer(10), 'mm');
+  assert.deepEqual(reports, []);
+});
+
 test('a part\'s picture is drawn at the row\'s 44 px times the screen\'s density, up to three', () => {
   assert.equal(PICTURE_CSS_PX, 44);
   assert.equal(picturePx(1), 44);

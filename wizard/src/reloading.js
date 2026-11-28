@@ -43,7 +43,9 @@ export function createReloader({ api, clock, store, version, onInput, beforeRelo
     reloading = true;
     if (idleTimer !== null) clock.cancel(idleTimer);
     idleTimer = null;
-    Promise.resolve(beforeReload()).then(() => reload(), () => reload());
+    // after every listener of the move between steps has run, so that the step it moved to is among
+    // the writes the reload waits for
+    Promise.resolve().then(() => beforeReload()).then(() => reload(), () => reload());
   }
 
   // A moment has come: reload now unless a request is pending, when the end of the last one

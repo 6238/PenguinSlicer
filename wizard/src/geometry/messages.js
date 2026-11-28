@@ -185,7 +185,10 @@ export function createGeometry() {
         return { reply: { id: message.id, ok: true, result }, transfer };
       } catch (err) {
         const error = err instanceof GeometryError ? err.report : errorReport(LAYOUT_FAILED, `${err.name}: ${err.message}`);
-        return { reply: { id: message.id, ok: false, error }, transfer: [] };
+        // whose fault: the part (a part the geometry cannot read or lay out), the page (it asked
+        // for something wrong), or the geometry's own code (an error it did not foresee)
+        const fault = err instanceof GeometryError ? 'part' : err instanceof PageFault ? 'page' : 'layout';
+        return { reply: { id: message.id, ok: false, error, fault }, transfer: [] };
       }
     },
   };
