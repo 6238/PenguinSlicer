@@ -98,6 +98,44 @@ def test_a_wrong_checksum_leaves_an_earlier_source_as_it_was(tmp_path):
     assert (dest / "VERSION").read_text().startswith("9.9.9 ")
 
 
+def test_a_stamp_of_the_same_version_with_another_checksum_downloads_again(tmp_path):
+    data, seen = archive(), []
+    dest = tmp_path / "s"
+    fetch("9.9.9", digest(data), dest, opener=opener_for(data, []))
+    (dest / "VERSION").write_text(f"9.9.9 {'1' * 64}\n")
+    assert fetch("9.9.9", digest(data), dest, opener=opener_for(data, seen)) == digest(data)
+    assert len(seen) == 1 and (dest / "VERSION").read_text() == f"9.9.9 {digest(data)}\n"
+
+
+def test_a_stamp_of_the_same_version_with_another_checksum_is_verified_again(tmp_path):
+    data, seen = archive(), []
+    dest = tmp_path / "s"
+    fetch("9.9.9", digest(data), dest, opener=opener_for(data, []))
+    (dest / "VERSION").write_text(f"9.9.9 {'1' * 64}\n")
+    with pytest.raises(FetchError, match=r"checksum mismatch.*expected 0{64}"):
+        fetch("9.9.9", "0" * 64, dest, opener=opener_for(data, seen))
+    assert len(seen) == 1 and (dest / "VERSION").read_text() == f"9.9.9 {'1' * 64}\n"
+
+
+def test_a_failed_move_into_place_leaves_an_earlier_source_as_it_was(tmp_path, monkeypatch):
+    data = archive()
+    dest = tmp_path / "s"
+    fetch("9.9.9", digest(data), dest, opener=opener_for(data, []))
+    before = (dest / "VERSION").read_text()
+    new = archive("9.9.8")
+    real_rename = type(dest).rename
+
+    def failing_rename(self, target):
+        if self.name == "tree":
+            raise OSError("no space left on device")
+        return real_rename(self, target)
+    monkeypatch.setattr(type(dest), "rename", failing_rename)
+    with pytest.raises(OSError):
+        fetch("9.9.8", digest(new), dest, opener=opener_for(new, []))
+    assert (dest / "VERSION").read_text() == before
+    assert all((dest / rel).is_file() for rel in SOURCE_FILES.values())
+
+
 def test_trusting_the_download_records_its_checksum(tmp_path):
     data = archive()
     assert fetch("9.9.9", None, tmp_path / "s", opener=opener_for(data, [])) == digest(data)

@@ -178,6 +178,14 @@ class TestTheTable:
         assert coarse["infill_pattern"] == "grid" and coarse["outer_speed"] == "60" and coarse["variant_speed"] == "50"
         assert coarse["template_text"] == ""
 
+    @pytest.mark.parametrize("literal, written", [
+        ("0.1234567", "0.123457"),     # six significant digits, as Orca's ostream writes it
+        ("1234567.", "1.23457e+06"),
+        ("0.5f", "0.5"), ("0.", "0"), ("-1", "-1"), (".25", "0.25"), (100, "100")])
+    def test_a_default_is_written_with_six_significant_digits(self, literal, written):
+        from make_settings_table import _figure
+        assert _figure(literal) == written
+
     def test_the_catalog_names(self):
         catalog = table()["catalog"]
         assert catalog["printers"] == [{"name": "Test Printer 0.6 nozzle",

@@ -250,6 +250,14 @@ class TestRefused:
     def test_delete_is_a_control_character(self):
         assert "line break" in refused({"extra_solid_infills": "\x7f"}).message
 
+    @pytest.mark.parametrize("value", ["\ud800", "\udfff", "\udc80"])
+    def test_a_text_with_a_lone_surrogate(self, value):
+        # A lone surrogate is one character, so max_length does not stop it; it cannot be
+        # written as UTF-8, and the process profile Orca reads is UTF-8.
+        error = refused({"extra_solid_infills": value})
+        assert error.message == "Insert solid layers (Strength, Advanced) cannot hold a character that is not valid text."
+        assert "surrogate" in error.details
+
     @pytest.mark.parametrize("name", ["a\nb", "a\x00b", "a b", "a\x85b"])
     def test_a_name_the_table_does_not_hold_is_shown_escaped(self, name):
         message = refused({name: "1"}).message

@@ -38,6 +38,7 @@ BELOW_MESSAGE = "{setting} must be at least {bound}, not {value}."
 ABOVE_MESSAGE = "{setting} must be at most {bound}, not {value}."
 TOO_LONG_MESSAGE = "{setting} can be at most {length} characters long."
 CONTROL_MESSAGE = "{setting} cannot hold a line break or other control character."
+SURROGATE_MESSAGE = "{setting} cannot hold a character that is not valid text."
 
 FORM_WORDS = {"integer": "a whole number", "decimal": "a number", "percent": "a percentage such as 40%",
               "decimal_or_percent": "a number or a percentage"}
@@ -45,6 +46,7 @@ _DECIMAL = r"-?[0-9]+(?:\.[0-9]+)?"          # ASCII digits only: `\d` takes any
 FORMS = {"integer": re.compile(r"-?[0-9]+"), "decimal": re.compile(_DECIMAL),
          "percent": re.compile(_DECIMAL + "%"), "decimal_or_percent": re.compile(_DECIMAL + "%?")}
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+_SURROGATE = re.compile("[\ud800-\udfff]")
 
 
 class TableUnreadable(Exception):
@@ -163,6 +165,8 @@ def _problem(name, value, table):
                 f"override {name!r} has {len(value)} characters, max_length {entry['max_length']}"
         if _CONTROL.search(value):
             return CONTROL_MESSAGE.format(setting=setting), f"override {name!r} holds a control character"
+        if _SURROGATE.search(value):         # no UTF-8 for it: the process profile could not be written
+            return SURROGATE_MESSAGE.format(setting=setting), f"override {name!r} holds a lone surrogate"
     else:
         form = entry["number_form"]
         figure = value[:-1] if value.endswith("%") else value

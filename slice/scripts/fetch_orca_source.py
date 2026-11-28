@@ -117,8 +117,17 @@ def fetch(version, sha, dest=SOURCE_DIR, *, opener=None, cache=None):
         if cached and not cached.is_file():
             cached.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(archive, cached)
-        shutil.rmtree(dest, ignore_errors=True)
-        tree.rename(dest)
+        # The earlier source moves aside first and is removed only once the new tree is in
+        # place, so a failed move leaves it as it was.
+        earlier = work / "earlier"
+        if dest.exists():
+            dest.rename(earlier)
+        try:
+            tree.rename(dest)
+        except OSError:
+            if earlier.exists():
+                earlier.rename(dest)
+            raise
         return actual
     finally:
         shutil.rmtree(work, ignore_errors=True)

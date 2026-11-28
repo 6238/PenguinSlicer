@@ -7,7 +7,8 @@ import zipfile
 
 import pytest
 
-from helpers import PLATE_ID, SUBMISSION_ID, pinned_orca_version, sha256
+from fetch_orca_source import pinned
+from helpers import INSTALL_ORCA, PLATE_ID, SUBMISSION_ID, pinned_orca_version, sha256
 from make_settings_table import SOURCE_DIR, SOURCE_FILES, TableError, build_table, dumps, read_process_options
 from penguin_slice.settings_table import CLASSIFICATION_PATH, TABLE_PATH
 from penguin_slice.slicer import SAMPLE_STL
@@ -24,6 +25,7 @@ def test_the_source_is_the_pinned_versions():
     """Protects: the table is read from the source of the Orca version that is pinned."""
     stamp = (SOURCE_DIR / "VERSION").read_text().split()
     assert stamp[0] == pinned_orca_version(), "run `make -C slice orca-source`"
+    assert stamp[1] == pinned(INSTALL_ORCA.read_text())[1], "run `make -C slice orca-source`"
     for rel in SOURCE_FILES.values():
         assert (SOURCE_DIR / rel).is_file(), rel
 

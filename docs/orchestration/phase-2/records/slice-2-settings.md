@@ -91,6 +91,15 @@ What was built is described in
 8. **A text may hold no control character.** The contract gives only the length. Chosen:
    also refuse `\x00` to `\x1f` and `\x7f`, so no line break can reach the G-code header
    Orca writes the settings into. To overrule: drop `_CONTROL` in `settings_table.py`.
+   Third review: a lone surrogate (U+D800 to U+DFFF, sent as a JSON `\ud800` escape) is one
+   character, so `max_length` 1 let it through, and writing the process profile as UTF-8
+   then failed the slice job as `slice.unexpected`. It is now refused before Orca runs with
+   `slice.bad_overrides`, "Insert solid layers (Strength, Advanced) cannot hold a character
+   that is not valid text." (`SURROGATE_MESSAGE`, `_SURROGATE`), tested by
+   `test_a_text_with_a_lone_surrogate`, seen to fail before the fix. Only text settings
+   need it: a choice must equal one of Orca's values and a number must match ASCII digits,
+   both of which a surrogate never does. To overrule: drop `_SURROGATE`, or write the
+   profile with `errors="surrogateescape"` in `print_config`.
 9. **A text's `max_length` over the process values.** "The length of its longest value in
    the profile catalog, never less than 1": taken over each process profile's value, its
    own or Orca's default. No catalog profile gives the four text settings a value, so each
@@ -177,6 +186,25 @@ What was built is described in
     lists every parameter setting and the table of settings; this batch built them.
 26. **Second review finding 10 (the "Ask a mentor" remedy)** agrees with decision 17;
     nothing changed.
+27. **Third review: the checksum half of the source's stamp.** The fetch already compared
+    the whole stamp, version and checksum, but no test held the checksum half. Added
+    `test_a_stamp_of_the_same_version_with_another_checksum_downloads_again` and
+    `..._is_verified_again` (a stamp of the right version and another checksum downloads
+    again, and is refused when the download does not match the pin), both seen to fail
+    under the mutation `.read_text().startswith(version)`; the upstream
+    `test_the_source_is_the_pinned_versions` now also asserts the stamp's checksum is
+    `SHA_SOURCE`. No code changed.
+28. **Third review: six significant digits.** `test_a_default_is_written_with_six_significant_digits`
+    tests `make_settings_table._figure` directly (`0.1234567` is `0.123457`, `1234567.` is
+    `1.23457e+06`), seen to fail with `.7g`.
+29. **Third review: a failed move of the new source into place.** `fetch` removed the
+    earlier source before renaming the new tree into place, so a failed rename lost it.
+    Now the earlier source is moved aside into the work folder, the new tree moved in, and
+    the earlier one moved back if that fails; the work folder is removed either way.
+    `test_a_failed_move_into_place_leaves_an_earlier_source_as_it_was`, seen to fail first.
+30. **Third review minor finding 3 (the `slice.unexpected` remedy says "ask a mentor")**
+    declined for the reason of decision 17: the words are in eight remedies from before
+    this batch, and the surrogate no longer reaches that remedy.
 
 ## Targets missed
 
@@ -196,6 +224,8 @@ What was built is described in
 4. **"Fails at once, not inside Orca" holds only for the table's own bounds.** A value Orca
    refuses against another setting (`layer_height` `"50"`) is refused only by Orca, as
    `slice.orca_failed` with the generic sentence; see decision 24.
+5. **The third review's fixes (decisions 8, 27 to 30) were merged without a further
+   review.** That round was the last; no one who did not write them checked them.
 
 ## Not done
 

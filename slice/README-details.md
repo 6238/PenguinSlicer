@@ -1059,8 +1059,11 @@ SHA-256 of GitHub's archive of the version's tag
 generator reads (`make_settings_table.SOURCE_FILES`: `src/libslic3r/Preset.cpp`,
 `src/libslic3r/PrintConfig.cpp`, `src/slic3r/GUI/Tab.cpp`, 1.2 MB) in `tools/orca-source/`
 with a `VERSION` stamp of the version and the checksum. It is idempotent: a stamp that
-records the pin downloads nothing. A wrong checksum, an archive that is not a `.tar.gz` or
-that lacks one of the three files keeps nothing new and leaves an earlier source as it was;
+records the pin, its version and its checksum both, downloads nothing; a stamp of the same
+version with another checksum is fetched and verified again. A wrong checksum, an archive
+that is not a `.tar.gz` or that lacks one of the three files keeps nothing new and leaves an
+earlier source as it was; the earlier source is moved aside and removed only once the new
+one is in place, so a failed move leaves it as it was too;
 the members are read by name and written by the script, never extracted, so no path in the
 archive is followed. `PENGUIN_SLICE_ORCA_CACHE` keeps each verified archive as
 `OrcaSlicer-<version>.tar.gz` and reuses it, verified against the pin like a download: a
@@ -1153,8 +1156,10 @@ the checks). Each value is checked against its entry before Orca runs:
   `percent` a decimal with `%`; `decimal_or_percent` either; at most 40 characters
   (`MAX_NUMBER_CHARS`); then
   within `min` and `max` where the entry has them, a percentage's figure in percent;
-- a text must be no longer than its `max_length` and hold no control character (`\x00` to
-  `\x1f`, `\x7f`).
+- a text must be no longer than its `max_length`, hold no control character (`\x00` to
+  `\x1f`, `\x7f`) and no lone surrogate (U+D800 to U+DFFF, which a JSON `\ud800` escape
+  can carry and UTF-8 cannot write): "Insert solid layers (Strength, Advanced) cannot hold
+  a character that is not valid text."
 
 Every process profile's own value of every setting passes these checks. A setting the
 table does not hold, or a value that does not fit, refuses the plate configuration with
@@ -1205,8 +1210,9 @@ settings Orca writes into the sliced file (`Metadata/project_settings.config`).
 with a classification) and `tests/fixtures/settings_catalog/`: every reader, every kind and
 form, the order, the process values (own, default, a list's first, a variant's), the
 catalog, and each refusal named. `tests/test_fetch_orca_source.py` fetches a made-up
-archive: verified, idempotent, cached, a wrong checksum or a missing file keeping nothing,
-no member outside its folder written. `tests/test_settings_table.py` holds the checked-in
+archive: verified, idempotent, a stamp with another checksum fetched again, cached, a wrong
+checksum, a missing file or a failed move keeping nothing new, no member outside its folder
+written. `tests/test_settings_table.py` holds the checked-in
 table to its contract (each entry's fields for its kind, every process profile in
 `process_values` with every setting, each profile's own value accepted, nothing
 programmatic and no filament or printer setting, the catalog's names, the contract's
