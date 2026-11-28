@@ -34,6 +34,10 @@ const TAB_PLATE = 'penguinslicer.plate_id';
 // Set in the tab once the storage holds `owner`: only then does a missing `owner` mean the
 // storage was cleared, and not that the browser would not open it on an earlier load.
 const TAB_STORED = 'penguinslicer.owner_stored';
+// Set in the tab just before the page reloads itself for a new version, and cleared by the next
+// load, which then says nothing (wizard/README-details.md, "Reloading for a new version"). In the
+// tab and not in the shared records, so that another tab opening at that moment never takes it.
+const TAB_SELF_RELOAD = 'penguinslicer.self_reload';
 const PLATES = 'plates/';
 const BYTES = 'part-bytes/';
 const CHOICES = ['uploadUnits', 'currentGroup'];
@@ -142,12 +146,15 @@ export function createStorage({ openRecords, locks, tab, clock, newId, report })
 
   return {
     // Opens the storage for `user` and gives the tab its plate and its current group:
-    //   {plate, group}
+    //   {plate, group, selfReload}
+    // selfReload: this load is the page's own reload for a new version (markSelfReload), told once.
     // `groups` is /api/me's list: the tab's own plate keeps its group while the user has it, a new
     // tab starts in the stored current group when the user has it, and otherwise in the first.
     async begin({ user, groups }) {
       const has = (id) => groups.some((g) => g.id === id);
       const now = clock.now();
+      const selfReload = tab.get(TAB_SELF_RELOAD) === '1';
+      if (selfReload) tab.set(TAB_SELF_RELOAD, '');
       try {
         records = await openRecords();
       } catch (err) {
@@ -220,7 +227,14 @@ export function createStorage({ openRecords, locks, tab, clock, newId, report })
       }
       tab.set(TAB_PLATE, plate.plate_id);
       await writePlate();
-      return { plate: structuredClone(plate), group };
+      return { plate: structuredClone(plate), group, selfReload };
+    },
+
+    // Notes in the tab that the page is about to reload itself, and resolves once every write
+    // asked for so far is done, so that the reloaded page finds the plate as this one left it.
+    async markSelfReload() {
+      tab.set(TAB_SELF_RELOAD, '1');
+      await writing;
     },
 
     // The tab's plate as it stands, in memory.

@@ -47,8 +47,9 @@ export async function endOpening(opening, { report, mark }) {
   }
 }
 
-// openWizard({api, store, panel, storage}) resolves to {opened}, false when /api/me could not
-// be used (its report is shown, and nothing is asked or stored for a group).
+// openWizard({api, store, panel, storage}) resolves to {opened, selfReload}: opened false when
+// /api/me could not be used (its report is shown, and nothing is asked or stored for a group);
+// selfReload true when this load is the page's own reload for a new version, which says nothing.
 export async function openWizard({ api, store, panel, storage }) {
   const tell = (report, key) => panel.notify({ kind: 'error', what: report.message, todo: report.remedy, key });
 
@@ -99,7 +100,7 @@ export async function openWizard({ api, store, panel, storage }) {
     return { opened: false };
   }
   const { user, groups } = me.body;
-  const { plate, group } = await storage.begin({ user: user.id, groups });
+  const { plate, group, selfReload = false } = await storage.begin({ user: user.id, groups });
   store.set({
     user, groups, group, plateId: plate.plate_id, step: plate.step,
     plate: {
@@ -121,5 +122,5 @@ export async function openWizard({ api, store, panel, storage }) {
 
   await readConfiguration();
   await table;
-  return { opened: true };
+  return { opened: true, selfReload };
 }

@@ -123,9 +123,12 @@ export const STILL_HERE_NOTICE = 'sliced-plate-still-here';
 //   mode      'stream' (the default) or 'ask': how a slice job is followed
 //   ready()   resolves once the plate can be read as it stands (the page opened, the Layout step's
 //             work done); by default layout.idle()
+//   back()    resolves to {quiet} when the page has opened on a stored plate it comes back to
+//             (quiet: the page's own reload for a new version, which says nothing), or to null when
+//             there is nothing to come back to (the opening failed); by default null
 export function createSlicing({
   api, clock, storage, store, settings, layout, panel, report, newId, random = Math.random, mode = 'stream', follow = followJob,
-  ready = () => layout.idle(),
+  ready = () => layout.idle(), back = () => Promise.resolve(null),
 }) {
   let run = 0;                  // moves on each time the page decides to slice; older work stops
   let current = null;           // {id, submissionId, fingerprint, submittedMs, body}
@@ -490,9 +493,115 @@ export function createSlicing({
     startFollowing(mine);
   }
 
+  // ---- coming back (wizard/README-details.md, "When a user comes back")
+  // The run that coming back left on the Preview step, which the first entering of the step keeps
+  // as it is (a failure, the expired message), rather than submitting the plate again.
+  let backRun = null;
+  let coming = null;
+
+  const isProgress = (r) => r !== null && typeof r === 'object' && typeof r.state === 'string' && Number.isInteger(r.sequence);
+
+  // The page has opened on a stored plate: it asks about the plate's slice job, when the plate has
+  // one of the plate as it stands, and opens where the user will want to be. The rows of the
+  // details' table, tried in order; the printer's row comes in phase 5.
+  async function comeBack({ quiet }) {
+    const stored = store.get().step;
+    const kept = storage.plate().slice;
+    const built = make('probe');
+    const usable = kept && typeof kept.id === 'string' && ID.test(kept.id) && Number.isFinite(kept.submitted_ms)
+      && built.configuration && kept.fingerprint === fingerprint(built.configuration);
+    // Parts, and no slice job: the stored step, with nothing said. The Send step without the sliced
+    // plate has nothing to show: the Preview step, which slices it.
+    if (!usable) {
+      if (stored === 'send') store.set({ step: 'preview' });
+      return;
+    }
+    run += 1;
+    const mine = run;
+    lastSequence = -Infinity;
+    current = { id: kept.id, submissionId: kept.submission_id, fingerprint: kept.fingerprint, submittedMs: kept.submitted_ms, body: built.configuration };
+    const path = `/api/slices/${encodeURIComponent(kept.id)}`;
+    const answer = await api.get(path);
+    if (mine !== run) return;          // the page decided something newer meanwhile
+    // The Preview step, unless the page reloaded itself, which reopens on the step it was on.
+    const toPreview = () => { if (!quiet && store.get().step !== 'preview') store.set({ step: 'preview' }); };
+    const say = (what) => { if (!quiet) panel.notify({ kind: 'info', what, todo: '', key: T.BACK_NOTICE }); };
+    const took = () => { backRun = run; };
+    // The sliced file has expired: the step as it was; on the Preview and Send steps the expired
+    // message with Slice again, and from an earlier step entering the Preview step slices.
+    const expiredBack = (r) => {
+      expire(r);
+      if (stored === 'preview' || stored === 'send') took();
+    };
+    if (!answer.ok) {
+      const r = answer.report;
+      if (r.code === 'front.slice_unknown') {
+        // by the time the page kept when it submitted: a slice service that restarted, or expired
+        if (clock.now() - current.submittedMs < SLICED_FILE_KEEP_S * 1000) {
+          toPreview();
+          slice({ restarted: true });
+          took();
+        } else expiredBack(null);
+      } else if (r.code === EXPIRED_CODE) expiredBack(r);
+      else { toPreview(); fail(r); took(); }
+      return;
+    }
+    const r = answer.body && answer.body.progress;
+    if (!isProgress(r) || (typeof r.job === 'string' && r.job !== current.id)) {
+      toPreview();
+      fail(badAnswer(path, answer.status, JSON.stringify(answer.body)));
+      took();
+      return;
+    }
+    if (r.state === 'queued' || r.state === 'running') {
+      toPreview();
+      newCard({ since: clock.now(), restarted: false });
+      show({ kind: 'card' });
+      onReport(mine, r);
+      startFollowing(mine);
+      say(T.BACK_SLICING);
+    } else if (r.state === 'done') {
+      toPreview();
+      onReport(mine, r);
+      say(T.BACK_SLICED);
+    } else if (r.state === 'failed') {
+      if (isErrorReport(r.error) && r.error.code === EXPIRED_CODE) { expiredBack(r.error); return; }
+      toPreview();
+      onReport(mine, r);
+    } else if (r.state === 'cancelled') {
+      // asked to stop before it ran: submitted again by itself, the card saying the slicer
+      // restarted; replaced by a later slice job the stored plate does not name (its acceptance
+      // was lost to the refresh): the plate as it stands submitted again
+      toPreview();
+      slice({ restarted: r.cancel_reason === 'shutdown' });
+    } else {
+      toPreview();
+      fail(badAnswer(path, answer.status, JSON.stringify(answer.body)));
+    }
+    took();
+  }
+
+  function cameBack() {
+    if (!coming) {
+      coming = (async () => {
+        const how = await back();
+        if (!how) return;
+        await ready();
+        await comeBack(how);
+      })();
+    }
+    return coming;
+  }
+
   async function enter() {
     await ready();
+    await cameBack();
     if (store.get().step !== 'preview') return;        // left again before the plate could be read
+    if (backRun !== null) {
+      const left = backRun;
+      backRun = null;
+      if (left === run) return;                        // as coming back left it
+    }
     const built = make('probe');
     if (!built.configuration) {
       run += 1;
@@ -517,6 +626,8 @@ export function createSlicing({
   store.subscribe((state, before) => {
     if (state.step === 'preview' && before.step !== 'preview') enter();
   });
+  // The page comes back to its stored plate once it has opened, whatever step it opens on.
+  cameBack();
 
   function cardModel(now) {
     const c = card;

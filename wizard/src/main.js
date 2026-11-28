@@ -28,7 +28,9 @@ import { createSettingsStep } from './panel/settings-step.js';
 import { createParts } from './parts.js';
 import { createSettings } from './settings.js';
 import { createReports } from './reports.js';
+import { createReloader } from './reloading.js';
 import { realClock } from './seams/clock.js';
+import { reloadPage } from './seams/location.js';
 import { webLocks } from './seams/locks.js';
 import { openIndexedDb, sessionTab } from './seams/browser-storage.js';
 import { fetchTransport } from './seams/transport.js';
@@ -78,10 +80,13 @@ const opened = openWizard({ api, store, panel, storage }).then(async (outcome) =
 });
 // The Preview step: submitting and following a plate, and every slice failure; the plate is
 // read as it stands once the page has opened and the Layout step's work is done.
+// Coming back: once opened on a stored plate, the page asks about its slice job and opens where the
+// user will want to be, saying nothing after its own reload for a new version.
 const slicing = createSlicing({
   api, clock: realClock, storage, store, settings, layout, panel, newId: () => randomId(),
   report: (what, fields) => reports.failure(what, fields),
   ready: () => opened.then(() => layout.idle()),
+  back: () => opened.then((outcome) => (outcome.opened ? { quiet: Boolean(outcome.selfReload) } : null)),
 });
 // The result around the layer preview, and the Send step with Download as its one button.
 const result = createResult({ api, slicing, store, panel, geometry, save: saveLink });
@@ -97,12 +102,25 @@ const sendStep = createSendStep(document.querySelector('section.step[data-step="
 // a change to the plate makes a sliced plate unsliced, until it is the sliced plate again
 for (const source of [layout, settings, parts, store]) source.subscribe(() => slicing.plateChanged());
 
+// Reloading for a new version: at a move between steps, or after RELOAD_IDLE_S without input, once
+// no request is pending; the reload is noted as the page's own first.
+const reloader = createReloader({
+  api, clock: realClock, store, version,
+  onInput: (listener) => {
+    for (const type of ['pointermove', 'pointerdown', 'keydown', 'wheel', 'scroll']) {
+      window.addEventListener(type, listener, { capture: true, passive: true });
+    }
+  },
+  beforeReload: () => storage.markSelfReload(),
+  reload: () => reloadPage(),
+});
+
 const opening = endOpening(opened, {
   report: (what, fields) => reports.failure(what, fields),
   mark: (how) => { document.documentElement.dataset.opened = how; },
 });
 
-export const wizard = { version, store, api, panel, storage, reports, geometry, holdMeter, parts, partsStep, layout, layoutStep, settings, settingsStep, slicing, result, previewStep, sendStep, opening };
+export const wizard = { version, store, api, panel, storage, reports, geometry, holdMeter, parts, partsStep, layout, layoutStep, settings, settingsStep, slicing, result, previewStep, sendStep, opening, reloader };
 
 document.documentElement.dataset.version = version;
 document.documentElement.dataset.started = 'true';

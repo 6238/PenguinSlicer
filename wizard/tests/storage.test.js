@@ -447,3 +447,32 @@ test('a write after another waits its turn, so the last change is the one kept',
   await Promise.all(writes);
   assert.equal(b.records.value(`plates/${a.plate.plate_id}`).step, 'preview');
 });
+
+// ---- the page's own reload (wizard/README-details.md, "Reloading for a new version")
+
+test('a reload marked as the page\'s own is told to the next load of that tab alone, once, after every write asked for before it', async () => {
+  const b = browser();
+  const a = await openTab(b, 'A');
+  const other = await openTab(b, 'B');
+  assert.equal(a.selfReload, false, 'a first opening is no reload of the page\'s own');
+  a.storage.update({ step: 'layout' });
+  await a.storage.markSelfReload();
+  assert.equal(b.records.value(`plates/${a.plate.plate_id}`).step, 'layout', 'the step was written before the reload');
+  const reloaded = await refresh(b, a);
+  assert.equal(reloaded.selfReload, true);
+  assert.equal(reloaded.plate.plate_id, a.plate.plate_id);
+  assert.equal(reloaded.plate.step, 'layout');
+  const tabB = await refresh(b, other);
+  assert.equal(tabB.selfReload, false, 'another tab\'s load is not this tab\'s reload');
+  const again = await refresh(b, reloaded);
+  assert.equal(again.selfReload, false, 'the next load clears it: a refresh after is the user\'s');
+});
+
+test('a reload marked while the browser will not open the storage is still told to the next load', async () => {
+  const b = browser();
+  b.records.unavailable = true;
+  const a = await openTab(b, 'A');
+  await a.storage.markSelfReload();
+  const reloaded = await refresh(b, a);
+  assert.equal(reloaded.selfReload, true);
+});
