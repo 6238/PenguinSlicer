@@ -178,6 +178,9 @@ def events(slice):  # noqa: A002 - the contract's name for the path's part
         if first.get("state") in FINAL_STATES:
             closing["why"] = "final"
             return
+        # The fifteen seconds count from the last thing sent, so that a wake that sends
+        # nothing (a report already sent) does not put the comment line off.
+        sent_at = clock.now()
         while True:
             stream.wakeup.clear()
             for report in stream.take():
@@ -188,14 +191,17 @@ def events(slice):  # noqa: A002 - the contract's name for the path's part
                     continue
                 last = report.get("sequence", 0)
                 yield event("progress", report, last)
+                sent_at = clock.now()
                 if report.get("state") in FINAL_STATES:
                     closing["why"] = "final"
                     return
             if stream.ended is not None:
                 closing["why"] = stream.ended
                 return
-            if not clock.sleep(PROGRESS_KEEPALIVE_S, stream.wakeup):
+            quiet = max(0, sent_at + PROGRESS_KEEPALIVE_S - clock.now())
+            if not clock.sleep(quiet, stream.wakeup):
                 yield KEEPALIVE
+                sent_at = clock.now()
 
     def closed():
         if stream is None or closing["done"]:

@@ -380,6 +380,24 @@ def test_stopping_ends_every_stream(app, client, standin, log):
     assert streams(app).open(USER, "j9") is None
 
 
+def test_a_final_report_given_between_the_answer_and_the_subscription_is_sent_and_closes(
+        app, client, standin, monkeypatch):
+    from penguin_front.following import Subscription
+
+    running_job(standin, "j1")
+    follower = context(app)["follower"]
+    real = follower.subscribe
+    final = dict(running("j1", 6), state="cancelled", cancel_reason="replaced")
+
+    def subscribe(user_key, job, deliver):
+        return Subscription(final, real(user_key, job, deliver).cancel)
+
+    monkeypatch.setattr(follower, "subscribe", subscribe)
+    reader = open_stream(client, "j1")
+    reader.wait_for_end()
+    assert reader.progress() == [final]
+
+
 def test_a_subscription_refused_because_the_following_ended_sends_the_report_and_closes(
         app, client, standin, monkeypatch):
     running_job(standin, "j1")

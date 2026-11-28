@@ -27,6 +27,7 @@ from werkzeug.exceptions import HTTPException, MethodNotAllowed, NotFound
 
 from . import asking, configuration, identity, pages, parts, settings_table, slices, streams
 from .streams import Streams
+from .sweep import Sweeper
 from .answers import json_body, page_file, target_path as _path  # noqa: F401 - used by tests
 from .buckets import FolderBucket
 from .context import EXTENSION
@@ -75,6 +76,10 @@ def create_app(settings, *, clock, log, version=None, state_bucket=None, slice_c
     ctx["follower"] = Follower(clock=clock, slice_client=ctx["slice"],
                                bucket=ctx["state_bucket"], log=log)
     ctx["streams"] = Streams(clock)
+    # Started by the running server (`server.serve`), not here: an application built for a
+    # test sweeps only when the test asks.
+    ctx["sweeper"] = Sweeper(clock=clock, bucket=ctx["state_bucket"],
+                             follower=ctx["follower"], log=log)
     for part in (pages, identity, configuration, settings_table, parts, slices, asking,
                  streams):
         part.register(app)

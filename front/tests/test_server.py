@@ -142,6 +142,40 @@ def test_each_following_of_a_slice_job_is_counted_among_the_threads(tmp_path, cl
     assert lines[0]["threads"] == threads
 
 
+def test_the_running_server_sweeps_and_writes_how_full_it_is_once_a_minute(tmp_path, clock,
+                                                                          monkeypatch):
+    from front_helpers import nobody_listens
+    from penguin_front import server as served
+
+    built = []
+    real_build = served.build
+
+    def keep(*args, **kwargs):
+        built.append(real_build(*args, **kwargs))
+        return built[-1]
+
+    monkeypatch.setattr(served, "build", keep)
+
+    def use(_port):
+        ctx = built[0][0].extensions["penguin_front"]
+        ctx["sweeper"].every.wait_for_runs(1)
+        ctx["load_loop"].wait_for_runs(1)
+        clock.wait_for_sleepers(3)  # the log's minute, the sweep and the line, all waiting
+        clock.advance(60)
+        ctx["load_loop"].wait_for_runs(2)
+
+    lines, result, _port = run_served(
+        tmp_path, clock, environ(tmp_path, PENGUIN_FRONT_THREADS="3",
+                                 PENGUIN_SLICE_URL=nobody_listens()), use)
+    assert result == [0]
+    loads = [line for line in lines if line["event"] == "load"]
+    assert len(loads) == 2
+    assert loads[0]["threads"] == 3 and loads[0]["slices_followed"] == 0
+    assert loads[0]["streams_open"] == 0 and loads[0]["threads_in_use"] >= 0
+    assert [line["event"] for line in lines].count("sweep") == 1
+    assert lines[-1]["event"] == "stop"
+
+
 def test_a_start_without_a_cookie_key_makes_one_and_says_so_after_the_start_line(tmp_path,
                                                                                  clock):
     lines, result, _port = run_served(

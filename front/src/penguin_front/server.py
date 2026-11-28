@@ -16,6 +16,8 @@ from waitress import wasyncore
 from .app import EXTENSION, create_app
 from .buckets import FolderBucket
 from .clock import RealClock
+from .every import Every
+from .load import LOAD_LINE_S, Load
 from .log import Log, line_text, utc_milliseconds
 from .settings import Settings, SettingError
 from .version import version_at
@@ -60,6 +62,13 @@ def serve(args, *, environ=None, stdout, stderr, clock=None, on_listening=None):
                   "in memory only, so after a restart the development identity signs in "
                   "again")
     log.start()
+    ctx = app.extensions[EXTENSION]
+    dispatcher = server.task_dispatcher
+    load = Load(follower=follower, streams=ctx["streams"], threads=settings.threads,
+                busy=lambda: dispatcher.active_count, log=log)
+    ctx["load_loop"] = Every(clock, LOAD_LINE_S, load.write, log, "load")
+    ctx["sweeper"].start()
+    ctx["load_loop"].start()
     (on_listening or _nothing)(server)
     try:
         with _stop_on_signals():
@@ -67,9 +76,13 @@ def serve(args, *, environ=None, stdout, stderr, clock=None, on_listening=None):
     finally:
         # The slice jobs being followed are left to run; a front server started later
         # follows them again. The web server's threads are no longer adjusted, so that a
-        # following ending now starts none after the shutdown.
+        # following ending now starts none after the shutdown. The pages' progress streams
+        # end, and each page opens its stream again on the front server started next.
         follower.on_count = None
         follower.stop()
+        ctx["streams"].stop()
+        ctx["sweeper"].stop()
+        ctx["load_loop"].stop()
         server.task_dispatcher.shutdown()
         log.write("stop")
         log.stop()
