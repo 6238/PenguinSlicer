@@ -104,6 +104,25 @@ class TestProgress:
         assert result.peak_rss_kb > 0 and result.wall_s >= 0
         assert not (tmp_path / "out" / "orca-progress.fifo").exists()
 
+    def test_the_stand_ins_g_code_has_its_layers_in_the_pinned_orcas_markers(self, tmp_path, monkeypatch, plate):
+        """The stand-in's sliced file is one a page can draw, as the pinned Orca's is: each of
+        the header's 42 layers opens with `; CHANGE_LAYER`, `; Z_HEIGHT:` and `; LAYER_HEIGHT:`,
+        and holds extruding moves under a `; FEATURE:` (the joined suite's browser walk draws
+        it in the wizard's layer preview; seam-wizard-front.md)."""
+        result = slice_with(tmp_path, monkeypatch, plate, "ok")
+        with zipfile.ZipFile(result.output_path) as zf:
+            gcode = zf.read("Metadata/plate_1.gcode").decode()
+        layers = gcode.split("; CHANGE_LAYER\n")[1:]
+        assert len(layers) == result.layer_count == 42
+        heights = []
+        for layer in layers:
+            lines = layer.splitlines()
+            assert lines[0].startswith("; Z_HEIGHT: ") and lines[1].startswith("; LAYER_HEIGHT: ")
+            heights.append(float(lines[0].split(": ")[1]))
+            assert any(line.startswith("; FEATURE: ") for line in lines)
+            assert any(line.startswith("G1 ") and " E" in line for line in lines)
+        assert heights == sorted(heights) and len(set(heights)) == 42
+
     def test_a_run_without_a_pipe_still_works(self, tmp_path, monkeypatch, plate):
         install_fake_orca(tmp_path, monkeypatch, "ok")
         out = tmp_path / "out"
