@@ -75,7 +75,7 @@ on [contracts/](contracts/README.md).
 |---|---|---|
 | `slice/` | `make -C slice test` | `install`, `test-parallel`, `test-flakes RUNS=20 WORKERS=2`, `coverage`, `test-upstream` (real Orca Slicer; `test-orca` is the same), `upgrade-orca VERSION=x.y.z` |
 | `delivery/` | `make -C delivery test` | `install`, `test-parallel`, `test-repeat`, `slowest`, `coverage`, `test-properties`, `test-sim` (simulated printer), `test-upstream`, `upgrade-printer-library`, `test-together`, `together`, `daemon-tarball`, `hardware-smoke` |
-| `wizard/` (phase 2, to be built) | `make -C wizard test` | `install`, `test-browser`, `build` (writes `wizard/dist/`), `trials`, `trials-serve` |
+| `wizard/` (phase 2: its project, tools and the trials' inputs built; the page to be built) | `make -C wizard test` | `install`, `test-browser`, `build` (writes `wizard/dist/`), `trials` (runs `trials-preview` and `trials-geometry`), `trials-parts`, `trials-serve` |
 | `front/` (phase 2, to be built) | `make -C front test` | `install`, `test-parallel`, `coverage`; outside the fast suite `test-r2` and `test-hosted` (phase 3) |
 | `together/` (phase 2, to be built) | none: it is the joined suite, `make -C together test` | |
 

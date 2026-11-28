@@ -2,8 +2,10 @@
 
 This is the builder's document for the wizard. The guide beside it,
 [README.md](README.md), is what the owner reads and decides from; where the two differ, the
-guide is right and this file is to be corrected. Nothing of the wizard is built, so
-everything here is the design to build: every screen, state and message of the guide, in
+guide is right and this file is to be corrected. Of the wizard, only
+[The project and its tools](#the-project-and-its-tools) and the inputs of
+[the trials](#how-the-trials-and-measurements-are-run) are built, and those two sections
+say what is true of them as built; everything else here is the design to build: every screen, state and message of the guide, in
 the builder's terms, with the names the guide leaves out (requests, fields, error codes,
 constants, stored records, tests), the figures, the tests each part needs, and an order in
 which to build phase 2.
@@ -1962,16 +1964,21 @@ the other components are: `wizard/` is a `uv` project of its own, with its own
 
 | Folder | What it holds |
 |---|---|
-| `wizard/src/` | The page: `index.html`, its modules, the workers' modules, the style sheets taken over from the mockup's `css/panel.css`, fonts and pictures |
-| `wizard/vendor/` | Third-party code kept as files, each with its version and licence in `wizard/vendor/README.md` |
-| `wizard/tests/` | The tests without a browser window, with their fakes in `wizard/tests/fakes/` |
-| `wizard/tests_browser/` | The tests that drive Chromium |
-| `wizard/trials/` | The two opening trials of phase 2, their pages, scripts, plates and results |
+| `wizard/src/` | The page: `index.html`, its modules, the workers' modules, the style sheets taken over from the mockup's `css/panel.css`, fonts and pictures. As built, `index.html` and `main.js`, which reads the version from the page's `<meta>` and marks the document started |
+| `wizard/src/seams/` | The seams: the only modules that may call `setTimeout`, `setInterval`, `Date.now` or `fetch` (the clock and the transport; from the skeleton, item 2 of [By phase](#by-phase)) |
+| `wizard/vendor/` | Third-party code kept as files, each with its release, licence and SHA-256 in [wizard/vendor/README.md](vendor/README.md) |
+| `wizard/tests/` | The tests without a browser window on Node's runner (`*.test.js`), with their fakes in `wizard/tests/fakes/` (from the skeleton) |
+| `wizard/tests/python/` | The tools' tests, on pytest: the build, Node's version check, the trials' server and made parts, the vendored files' hashes and the real parts' hashes. Not `tests/tools/`: the repository's `.gitignore` ignores every folder named `tools/` |
+| `wizard/tests_browser/` | The tests that drive Chromium, with the fake front server in Python (`fake_front_server.py`) |
+| `wizard/scripts/check_node.py` | Node's version check |
+| `wizard/trials/` | The two opening trials of phase 2, their pages, scripts, plates and results ([wizard/trials/README.md](trials/README.md)) |
 | `wizard/build.py` | The build ([The wizard's built files](../contracts/wizard-front-server.md#the-wizards-built-files)) |
 | `wizard/dist/` | The built files; not committed |
 
 **Tests without a browser window** run on Node's own test runner (`node --test`), Node 24
-or later, with no npm package. They cover the geometry (faces, auto-orient, Arrange, the
+or later, with no npm package, in a random order (`--test-randomize`; the runner prints the
+seed, and `--test-random-seed=<seed>` repeats an order), each test bounded at 60 seconds. They
+cover the geometry (faces, auto-orient, Arrange, the
 placement check against the shared plates), the plate configuration the page makes, the
 storage, retrying, progress streams, the slicing card's states and every row of this file's
 tables that needs no drawing. The page's modules reach the world through a few seams, each
@@ -1981,9 +1988,22 @@ makes every request takes a transport, which the fake front server replaces, ans
 the contract's shapes and checked against the contract's examples); the browser's storage
 (the storage module sits on a small interface over IndexedDB, which a fake in memory
 implements); the browser's locks (`navigator.locks`, faked with the same interface); and the
-worker (run in the same thread by the tests, through the same messages). A test that calls
-`setTimeout`, `Date.now` or `fetch` directly fails: a check in the suite searches the page's
-modules for them outside the seams. So the suite needs no network and never waits.
+worker (run in the same thread by the tests, through the same messages). A page module that
+calls `setTimeout`, `setInterval`, `Date.now` or `fetch` directly fails the suite:
+`tests/seams.test.js` searches every `.js` and `.mjs` file under `wizard/src/` outside
+`wizard/src/seams/` for those names, reached directly or through the global object
+(`globalThis.fetch`, `self['fetch']`, `Date['now']`), skipping comments but not strings or
+regular expression literals, and names each file and line. It does not see a name built from
+pieces (`'set' + 'Timeout'`, `Date[n]`), and it does not search for the other ways to reach
+the time or the network (`new Date()`, `performance.now`, `requestAnimationFrame`,
+`XMLHttpRequest`, `EventSource`, `WebSocket`), which the skeleton (item 2 of
+[By phase](#by-phase)) decides when it builds the seams. So the suite needs no network and never waits. `tests/page.test.js` holds
+`index.html` to the contract's rules: one version placeholder, no inline script, no `style`
+element or attribute, nothing loaded from another site. The tools' tests in
+`wizard/tests/python/` run in the same target, on pytest in a random order (pytest-randomly
+prints the seed in pytest's header, `Using --randomly-seed=<seed>`, and passing that
+option repeats an order; the target runs pytest without `-q`, which would
+hide the header, and a test checks the seed is printed), each bounded at 120 seconds.
 
 **Tests in a browser** use Playwright for Python in the project's `uv` environment, driving
 the Chromium build Playwright installs (`playwright install chromium`), headless, with a
@@ -1992,25 +2012,57 @@ shapes, on a port the system chooses. They cover what needs drawing or the real 
 3D views coarsely, as [The layer preview](#the-layer-preview) says; the widths; focus and
 keyboard; the real IndexedDB and locks across several tabs; a reload. On a machine without a
 graphics card Chromium draws 3D in software. Like the other suite, they wait on events, never
-on a duration.
+on a duration. As built, the fake front server serves `GET /` with the version filled in and
+the contract's exact content security policy, and `GET /assets/<file>`; the tests check the
+page runs with no error under that policy, that an inline script would be reported, that the
+page reads its version, and that it asks only for itself and its assets. Playwright's browsers
+go where `PLAYWRIGHT_BROWSERS_PATH` says, unless that folder cannot be written (the agents'
+machine has a read-only `/opt/ms-playwright` holding an older revision); then into
+`~/.cache/ms-playwright`, shared by every checkout.
 
 **Third-party code.** Only code under a licence that MIT code may include (MIT, BSD or
 Apache 2.0), never Orca's or any other AGPL or GPL code, kept in `wizard/vendor/` and served
-from `/assets/` with the rest: nothing is loaded from another site. The expected one is
-three.js, which the mockup uses (its `vendor/three.min.js`, release 128); the builder may take
-a newer release, noted in `wizard/vendor/README.md`. A drawing method of the first trial that
-needs other code is held to the same rule.
+from `/assets/` with the rest: nothing is loaded from another site. It is three.js 0.170.0
+(release 170), taken in place of the mockup's release 128 because it is published as ES
+modules with a one-file core: the core and the example files the trials are likely to need
+(orbit controls, buffer utilities, convex hull, wide lines), byte for byte at the package's
+own paths, as [wizard/vendor/README.md](vendor/README.md) lists with each file's SHA-256,
+which the fast suite checks. The example files import the core by the bare name `three`: a
+trial's page maps it with an import map; the wizard's page, which may have no inline script,
+gets the name rewritten by the build (from the skeleton). A drawing method of the first trial
+that needs other code is held to the same rule.
+
+**The build, as built.** `build.py` writes `wizard/dist/index.html` and puts every other file
+of `wizard/src/` flat in `wizard/dist/assets/` as
+`<name>.<first 12 hexadecimal characters of its SHA-256>.<extension>`, bytes unchanged, and
+rewrites each `src` and `href` of `index.html` that names one of them, its value in double
+quotes, single quotes or none, to `/assets/<that name>`, keeping its quotes; a link within the
+page (`href="#..."`) is left as it is. It refuses, with a sentence that says why: no
+`index.html`; no version placeholder, or more than one; a reference to another site or to a
+file not in `wizard/src/`; two files that would get the same built name. Only `src` and
+`href` are read: an address in another attribute (`srcset`, `poster`, `data`) is neither
+rewritten nor refused, and the content security policy is what stops it loading. Not yet built (the skeleton, item 2 of
+[By phase](#by-phase)): rewriting the names inside an asset (a module's or a worker's
+imports, a style sheet's addresses) and building in `wizard/vendor/`.
 
 **Make targets,** each run as `make -C wizard <target>`:
 
 | Target | What it does |
 |---|---|
-| `install` | The `uv` environment and Playwright's Chromium; fails naming the version when Node is older than 24 |
-| `test` | The tests without a browser window: the fast suite |
+| `install` | The `uv` environment and Playwright's Chromium; fails naming the version when Node is older than 24 ("Node 22.3.0 is older than 24: the wizard's tests need Node 24 or later.") |
+| `test` | The tests without a browser window: the fast suite (Node's check, then `test-page`, the page's tests on Node, then `test-tools`, the tools' tests on pytest) |
 | `test-browser` | The tests in Chromium, after `build` |
-| `build` | `wizard/dist/` from `wizard/src/` and `wizard/vendor/` |
-| `trials` | The two opening trials' measurements, as [How the trials and measurements are run](#how-the-trials-and-measurements-are-run) says |
-| `trials-serve` | Serves `wizard/trials/` on `127.0.0.1:8610`, for the owner's timing on the Mac |
+| `build` | `wizard/dist/` from `wizard/src/` (and, from the skeleton, `wizard/vendor/`) |
+| `trials` | Both opening trials' measurements, as [How the trials and measurements are run](#how-the-trials-and-measurements-are-run) says: runs `trials-preview` and `trials-geometry`, the second even when the first fails, and fails when either does |
+| `trials-preview` | The first trial: `wizard/trials/preview/run.py` |
+| `trials-geometry` | The second trial: `wizard/trials/geometry/run.py` |
+| `trials-parts` | Writes the trials' made parts again into `wizard/trials/parts/` |
+| `trials-serve` | Serves `wizard/trials/` at `/`, with `wizard/vendor/` at `/vendor/` and `contracts/examples/parts/real/` at `/parts/real/`, on `127.0.0.1:8610`, for the owner's timing on the Mac; `HOST=0.0.0.0` (or `PORT=`) to change the address |
+
+Each trial's entry point is its own file in its own folder, so the two trials are built at
+the same time without touching one file; until its builder replaces it, each is a
+placeholder that says so and fails. A trial's script starts the trials' server itself with
+`trials/serve.py`'s `make_server("127.0.0.1", 0)`, on a port the system chooses.
 
 ## How it is tested
 
@@ -2047,16 +2099,25 @@ real printer, phase 5); that progress passes the hosts unheld (the hosted servic
 
 ## How the trials and measurements are run
 
-**The inputs, kept in the repository.** The wizard reads no other component's folder, so its
-builder's first commit of phase 2 copies the eight real parts of the Popcorn Penguins' robot, byte
-for byte, from `slice/tests/fixtures/frc-parts/` to `contracts/examples/parts/real/` (Clamp Plate
+**The inputs, kept in the repository.** The wizard reads no other component's folder, so the
+eight real parts of the Popcorn Penguins' robot are copied, byte for byte, from
+`slice/tests/fixtures/frc-parts/` to `contracts/examples/parts/real/` (Clamp Plate
 Inner, Elevator Block Bottom Inner, Elevator Block Carriage, Elevator Block Top, Elevator Top Inner,
-Inner Spacer, Outer Clamp, Pulley v3; 2,908 to 39,054 triangles, each exported once). Parts that are not real are made by `wizard/trials/make_parts.py`
-(*proposed*), deterministic, into `wizard/trials/parts/`, committed: `hub-150k.stl`, a closed hub (a
-surface of revolution, bore and all) of exactly 150,000 triangles, the shape the slice service's
-measurements used, written in the wizard's own code; and `hex-spacer.stl`, the slice service's
+Inner Spacer, Outer Clamp, Pulley v3; 2,908 to 39,054 triangles, each exported once), with
+[a README](../contracts/examples/parts/real/README.md) listing each file's SHA-256, which the
+wizard's fast suite checks. Parts that are not real are made by `wizard/trials/make_parts.py`
+(`make -C wizard trials-parts`), deterministic, into `wizard/trials/parts/`, committed, and the
+fast suite checks the committed files equal its output: `hub-150k.stl`, a closed hub (a
+surface of revolution, bore and all) of exactly 150,000 triangles (7,500,084 bytes, the largest
+part the plate configuration allows), the shape the slice service's
+measurements used (a ring 40 mm across and 20 mm tall, a 12 mm bore, 3 mm fillets on its four
+edges, in near-square facets: 300 around by 250 along the cross-section, its flat base on
+z = 0), written in the wizard's own code; and `hex-spacer.stl`, the slice service's
 reference spacer (a spacer for a 3/8 inch hex shaft, 1/8 inch thick, round outside and 5/8 inch
-across, 216 triangles), likewise written anew. The round parts exported from Onshape at its coarse
+across, 216 triangles: 48 sides outside, each rim segment fanned to the nearer hexagon corner),
+likewise written anew. Both are closed and wound outwards, and each coordinate is rounded to a
+millionth of a millimetre before it is stored, so the bytes do not hang on the last bit of a
+machine's sine and cosine. The round parts exported from Onshape at its coarse
 and fine settings, which the second trial would be better for, can only come from the owner; until
 they are in `contracts/examples/parts/real/`, the trial's round parts are `pulley-v3.stl` and
 `inner-spacer.stl`, and its result says so.
@@ -2136,10 +2197,11 @@ contract's request or shape it implements, and this file's section that specifie
 
 The page opened directly in a browser, with the development identity and no sign-in.
 
-1. **The project, then the two trials,** before the rest, because a failure in either trial
-   changes the design: the folders, tools and make targets of
-   [The project and its tools](#the-project-and-its-tools), the real parts copied into
-   `contracts/examples/parts/real/`, then
+1. **The two trials,** before the rest, because a failure in either trial
+   changes the design. Their project and inputs are built
+   ([The project and its tools](#the-project-and-its-tools), and the inputs of
+   [How the trials and measurements are run](#how-the-trials-and-measurements-are-run)); the
+   trials themselves are to be built, each in place of its placeholder entry point:
    [the layer preview's speed](README.md#the-risks-to-try-first-in-phase-2) and
    [the geometry on real parts](README.md#the-risks-to-try-first-in-phase-2)
    ([How the trials and measurements are run](#how-the-trials-and-measurements-are-run)).
