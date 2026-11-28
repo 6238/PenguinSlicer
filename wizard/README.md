@@ -897,7 +897,8 @@ or more instances selected no patches show.
 
 Two kinds of patch are offered. **Hull patches** lie on the flat faces of the part's
 convex hull, the shape a rubber skin stretched over the part would take, because those
-are the only faces a rigid part can rest on; they are Orca's. **Bounding-box patches**
+are the only faces a rigid part can rest on; they are Orca's, less those on which the part
+would touch the plate only along edges and could be given no first layer. **Bounding-box patches**
 lie on a side of the part's bounding box where no hull patch points that way, which is
 what lets a pulley be stood on its rim; Orca has none, and they are PenguinSlicer's own. How both are found is in
 [Finding the faces a part can lie on](#finding-the-faces-a-part-can-lie-on). Only the
@@ -1075,6 +1076,7 @@ is a fault in the part's mesh
 | A part has a gap with nothing under it (empty layers) | Which instance, and between which heights above the plate nothing would be printed; with supports off, to turn supports on, which is the single action; with supports already on, that the part itself must be repaired in CAD and added again. An example of the kind: "Gusset Plate #2 has empty layers at about 12.4 mm above the plate." Details, in both cases: where to look on the part, and Orca's own sentence with the heights | With supports off: **Turn on Supports and slice again**; Back to Layout. With supports on: Back to Parts |
 | A profile or setting is not accepted by the slice service | To choose from the lists. The page offers only what the configuration and the list of settings hold, so this is a configuration that names a profile the slice service does not have, or a disagreement between the wizard's list of settings and the slice service's | Back to Settings |
 | Two instances' paths would meet | Which two, and that supports are the likely cause when they are on; to spread them out, turn supports off or use a new plate | Back to Layout |
+| An instance touches the plate only along an edge or at a point, so it has no first layer | Which instance; to lay the part on one of its own flat faces, or to turn supports on with a raft. This page leaves out the hull faces that fail this way with the default first layer (see [Finding the faces a part can lie on](#finding-the-faces-a-part-can-lie-on)), so the failure comes from a part laid on a bounding-box patch, which is not tested this way; from a first layer set wider or lower than the default's; from a face on the very edge of the rule, where the page's measure and the slice service's differ by a few hundredths of a millimetre; or from a plate laid out by another version of the page | Back to Layout |
 | Nothing printable was found | That no layers were found, or that the print is empty, naming the part when the plate has one; to repair the part in CAD or check its size | Back to Parts |
 | Too slow: the slice passed the slice service's time limit, today 240 seconds | "The slicer took too long on this plate.", and the remedies: fewer instances or a new plate | **Slice again**, since the slice service may only have been busy; Back to Parts |
 | The sliced file would be larger than 50 MB, the most that is kept for one plate | The slice service's own sentence: that the sliced file would be too large, and the remedy, fewer instances or a new plate. The slice service ends the slice | Back to Parts. Slice again is not offered, because the same plate would give the same file |
@@ -1647,7 +1649,31 @@ rules of PenguinSlicer's own for round parts.
    of which passes step 3. A face is left out when a neighbouring hull face bends away from
    it by less than 20 degrees and is at least half its size, which is the mark of a facet
    among its like. A flat face beside a chamfer keeps its patch.
-5. **Add bounding-box patches where step 4 left a direction empty.** For each of the six
+5. **Drop the faces on which the part would have no first layer.** A hull face that bridges
+   a hollow can meet the part only along the hollow's edges. Laid there, the part touches the
+   plate along those edges, its first layer is strips narrower than one printed line, and
+   Orca refuses to slice it. A face is left out when the part's own faces on the plate add up
+   to less than a hundredth of a square millimetre and no line of the first layer, 0.62 mm
+   wide, fits in the part's outline 0.15 mm above the plate. These are the slice service's
+   own rule and figures for saying that a part touches the plate only along an edge, so the
+   wizard offers no hull face the slice service would refuse for that reason with the
+   default first layer. Which side of the outline is the part is found as the slice service
+   finds it, by counting the outline's crossings, not from the direction the part's file
+   says each triangle faces, so a part exported inside out, which the slice service slices
+   with a warning, loses the same faces. The outline is joined into closed loops as the slice
+   service joins it, and a loop left open by a triangle missing from the file, or broken by
+   one written twice, is no part of it for either, so a damaged file loses the same faces in
+   both. The search costs in proportion to the outline, also for a part whose sides are cut
+   into thousands of thin strips. The rule is not applied to the bounding-box patches of step 6, and a
+   face it drops does not count as covering a side, so a side left empty gets a
+   bounding-box patch, which can itself rest on edges: a bar shaped as a twelve-pointed star,
+   whose every long hull face spans two sharp tips, loses those twelve faces and is offered
+   four bounding-box patches across its sides that rest on tips too. A hull face
+   across a hollow whose rims are rounded is kept: the part touches along lines there too,
+   but is millimetres wide a little above the plate, and Orca slices it. The first layer is
+   the default process's, since the faces are found once for each part whatever the
+   settings.
+6. **Add bounding-box patches where steps 4 and 5 left a direction empty.** For each of the six
    sides of the part's bounding box, if no kept face points within 30 degrees of that
    side, the side itself gets a patch, and a click turns the part to rest that way. Thirty
    degrees is the half-angle of a hexagon, so a hex shaft, whose flats are 60 degrees
@@ -1676,20 +1702,34 @@ step 4 as first written dropped both, so a face of the part's own surface of at 
 25 mm² is no longer dropped on account of a neighbour that only bridges a hollow or a
 step.
 
+The real Orca checks the result, in a test and never while a user works: every face the
+wizard offers on each of the robot's eight real parts is written down as one pose, and the
+slice service's check against the real Orca slices each one alone and requires every one to
+slice. Before step 5, Orca refused one of the 60 faces then offered, a large face of Elevator
+Block Bottom Inner across a pocket. Step 5 drops that face and three more on the three
+elevator blocks, which Orca still slices but with a first layer narrower than one line across,
+and keeps 17 other faces across the blocks' pockets that rest on rounded rims and slice. All 56
+faces offered now slice. Whether the wizard offers every face a person would want is not
+something Orca can tell; the second trial's pictures are for a person to judge that.
+
 Each patch also carries the test of whether the part would tip over on it, which Orca's
 tool lacks, using the test auto-orient already makes. It is not used to hide patches: a
 printer's plate holds the first layer whichever way the part's weight falls, and hiding
 the faces a part would tip from removed four real flat sides of one of the robot's parts.
-Two cases are still not handled, and none of the robot's parts kept in the repository
+Three cases are still not handled, and none of the robot's parts kept in the repository
 has them: a round side cut into fewer than 18 facets, which bend more than 20 degrees
-apart, and a part modelled at an angle to its axes, whose bounding box does not meet its
-rim square.
+apart; a part modelled at an angle to its axes, whose bounding box does not meet its
+rim square; and a part whose hull faces on one side all rest on edges, such as the star
+above, which is offered bounding-box patches there that rest on edges too, and which the
+slice service then refuses with its message that the part touches the plate only along an
+edge.
 
 What the approach costs: making the hull dominates. The hull is made by a method that
 keeps, for each of its faces, the corners outside it, so the time grows little faster
 than the part's detail: finding the faces of the largest part allowed, 150,000 triangles,
-takes about a fifth of a second in the worker, and of the robot's real parts at most a
-tenth. Since auto-orient finds them when the part arrives, selecting an instance only
+takes about a quarter of a second in the worker, and of the robot's real parts at most a
+tenth; the test for a first layer (step 5) adds a little to that, as it reads the whole part
+once for each face found. Since auto-orient finds them when the part arrives, selecting an instance only
 fetches patches already found, in a few milliseconds.
 
 ### Choosing how a part lies: auto-orient
@@ -1912,8 +1952,8 @@ card are confirmed.
 | Instances on a plate | 150 | The slice service | Someone else's | A hundred-and-fifty-first instance |
 | Storage in the browser | 25 parts of 7.5 MB for each tab's plate | A full plate surviving a refresh | Follows from the two limits. Met for one tab in Chrome's engine on the machine without a graphics card, nothing refused; several tabs at once, and Chrome on the Mac, unmeasured | A full plate stored, the page reloaded |
 | A stored plate | Dropped after 12 hours unused, once no tab holds it | The storage not filling with plates nobody will open again, and yesterday's plate not greeting today's user | Set here. Met | A test with a clock the test moves |
-| Faces found for a part | Patches appear within 100 ms of selecting an instance | Selecting feeling direct | Set here. Met: at most 4 ms for the largest part allowed, its faces found when it arrived; about 0.2 s to find them from nothing | Timed on the real exported parts and the largest part allowed, in Chrome on the machine without a graphics card |
-| Auto-orient | A part lies its best way within one second of arriving | Parts arriving laid down, not jumping later | Set here. Met: at most 0.27 s for the largest part allowed, at most 0.18 s for a real part | The same |
+| Faces found for a part | Patches appear within 100 ms of selecting an instance | Selecting feeling direct | Set here. Met: about a millisecond for the largest part allowed, its faces found when it arrived; about a quarter of a second (0.24 s) to find them from nothing | Timed on the real exported parts and the largest part allowed, in Chrome on the machine without a graphics card |
+| Auto-orient | A part lies its best way within one second of arriving | Parts arriving laid down, not jumping later | Set here. Met: at most 0.24 s for the largest part allowed as tried (a round hub of 150,000 triangles), at most 0.17 s for a real part. A part as large on which step 5 drops faces costs more, since the test for a first layer reads the whole part once for each face it drops: a twelve-pointed star bar of 144,000 triangles, its sides cut into thousands of thin strips, took at most 0.39 s on Node, and an L-shaped bar as large at most 0.3 s; neither was measured in a browser | The same |
 | Arrange | Under 2 seconds for 150 instances | A button that feels like a button; anything longer would need progress and a way to cancel | Set here. Met: at most 0.06 s for 150 instances | The same |
 | The placement check | Keeps up with a drag, with 150 instances on the plate | The status line telling the truth while the user moves things | Set here. Met: at most 5 ms for each check, against a frame's 100 ms at 10 frames a second | The same |
 | The Layout view | At least 30 frames a second while an instance is dragged or the view turned, on the machine with a graphics card, and at least 10 on the one without, at the largest plate allowed: 150 instances of parts of up to 150,000 triangles | Dragging an instance feeling joined to the hand | Set here, with no measurement behind it: the same figures as the layer preview, since the same hand does the dragging | Timed in Chrome on both machines, and reported by the page in real use |
