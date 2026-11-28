@@ -10,8 +10,10 @@ the refusal of one over 50 MB. Written Sat 2026-11-28, Pacific time.
 
 1. **The order of an upload's checks.** Silent. Chosen: signed in, the current group,
    `Content-Length` (none, then over the limit), the limit on how fast, then the upload; the
-   same for a submission. Reason: the cheap checks that need no body first, and a refused
-   request never counts toward the limit. To overrule: `parts.upload_part`,
+   same for a submission. Reason: the cheap checks that need no body first, and a request
+   refused by those checks never counts toward the limit. One exception: a submission sent
+   without `Content-Length` and found over 1 MB only as it is read (decision 8) has already
+   counted, since the body is read after the limit is taken. To overrule: `parts.upload_part`,
    `slices.submit`.
 2. **How the limit on how fast counts.** The details file gives only the figures. Chosen: a
    window that slides, sixty seconds on the front server's clock, for each user key; a
@@ -142,7 +144,8 @@ the refusal of one over 50 MB. Written Sat 2026-11-28, Pacific time.
     with no record the page gets `running` at sequence 8 and no `sliced_file`; with a stored
     record it gets the `done` with `sliced_file`; while the slice job is followed it gets the
     following's latest report. Replacing `as_pages_see` with the `202`'s own `progress` fails
-    all three.
+    all three. To overrule: nothing to choose here; this is a test of decision 10, which is
+    overruled in its own place.
 28. **After review: a record found already `stored` or `failed` still sends the delete.** The
     documents call for it (the details file's step 3, the guide, and the architecture's "the
     moments until the front server has stored it"); the code had skipped it. That path is a
@@ -154,9 +157,16 @@ the refusal of one over 50 MB. Written Sat 2026-11-28, Pacific time.
     in the `storing.found` branch of `Follower._store_steps`.
 29. **After review: `slice_ended_at` is kept across a fault while storing.** The following
     notes the moment its `done` first arrived (`_Followed.ended_at`); a `done` handled again
-    after a fault (decision 21) keeps it instead of taking a later one.
+    after a fault (decision 21) keeps it instead of taking a later one. The documents are
+    silent on which moment to keep; the first is chosen because it is the nearest to the
+    slice's real end, and the two hours a sliced file is kept count from it. To overrule:
+    set `followed.ended_at` afresh at each `done` in `Follower._store` (the sliced file is
+    then kept up to the waits' total longer), and change the test
+    `test_a_fault_while_storing_is_logged_and_the_done_report_is_handled_again`.
 30. **After review: `Retry-After` rounds a part second up.** A test with 30.5 s left expects
-    31; the code already did so, and `int` in place of `math.ceil` now fails it.
+    31; the code already did so, and `int` in place of `math.ceil` now fails it. Rounding up
+    is the only choice that never tells a browser to come back before it would be taken. To
+    overrule: `RateLimit.take` and its test.
 31. **Declined after review: a malformed `Content-Length` (`-1`, `abc`, `1e3`).** Not changed
     in this batch. Werkzeug reads such a header as no length, so the body is read as empty and
     the slice service refuses it in its own words (`slice.part_unreadable` for a part,
@@ -168,6 +178,35 @@ the refusal of one over 50 MB. Written Sat 2026-11-28, Pacific time.
     through Flask's test client. The reviewer placed the fix with the rules for every
     request, an item of another batch, not with uploading and submitting; a check there (`400` `front.bad_request` for any
     `Content-Length` that is not a whole number) is the way to overrule.
+32. **After the second review: a submission's group is tested as far as the stored record.**
+    The code passed the current group to the following, but nothing checked it: replacing it
+    with `"x"` passed every test. The test
+    `test_the_submissions_group_reaches_the_stored_record_and_the_followings_lines` submits
+    as `dev-group`, gives the stand-in's slice job a sliced file, ends it `done`, waits for
+    the following's end and checks the `stored` record's `group` and the `group` of
+    `slice_followed` and `sliced_file_stored`. The test of a submitted record that cannot be
+    written now lets the state bucket take writes again, ends the slice job the same way and
+    checks the stored record's `group`, which then came from the following's memory only
+    (decision 11). Both fail under the reviewer's mutation. To overrule: nothing to choose;
+    the documents require the group in the record and the lines.
+33. **After the second review: what a page sees of a `done` while the following's latest is
+    final.** `as_pages_see` gave the latest report only when it was not final, and otherwise
+    held the `done` back; the reviewer found dropping that condition changed no test. It is
+    not quite equivalent: between the final report's delivery and the following's end the
+    latest is final, and when the state bucket cannot be read at that moment the condition
+    turned a stored `done` with its `sliced_file` back into `running`. Chosen: the latest
+    report, final or not, is what pages see while the slice job is followed; a test asks
+    `as_pages_see` from inside the final report's delivery with the state bucket unreadable,
+    and failed for that reason before the condition was removed. To overrule: restore the
+    condition in `Follower.as_pages_see` and change the test
+    `test_a_done_report_seen_as_the_final_report_is_delivered_is_that_final_report`.
+34. **After the second review: three checks the mutations survived are now tested.** A
+    submission refused `413` for its `Content-Length` does not count toward the limit on how
+    fast (`test_a_submission_refused_for_its_size_does_not_count`, which fails when the
+    limit is taken before the size check); `sliced_file_already_stored` is checked line for
+    line in the test of a file already stored; and `stored_after_s` is checked as 1 after a
+    fault and its one-second wait, where the test of the following's lines can only see 0.
+    Each was seen to fail under the reviewer's mutation. To overrule: nothing to choose.
 
 ## Targets missed
 
@@ -184,8 +223,9 @@ the refusal of one over 50 MB. Written Sat 2026-11-28, Pacific time.
   no `Content-Length` at all: the HTTP client reads no further than a length a header
   states, so a lying header cannot carry more bytes than it says.
 - **The fast suite's time.** 768 tests, about 7.5 seconds on two workers and about 13 on
-  one, from about 4 and 7 before the batch (773 tests, about 9 seconds on two workers, after
-  the review's fixes). The slowest test, an upload of a part of
+  one, from about 4 and 7 before the batch. After the second review's fixes, 776 tests, 6.5
+  seconds on two workers and 10.8 on one, measured Sat 2026-11-28 (the reviewer measured
+  6.0 to 6.5 and 11.1 for 773). The slowest test, an upload of a part of
   exactly 7.5 MB, takes about 0.5 s; where the rest goes was not measured.
 - **Test first** was not met for item 12 (decision 26). The reviewer's finding on it cannot
   be fixed after the fact; the fixes of decisions 27 to 30 were each written test first and

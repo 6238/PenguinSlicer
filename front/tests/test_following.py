@@ -447,7 +447,7 @@ def test_a_slice_job_unknown_when_its_file_is_fetched_ends_the_following(standin
 
 
 def test_a_file_already_stored_is_not_fetched_again_and_its_delete_is_sent(standin, follower,
-                                                                           bucket):
+                                                                           bucket, log):
     # A front server that wrote the record and stopped before its delete went out: the
     # slice service is still told, before the page gets done.
     write_record(bucket, sliced.record_name(USER, "j1"), "sliced_file", {
@@ -470,6 +470,10 @@ def test_a_file_already_stored_is_not_fetched_again_and_its_delete_is_sent(stand
     assert len(requests_of(standin, "DELETE", "/slices/j1/file")) == 1
     assert seen_delete == [True]
     assert standin.jobs["j1"].file is None
+    assert log.events("sliced_file_already_stored") == [
+        {"event": "sliced_file_already_stored", "user_key": USER, "group": GROUP,
+         "slice": "j1", "state": "stored"}]
+    assert log.events("sliced_file_stored") == []
 
 
 def test_a_delete_after_a_stored_record_that_fails_is_sent_again(standin, follower, bucket,
@@ -729,6 +733,8 @@ def test_a_fault_while_storing_is_logged_and_the_done_report_is_handled_again(
     # When the slice ended is when the done report first arrived, not after the wait.
     assert record_of(bucket, "j1")["slice_ended_at"] == sliced.utc(START)
     assert page.reports[-1]["sliced_file"]["expires_in_s"] == 7199
+    # Stored one second, the wait, after the slice ended.
+    assert log.events("sliced_file_stored")[-1]["stored_after_s"] == 1
 
 
 def test_a_stream_refused_otherwise_is_opened_again(standin, follower, clock, log):
@@ -804,6 +810,31 @@ def test_a_done_report_of_a_stored_file_is_seen_as_its_stored_report(follower, b
         "report": done("j1", 3)})
     seen = follower.as_pages_see(USER, "j1", done("j1", 3))
     assert seen["state"] == "done" and seen["sliced_file"]["expires_in_s"] == 7200
+
+
+def test_a_done_report_seen_as_the_final_report_is_delivered_is_that_final_report(
+        standin, follower, bucket):
+    # Between the final report's delivery and the following's end, the latest report is
+    # final: it is what pages see, even when the state bucket cannot be read then.
+    page = start(standin, follower)
+    original, seen = bucket.get, []
+
+    def unreadable(name):
+        raise BucketUnavailable("the state bucket cannot be read, by the test")
+
+    def deliver(report):
+        if report is not None and report["state"] == "done":
+            bucket.get = unreadable
+            try:
+                seen.append(follower.as_pages_see(USER, "j1", done("j1", 3)))
+            finally:
+                bucket.get = original
+        page.deliver(report)
+
+    follower.subscribe(USER, "j1", deliver)
+    standin.report("j1", done("j1", 3))
+    page.wait(lambda p: p.closed, "the following's end")
+    assert seen == [page.reports[-1]] and "sliced_file" in seen[0]
 
 
 def test_a_done_report_is_held_back_when_the_state_bucket_cannot_be_read(follower, bucket):

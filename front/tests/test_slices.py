@@ -147,14 +147,54 @@ def test_a_record_already_there_is_not_replaced(app, client, standin):
     assert record["state"] == "stored"
 
 
+SLICED = b"a sliced file of the stand-in's"
+
+
+def end_done(app, standin, job):
+    """Give the stand-in's slice job a sliced file, end it `done`, and wait until its
+    following has ended; gives the slice job's record."""
+    standin.jobs[job].file = SLICED
+    standin.jobs[job].summary = json.loads((EXAMPLES / "sliced-file.json").read_text())
+    standin.changes.wait_for(lambda: standin.open_streams(job) == 1, "the following's stream")
+    seen, told = [], Announcer()
+
+    def deliver(report):
+        seen.append(report)
+        told.announce()
+
+    assert follower(app).subscribe("dev-user", job, deliver) is not None
+    standin.report(job, {"job": job, "state": "done", "stage": "reading_result",
+                         "stage_label": "Reading the sliced file", "fraction": 1.0,
+                         "elapsed_s": 52.8, "expected_s": 75, "sequence": 2})
+    told.wait_for(lambda: None in seen, "the following's end")
+    assert seen[-2]["state"] == "done"
+    record, _ = read_record(state_bucket(app), sliced.record_name("dev-user", job),
+                            "sliced_file", Lines())
+    return record
+
+
+def test_the_submissions_group_reaches_the_stored_record_and_the_followings_lines(
+        app, client, standin, log):
+    job = submit(client).get_json()["slice"]["id"]
+    record = end_done(app, standin, job)
+    assert record["state"] == "stored" and record["group"] == "dev-group"
+    assert [line["group"] for line in log.events("slice_followed")] == ["dev-group"]
+    assert {line["group"] for line in log.events("sliced_file_stored")} == {"dev-group"}
+
+
 def test_a_record_that_cannot_be_written_is_no_error_for_the_page(tmp_path, clock, log,
                                                                   standin):
     class Refusing(FolderBucket):
-        def put(self, name, data, **condition):
-            raise BucketUnavailable("the state bucket refuses writes, by the test")
+        refuse = True
 
+        def put(self, name, data, **condition):
+            if self.refuse:
+                raise BucketUnavailable("the state bucket refuses writes, by the test")
+            return super().put(name, data, **condition)
+
+    bucket = Refusing(tmp_path / "state", clock)
     app = create_app(Settings.from_environ(environ(tmp_path, PENGUIN_SLICE_URL=standin.url)),
-                     clock=clock, log=log, state_bucket=Refusing(tmp_path / "state", clock))
+                     clock=clock, log=log, state_bucket=bucket)
     try:
         client = app.test_client()
         sign_in(client)
@@ -167,6 +207,12 @@ def test_a_record_that_cannot_be_written_is_no_error_for_the_page(tmp_path, cloc
         assert line["slice"] == job and line["group"] == "dev-group"
         assert "refuses writes" in line["why"]
         assert job in follower(app).followed()
+        # The group lives in the following's memory only, and still reaches the record
+        # written when the sliced file is stored.
+        bucket.refuse = False
+        record = end_done(app, standin, job)
+        assert record["state"] == "stored" and record["group"] == "dev-group"
+        assert [line["group"] for line in log.events("slice_followed")] == ["dev-group"]
     finally:
         shut(app, standin)
 
@@ -453,5 +499,23 @@ def test_past_the_limit_a_submission_is_too_many_requests_with_retry_after(
         assert len(submissions(standin)) == 2
         clock.advance(40)
         assert submit(client).status_code == 202
+    finally:
+        shut(app, standin)
+
+
+def test_a_submission_refused_for_its_size_does_not_count(tmp_path, clock, log, standin,
+                                                          monkeypatch):
+    monkeypatch.setattr(slices, "SUBMISSIONS_PER_MINUTE", 2)
+    app = front(tmp_path, clock, log, PENGUIN_SLICE_URL=standin.url)
+    try:
+        client = app.test_client()
+        sign_in(client)
+        for body in PARTS.values():
+            client.post("/api/parts?units=mm", data=body, headers=DEV_GROUP)
+        for _ in range(3):
+            assert raw_submit(client, Unreadable(), 1_048_577).status_code == 413
+        assert submit(client).status_code == 202
+        assert submit(client, plate(plate_id="p2", submission_id="s2")).status_code == 202
+        assert submit(client, plate(plate_id="p3", submission_id="s3")).status_code == 429
     finally:
         shut(app, standin)

@@ -198,7 +198,10 @@ class Follower:
     def as_pages_see(self, user_key, job, report):
         """`report`, a report of the slice service's about `job`, as pages are to see it: a
         `done` report is held back until its sliced file is stored, and is then the stored
-        `done` report with `sliced_file`; until then it is the latest report before it."""
+        `done` report with `sliced_file`; until then it is the latest report before it. While
+        the slice job is followed, the following's latest report is what pages see of a
+        `done` not found stored, a final one included (between its delivery and the
+        following's end)."""
         latest = self.latest(user_key, job)
         if report.get("state") != "done":
             if latest is not None and latest.get("sequence", 0) > report.get("sequence", 0):
@@ -210,7 +213,7 @@ class Follower:
             record = None
         if record is not None and record.get("state") in ("stored", "failed"):
             return sliced.final_report(record, self._clock.now())
-        if latest is not None and latest.get("state") not in FINAL_STATES:
+        if latest is not None:
             return latest
         return held_back(report)
 
