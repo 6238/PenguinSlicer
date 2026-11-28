@@ -29,7 +29,9 @@ const patchSummary = (p) => ({
 
 export function createGeometry() {
   const parts = new Map();
-  const footprints = new Map();
+  // Footprints by each read part's hull corners (placement.js, turnedFootprint): a part read
+  // again or forgotten leaves none of its old footprints behind.
+  const footprints = new WeakMap();
 
   const partOf = (key) => {
     const part = parts.get(key);
@@ -77,7 +79,6 @@ export function createGeometry() {
     },
     forget(m) {
       parts.delete(m.key);
-      footprints.clear();
       return [{}, []];
     },
   };

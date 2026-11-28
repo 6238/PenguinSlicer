@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  ORIENTATION_MATRICES, instanceMatrix, instanceTurn, layOnFace, matrixOfQuaternion, rotateVector,
+  ORIENTATION_MATRICES, instanceMatrix, instanceTurn, layFor, layOnFace, matrixOfQuaternion, rotateVector,
   shortestRotation,
 } from '../../src/geometry/turn.js';
 
@@ -60,6 +60,26 @@ test('laying an instance on a face keeps its turn about the vertical', () => {
   // Laid on an already laid instance's face: the new lay starts from the current one.
   const again = layOnFace(after, [0, 1, 0]);
   assert.ok(close(rotateVector(again, [0, 1, 0]), [0, 0, -1]));
+});
+
+test('laid on a face after a turn about the vertical, an instance lies as the part laid on that face, then turned the same', () => {
+  // The turn about the vertical is kept: laying Rz(a) on a face gives Rz(a) times the lay on
+  // that face from the part as modelled, for a face along an axis and for one that is not.
+  for (const degrees of [90, 35, -120]) {
+    const half = (degrees * Math.PI) / 360;
+    const rz = [Math.cos(half), 0, 0, Math.sin(half)];
+    for (const normal of [[-1, 0, 0], [0, 1, 0], [0.6, 0, -0.8], [0.48, 0.6, 0.64]]) {
+      const after = layOnFace(rz, normal);
+      const expected = multiply(rz, layFor(normal));
+      assert.ok(closeM(matrixOfQuaternion(after), matrixOfQuaternion(expected)), `${degrees} degrees, face ${normal}`);
+    }
+  }
+  // An instance laid on one face and turned 90 degrees, then laid on another, keeps the turn:
+  // the part's x axis, level before, still points where the turn sent it.
+  const s = Math.SQRT1_2;
+  const turned = multiply([s, 0, 0, s], layFor([0, 0, -1]));
+  const again = layOnFace(turned, [0, -1, 0]);
+  assert.ok(close(rotateVector(again, [1, 0, 0]), [0, 1, 0]));
 });
 
 test('an instance\'s matrix comes from its orientation or its rotation', () => {

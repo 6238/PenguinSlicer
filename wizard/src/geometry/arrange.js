@@ -82,7 +82,7 @@ const GRID = Math.round(PILE_GRID_MM * K);
 const REFINE = Math.round(PILE_REFINE_MM * K);
 
 function prepare(plateConfiguration, pointsByPart, plate) {
-  const cache = new Map();
+  const cache = new WeakMap();
   const r = (plate.spacing + ARRANGE_SLACK_MM) / 2;
   const masks = new Map();
   const items = plateConfiguration.instances.map((instance, index) => {

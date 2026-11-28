@@ -59,24 +59,35 @@ export function footprint(points, m) {
   return { hull, centre, minZ: z0, height: z1 - z0 };
 }
 
-// Each instance's outline on the plate, turned by its angle and moved to its place, with its
-// height; footprints are worked out once for each part and turn.
 // An instance's footprint as it lies and as it is turned, about its centre: `hull`, `coarse`
-// (at most 32 corners, holding `hull`), `height` and `bounds`.
-export function turnedFootprint(instance, pointsByPart, cache = new Map()) {
+// (at most 32 corners, holding `hull`), `height` and `bounds`. Footprints are worked out once
+// for each part and turn. The cache is keyed by the part's hull corners themselves, never by
+// the plate configuration's part key, which means nothing beyond one plate configuration: a
+// part key that comes to point at another part (read again in other units, or a key used
+// again) finds no footprint of the part it pointed at before, and a part forgotten takes its
+// footprints with it.
+export function turnedFootprint(instance, pointsByPart, cache = new WeakMap()) {
+  const points = pointsByPart[instance.ref];
+  let byTurn = cache.get(points);
+  if (!byTurn) {
+    byTurn = new Map();
+    cache.set(points, byTurn);
+  }
   const turn = instance.rotation ? `r${instance.rotation.join(',')}` : `o${instance.orientation}`;
-  const key = `${instance.ref}|${turn}|${instance.angle}`;
-  let fp = cache.get(key);
+  const key = `${turn}|${instance.angle}`;
+  let fp = byTurn.get(key);
   if (!fp) {
-    const base = footprint(pointsByPart[instance.ref], instanceMatrix(instance));
+    const base = footprint(points, instanceMatrix(instance));
     const hull = turnedOutline(base.hull, instance.angle);
     fp = { hull, coarse: simplified(hull), height: base.height, bounds: bounds(hull) };
-    cache.set(key, fp);
+    byTurn.set(key, fp);
   }
   return fp;
 }
 
-export function placedOutlines(plateConfiguration, pointsByPart, cache = new Map()) {
+// Each instance's outline on the plate, turned by its angle and moved to its place, with its
+// height.
+export function placedOutlines(plateConfiguration, pointsByPart, cache = new WeakMap()) {
   return plateConfiguration.instances.map((instance) => {
     const fp = turnedFootprint(instance, pointsByPart, cache);
     const move = ([x, y]) => [x + instance.x, y + instance.y];

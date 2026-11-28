@@ -91,6 +91,39 @@ test('Arrange and the placement check run on parts the worker has read', () => {
   assert.equal(crowded.result.problems[0].rule, 'off_plate');
 });
 
+test('the placement check follows the part each part key points at, never a footprint of the part it pointed at before', () => {
+  // The same part key first points at the spacer read in millimetres, then at it read in
+  // inches (25.4 times larger), then the key it was read under is read again in inches.
+  const spacer = () => fileBuffer(join(MADE_PARTS, 'hex-spacer.stl'));
+  const plateConfiguration = {
+    parts: { p: { name: 'Spacer' } },
+    instances: [
+      { ref: 'p', orientation: '+z', angle: 0, x: 100, y: 160 },
+      { ref: 'p', orientation: '+z', angle: 0, x: 200, y: 160 },
+    ],
+  };
+  const check = (g, id, key) => ask(g, { id, op: 'check', plateConfiguration, geometry: { p: key }, printer: H2S, supports: false }).reply.result.problems;
+  const fresh = (units) => {
+    const f = createGeometry();
+    ask(f, { id: 1, op: 'read', key: 'k', buffer: spacer(), units });
+    return check(f, 2, 'k');
+  };
+  const inMm = fresh('mm');
+  const inInches = fresh('in');
+  assert.deepEqual(inMm, []);
+  assert.deepEqual(inInches.map((p) => p.rule), ['off_plate', 'off_plate', 'too_close']);
+
+  const g = createGeometry();
+  ask(g, { id: 1, op: 'read', key: 'spacer-mm', buffer: spacer(), units: 'mm' });
+  ask(g, { id: 2, op: 'read', key: 'spacer-in', buffer: spacer(), units: 'in' });
+  assert.deepEqual(check(g, 3, 'spacer-mm'), inMm);
+  assert.deepEqual(check(g, 4, 'spacer-in'), inInches);
+  assert.deepEqual(check(g, 5, 'spacer-mm'), inMm);
+  // One read key read again, without a forget between, in other units.
+  ask(g, { id: 6, op: 'read', key: 'spacer-mm', buffer: spacer(), units: 'in' });
+  assert.deepEqual(check(g, 7, 'spacer-mm'), inInches);
+});
+
 test('forgetting a part lets its memory go; asking about it after is the page\'s fault', () => {
   const g = createGeometry();
   ask(g, { id: 1, op: 'read', key: 'spacer', buffer: fileBuffer(join(MADE_PARTS, 'hex-spacer.stl')), units: 'mm' });

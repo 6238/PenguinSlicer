@@ -94,6 +94,53 @@ test('a problem carries what the Layout step\'s messages need: the edges crossed
   assert.deepEqual(off.size.map((v) => +v.toFixed(6)), [40, 20]);
 });
 
+test('each of the four edges of the margin is reached on purpose: on the line passes, a hundredth over fails, naming that edge', () => {
+  // A 40 x 20 block on the H2S (340 x 320, a margin of 3): its centre may go from x 23 to 317
+  // and from y 13 to 307.
+  const points = { block: convexHull(box(40, 20, 10).positions).points };
+  const at = (x, y) => checkPlate(
+    { parts: { block: { name: 'Block' } }, instances: [{ ref: 'block', orientation: '+z', angle: 0, x, y }] },
+    points, plateOf(H2S, false),
+  );
+  const cases = [
+    ['left', [23, 160], [22.99, 160]],
+    ['right', [317, 160], [317.01, 160]],
+    ['front', [170, 13], [170, 12.99]],
+    ['back', [170, 307], [170, 307.01]],
+  ];
+  for (const [edge, inside, over] of cases) {
+    assert.deepEqual(at(...inside), [], `${edge}: on the line`);
+    const problems = at(...over);
+    assert.deepEqual(problems.map((p) => [p.rule, p.edges]), [['off_plate', [edge]]], `${edge}: over`);
+  }
+  // Over two edges at once, both are named.
+  assert.deepEqual(at(317.01, 307.01)[0].edges, ['right', 'back']);
+  assert.deepEqual(at(22.99, 12.99)[0].edges, ['left', 'front']);
+});
+
+test('two instances too close front to back are found, in either order and either a little left or right of the other', () => {
+  // Two 40 x 20 blocks one behind the other, their facing edges 4.99 mm apart (the spacing is 5),
+  // then 5 mm apart.
+  const points = { block: convexHull(box(40, 20, 10).positions).points };
+  const pair = (first, second) => checkPlate(
+    {
+      parts: { block: { name: 'Block' } },
+      instances: [first, second].map(([x, y]) => ({ ref: 'block', orientation: '+z', angle: 0, x, y })),
+    },
+    points, plateOf(H2S, false),
+  );
+  for (const [front, back] of [[100, 101], [101, 100], [100, 100]]) {
+    for (const reversed of [false, true]) {
+      const near = [[front, 100], [back, 124.99]];
+      const problems = pair(...(reversed ? near.reverse() : near));
+      assert.deepEqual(problems.map((p) => [p.rule, p.instances]), [['too_close', [0, 1]]], `x ${front}/${back}, reversed ${reversed}`);
+      assert.ok(Math.abs(problems[0].distance - 4.99) < 1e-6);
+      const apart = [[front, 100], [back, 125]];
+      assert.deepEqual(pair(...(reversed ? apart.reverse() : apart)), [], `x ${front}/${back}, reversed ${reversed}, 5 mm`);
+    }
+  }
+});
+
 test('a footprint is the turned part\'s outline seen from above, centred on its bounding box', () => {
   const points = convexHull(box(40, 20, 10).positions).points;
   const fp = footprint(points, [[1, 0, 0], [0, 1, 0], [0, 0, 1]]);
