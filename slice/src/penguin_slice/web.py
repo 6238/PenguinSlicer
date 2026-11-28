@@ -86,7 +86,17 @@ NO_LENGTH_MESSAGE = "The slicer was not told how large this part is."
 PART_STORE_UNWRITABLE_MESSAGE = "The slicer could not keep this part."
 UPLOAD_NOT_WHOLE_MESSAGE = "This part did not arrive whole."
 BAD_AFTER_MESSAGE = "The slicer was asked for its log after a line that is not a whole number."
-WHOLE_NUMBER = re.compile(r"[0-9]{1,18}")      # GET /log's `after`: ASCII digits only, never "²"
+WHOLE_NUMBER = re.compile(r"[0-9]+")      # GET /log's `after`: ASCII digits only, never "²"
+# An `after` of more digits than this, leading zeros aside, is past any line a process writes;
+# it is read as this many nines, which keeps int() clear of Python's limit on long digit strings.
+AFTER_DIGITS = 18
+
+
+def _after(text):
+    """GET /log's `after` as a number: leading zeros are dropped, and a number of more than
+    AFTER_DIGITS digits is read as the largest of AFTER_DIGITS digits."""
+    digits = text.lstrip("0") or "0"
+    return int(digits) if len(digits) <= AFTER_DIGITS else 10 ** AFTER_DIGITS - 1
 TOO_LARGE_PROBLEM = f"it is larger than {limits.MAX_PLATE_CONFIGURATION_BYTES:,} bytes"
 JOB_PARTS = "parts"           # a slice job's hold on its parts' files, in its folder
 STORE_LABEL = "parts-"        # the part store's folder: slice-<pid>-<start>-parts-<random>
@@ -483,7 +493,7 @@ def create_app(work_dir=None, pool=None, *, log=None, start_sweeper=True, enviro
         after = request.args.get("after", "0")
         if not WHOLE_NUMBER.fullmatch(after):
             return _report("slice.bad_request", BAD_AFTER_MESSAGE, f"GET /log with after {after[:40]!r}", 400)
-        return jsonify(buffer.read(int(after)))
+        return jsonify(buffer.read(_after(after)))
 
     @app.get("/slices")
     def every_slice_job():

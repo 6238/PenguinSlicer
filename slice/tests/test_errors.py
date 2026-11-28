@@ -599,6 +599,33 @@ class TestRestsOnAnEdge:
         assert report["code"] == "slice.orca_failed", report
         assert name not in report["message"] and "instance" not in report.get("where", {})
 
+    @pytest.mark.parametrize("beside", [False, True])
+    def test_a_part_on_a_face_of_its_own_narrower_than_a_line_is_not_said_to_rest_on_an_edge(self, beside, tmp_path,
+                                                                                          monkeypatch):
+        """The face-area condition: the block on a stem stands on the stem's own face, 0.16 mm2
+        on the plate, which is narrower at its first layer than one line. It gets Orca's general
+        failure, not "touches the plate only along an edge"; beside the box on its edge, only
+        the box is named."""
+        from helpers import block_on_a_stem_stl
+        stem = block_on_a_stem_stl()
+        scene = Scene(tmp_path, monkeypatch)
+        scene.upload(stem)
+        install_fake_orca(tmp_path, monkeypatch, "general")
+        instances = [{"ref": "block", "orientation": "+z", "angle": 0, "x": 40.0, "y": 100.0}]
+        if beside:
+            instances.append({"ref": "box", "rotation": ON_AN_EDGE, "angle": 0, "x": 120.0, "y": 100.0})
+        data = plate_configuration(instances=instances, overrides={"enable_support": "0"})
+        data["parts"]["block"] = part_entry("Block", stem)
+        with pytest.raises(slicer.SliceError) as caught:
+            scene.slice(data)
+        report = error_report(caught.value)
+        assert "Block" not in report["message"], report
+        if beside:
+            assert report["code"] == "slice.rests_on_an_edge" and report["where"]["instance"] == "Box #1"
+            assert "resting on no face of its own: Box #1\n" in report["detail"] + "\n"
+        else:
+            assert report["code"] == "slice.orca_failed" and "instance" not in report.get("where", {})
+
     @pytest.mark.parametrize("overrides", [
         {"initial_layer_line_width": "0.25"},                                    # 0.3 mm across, lines 0.25
         {"initial_layer_line_width": "0.5", "initial_layer_print_height": "0.6"}])   # 0.6 mm across, lines 0.5

@@ -859,7 +859,10 @@ fake Orca's general failure: the box on its edge is named under a 0.4 mm line an
 0.4 mm first layer and not under a 0.25 mm line; a process file of its own, with no
 overrides, decides by its own first layer (0.25 mm line or 0.8 mm first layer: not named;
 0.9 mm line under 0.8 mm: named); and the contract example's bracket on its hull face is
-named under the default process. The upstream check pins it
+named under the default process. The face-area condition has its own case: the block on a
+stem (`helpers.block_on_a_stem_stl`, a stem 0.4 mm across standing on its own 0.16 mm²
+face) keeps `slice.orca_failed` alone, and beside the box on its edge only the box is
+named. The upstream check pins it
 (`test_a_part_resting_on_an_edge_has_no_first_layer_unless_supported_on_a_raft`). The
 upstream check slices a bracket laid by a `rotation` on a face of the part itself
 (`test_a_rotation_and_a_part_in_inches_slice_where_the_checks_place_them`): Orca's first
@@ -1976,7 +1979,9 @@ lines numbered after `after`, oldest first, at most 1,000 (`log_buffer.LOG_ANSWE
 `process`, `p` and 8 random hexadecimal characters made when the process starts, so that a
 restarted process, which numbers from 1 again, is told apart; `dropped`, how many lines after
 `after` the buffer no longer holds; and `more`, whether lines remain after the last one in
-`lines`. `after` left out is 0; one that is not 1 to 18 ASCII digits (`-1`, `1.5`, `²`, empty)
+`lines`. `after` left out is 0; any run of ASCII digits is a whole number, leading zeros
+dropped, and one of more than 18 digits (`web.AFTER_DIGITS`), past any line a process
+writes, is read as eighteen nines; one that is not ASCII digits (`-1`, `+1`, `1.5`, `²`, empty)
 is refused `400` `slice.bad_request` ("The slicer was asked for its log after a line that is
 not a whole number."). The route answers for the whole slice service and does not look at the
 user key. Every line about a request carries the user key the request carried (`user_key`,

@@ -706,17 +706,9 @@ def test_an_orca_that_cannot_load_its_libraries_is_unstartable(tmp_path, monkeyp
 
 
 def block_on_a_stem_stl():
-    """A 20 x 20 x 5 mm block on a stem 0.4 mm across and 30 mm tall, too thin for the
-    nozzle: the pinned Orca fails it with only its general error_string (its own reason,
-    "One object has an empty first layer", is thrown, collected and lost), and its debug log
-    holds the warning it reported while slicing: floating regions."""
-    import numpy as np
-    from penguin_slice.mesh import read_binary_stl
-    from helpers import mesh_stl
-    stem, block = (read_binary_stl(box_stl(*size, origin=origin), "x") for size, origin in
-                   (((0.4, 0.4, 30.5), (9.8, 9.8, 0.0)), ((20, 20, 5), (0.0, 0.0, 30.0))))
-    return mesh_stl(np.vstack([stem.vertices, block.vertices]),
-                    np.vstack([stem.faces, block.faces + len(stem.vertices)]))
+    """helpers.block_on_a_stem_stl, the block on a stem the fast suite uses too."""
+    from helpers import block_on_a_stem_stl as block
+    return block()
 
 
 def test_orcas_reason_for_a_general_failure_is_read_from_its_debug_log(tmp_path):

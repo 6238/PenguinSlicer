@@ -141,7 +141,19 @@ class TestTheRoute:
         client, _pool, _buffer = app_with_buffer(tmp_path / "work")
         assert client.get("/log?after=0", headers={"X-Penguin-User-Key": ""}).status_code == 200
 
-    @pytest.mark.parametrize("after", ["-1", "x", "1.5", "²", "1e3", "9" * 19, ""])
+    @pytest.mark.parametrize("after, lines", [("01", [2]), ("0" * 19 + "1", [2]), ("9" * 19, []), ("9" * 5000, [])])
+    def test_every_whole_number_is_an_after_however_long(self, tmp_path, after, lines):
+        """The contract refuses only an `after` that is not a whole number: leading zeros and
+        a number past any line the process will write are answered 200."""
+        client, _pool, buffer = app_with_buffer(tmp_path / "work")
+        buffer({"event": "x"})
+        buffer({"event": "y"})
+        answer = client.get("/log", query_string={"after": after})
+        assert answer.status_code == 200, answer.get_json()
+        body = answer.get_json()
+        assert ([line["n"] for line in body["lines"]], body["dropped"], body["more"]) == (lines, 0, False)
+
+    @pytest.mark.parametrize("after", ["-1", "x", "1.5", "²", "1e3", "+1", " 1", ""])
     def test_an_after_that_is_not_a_whole_number_is_refused(self, tmp_path, after):
         client, _pool, _buffer = app_with_buffer(tmp_path / "work")
         answer = client.get("/log", query_string={"after": after})

@@ -91,6 +91,18 @@ def box_stl(sx=10.0, sy=20.0, sz=30.0, origin=(0.0, 0.0, 0.0)):
     return mesh_stl(corners, faces)
 
 
+def block_on_a_stem_stl():
+    """A 20 x 20 x 5 mm block on a stem 0.4 mm across and 30 mm tall, too thin for the
+    nozzle: the stem stands on a face of its own (0.16 mm2 on the plate), narrower than one
+    line of the first layer. The pinned Orca fails it with only its general error_string (its
+    own reason, "One object has an empty first layer", is thrown, collected and lost), and its
+    debug log holds the warning it reported while slicing: floating regions."""
+    stem, block = (read_binary_stl(box_stl(*size, origin=origin), "x") for size, origin in
+                   (((0.4, 0.4, 30.5), (9.8, 9.8, 0.0)), ((20, 20, 5), (0.0, 0.0, 30.0))))
+    return mesh_stl(np.vstack([stem.vertices, block.vertices]),
+                    np.vstack([stem.faces, block.faces + len(stem.vertices)]))
+
+
 def l_prism_stl(origin=(0.0, 0.0, 0.0)):
     """An L-shaped prism with unequal arms and its top sheared in x and y, so that no view of
     it is symmetric: a reversed angle or a wrong orientation changes its footprint."""

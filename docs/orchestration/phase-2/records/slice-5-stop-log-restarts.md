@@ -227,6 +227,35 @@ and in [the guide](../../../../slice/README.md).
     pins it (`test_orcas_debug_log_naming_an_instance_whose_name_holds_has_is_explained`,
     which names `Arm_has_holes #1`), and a comment by the expression says why it is whole.
 
+### After the third review
+
+29. **The face-area condition of `resting_on_no_face` (blocking finding 1).** The finding was
+    real: no fast case stood a part on a face of its own that is narrower than one line at
+    its first layer, so replacing `contact_area_mm2(...) < REST_AREA_MM2` with `True` passed
+    every fast test. The block on a stem moved from `tests_orca/test_orca.py` into
+    `tests/helpers.py` (`block_on_a_stem_stl`), which both suites now use, and
+    `TestRestsOnAnEdge` gained
+    `test_a_part_on_a_face_of_its_own_narrower_than_a_line_is_not_said_to_rest_on_an_edge`,
+    through the fake Orca's general failure with supports off: the block alone keeps
+    `slice.orca_failed`; beside the box on its edge only `Box #1` is named and listed. Both
+    cases fail under the reviewer's mutation and pass on the code, which was right, so only
+    the tests and the details file's sentence changed.
+30. **`GET /log`'s `after` of any length (minor finding 1).** Fixed, since the contract refuses
+    only an `after` that is not a whole number. Any run of ASCII digits is now accepted:
+    leading zeros dropped (`01` and nineteen zeros then `1` are both 1), and one of more than
+    18 digits is read as eighteen nines, past any line a process writes, so `int()` never
+    meets Python's limit on long digit strings (a 5,000-digit `after` answers 200 with no
+    lines). A sign, a decimal point, a space or a non-ASCII digit is still `400`
+    `slice.bad_request`. This replaces the 18-digit bound of decision 8. The test was seen to
+    fail first (3 of 4 cases).
+31. **Finding declined: minor finding 2 (`after=1&after=x` reads the first).** Flask's
+    `request.args.get` takes the first value of a repeated parameter; the contract names one
+    `after`, the front server sends one, and the answer is the same as for `after=1`. The
+    reviewer calls it harmless; refusing repeated parameters would be a rule no other route
+    has.
+32. **Minor findings 3 and 4** asked for nothing: decision 2's reading was accepted, and the
+    bracket's figures re-measured as the record gives them.
+
 ## Targets missed
 
 1. **"An instance laid on any face of its part's convex hull" does not always slice.** A hull
@@ -261,6 +290,9 @@ and in [the guide](../../../../slice/README.md).
    (decision 6); after the fix it passed whole: 63 tests in 121 s. After the review's fixes
    and the merge of `main` it passed whole at the first run: 64 tests in 157 s, and again
    after the second review's fixes: 64 tests in 121 s.
+4. **The third review's fixes were merged without a further review.** Decisions 29 to 32
+   were checked only by their own tests, the hand mutation of decision 29, the fast suite
+   run twice in random order and again after merging `main`, and the real-Orca suite.
 
 ## Not done
 
@@ -297,5 +329,5 @@ plates by the service's own rotation) was done by slice-1; slice-1's (items 7, 5
   prints the three error reports and the slice with supports and a raft; `-k ball_that_prints`
   prints the ball alone (done) and beside the block on a stem (`slice.orca_failed`, the
   block's warning, the ball named nowhere).
-- The fast suite and its branch coverage: `make -C slice test` (1,669 tests) and
+- The fast suite and its branch coverage: `make -C slice test` (1,676 tests) and
   `make -C slice coverage` (100%).
