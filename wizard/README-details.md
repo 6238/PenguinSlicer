@@ -1454,9 +1454,17 @@ plate, a page opened again) has the wizard's own message "Gusset Plate #3 waits 
 no spot on the plate is free for it." with Arrange. Beside the plate means wholly to the right of
 it and put there by the wizard: `layout.js` keeps the ids Arrange, a lay-down's `settle` and a
 joining part's `settle` left beside the plate, and every instance of a page opened again (the
-stored plate keeps no such mark), and `place` takes an instance out of them, so one the user
-drags wholly off the right edge has the `OFF_PLATE` message ("crosses the right edge") like one
-dragged off any other edge, and Arrange's message does not count it. Two or more pairs too close are one message;
+stored plate keeps no such mark, so one the user had dragged there waits beside the plate
+until it is moved), and `place` takes an instance out of them unless its footprint's centre
+moves less than `IN_PLACE_MM` (0.01 mm: a turn in place with the rotation handle is not a
+move), so one the user drags wholly off the right edge has the `OFF_PLATE` message ("crosses
+the right edge") like one dragged off any other edge. Arrange's message and a lay-down's
+amber one keep the ids they count (`waiting`) and are worked out afresh from those still
+beside the plate: dragged one of two away, "Arrange placed 1 of 3 instances; 2 instances do
+not fit…" becomes "Arrange placed 1 of 2 instances; 1 instance does not fit…", naming only
+the one left, and the message goes when none is left; Arrange's offer and its button stay as
+Arrange worked them out. `WAITS_BESIDE` is held back only for an instance a shown message
+counts. Two or more pairs too close are one message;
 a crossing of several edges names them ("the right and back edges"). Auto-orient arranges the
 plate again whenever, once laid, it breaks a rule other than the height, for a selection as for
 the whole plate. "Turned Rib #1 and arranged 1 instance." follows Turn it to fit, and "Laid 30
@@ -2657,7 +2665,7 @@ or is not yet in a contract:
 | Auto-orient | Best way within 1 s of arriving | Met: at most 236 ms for `hub-150k.stl` from the file to its best way, faces included; at most 170 ms for a real part. Not measured in Chromium for a part as large on which step 5 drops faces, which reads the whole part once for each. On Node, from the mesh to its best way, on a machine shared with other builders (Sat 2026-11-28): a twelve-pointed star prism (radii 50 and 30 mm, 100 mm long) with its sides cut into 3,000 strips along its length (144,048 triangles, 12 faces dropped) 311 to 390 ms, into 600 strips (28,848) 59 to 113 ms; the L of `first-layer.test.js` 100 mm long cut into 12,000 strips (144,008, one face dropped) 204 to 299 ms; `hub-150k.stl` 248 to 330 ms | The same; the L cut into 600 strips in `first-layer.test.js` bounds the work of step 5's even-odd search |
 | Arrange | Under 2 s for 150 instances | Met: at most 30 ms for 150 of `hex-spacer.stl` (all placed) and 44 ms for a mix of 150 real parts (104 placed, the rest beside the plate) | The same |
 | The placement check | Keeps up with a drag at 150 instances | Met: at most 4.1 ms for each check of a drag at 150 instances, against one frame of 100 ms at 10 frames a second | The same |
-| The Layout view | 30 frames a second with a graphics card, 10 without, while dragging or turning, at 150 instances of parts up to 150,000 triangles | Met without a graphics card, with the coarse copies while moving: 150 instances of the real mix dragged at 16 to 19 and turned at 17 to 20, 150 of `hub-150k.stl` dragged at 14 to 41, 150 of `hex-spacer.stl` at 34 to 45, over six runs on a shared machine; the main thread held 0.39 to 0.49 s during a drag on the real mix, 0.22 to 0.46 s on the spacers and 0.10 to 0.28 s on `hub-150k.stl` (missed). With a graphics card, unmeasured | `make -C wizard measure-layout`, in Chromium; on the Mac, Chrome; reported in real use |
+| The Layout view | 30 frames a second with a graphics card, 10 without, while dragging or turning, at 150 instances of parts up to 150,000 triangles | Met without a graphics card, with the coarse copies while moving: 150 instances of the real mix dragged at 16 to 19 and turned at 17 to 20, 150 of `hub-150k.stl` dragged at 14 to 42, 150 of `hex-spacer.stl` at 34 to 47, over seven runs on a shared machine; the main thread held 0.39 to 0.49 s during a drag on the real mix, 0.22 to 0.46 s on the spacers and 0.10 to 0.28 s on `hub-150k.stl` (missed). With a graphics card, unmeasured | `make -C wizard measure-layout`, in Chromium; on the Mac, Chrome; reported in real use |
 | The layer preview | 30 with a graphics card, 10 without, while turning or dragging the layer bar, on a 14.1 MB sliced file and at 150 instances; a simpler look while moving | Without a graphics card, method C of the first trial: 10 to 20 typical on the three plates (10.0 turning at `blocks-12-supports`); with one, unmeasured | Timed in Chrome on both machines; reported in real use; test renders |
 | The first layer drawn | Within 5 s, print time and filament at once | The first trial, method C: 1.5 to 2.7 s from fetching the sliced file to the first frame with toolpaths (the look while moving; the full look 2.4 to 8.5 s) | The same |
 | The page's memory | Under 1 GB at the largest plate with the preview of a 14.1 MB sliced file | The first trial, method C: 839 MB at that plate (the page's and the graphics process's peaks) | Measured in Chrome at that plate |

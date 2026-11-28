@@ -131,12 +131,36 @@ and, in plain words, in the guide's [What is to be built, by phase](../../../../
     instance Arrange, a lay-down or a joining part left beside the plate, and `place` clears it;
     an instance is beside the plate only when it is marked and wholly to the right of the
     plate. One the user drags there is told it crosses the right edge, and Arrange's message
-    does not count it. The stored plate's shape is unchanged, so a page opened again marks
+    does not count it (decision 27). The stored plate's shape is unchanged, so a page opened again marks
     every stored instance: one the user had dragged wholly off the right edge before the page
-    was opened again is then told it waits beside the plate, until it is moved. The middle at
+    was opened again is then told it waits beside the plate, until it is moved; the guide now
+    says so too. The middle at
     which joining instances are put still leaves out every instance wholly to the right of the
     plate. To overrule: `parked`, `markParked` and `besideIndex` in `wizard/src/layout.js`; to
     keep the mark across a reopening, a field of the stored plate's instances (decision 13).
+27. **Arrange's message and a lay-down's count only the instances still waiting** (third
+    review, blocking finding 1). The documents said the message does not count an instance the
+    user drags, and were silent on what the message then says. Chosen: each such message keeps
+    the ids it counted and is worked out afresh from those still marked and beside the plate;
+    the count of placed instances stays as Arrange left it, so one of two waiting dragged away
+    turns "Arrange placed 1 of 3 instances; 2 instances do not fit…" into "Arrange placed 1 of 2
+    instances; 1 instance does not fit…", the "of" counting the placed and the waiting only.
+    The message goes when none is left. Arrange's offer and the count on its button stay as
+    Arrange worked them out: working them out again on every drag means a trial arrangement
+    in the worker for each. The wizard's own "waits beside the plate" message is held back only
+    for an instance a shown message counts, not for every instance once any such message is
+    shown. A lay-down's amber message with a single instance still waiting names it ("Rod #3 no
+    longer fits…") where it used to say "1 instances". To overrule: `shownNote` and the
+    `waiting` and `say` of the two notes in `wizard/src/layout.js`; to keep "of 3", a sentence
+    for the instances the user took away.
+28. **A turn in place is not a move** (third review, minor finding 1). The documents were
+    silent. Chosen: `place` keeps an instance's mark when its footprint's centre moves less
+    than 0.01 mm (`IN_PLACE_MM`), which a turn of one instance with the rotation handle does,
+    since it turns about the instance's own centre. A turned instance still wholly to the right
+    of the plate waits beside it, counted by Arrange's message; one the turn brings across the
+    edge is across the edge, since beside the plate needs it wholly to the right. A turn of
+    several about their common middle moves each, and unmarks them. To overrule: `IN_PLACE_MM`
+    in `wizard/src/layout.js`.
 26. **The Settings step's changes reach the Layout step through the page's entry point.** Found
     merging the Settings step from `main`: its quick change Supports writes the stored plate's
     changes and tells its own listeners, and nothing told the Layout step, so its spacing stayed
@@ -192,7 +216,40 @@ Every finding of the review was checked against the code and found real; none wa
   declined as a code change; it is the camera difference already listed under "Targets missed"
   (the built camera stays where the user left it).
 
+## Third review of pull request #43, findings and what became of them
+
+- Blocking 1 (Arrange's message still counting a waiting instance the user dragged): real; a
+  new test with two waiting, one dragged 600 mm further right, failed with the reviewer's
+  unchanged sentence; fixed by decision 27. Writing it found the same fault in a lay-down's
+  amber message, fixed the same way with its own test.
+- Blocking 2 (`markParked` in `join` mutable to `() => false`): real; a new test raises a
+  slab's quantity from 1 to 2 on a full plate and sees "Slab #2 waits beside the plate: no
+  spot on the plate is free for it." with Arrange. The mutation fails it, checked by hand.
+- Blocking 3 (the guide silent on a page opened again): real; the guide now says, under its
+  own heading, that a page opened again takes every instance wholly to the right of the plate
+  to be waiting beside it, and has the details' sentence on a part joining a full plate.
+- Minor 1 (a turn in place clears the mark): fixed by decision 28, with a test that fails
+  without it.
+- Minor 2 (the selection line counts an instance wholly off the plate as on it): declined.
+  The line's second count is "beside it", the name of the instances the wizard put there
+  (decision 25); counting an instance the user dragged off under it gives one word two
+  meanings, and a third count ("1 off it") is a sentence neither the guide nor the mockup
+  has. That instance's own message names it in the same panel. It stays under "Targets
+  missed".
+- Minor 3 (`middleOfPlaced` mutable to `!besideIndex`): real; a test drags one spacer to
+  x = 900 mm and raises the quantity, and the joining one lands within 60 mm of the spacer on
+  the plate. The mutation fails it, checked by hand.
+- Minor 4 (hub-150k dragged at 41.4 frames a second, above 14 to 41): the range is widened
+  to 14 to 42 in the guide, the details and below; the same run's 46.4 on the spacers was
+  above their 34 to 45 too, widened to 34 to 47.
+- Minor 5 (`PLAYWRIGHT_BROWSERS_PATH`): an environment matter of the container, no change.
+
 ## Targets missed
+
+- **These last fixes (the third review's) were merged without a further review.**
+- **The selection line counts an instance the user dragged wholly off the plate as on the
+  plate** ("1 instance on the plate." for a spacer at x = 420 mm on the 340 mm plate), at any
+  edge; its own message says it is not fully on the plate (third review, minor 2).
 
 - **The main thread held over 250 ms during a drag at 150 instances**: 0.39 to 0.49 s on the
   real mix, 0.22 to 0.46 s on 150 spacers and 0.10 to 0.28 s on 150 of `hub-150k.stl`

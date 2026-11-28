@@ -25,6 +25,8 @@ import * as W from './layout-sentences.js';
 const DOWN = [0, 0, -1];
 const SAME_FACE = 1 - 1e-6;
 const MODELLED = [1, 0, 0, 0];
+// A move of an instance's footprint centre by less than this is a turn in place, not a move.
+const IN_PLACE_MM = 0.01;
 
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
 const wholeAngle = (deg) => ((Math.round(deg) % 360) + 360) % 360;
@@ -254,6 +256,19 @@ export function createLayout({ geometry, storage, store, parts, panel }) {
   function markParked(list, left) {
     list.forEach((instance, k) => { if (left(instance, k)) parked.add(instance.id); else parked.delete(instance.id); });
   }
+  const besideId = (id) => besideIndex(instances.findIndex((i) => i.id === id));
+
+  // A note about instances beside the plate (Arrange's, a lay-down's) counts and names only
+  // those of its `waiting` still waiting there: one the user has moved since is the user's and
+  // has its own message. The note goes when none still waits. Other notes are shown as written.
+  function shownNote(key) {
+    const note = notes[key];
+    if (!note || !note.waiting) return note;
+    const still = note.waiting.filter(besideId);
+    if (!still.length) { notes[key] = null; return null; }
+    const { waiting, say, ...rest } = note;
+    return { ...rest, ...say(still), instances: still };
+  }
 
   // ---- the messages, from the check and the notes
   function problemMessages() {
@@ -263,7 +278,7 @@ export function createLayout({ geometry, storage, store, parts, panel }) {
     if (!p || checked.at < 0) return out;
     const sup = supports();
     const spacing = spacingNow();
-    const coveredBeside = Boolean(notes.arrange) || Boolean(notes.lay && notes.lay.beside);
+    const covered = new Set(shownNotes().flatMap((note) => (note.beside ? note.instances : [])));
     for (const problem of checked.problems) {
       const [n] = problem.instances;
       const instance = instances[n];
@@ -277,7 +292,7 @@ export function createLayout({ geometry, storage, store, parts, panel }) {
           const words = W.TOO_LONG(list[n], way, way === 'x' ? problem.size[0] : problem.size[1], units, way === 'x' ? w : d, !besideIndex(n), turns);
           out.push({ kind: 'error', ...words, instances: [instance.id], action: turns ? { label: W.TURN_TO_FIT, run: () => turnToFit([instance.id]) } : null });
         } else if (besideIndex(n)) {
-          if (coveredBeside) continue;
+          if (covered.has(instance.id)) continue;
           out.push({ kind: 'error', ...W.WAITS_BESIDE(list[n]), instances: [instance.id], action: { label: W.ARRANGE, run: () => arrange() } });
         } else {
           out.push({ kind: 'error', ...W.OFF_PLATE(list[n], problem.edges), instances: [instance.id], action: { label: W.ARRANGE, run: () => arrange() } });
@@ -309,15 +324,18 @@ export function createLayout({ geometry, storage, store, parts, panel }) {
     return value;
   }
 
+  function shownNotes() {
+    return [shownNote('lay'), shownNote('arrange')].filter(Boolean);
+  }
+
   function workOut() {
     const p = printer();
     const problems = problemMessages();
     const beside = besideCount();
-    if (notes.arrange && beside === 0) notes.arrange = null;
-    const shownNotes = [notes.lay, notes.arrange].filter(Boolean);
+    const noted = shownNotes();
     // An instance beside the plate that only a note accounts for still holds Next.
-    const holdsByNote = beside > 0 && problems.every((m) => !m.instances.some((id) => besideIndex(instances.findIndex((i) => i.id === id))));
-    const lines = problems.length + (holdsByNote && shownNotes.some((n) => n.beside) ? 1 : 0);
+    const holdsByNote = beside > 0 && problems.every((m) => !m.instances.some(besideId));
+    const lines = problems.length + (holdsByNote && noted.some((n) => n.beside) ? 1 : 0);
     let status;
     if (problems.length) {
       status = { ok: false, first: problems[0].what, more: lines > 1 ? W.MORE(lines - 1) : W.FIX };
@@ -337,7 +355,7 @@ export function createLayout({ geometry, storage, store, parts, panel }) {
       selected: selected.slice(),
       marked,
       status,
-      notes: shownNotes,
+      notes: noted,
       problems,
       selection: selectionLine(),
       link: selectionLink(),
@@ -475,14 +493,16 @@ export function createLayout({ geometry, storage, store, parts, panel }) {
     const placed = result.placed.filter(Boolean).length;
     if (parked > 0) {
       const offer = await bestWayOffer(parked);
+      // the offer is worked out once, as Arrange left the plate; the count follows those still waiting
       notes.arrange = {
-        kind: 'error', beside: true, what: W.ARRANGE_PARTIAL(placed, parked),
+        kind: 'error', beside: true,
         todo: offer ? W.ARRANGE_PARTIAL_OFFER(offer.changed, offer.parked === 0) : W.ARRANGE_PARTIAL_TODO,
         actions: [
           ...(offer ? [{ label: W.LAY_THEM_BEST(offer.parked === 0, parked - offer.parked), run: () => layAllBestWay() }] : []),
           { label: W.BACK_TO_PARTS, run: () => store.set({ step: 'parts' }) },
         ],
-        instances: left.map((n) => instances[n].id),
+        waiting: left.filter((n) => !checked.fits.has(n)).map((n) => instances[n].id),
+        say: (still) => ({ what: W.ARRANGE_PARTIAL(placed, still.length) }),
       };
     } else {
       notes.arrange = null;
@@ -546,7 +566,12 @@ export function createLayout({ geometry, storage, store, parts, panel }) {
     const parked = outcomes.filter((h) => h === 'beside').length;
     const moved = outcomes.filter((h) => h === 'moved' || h === 'turned').length;
     if (parked) {
-      notes.lay = { kind: 'warn', beside: true, what: changed.length === 1 ? W.BESIDE_ONE(label) : W.BESIDE_MANY(parked), todo: W.BESIDE_TODO(parked), actions: [], instances: changed.map((i) => i.id) };
+      const nameOf = (id) => labels()[instances.findIndex((i) => i.id === id)];
+      notes.lay = {
+        kind: 'warn', beside: true, actions: [],
+        waiting: changed.filter((_, k) => outcomes[k] === 'beside').map((i) => i.id),
+        say: (still) => ({ what: still.length === 1 ? W.BESIDE_ONE(nameOf(still[0])) : W.BESIDE_MANY(still.length), todo: W.BESIDE_TODO(still.length) }),
+      };
     } else if (moved) {
       notes.lay = { kind: 'ok', what: changed.length === 1 ? W.MOVED_ONE(label) : W.MOVED_MANY(moved), actions: [], instances: changed.map((i) => i.id) };
     } else {
@@ -634,10 +659,13 @@ export function createLayout({ geometry, storage, store, parts, panel }) {
       const instance = byId(m.id);
       // the view sends only numbers; a move that is not one is not taken
       if (!instance || !finite(m.x) || !finite(m.y) || (m.angle !== undefined && !finite(m.angle))) continue;
+      // the user has moved it: no longer the wizard's to account for. A turn in place (its
+      // footprint's centre within 0.01 mm of where it was) is not a move: Arrange's or a
+      // lay-down's message still counts it while it stays wholly beside the plate
+      if (Math.hypot(m.x - instance.x, m.y - instance.y) >= IN_PLACE_MM) parked.delete(instance.id);
       instance.x = m.x;
       instance.y = m.y;
       if (m.angle !== undefined) instance.angle = m.angle;
-      parked.delete(instance.id);  // the user has moved it: no longer the wizard's to account for
     }
     recheck();
     tell();

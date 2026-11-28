@@ -380,6 +380,96 @@ test('an instance the user drags wholly off the right edge while Arrange\'s mess
   assert.equal(page.layout.model().instances.every((i) => !i.beside), true);
 });
 
+test('Arrange\'s message counts only the instances still waiting beside the plate: one of two waiting, dragged away, leaves it counting one', async () => {
+  const page = await openPage();
+  await addParts(page, [['Slab.stl', boxPart('slab', [10, 250, 200])]]);
+  page.parts.setQuantity(page.parts.rows()[0].key, 3);
+  await enterLayout(page);                     // flat, 200 by 250: one placed, two beside the plate
+  const [note] = page.layout.model().notes;
+  assert.equal(note.what, 'Arrange placed 1 of 3 instances; 2 instances do not fit and wait beside the plate.');
+  const waiting = page.layout.model().instances.filter((i) => i.beside);
+  assert.equal(waiting.length, 2);
+  await moveTo(page, waiting[0].id, waiting[0].x + 600, waiting[0].y);
+  const m = page.layout.model();
+  assert.deepEqual(m.notes.map((n) => [n.what, n.instances]), [['Arrange placed 1 of 2 instances; 1 instance does not fit and waits beside the plate.', [waiting[1].id]]]);
+  assert.deepEqual(m.problems.map((p) => p.instances), [[waiting[0].id]]);
+  assert.match(m.problems[0].what, /is not fully on the plate: it crosses the right/);
+  assert.equal(m.status.more, '+1 more ↓');
+  page.layout.clearSelection();
+  assert.deepEqual(page.layout.model().selection, { text: '2 instances on the plate, 1 beside it.' });
+  // the last one waiting, dragged too: the message goes
+  await moveTo(page, waiting[1].id, waiting[1].x + 600, waiting[1].y + 300);
+  assert.deepEqual(page.layout.model().notes, []);
+});
+
+test('a part joining a full plate waits beside it and has its own message with Arrange', async () => {
+  const page = await openPage();
+  await addParts(page, [['Slab.stl', boxPart('slab', [10, 250, 200])]]);
+  await enterLayout(page);                     // one slab, flat, 200 by 250: the plate is full
+  assert.deepEqual(page.layout.model().problems, []);
+  page.store.set({ step: 'parts' });
+  page.parts.setQuantity(page.parts.rows()[0].key, 2);
+  await enterLayout(page);
+  const m = page.layout.model();
+  assert.deepEqual(m.notes, []);
+  assert.equal(m.instances[1].beside, true);
+  assert.deepEqual(m.problems.map((p) => [p.what, p.action.label, p.instances]), [['Slab #2 waits beside the plate: no spot on the plate is free for it.', 'Arrange', [m.instances[1].id]]]);
+  assert.equal(m.status.first, 'Slab #2 waits beside the plate: no spot on the plate is free for it.');
+});
+
+test('an instance joining the plate is put among the instances on it, not among those the user dragged off it', async () => {
+  const page = await openPage();
+  await addParts(page, [['Spacer.stl', contractPart('spacer.stl')]]);
+  page.parts.setQuantity(page.parts.rows()[0].key, 2);
+  await enterLayout(page);
+  const [a, b] = page.layout.model().instances;
+  await moveTo(page, a.id, 100, 100);
+  await moveTo(page, b.id, 900, 100);          // the user's, wholly to the right of the plate
+  page.store.set({ step: 'parts' });
+  page.parts.setQuantity(page.parts.rows()[0].key, 3);
+  await enterLayout(page);
+  const joined = inst(page, 2);
+  assert.equal(joined.beside, false);
+  assert.ok(Math.hypot(joined.x - 100, joined.y - 100) < 60, `joined at ${joined.x}, ${joined.y}, near the one on the plate`);
+});
+
+test('a turn in place with the rotation handle does not move an instance waiting beside the plate: it still waits there', async () => {
+  const page = await openPage();
+  await addParts(page, [['Slab.stl', boxPart('slab', [10, 250, 200])]]);
+  page.parts.setQuantity(page.parts.rows()[0].key, 2);
+  await enterLayout(page);
+  const waiting = page.layout.model().instances.find((i) => i.beside);
+  // half a turn: the same footprint, still wholly to the right of the plate
+  page.layout.place([{ id: waiting.id, x: waiting.x, y: waiting.y, angle: waiting.angle + 180 }]);
+  await page.layout.endDrag();
+  await settleAll(page);
+  const m = page.layout.model();
+  assert.equal(m.instances.find((i) => i.id === waiting.id).beside, true);
+  assert.deepEqual(m.problems, []);
+  assert.deepEqual(m.notes.map((n) => n.what), ['Arrange placed 1 of 2 instances; 1 instance does not fit and waits beside the plate.']);
+});
+
+test('a lay-down\'s message about an instance beside the plate goes once the user drags that instance', async () => {
+  const page = await openPage();
+  await addParts(page, [['Slab.stl', boxPart('slab', [10, 250, 200])]]);
+  page.parts.setQuantity(page.parts.rows()[0].key, 2);
+  await enterLayout(page);
+  page.layout.selectAll();
+  await page.layout.model().link.run();
+  await settleAll(page);
+  const [a, b] = page.layout.model().instances;
+  page.layout.place([{ id: a.id, x: 170, y: 160 }, { id: b.id, x: 240, y: 160 }]);
+  await page.layout.endDrag();
+  await settleAll(page);
+  await page.layout.layOnNormal(b.id, [-1, 0, 0]);
+  await settleAll(page);
+  assert.equal(page.layout.model().notes[0].what, 'Slab #2 no longer fits on the plate and waits beside it.');
+  const w = inst(page, 1);
+  await moveTo(page, w.id, w.x + 600, w.y);
+  assert.deepEqual(page.layout.model().notes, []);
+  assert.match(problemWhats(page)[0], /^Slab #2 is not fully on the plate: it crosses the right/);
+});
+
 test('the status line counts the other problems: "+1 more ↓"', async () => {
   const page = await openPage();
   await addParts(page, [['Spacer.stl', contractPart('spacer.stl')]]);
