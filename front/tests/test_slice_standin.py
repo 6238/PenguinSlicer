@@ -198,13 +198,19 @@ def test_a_repeat_is_answered_before_any_check_and_the_stopping_answer_before_th
 
 @pytest.mark.parametrize("content_type, body", [
     ("application/json", b"{not json"),
-    ("multipart/form-data; boundary=b", b'--b\r\nContent-Disposition: form-data; name="x"\r\n\r\n{}\r\n--b--\r\n'),
+    # Nested deeper than Python's parser goes: a RecursionError, not a ValueError.
+    ("application/json", b"[" * 100_000),
+    # A JSON body sent as a multipart form: only the multipart check refuses it.
+    ("multipart/form-data; boundary=b", b"{}"),
+    # A multipart form over the size cap: the real slice service looks at the form first.
+    ("multipart/form-data; boundary=b", b"{}" + b" " * 1_048_576),
 ])
 def test_a_stopping_slice_service_refuses_a_body_it_cannot_read_before_it_answers_stopping(
         standin, http, content_type, body):
     # The real slice service reads the body as JSON before the repeat and the stopping answer
-    # (slice/src/penguin_slice/web.py, `submit`): a body that is not JSON, or a multipart
-    # form, is answered 400 slice.bad_plate_configuration even while it stops.
+    # (slice/src/penguin_slice/web.py, `submit`): a multipart form, whatever its size, and a
+    # body that is not JSON, however it fails, are answered 400
+    # slice.bad_plate_configuration even while it stops.
     standin.stopping = True
     answer = http.post("/slices", content=body, headers={**KEY, "Content-Type": content_type})
     assert answer.status_code == 400 and answer.json()["code"] == "slice.bad_plate_configuration"

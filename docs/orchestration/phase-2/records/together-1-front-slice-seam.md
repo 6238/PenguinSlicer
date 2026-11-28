@@ -208,7 +208,12 @@ Each in full, with its evidence, in [the record of the seam](../seam-front-slice
    answered `503` `slice.stopping`, which the contract's words ("`POST /slices` answers
    `503`") read like. The front server always sends JSON it built, so no page meets it.
    Fixed in the stand-in, with a test; the contract's words now say such a body is refused
-   as at any other time. Found by the second review.
+   as at any other time. Found by the second review. The third review found the stand-in
+   still differed in the same checks: a multipart form over the cap was `413` from it and
+   `400` from the slice service (which looks at the form first), and JSON nested too deep to
+   parse was `500` from it and `400` from the slice service (which catches `RecursionError`).
+   Fixed in the stand-in, with a case for each; the contract's words now give the order and
+   each status.
 
 ## The review's findings
 
@@ -253,8 +258,8 @@ declined in part.
    a second boundary, a wait of a duration the quality bar forbids; neither process takes a
    fake clock. The front server's fast suite checks it on its fake clock
    (`front/tests/test_collecting.py`, which the reviewer saw fail). The test's comment and
-   the record of the seam now say what the joined check does show: `ended_at` crossing in a
-   form the front server takes.
+   the record of the seam then said the joined check shows `ended_at` crossing in a form the
+   front server takes; the third review showed that false (item 1 below).
 3. **The stand-in's `400` against the slice service's `503` while stopping:** fixed as
    mismatch 8.
 4. **The second-stop test sent its signal only at the stop line:** the test also sends one
@@ -265,12 +270,47 @@ declined in part.
 6. **The joined suite's time:** the figure now gives the measured range, 37.6 to 46.7 s
    (decision 17).
 
+A third review found one blocking finding and four minor ones. The blocking one and three
+minor ones were fixed; one minor one needs nothing of this branch.
+
+1. **Blocking: the joined `slice_ended_at` check could not tell a taken `ended_at` from a
+   refused one.** A refused one is replaced by the moment of collecting, which the front
+   server writes in the same form and usually in the same second; with `_ended_at` made to
+   refuse every value the joined test passed 3 runs of 3. Fixed the reviewer's way (a): the
+   front server's `slices_collected` line has a new count, `ended_at_refused`, of the slice
+   jobs collected whose `ended_at` it refused (test first in
+   `front/tests/test_collecting.py`, which failed on the missing field), the joined test
+   asserts it is 0, and the front server's details, the test's comment and the record of
+   the seam say so. With `_ended_at` refusing every value the joined test now fails
+   (`assert 1 == 0`); as built it passes. Decision: a count on the line the joined suite
+   already waits for, rather than a field on the following's line, since it is the
+   collection that reads the list; it is a log field, not a name between components, so no
+   contract changes. To overrule it: drop the count and say instead that only the front
+   server's fast suite checks the form.
+2. **The stand-in's multipart check could be removed with every test passing.** The
+   multipart case now sends `{}`; with the check removed it fails.
+3. **The stand-in ordered the body checks differently and missed `RecursionError`:** fixed
+   as part of mismatch 8.
+4. **A flake of 1 in 40 in
+   `front/tests/test_restarts.py::test_an_open_progress_stream_is_closed_at_the_stop_and_carries_on_when_opened_again`,
+   older than this batch.** Its cause: the page's first report can come before the first
+   front server's following has opened its stream to the stand-in; stopped then, that
+   stream could open after the stand-in was told to close the slice job's streams and stay
+   open beside the second front server's, so the count of open streams never fell to one.
+   The test now waits for the first following's stream before the stop. Run alone 120
+   times: 6 failures without the wait, 0 with it (and 0 of 200 more). A test's artefact,
+   not the front server's: a real slice service ends such a stream at its next write.
+5. **`origin/main` moved and edits the wizard's row of the root `CLAUDE.md` table:** merged
+   in, the conflict resolved by keeping main's wizard row and this branch's front and
+   together rows.
+
 ## Targets missed
 
 1. **A deploy of the slice container loses up to 60 seconds of the slice service's lines
    from the log bucket** (mismatch 5), where the architecture loses lines only at a crash.
 2. **A front server's stop takes 5.1 seconds while it follows a quiet slice.** No phase 2
    figure is set for it; phase 3's stopping item will set one against Railway's stop time.
+3. **The third review's fixes were merged without a further review.**
 
 ## Not done
 

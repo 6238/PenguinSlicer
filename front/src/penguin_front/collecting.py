@@ -90,7 +90,7 @@ class Collector:
         if not isinstance(entries, list):
             raise _Again("GET /slices answered with what is not a list of slice jobs")
         counts = {"listed": len(entries), "followed": 0, "collecting": 0,
-                  "already_stored": 0, "left": 0, "unreadable": 0}
+                  "already_stored": 0, "left": 0, "unreadable": 0, "ended_at_refused": 0}
         plan = []
         for entry in entries:
             readable = _readable(entry)
@@ -111,6 +111,10 @@ class Collector:
             # kind: `followed`, `collecting` and `already_stored` count followings begun.
             if not started:
                 counts[kind] -= 1
+            elif kind == "collecting" and ended_at is None:
+                # Its two hours count from when the following hears it is done. The moment
+                # is written in the list's form, so only this count tells the two apart.
+                counts["ended_at_refused"] += 1
         self._log.write("slices_collected", **counts)
 
     def _kind(self, entry, user_key, job, state):

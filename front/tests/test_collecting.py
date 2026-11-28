@@ -62,6 +62,9 @@ def test_the_unfinished_is_followed_and_the_finished_unstored_stored_with_its_re
     assert followed["group"] == "group-of-run" and followed["user_key"] == USER
     [line] = log.events("slices_collected")
     assert (line["listed"], line["followed"], line["collecting"]) == (2, 1, 1)
+    # The line says the list's end was taken: the joined suite reads this, since the moment
+    # of collecting is written in the same form and usually in the same second.
+    assert line["ended_at_refused"] == 0
 
 
 def test_a_slice_job_with_no_record_is_followed_without_a_group(app, standin, bucket, log):
@@ -178,6 +181,21 @@ def test_an_end_time_of_another_form_counts_the_two_hours_from_when_it_is_heard(
     collect(app)
     wait_for_delete(standin, "jdone")
     assert sliced.read(bucket, USER, "jdone", log)["slice_ended_at"] == sliced.utc(clock.now())
+    [line] = log.events("slices_collected")
+    assert (line["collecting"], line["ended_at_refused"]) == (1, 1)
+
+
+def test_an_end_time_is_counted_refused_only_for_a_slice_job_collected(app, standin, bucket,
+                                                                       log):
+    # A stored record is not stored again, so its listed end is used for nothing; nor is a
+    # running slice job's absent one.
+    write_stored(bucket, "jkept")
+    add_done(standin, "jkept", ended_at="yesterday")
+    standin.add_job("jrun", USER, "plate-run", "submission-run", running("jrun", 4))
+    collect(app)
+    wait_for_delete(standin, "jkept")
+    [line] = log.events("slices_collected")
+    assert (line["already_stored"], line["followed"], line["ended_at_refused"]) == (1, 1, 0)
 
 
 @pytest.mark.parametrize("entry", [

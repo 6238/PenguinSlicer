@@ -142,14 +142,14 @@ def test_a_slice_that_ended_while_the_front_server_was_down_is_collected_at_star
     assert listed["file_on_disk"] is True and listed["ended_at"]
 
     front_server.restart()
-    front_server.running.wait_for_event("slices_collected", collecting=1)
+    collected = front_server.running.wait_for_event("slices_collected", collecting=1)
+    # The list's `ended_at` crosses the seam in a form the front server takes. A refused one
+    # would be replaced by the moment of collecting, written in the same form and usually in
+    # the same second, so the stored value below cannot show it: the front server's count of
+    # the ends it refused does.
+    assert collected["ended_at_refused"] == 0
     done = page.stream(accepted["id"]).wait_closed().final
     assert done["state"] == "done"
-    # This checks that the list's `ended_at` crosses the seam in a form the front server takes
-    # (one it refused would become the moment of collecting, a different form's string). Both
-    # moments are to the second and usually fall in the same one, so it cannot tell the slice's
-    # end from the moment of collecting: that is the front server's fast suite's to check, on
-    # its fake clock (test_collecting.py).
     assert done["sliced_file"]["slice_ended_at"] == listed["ended_at"]
     assert _listed(slice_service, accepted["id"])["file_on_disk"] is False
 

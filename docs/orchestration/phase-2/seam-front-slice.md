@@ -240,6 +240,16 @@ now refuses a multipart form or a body that is not JSON before the repeat and th
 answer, with a test (`test_a_stopping_slice_service_refuses_a_body_it_cannot_read_before_it_answers_stopping`),
 and the contract's words say that such a body is refused as at any other time.
 
+The third review found two more differences in the same checks. The stand-in looked at the
+size before the form, so a multipart form over the cap was `413` from it and `400` from the
+slice service; and it caught only `ValueError`, so JSON nested deeper than Python's parser
+goes was `500` from it and `400` from the slice service, which catches `RecursionError` too.
+The front server sends neither. The stand-in now looks at the form, the size and the JSON
+in the slice service's order and catches both errors; its test has a case for each, and a
+JSON body sent as a multipart form, which only the multipart check refuses. The contract's
+words give the order and the status of each, and the slice service's fast suite has a test
+of the multipart body over the cap.
+
 ## A choice for the owner: the slice service's lines at a deploy
 
 **What it is.** Whether a deploy of the slice container may lose up to a minute of the
@@ -308,10 +318,12 @@ Each of these had been exercised, on the front server's side, only against the s
   sliced file stored, offered under its name, and the slice service's copy deleted once.
 - `GET /slices` at a front server's start: a running slice followed again, a slice that
   ended while the front server was down collected with `ended_at` as its `slice_ended_at`,
-  `file_on_disk` false after. Both moments are to the second and usually fall in the same
-  one, so the joined check shows `ended_at` crossing in a form the front server takes, not
-  that the two hours count from the slice's end rather than from the collecting: the front
-  server's fast suite checks that on its fake clock.
+  `file_on_disk` false after. The stored `slice_ended_at` alone cannot show that the front
+  server took `ended_at`: a refused one is replaced by the moment of collecting, written in
+  the same form and usually in the same second. The joined check reads the front server's
+  `slices_collected` line instead, whose `ended_at_refused` is 0 only when the list's
+  `ended_at` was taken. That the two hours then count from the slice's end rather than from
+  the collecting is the front server's fast suite's to check, on its fake clock.
 - `GET /settings-table`, compressed and plain, the configuration's profiles found in its
   catalog.
 - `GET /log`: the lines gathered into the log folder, each once, with the group added, the

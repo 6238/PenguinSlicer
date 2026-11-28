@@ -2075,9 +2075,13 @@ by the running server after the `start` line; `collected` is set when it has end
   holding a slash or otherwise unable to name a folder; a `progress` without a `state`)
   writes `slices_entry_unreadable` with the entry cut to 300 characters, and is skipped;
 - the end writes `slices_collected`: `listed`, `followed`, `collecting`, `already_stored`,
-  `left` and `unreadable`. A slice job already followed (a page asked about it first) is
-  not followed twice, and is counted in none of `followed`, `collecting` and
-  `already_stored`, which count the followings the start began;
+  `left`, `unreadable` and `ended_at_refused`. A slice job already followed (a page asked
+  about it first) is not followed twice, and is counted in none of `followed`, `collecting`
+  and `already_stored`, which count the followings the start began. `ended_at_refused`
+  counts those of `collecting` whose `ended_at` was not of the form above, so that their
+  two hours count from when the following hears the slice is done: the moment written then
+  has the same form as the list's and usually the same second, and only this count tells a
+  taken `ended_at` from a refused one;
 - asked to stop while it waits, it ends at once.
 
 | What the user did | Where it is | After a restart of the front server |

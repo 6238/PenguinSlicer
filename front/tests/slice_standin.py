@@ -348,19 +348,21 @@ class SliceStandIn:
     # Slice jobs.
 
     def _submit(self, key):
+        # The real slice service reads the body as JSON first, in this order: a multipart
+        # form (whatever its size, 400), then a body over the cap (413), then one that is not
+        # JSON (400, nesting too deep for the parser included), each refused before the
+        # repeat and the stopping answer (slice/src/penguin_slice/web.py, `submit`).
+        if request.mimetype.startswith("multipart/"):
+            raise _bad_plate("a multipart form, not a JSON body")
         length = request.content_length or 0
         if length > MAX_PLATE_CONFIGURATION_BYTES:
             raise Refusal(413, example("error-report-plate-configuration-over-size.json")
                           | {"detail": f"plate configuration Content-Length {length:,} "
                                        f"bytes, cap {MAX_PLATE_CONFIGURATION_BYTES:,}"})
         body = request.get_data()
-        # The real slice service reads the body as JSON first: a multipart form, or a body
-        # that is not JSON, is refused before the repeat and the stopping answer.
-        if request.mimetype.startswith("multipart/"):
-            raise _bad_plate("a multipart form, not a JSON body")
         try:
             json.loads(body)
-        except ValueError as exc:
+        except (ValueError, RecursionError) as exc:
             raise _bad_plate(f"not JSON: {exc}") from None
         with self._lock:
             # A remembered submission is answered before any check, and the stopping answer
