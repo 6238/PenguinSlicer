@@ -67,6 +67,12 @@ def test_when_none_passes_the_fastest_is_chosen_and_the_target_is_missed():
     assert chosen == {"method": "C", "passes": False}
 
 
+def test_the_figures_of_methods_not_measured_again_are_kept(tmp_path):
+    (tmp_path / "A-p.json").write_text(json.dumps({"method": "A"}))
+    (tmp_path / "C-p.json").write_text(json.dumps({"method": "C"}))
+    assert run.previous_results(tmp_path, ["C"], ["p", "q"]) == {"A": {"p": {"method": "A"}}}
+
+
 def test_the_report_shows_every_method_and_plate_side_by_side_with_their_renders(tmp_path):
     results = results_of(A=0.5, C=14.0)
     for method in results.values():

@@ -172,6 +172,20 @@ over {HOLD_MS} ms, and the coarse checks of the look.</p>
 """
 
 
+def previous_results(out, skip, plates):
+    """The figures already in `out` of the methods not measured this time, so that the report
+    still shows every method when only some are measured again."""
+    found = {}
+    for name in METHODS:
+        if name in skip:
+            continue
+        for plate in plates:
+            path = Path(out) / f"{name}-{plate}.json"
+            if path.is_file():
+                found.setdefault(name, {})[plate] = json.loads(path.read_text())
+    return found
+
+
 # ------------------------------------------------------------------ measuring
 
 def process_memory(browser):
@@ -311,6 +325,8 @@ def main(argv):
         httpd.shutdown()
         httpd.server_close()
         thread.join()
+    results = {name: per_plate for name, per_plate in
+               sorted({**previous_results(out, methods, plates), **results}.items())}
     chosen = choose(results)
     (PREVIEW / "report.html").write_text(report_html(
         results, chosen, mach, render_dir=lambda m, p: os.path.relpath(out / m / p, PREVIEW)))

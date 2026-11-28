@@ -13,10 +13,13 @@ that the two can be built at the same time without touching the same file.
 | `parts/` | The made parts, `hub-150k.stl` (a closed hub of exactly 150,000 triangles) and `hex-spacer.stl` (the slice service's reference spacer, 216 triangles), committed | `make -C wizard trials-parts` writes them again; the fast suite checks they are unchanged |
 | `make_parts.py` | Writes `parts/`, deterministically | |
 | `serve.py` | Serves this folder at `/`, `wizard/vendor/` at `/vendor/` and the real parts of `contracts/examples/parts/real/` at `/parts/real/`; nothing else | `make -C wizard trials-serve` (on `127.0.0.1:8610`; `HOST=0.0.0.0` to reach it from another machine) |
-| `sliced/` | The preview trial's sliced files, made again by its script; not committed | |
+| `sliced/` | The preview trial's sliced files, made again by its script; not committed | `make_sliced_files.py`, with a slice service started by hand ([preview/README.md](preview/README.md)) |
+| `plates/` | The preview trial's three plates, as plate configurations | `make_sliced_files.py --write-plates` writes them again; the fast suite checks they are unchanged |
+| `make_sliced_files.py` | Has a slice service slice each plate of `plates/` and saves the sliced files into `sliced/` | |
 
-`make -C wizard trials` runs both trials, the preview first. Until a trial's builder
-replaces its `run.py`, that entry point is a placeholder that says so and fails.
+`make -C wizard trials` runs both trials, the preview first. The preview trial is built
+([preview/README.md](preview/README.md)); until a trial's builder replaces its `run.py`,
+that entry point is a placeholder that says so and fails.
 
 A trial's page loads three.js through an import map that names
 `/vendor/three/build/three.module.min.js` for `three`, and a part as

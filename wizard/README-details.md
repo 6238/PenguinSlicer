@@ -2129,7 +2129,7 @@ processors and memory. The **machine with a graphics card** is the owner's Mac, 
 owner can take figures there.
 
 **The layer preview's speed without a graphics card** (the first trial of phase 2). Three real sliced
-files, made by `wizard/trials/make_sliced_files.py` (*proposed*), which submits each plate to a slice
+files, made by `wizard/trials/make_sliced_files.py`, which submits each plate to a slice
 service started by hand on the same machine through its HTTP interface as built today (a plate
 configuration with its files) and saves the sliced file:
 

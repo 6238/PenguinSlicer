@@ -33,7 +33,11 @@ void main() {
   float halfW = 0.5 * max(w, minPx / ppu);
   float hh = current > 0.5 ? max(h, minPx / ppu) : h * 1.04;     // a little overlap closes cracks
   bool under = camPos.z < base.z - hh;
-  float zFace = under ? base.z - hh : base.z, zOther = under ? base.z : base.z - hh;
+  // Lines of one layer overlap where Orca lays infill and surfaces over the walls' edge. Their
+  // tops lying at one height would fight in the depth buffer and speckle; the walls' tops sit
+  // 0.01 mm lower, so the other line types are drawn over them there, the same at every angle.
+  float lift = (g == 0 || under) ? 0.0 : 0.01;
+  float zFace = under ? base.z - hh : base.z + lift, zOther = under ? base.z : base.z - hh;
   vec3 pos;
   if (role == 0) pos = vec3(base.xy + n * side * halfW, zFace);
   else if (role == 1) pos = vec3(base.xy - n * side * halfW, zFace);
@@ -208,7 +212,7 @@ export const methodB = {
 // Method C: as B while moving; at rest, the full look is drawn into an image off the screen a
 // piece at a time, at most `PIECE` boxes a frame, while the screen keeps the look while moving,
 // and is copied to the screen when it is whole. No frame holds the browser for the whole plate.
-export const PIECE = 150000;
+export const PIECE = 100000;
 export const methodC = {
   name: 'C: fewer layers while moving, every box at rest over several frames', prepare: 'moving',
   create(gl, prepared, info) {
@@ -224,12 +228,25 @@ export const methodC = {
     let work = null;          // the pieces still to draw for the view at rest, or null
     let fence = null;         // the last piece's fence: the next piece waits until it is drawn
     let shown = false;        // the full look of the present view is on the screen
+    let warmed = false;       // the pipelines are built
     return {
       decimate: prepared.decimate,
       // `fresh` is true when the view or the layer changed since the last frame.
       draw(f, scene, fresh) {
         const { movingReady, fullReady } = uploading(moving, full);
         if (!movingReady) return waiting(gl, f, scene);
+        if (!warmed) {
+          // A first frame of one box, to the screen and to the image off it: software drawing
+          // builds its pipelines on the first draw of each, which then holds no full frame.
+          for (const target of [fbo, null]) {
+            gl.bindFramebuffer(gl.FRAMEBUFFER, target);
+            gl.viewport(0, 0, w, h);
+            clear(gl); scene.plate(f.viewProj);
+            moving.begin(f); moving.draw(0, Math.min(1, moving.layerStart[moving.layerStart.length - 1]), false);
+          }
+          warmed = true;
+          return { segments: 1, complete: false, again: true };
+        }
         if (!fullReady) {
           const n = drawMoving(gl, full, moving, prepared.decimate, f, scene, false);
           work = null;
@@ -256,8 +273,10 @@ export const methodC = {
           let n = 0;
           if (work.next < work.pieces.length) {
             full.begin(f);
-            while (work.next < work.pieces.length && n < PIECE) {
-              const [a, b, current] = work.pieces[work.next++];
+            while (work.next < work.pieces.length) {
+              const [a, b, current] = work.pieces[work.next];
+              if (n > 0 && n + (b - a) > PIECE) break;
+              work.next++;
               n += full.draw(a, b, current);
             }
           } else {                                     // the ghost, a frame of its own

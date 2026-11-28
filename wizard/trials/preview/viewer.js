@@ -136,7 +136,9 @@ export async function start(method) {
   for (let i = 0; i < n; i++) for (let a = 0; a < 3; a++) {
     box[a] = Math.min(box[a], b[i * 6 + a]); box[a + 3] = Math.max(box[a + 3], b[i * 6 + 3 + a]);
   }
-  const camera = new THREE.PerspectiveCamera(40, width / height, 1, 5000);
+  // The near plane at 5 mm keeps the depth buffer fine enough for layers 0.2 mm apart seen
+  // from across the plate; no view comes nearer than 30 mm.
+  const camera = new THREE.PerspectiveCamera(40, width / height, 5, 3000);
   camera.up.set(0, 0, 1);
   const controls = new OrbitControls(camera, canvas);
   controls.screenSpacePanning = true;
@@ -236,6 +238,9 @@ export async function start(method) {
     for (const w of [...watchers]) w(now, js, r);
   }
   requestAnimationFrame(loop);
+  trial.frameLog = [];
+  const logFrames = (now, js, r) => { trial.frameLog.push([Math.round(now), Math.round(js), r.segments, r.complete ? 1 : 0]); if (trial.frameLog.length > 60) watchers.delete(logFrames); };
+  watchers.add(logFrames);
   const afterFrame = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   // Resolves once the full look is on the screen.
   const untilComplete = () => new Promise((resolve) => {
