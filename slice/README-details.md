@@ -1761,7 +1761,7 @@ sentence, remedy, action, retryable flag and evidence its report must carry.
 | `slice.placement_too_tall` | checking | An instance is taller than the printable height. |
 | `slice.placement_too_close` | checking | Two footprints are closer than `SPACING_MM` (5 mm), or `SPACING_SUPPORTS_MM` (12 mm) with supports on (see "Spacing"). The report names both instances (`where`: `instance`, `other_instance`); with supports on the sentence says supports need the room, and the remedy also offers turning supports off. The detail lists at most 20 such problems. |
 | `slice.busy` | queued | The job queue is full. |
-| `slice.scratch_unwritable` | building | The plate 3MF, the process file or Orca's folders cannot be written (a full disk, a folder where an earlier run's sliced file was), or the HTTP interface cannot make a slice job's folder in its work folder or hold its parts there, or the part store cannot keep an uploaded part (HTTP 500). The upload's report has its own sentence and remedy (`web.PART_STORE_UNWRITABLE_MESSAGE`, `web.PART_STORE_UNWRITABLE_REMEDY`: add the part again in a few minutes, or the server needs more free disk space). |
+| `slice.scratch_unwritable` | building | The plate 3MF, the process file or Orca's folders cannot be written (a full disk, a folder where an earlier run's sliced file was), or the HTTP interface cannot make a slice job's folder in its work folder or hold its parts there, or the part store cannot keep an uploaded part (HTTP 500). The upload's report has its own sentence (`web.PART_STORE_UNWRITABLE_MESSAGE`) and remedy (add the part again in a few minutes, or the server needs more free disk space). |
 | `slice.orca_missing` | slicing | No Orca at `PENGUIN_SLICE_ORCA` or `tools/orca`. |
 | `slice.orca_unstartable` | slicing | Orca is there but will not start (not executable, another architecture), or exits 126 or 127 with no `result.json` (the loader could not load a library it needs). |
 | `slice.timeout` | slicing | Orca took longer than `PLATE_SLICE_TIMEOUT_S`; the service stopped it, and the stop is what ended Orca, before its sliced file was complete. On a plate of one instance the remedy is to simplify or split the part, with no action. |
@@ -1785,8 +1785,25 @@ sentence, remedy, action, retryable flag and evidence its report must carry.
 | `slice.unknown_job` | fetching | The HTTP interface does not know the slice job (never, or expired, or accepted by another slice service process), or it is another user key's (answered exactly alike, and logged as a refusal). |
 | `slice.not_ready` | fetching | The sliced file or summary of a slice job that has not finished. |
 | `slice.file_gone` | fetching | The sliced file of a done slice job is no longer on the disk (HTTP 410), for the file and the summary alike. |
-| `slice.bad_request` | fetching | The HTTP interface does not offer that path (404) or that method on it (405), or an upload has no Content-Length (400). The upload's report has its own sentence and remedy (`web.NO_LENGTH_MESSAGE`, `web.NO_LENGTH_REMEDY`: add the part again, or the server needs fixing), a fault of the front server's. |
+| `slice.bad_request` | fetching | The HTTP interface does not offer that path (404) or that method on it (405), or an upload has no Content-Length (400), or an upload's body ends before its Content-Length (400, "This part did not arrive whole."). The upload's report has its own sentence (`web.NO_LENGTH_MESSAGE`) and remedy (add the part again, or the server needs fixing), a fault of the front server's. |
 | `slice.unexpected` | slicing | Anything else: a bug in the slice service; the detail keeps the traceback. |
+
+**The remedies of an upload.** A part refused when it arrives (`POST /parts`) was never
+added, and its report reaches the wizard's Parts step: its remedy is about adding the part
+(export it again, simplify it, check its units, as the guide's "When things go wrong" says),
+never about a slice, a mentor or the print server, and it carries no `action`. Every code
+`POST /parts` can answer has its remedy in `service.UPLOAD_REMEDIES`: `service.check_part`
+sets it on the part checks' `MeshError` and on a `ProfileError` of the server's own
+profiles (whose upload sentence is `service.UPLOAD_PROFILE_UNREADABLE_MESSAGE`, "The slicer
+could not read its printer settings, so it could not check this part."), and `web._for_upload`
+sets it on every other answer of the route (no user key, no units, no Content-Length, a
+Content-Length over the cap, a part store that cannot be written, a bug, and a body that
+ends before its Content-Length, which Flask answers as a 400 and whose sentence is
+`web.UPLOAD_NOT_WHOLE_MESSAGE`, "This part did not arrive whole.", under
+`slice.bad_request`). `errors.CODES`
+keeps the slice's remedies for the same codes, for a part read again for a plate.
+`tests/test_errors.py` produces every one through the HTTP interface and asserts its remedy,
+that it has no action, and that no remedy says mentor, print server or slice.
 
 For a failure Orca reports, the detail holds Orca's code, the exit status, Orca's own
 reasons (`error_string` and every `warning_message` from its `result.json`, the warnings

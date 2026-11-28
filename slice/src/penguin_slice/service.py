@@ -94,6 +94,26 @@ _SCRATCH_RE = re.compile(r'^slice-(\d+)-(\d+)-')
 # starts one), as contracts/wizard-front-server.md's part record does.
 UPLOAD_NAME = "this part"
 UPLOAD_SOURCE = "upload"
+# The remedy of every code POST /parts can answer. A part refused on arrival was never added,
+# so its remedy is about adding it on the Parts step (slice/README.md, "When things go wrong":
+# export the part again, simplify it, check its units), never about a slice; and its report
+# carries no action. errors.CODES keeps the slice's remedies for the same codes.
+UPLOAD_REMEDIES = {
+    "slice.no_user_key": "Try again; if it happens again, the server needs fixing.",
+    "slice.bad_units": "Choose millimetres or inches for the part and add it again.",
+    "slice.bad_request": "Add the part again; if it happens again, the server needs fixing.",
+    "slice.part_too_detailed": "Export the part with a coarser tessellation, or simplify it, and add it again.",
+    "slice.part_unreadable": "Export the part again as an STL and add it again.",
+    "slice.part_not_binary": "Export the part again as a binary STL and add it again.",
+    "slice.part_too_small": "Check the part's units and size, and add it again.",
+    "slice.part_no_volume": "Make the part a closed solid in CAD, export it again and add it again.",
+    "slice.part_too_large": "Check the part's units, or split the part in CAD so each piece fits, and add the pieces.",
+    "slice.scratch_unwritable": ("Add the part again in a few minutes; if it fails again, the server needs more free "
+                                 "disk space."),
+    "slice.profile_unreadable": "Add the part again later; if it fails again, the server needs fixing.",
+    "slice.unexpected": "Add the part again; if it fails again, the server needs fixing.",
+}
+UPLOAD_PROFILE_UNREADABLE_MESSAGE = "The slicer could not read its printer settings, so it could not check this part."
 
 # The sentences of a refused plate configuration. The limits' sentences come from limits.py.
 BAD_CONFIGURATION_MESSAGE = "This plate configuration could not be read: {problem}."
@@ -325,8 +345,12 @@ def check_part(data, units):
     ({footprints, health, triangles}), or a MeshError (ProfileError when the server's own
     printer profiles cannot be read). The part is read in its units, scaled to millimetres
     first; its sentences say "This part" and its report's `where` names nothing, since an
-    upload carries no name."""
-    plate = largest_plate()
+    upload carries no name. Its refusals carry UPLOAD_REMEDIES' remedy and no action."""
+    try:
+        plate = largest_plate()
+    except ProfileError as exc:
+        exc.message, exc.remedy, exc.no_action = UPLOAD_PROFILE_UNREADABLE_MESSAGE, UPLOAD_REMEDIES[exc.error_code], True
+        raise
     try:
         mesh = read_binary_stl(data, UPLOAD_NAME, source=UPLOAD_SOURCE, scale=UNITS[units])
         footprints = orientation_footprints(mesh)
@@ -338,6 +362,7 @@ def check_part(data, units):
                             "slice.part_too_large")
     except MeshError as exc:
         exc.message, exc.where = _capitalised(exc.message), {}
+        exc.remedy, exc.no_action = UPLOAD_REMEDIES[exc.error_code], True
         raise
     return {"footprints": footprints, "health": mesh.health, "triangles": mesh.triangles}
 
@@ -365,8 +390,8 @@ def upload_part(store, user_key, units, data):
         store.touch([entry])
         return part_record(entry), entry, False
     analysis = check_part(data, units)
-    entry = store.put(user_key, units, sha256, data, analysis)
-    return part_record(entry), entry, True
+    entry, new = store.put(user_key, units, sha256, data, analysis)     # not new when another upload was first
+    return part_record(entry), entry, new
 
 
 def _listed(problems):

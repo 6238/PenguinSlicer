@@ -142,16 +142,57 @@ and in [the guide](../../../../slice/README.md#keep-each-part-once-the-part-stor
     "The slicer could not keep this part." with "Add the part again in a few minutes; if it
     fails again, the server needs more free disk space.", and "Add the part again; if it
     happens again, the server needs fixing." (the words of `slice.no_user_key`'s remedy, the
-    other fault of the front server's). `errors.report_for_code` takes a `remedy`. Their
-    stage (`building`, `fetching`) and retryable flag stay the code's, as the details file's
-    table of codes fixes one stage per code. To overrule: change the two constants in `web.py`
-    and their entries in `tests/test_errors.py` (`UPLOAD_EXPECTED`); a stage of their own
-    would need a change to that table and to `errors.CODES`.
+    other fault of the front server's). Their stage (`building`, `fetching`) and retryable
+    flag stay the code's, as the details file's table of codes fixes one stage per code. Both
+    remedies now live in `service.UPLOAD_REMEDIES` (decision 26). To overrule: change their
+    entries there and in `tests/test_errors.py` (`UPLOAD_ANSWERS`); a stage of their own would
+    need a change to that table and to `errors.CODES`.
 25. **Two first uploads of the same bytes under one user key at once** (after review): the
     documents are silent. Both still run the checks (no lock is held across a part's check);
-    `PartStore.put` now keeps an entry already under the three, as a use, instead of
-    replacing it, so a slice job that found the first entry can still hold it. To overrule:
-    drop that early return in `put` and its test.
+    `PartStore.put` keeps an entry already under the three, as a use, instead of replacing
+    it, so a slice job that found the first entry can still hold it. After the second review
+    `put` answers (the entry, whether it is new), so the second of the two is logged
+    `stored_again`, not `stored`. To overrule: drop that early return in `put` and its test.
+26. **Every refusal of an upload says what to do on the Parts step** (after the second
+    review). The guide's row "A part cannot be used" says the user exports the part again or
+    simplifies it, on the Parts step, and the part is not added; the details file and
+    `errors.CODES` gave the part checks' codes a slice's remedies ("... and slice again", "...
+    and send a new slice", `refresh_parts` on `slice.part_unreadable`), and
+    `slice.profile_unreadable` "Ask a mentor ...; `make upgrade-orca` ...". The guide is right.
+    Chosen: one table, `service.UPLOAD_REMEDIES`, holds the remedy of every code `POST /parts`
+    can answer (`no_user_key`, `bad_units`, `bad_request`, `part_too_detailed`,
+    `part_unreadable`, `part_not_binary`, `part_too_small`, `part_no_volume`,
+    `part_too_large`, `scratch_unwritable`, `profile_unreadable`, `unexpected`), each about
+    adding the part ("Export the part again as an STL and add it again.", "Check the part's
+    units and size, and add it again.", "... and add the pieces." for a part too large), and
+    an upload's report carries no `action`, since none of the contract's actions applies to a
+    part never added. `service.check_part` sets the remedy on the checks' `MeshError` and on
+    the `ProfileError` of the server's own profiles, whose upload sentence becomes "The slicer
+    could not read its printer settings, so it could not check this part." (the slice's
+    sentence names "this printer", which an upload has not chosen); `web._for_upload` sets it
+    on every other answer of the route, a bug's and Flask's own among them. Covering Flask's
+    own showed one more wrong sentence: a body cut off before its Content-Length answered
+    "The print server does not offer POST /parts."; it now says "This part did not arrive
+    whole.", under `slice.bad_request` (the contract lists 400 `slice.bad_request` for an
+    upload's fault of the front server's). `errors.CODES`
+    keeps the slice's remedies for the same codes, which a part read again for a plate can
+    still raise (`slice.part_too_large` against the plate's own printer).
+    `tests/test_errors.py` produces every code through the HTTP interface and asserts the
+    remedy, no action, and no "mentor", "print server" or "slic" in any remedy. To overrule:
+    change `UPLOAD_REMEDIES` and `UPLOAD_ANSWERS` together.
+27. **The contract's over-size example changes its remedy** (with decision 26). The contract
+    requires the 413 of an upload over 7,500,084 bytes to be exactly
+    [examples/error-report-part-over-size.json](../../../../contracts/examples/error-report-part-over-size.json),
+    whose remedy ended "and slice again.". Chosen: the example now ends "and add it again.";
+    the code, the message and the shape are unchanged. The front server's stand-in reads the
+    file, so it follows; no other component quoted the sentence. To overrule: put the old
+    words back in the example and give `slice.part_too_detailed` its slice remedy on upload.
+28. **A slice job's hold refuses an entry replaced under the same three** (minor finding of
+    the second review). `PartStore.hold` compares each entry with the very object in the
+    store; a test now sweeps an entry, uploads the same bytes again and holds the old entry:
+    `PartsGone`. Reason: the slice job's use renewed the old entry, not the new one, so the
+    new one could be swept under it; the plate is then answered with the part missing and
+    the wizard uploads it again. To overrule: compare with `is None` and drop that test.
 
 ## Targets missed
 
@@ -199,19 +240,29 @@ and in [the guide](../../../../slice/README.md#keep-each-part-once-the-part-stor
    known future work, as the details file says. As first pushed, this record said the new
    sentences of this batch used neither; that was false (the part store's refusal said "The
    print server could not keep this part." and carried the default remedy "Ask a mentor
-   ..."). After review the batch's own sentences and remedies use neither (decision 24).
-   The older sentences, the 404 and 405 sentence ("The print server does not offer ...")
-   among them, keep the old words.
-6. **The review's findings declined.** A refusal of a path other than `POST /slices` and
-   `POST /parts` (a 404 or a 405, `GET /parts` for one) still writes no log line. That is the
-   details file's later item: item 9 of "Phase 3: hosted on Railway" (the log's new lines)
-   says that as built only the refusals of `POST /slices`, of `POST /parts`, of a request
-   without the user key and of another user key's slice job are logged, and makes "a line
-   for every exception and every refusal, whichever route it comes from" that item's work. The test that pins it,
-   `test_a_method_parts_does_not_take_is_no_upload`, changes with that item. Minor finding 1
-   (tests not written first) needs no change: it is Targets missed 5, and the reviewer's
-   mutations there were caught.
+   ..."). After the first review the batch's own two sentences used neither (decision 24),
+   but the second review found that every other refusal of an upload still carried a
+   slice's remedy, and `slice.profile_unreadable` "Ask a mentor"; after the second review
+   no remedy `POST /parts` answers says mentor, print server or slice (decision 26). The
+   older sentences of a slice, the 404 and 405 sentence ("The print server does not offer
+   ...") among them, keep the old words; on `POST /parts` an error of Flask's own answers
+   with the upload's sentence and remedy instead.
 5. Measuring the disk the part store takes: open in the guide's Unmeasured, before phase 3.
+
+## Findings of the reviews declined
+
+1. First review: a refusal of a path other than `POST /slices` and `POST /parts` (a 404 or
+   a 405, `GET /parts` for one) still writes no log line. That is the details file's later
+   item: item 9 of "Phase 3: hosted on Railway" (the log's new lines) says that as built
+   only the refusals of `POST /slices`, of `POST /parts`, of a request without the user key
+   and of another user key's slice job are logged, and makes "a line for every exception
+   and every refusal, whichever route it comes from" that item's work. The test that pins
+   it, `test_a_method_parts_does_not_take_is_no_upload`, changes with that item.
+2. First review, minor finding 1 (tests not written first) needs no change: it is Targets
+   missed 5, and the reviewer's mutations there were caught.
+3. Second review: none declined. Its minor finding 4 (the `errors.py` docstring said "for the
+   student") was fixed with the same words in `mesh.MeshError` and
+   `print_config.ProfileError`.
 
 ## For the owner to look at
 

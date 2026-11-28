@@ -77,12 +77,39 @@ class TestFinding:
         slice job that found the first entry between them can still hold it."""
         store = Parts(tmp_path)
         data = box_stl()
-        first = store.store.put(USER_KEY, "mm", sha256(data), data, {"checked": 1})
+        first, first_new = store.store.put(USER_KEY, "mm", sha256(data), data, {"checked": 1})
         store.clock[0] += 60
-        second = store.store.put(USER_KEY, "mm", sha256(data), data, {"checked": 2})
+        second, second_new = store.store.put(USER_KEY, "mm", sha256(data), data, {"checked": 2})
+        assert (first_new, second_new) == (True, False)                       # the second put says so
         assert second is first and first.last_used == store.clock[0]          # the second put is a use
         assert store.store.hold([first], tmp_path / "job")[(sha256(data), "mm")].read_bytes() == data
         assert len(store.store) == 1 and not list(first.path.parent.glob(".upload-*"))
+
+    def test_two_first_uploads_at_once_are_logged_as_one_new_and_one_again(self, tmp_path, monkeypatch):
+        """The second upload looked before the first was kept (its get found nothing), so it
+        checks and puts too: it is not new."""
+        from penguin_slice.service import upload_part
+        store = Parts(tmp_path)
+        data = box_stl()
+        assert upload_part(store.store, USER_KEY, "mm", data)[2] is True
+        monkeypatch.setattr(store.store, "get", lambda *a: None)              # it looked first
+        _record, entry, new = upload_part(store.store, USER_KEY, "mm", data)
+        assert new is False and len(store.store) == 1
+
+    def test_an_entry_swept_and_added_again_is_not_the_entry_a_slice_job_found(self, tmp_path):
+        """A slice job that found an entry which was then swept and uploaded again holds
+        nothing: its use renewed the old entry, not the new one, so the new one could go at
+        any moment under it."""
+        store = Parts(tmp_path)
+        data = box_stl()
+        store.add(data)
+        found = store.store.get(USER_KEY, sha256(data), "mm")
+        store.clock[0] += 7200
+        assert store.store.sweep() == 1
+        store.add(data)                                     # the same bytes again: a new entry
+        with pytest.raises(PartsGone) as caught:
+            store.store.hold([found], tmp_path / "job")
+        assert caught.value.entries == [found] and not (tmp_path / "job").exists()
 
     def test_two_users_who_upload_one_file_each_have_their_own_entry(self, tmp_path):
         store = Parts(tmp_path)

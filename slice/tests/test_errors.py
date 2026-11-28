@@ -284,29 +284,31 @@ EXPECTED = {
     "slice.bad_units": Expected(
         bad_units, "The slicer was not told whether this part is in millimetres or inches.", "checking", False, None,
         "Choose millimetres or inches for the part and add it again.", "units 'cm', not 'mm' or 'in'"),
+    # The part checks run when a part is added, on the Parts step: their remedies are about
+    # adding it (service.UPLOAD_REMEDIES); the same codes from a slice are tested below.
     "slice.part_unreadable": Expected(
-        lambda s: stl(s, b""), "The file for this part is empty.", "checking", False, "refresh_parts",
-        "Export the part again and send a new slice.", "upload: 0 bytes"),
+        lambda s: stl(s, b""), "The file for this part is empty.", "checking", False, None,
+        "Export the part again as an STL and add it again.", "upload: 0 bytes"),
     "slice.part_not_binary": Expected(
         lambda s: stl(s, ASCII_BOX), "The file for this part is a text STL; the slicer needs a binary STL.",
-        "checking", False, None, "Export the part again as a binary STL and send a new slice.", "bytes of ASCII STL"),
+        "checking", False, None, "Export the part again as a binary STL and add it again.", "bytes of ASCII STL"),
     "slice.part_too_detailed": Expected(
         oversize, "This part is too detailed to print here (over 7,500,084 bytes, the size of 150,000 triangles).",
-        "checking", False, None, "Export the part with a coarser tessellation, or simplify it, and slice again.",
+        "checking", False, None, "Export the part with a coarser tessellation, or simplify it, and add it again.",
         "upload Content-Length 7,500,085 bytes, cap 7,500,084"),
     "slice.part_too_small": Expected(
         lambda s: stl(s, box_stl(0.05, 0.05, 0.05)), "This part is too small to print (0.05 x 0.05 x 0.05 mm).",
-        "checking", False, None, "Check the part's units and size, then slice again.",
+        "checking", False, None, "Check the part's units and size, and add it again.",
         "upload: 0.05 x 0.05 x 0.05 mm"),
     "slice.part_no_volume": Expected(
         lambda s: stl(s, LOOSE), "This part is loose triangles that enclose nothing, so there is nothing to print.",
-        "checking", False, None, "Make the part a closed solid in CAD, export it again and send a new slice.",
+        "checking", False, None, "Make the part a closed solid in CAD, export it again and add it again.",
         "1 triangles, none shares an edge with another"),
     "slice.part_too_large": Expected(
         lambda s: stl(s, box_stl(500, 500, 500)),
         "This part is 500 x 500 x 500 mm, larger than any printer here can print in any orientation (the largest "
         "prints 340.0 x 320.0 x 340.0 mm).", "checking", False, None,
-        "Check the part's units, or split the part in CAD so each piece fits, and slice again.", "upload: "),
+        "Check the part's units, or split the part in CAD so each piece fits, and add the pieces.", "upload: "),
     "slice.placement_off_plate": Expected(
         lambda s: s.read(plate_configuration(instances=[dict(TWO[0], x=1.0)])), "Box #1 is not fully on the plate.", "checking",
         False, "arrange", "Move the instance fully onto the plate, or press Arrange, and slice again.",
@@ -504,6 +506,121 @@ def test_an_upload_failure_says_what_to_do_about_the_upload(case, tmp_path, monk
     assert report["remedy"] == expected.remedy
     assert expected.detail in report["detail"]
     assert not re.search(r"mentor|print server|slice again", report["message"] + report["remedy"], re.I)
+
+
+def web_upload(data, units="mm"):
+    def produce(scene):
+        client, _pool = scene.web()
+        return upload(client, data, units=units).get_json()
+    return produce
+
+
+def over_the_triangle_cap(scene):
+    scene.monkeypatch.setattr(limits, "MAX_PART_TRIANGLES", 11)
+    return web_upload(BOX)(scene)                   # 12 triangles
+
+
+def profiles_unreadable_on_upload(scene):
+    """The server's own printer profiles cannot be read when a part arrives (the largest plate)."""
+    def broken():
+        raise ValueError("Expecting property name enclosed in double quotes")
+    scene.monkeypatch.setattr(service_module, "_largest_plate", broken)
+    return web_upload(BOX)(scene)
+
+
+def cut_off_upload(scene):
+    """An upload whose body ends before its Content-Length: the connection was lost."""
+    client, _pool = scene.web()
+    return client.post("/parts?units=mm", headers={"X-Penguin-User-Key": "user-a"},
+                       content_type="application/octet-stream", input_stream=io.BytesIO(BOX[:100]),
+                       environ_overrides={"CONTENT_LENGTH": str(len(BOX))}).get_json()
+
+
+def bug_while_a_part_arrives(scene):
+    scene.monkeypatch.setattr("penguin_slice.web.upload_part", lambda *a: 1 / 0)
+    return web_upload(BOX)(scene)
+
+
+# Every code POST /parts can answer, through the HTTP interface, with the remedy a user reads
+# on the Parts step (slice/README.md, "When things go wrong": export the part again, simplify
+# it, check its units). Written out, not imported, so a change to them fails a test.
+UPLOAD_ANSWERS = {
+    "no_user_key": ("slice.no_user_key", no_user_key, "Try again; if it happens again, the server needs fixing."),
+    "bad_units": ("slice.bad_units", bad_units, "Choose millimetres or inches for the part and add it again."),
+    "no_content_length": ("slice.bad_request", upload_without_a_length,
+                          "Add the part again; if it happens again, the server needs fixing."),
+    "cut_off": ("slice.bad_request", cut_off_upload,
+                "Add the part again; if it happens again, the server needs fixing."),
+    "content_length_over_cap": ("slice.part_too_detailed", oversize,
+                                "Export the part with a coarser tessellation, or simplify it, and add it again."),
+    "triangles_over_cap": ("slice.part_too_detailed", over_the_triangle_cap,
+                           "Export the part with a coarser tessellation, or simplify it, and add it again."),
+    "empty": ("slice.part_unreadable", web_upload(b""), "Export the part again as an STL and add it again."),
+    "text_stl": ("slice.part_not_binary", web_upload(ASCII_BOX),
+                 "Export the part again as a binary STL and add it again."),
+    "too_small": ("slice.part_too_small", web_upload(box_stl(0.05, 0.05, 0.05)),
+                  "Check the part's units and size, and add it again."),
+    "no_volume": ("slice.part_no_volume", web_upload(LOOSE),
+                  "Make the part a closed solid in CAD, export it again and add it again."),
+    "too_large": ("slice.part_too_large", web_upload(box_stl(500, 500, 500)),
+                  "Check the part's units, or split the part in CAD so each piece fits, and add the pieces."),
+    "part_store_full": ("slice.scratch_unwritable", part_store_full,
+                        "Add the part again in a few minutes; if it fails again, the server needs more free disk "
+                        "space."),
+    "profiles_unreadable": ("slice.profile_unreadable", profiles_unreadable_on_upload,
+                            "Add the part again later; if it fails again, the server needs fixing."),
+    "bug": ("slice.unexpected", bug_while_a_part_arrives,
+            "Add the part again; if it fails again, the server needs fixing."),
+}
+
+
+def test_upload_answers_cover_every_code_post_parts_answers():
+    from penguin_slice.service import UPLOAD_REMEDIES
+    assert {code for code, _p, _r in UPLOAD_ANSWERS.values()} == set(UPLOAD_REMEDIES)
+
+
+@pytest.mark.parametrize("case", list(UPLOAD_ANSWERS))
+def test_every_upload_refusal_says_what_to_do_on_the_parts_step(case, tmp_path, monkeypatch):
+    """No remedy of an upload asks for a slice, a mentor or the print server, and none
+    carries an action: the part was never added, so there is nothing to slice again."""
+    code, producer, remedy = UPLOAD_ANSWERS[case]
+    report = producer(Scene(tmp_path, monkeypatch))
+    assert report["code"] == code
+    assert_report_shape(report)
+    assert report["remedy"] == remedy
+    assert "action" not in report
+    assert not re.search(r"mentor|print server|slic", report["remedy"], re.I)
+    assert not re.search(r"mentor|student|team|print server|slice again|new slice", report["message"], re.I)
+
+
+def test_an_upload_cut_off_says_the_part_did_not_arrive_whole(tmp_path, monkeypatch):
+    report = cut_off_upload(Scene(tmp_path, monkeypatch))
+    assert (report["message"], report["detail"]) == ("This part did not arrive whole.", "HTTP 400 Bad Request")
+
+
+def test_the_upload_message_for_unreadable_profiles_is_about_the_part(tmp_path, monkeypatch):
+    report = profiles_unreadable_on_upload(Scene(tmp_path, monkeypatch))
+    assert report["message"] == "The slicer could not read its printer settings, so it could not check this part."
+    assert "Expecting property name" in report["detail"]
+
+
+# The part codes from a slice (a part read again for a plate) keep the slice's remedies.
+SLICE_PART_REMEDIES = {
+    "slice.part_unreadable": ("refresh_parts", "Export the part again and send a new slice."),
+    "slice.part_not_binary": (None, "Export the part again as a binary STL and send a new slice."),
+    "slice.part_too_detailed": (None, "Export the part with a coarser tessellation, or simplify it, and slice again."),
+    "slice.part_too_small": (None, "Check the part's units and size, then slice again."),
+    "slice.part_no_volume": (None, "Make the part a closed solid in CAD, export it again and send a new slice."),
+    "slice.part_too_large": (None, "Check the part's units, or split the part in CAD so each piece fits, and "
+                                   "slice again."),
+}
+
+
+@pytest.mark.parametrize("code", list(SLICE_PART_REMEDIES))
+def test_a_part_code_from_a_slice_keeps_the_slices_remedy(code):
+    from penguin_slice.mesh import MeshError
+    report = error_report(MeshError("A part could not be read.", "x", code))
+    assert (report.get("action"), report["remedy"]) == SLICE_PART_REMEDIES[code]
 
 
 def test_the_three_ways_orca_can_end_on_a_signal_are_distinct(tmp_path, monkeypatch):

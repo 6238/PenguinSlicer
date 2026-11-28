@@ -2,9 +2,10 @@
 (contracts/error-report.md).
 
 Each exception the slice service raises carries its error code (`error_code`), its
-sentence for the student (`message`), the evidence for the log (`details`) and, when
+sentence for the user (`message`), the evidence for the log (`details`) and, when
 known, the part, instance or height (`where`). The adapter adds the `remedy`, the `action`,
-`retryable` and the stage from CODES. Orca's return codes and their error codes are in
+`retryable` and the stage from CODES. The remedies of CODES are a slice's; an upload
+(POST /parts) answers with service.UPLOAD_REMEDIES instead, and no action. Orca's return codes and their error codes are in
 slicer.ORCA_RETURN_CODES, the one table of them.
 """
 from .jobs import GENERIC_FAILURE, JobFailure, QueueFull, exception_text
@@ -146,7 +147,7 @@ def error_report(exc):
         return _report(exc.error_code, exc.message, detail, exc.where, exc.remedy, exc.no_action)
     if isinstance(exc, _OWN):
         return _report(exc.error_code, exc.message, exc.details, getattr(exc, "where", None),
-                       getattr(exc, "remedy", None))
+                       getattr(exc, "remedy", None), getattr(exc, "no_action", False))
     if isinstance(exc, QueueFull):
         return _report("slice.busy", BUSY_MESSAGE, "the job queue is full")
     if isinstance(exc, JobFailure) and exc.__cause__ is not None:

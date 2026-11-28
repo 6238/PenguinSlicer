@@ -83,14 +83,17 @@ def load_catalog():
 class ProfileError(ValueError):
     """A printer, filament or process the slice service will not slice with.
 
-    `message` is one sentence for the student; `details` names the choice for the log;
-    `error_code` is the error report's code."""
+    `message` is one sentence for the user; `details` names the choice for the log;
+    `error_code` is the error report's code. `remedy`, when set, replaces the code's remedy
+    and `no_action` drops its action (service.check_part sets both for a part being added)."""
 
     def __init__(self, message, details="", error_code="slice.profiles_not_offered"):
         super().__init__(message)
         self.message = message
         self.details = details
         self.error_code = error_code
+        self.remedy = None
+        self.no_action = False
 
 
 def _profile_name(path):

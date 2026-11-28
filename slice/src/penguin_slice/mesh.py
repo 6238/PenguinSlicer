@@ -20,9 +20,10 @@ _MIRRORS = {'-z': ('+z', 1), '-x': ('+x', 0), '-y': ('+y', 1)}
 
 
 class MeshError(Exception):
-    """A part refused when it is read. `message` is one sentence for the student, `details`
+    """A part refused when it is read. `message` is one sentence for the user, `details`
     the measured value and the file for the log, `error_code` the error report's code and
-    `where` the part."""
+    `where` the part. `remedy`, when set, replaces the code's remedy and `no_action` drops
+    its action (service.check_part sets both for a part being added)."""
 
     def __init__(self, message, details="", error_code="slice.part_unreadable", where=None):
         super().__init__(message)
@@ -30,6 +31,8 @@ class MeshError(Exception):
         self.details = details
         self.error_code = error_code
         self.where = where or {}
+        self.remedy = None
+        self.no_action = False
 
 
 @dataclass
