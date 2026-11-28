@@ -65,6 +65,29 @@ FRONT_REPORTS = {
         "remedy": "Put fewer instances on the plate, or split its parts over two plates, and "
                   "slice again.",
     },
+    "front.slice_unknown": {
+        "status": 404, "retryable": False,
+        "message": "The server knows of no such slice.",
+        "remedy": "Slice the plate again.",
+    },
+    "front.sliced_file_not_ready": {
+        "status": 409, "retryable": False,
+        "message": "This plate's sliced file is not ready yet.",
+        "remedy": "Wait for the slice to finish; if it happens again, PenguinSlicer needs "
+                  "fixing.",
+    },
+    "front.sliced_file_expired": {
+        "status": 410, "retryable": False,
+        "message": "This plate's slice has expired: a sliced file is kept for two hours "
+                   "after its slice ends.",
+        "remedy": "Slice the plate again.",
+    },
+    "front.too_many_streams": {
+        "status": 429, "retryable": True,
+        "message": "You are following more slices at once than the server allows: four.",
+        "remedy": "Close another tab that is slicing, or wait for one of its slices to "
+                  "finish.",
+    },
     "front.too_many_requests": {
         "status": 429, "retryable": True,
         "message": "This browser sent parts or plates faster than the server takes them.",

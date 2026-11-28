@@ -169,6 +169,18 @@ class Follower:
         with self._lock:
             return set(self._jobs)
 
+    def whose(self, job):
+        """The user key `job` is followed for, or None when it is not followed."""
+        with self._lock:
+            followed = self._jobs.get(job)
+            return followed.user_key if followed is not None else None
+
+    def states(self):
+        """The `state` of the latest report pages see of each slice job followed (None for
+        one with no report yet), for the once-a-minute line on how full the server is."""
+        with self._lock:
+            return [(f.latest or {}).get("state") for f in self._jobs.values()]
+
     def subscribe(self, user_key, job, deliver):
         """Give every report pages are to see of `job` to `deliver(report)`, then
         `deliver(None)` when the following ends; None when `job` is not followed for
