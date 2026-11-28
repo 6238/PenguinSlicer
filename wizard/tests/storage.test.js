@@ -172,6 +172,15 @@ test('a different user\'s sign-in clears every stored plate, the upload units an
   assert.deepEqual(b.reports, []);
 });
 
+test('a different user\'s sign-in clears the plate an open tab of the first user holds, too', async () => {
+  const b = browser();
+  const a = await openTab(b, 'A');
+  await a.storage.addPart({ sha256: 'aa', units: 'mm', name: 'Bracket' }, bytes(84, 1));
+  const c = await openTab(b, 'C', { user: OTHER_USER, groups: [{ id: OTHER_USER, name: 'Sam Lee' }] });
+  assert.deepEqual(b.records.keys(), ['owner', `plates/${c.plate.plate_id}`]);
+  assert.deepEqual(b.locks.heldBy('A'), [plateLock(a.plate.plate_id)]);
+});
+
 test('the same user opening again clears nothing', async () => {
   const b = browser();
   const a = await openTab(b, 'A');
@@ -290,6 +299,21 @@ test('a storage the browser will not open: the page works from memory, with one 
   assert.deepEqual(b.reports.map((r) => r.what), ['storage_refused']);
 });
 
+test('a storage the browser would not open on one load and opens on the next is not reported as cleared', async () => {
+  const b = browser();
+  b.records.unavailable = true;
+  const a = await openTab(b, 'A');
+  assert.deepEqual(b.reports.map((r) => r.what), ['storage_refused']);
+  b.records.unavailable = false;
+  const again = await refresh(b, a);
+  assert.deepEqual(b.reports.map((r) => r.what), ['storage_refused']);
+  assert.equal(b.records.value('owner'), USER);
+  // From then on the storage holds the owner, and a storage cleared after it is reported.
+  b.records.clearAll();
+  await refresh(b, again);
+  assert.deepEqual(b.reports.map((r) => r.what), ['storage_refused', 'storage_cleared']);
+});
+
 test('without the browser\'s locks a tab keeps its own plate through a refresh and never takes up another', async () => {
   const b = browser();
   const a = await openTab(b, 'A', { locks: null });
@@ -310,25 +334,67 @@ test('a plate written by a later page, in a format this page does not know, is l
   assert.deepEqual(b.records.value(`plates/${a.plate.plate_id}`), record);
 });
 
+// One stored plate for each way a plate of this page's format can be unreadable (README-details.md,
+// "When a plate is dropped"), each used more recently than the readable plate, so that a plate
+// the page took up by mistake would be the one the new tab opens. Each is made from the readable
+// plate by `spoil`.
+const UNREADABLE = {
+  'parts-not-a-list': (p) => ({ ...p, parts: { 0: 'not a list' } }),
+  'part-without-units': (p) => ({ ...p, parts: [{ ...p.parts[0], units: 3 }] }),
+  'part-without-sha256': (p) => ({ ...p, parts: [{ ...p.parts[0], sha256: undefined }] }),
+  'part-not-an-object': (p) => ({ ...p, parts: ['aa.mm'] }),
+  'instances-not-a-list': (p) => ({ ...p, instances: null }),
+  'settings-missing': ({ settings, ...p }) => p,
+  'changes-not-an-object': (p) => ({ ...p, settings: { ...p.settings, changes: [] } }),
+  'filament-not-a-name': (p) => ({ ...p, settings: { ...p.settings, filament: 7 } }),
+  'profile-not-a-name': (p) => ({ ...p, settings: { ...p.settings, profile: { name: 'x' } } }),
+  'step-not-a-step': (p) => ({ ...p, step: 'checkout' }),
+  'user-missing': ({ user, ...p }) => p,
+  'group-not-a-string': (p) => ({ ...p, group: 6238 }),
+  'last-used-missing': ({ last_used_ms, ...p }) => p,
+  'last-used-not-finite': (p) => ({ ...p, last_used_ms: Infinity }),
+  'plate-id-not-its-key': (p) => ({ ...p, plate_id: 'another-plate' }),
+};
+
 test('a stored plate of this page\'s format that the page cannot read is dropped, never taken up, with one page_failed report', async () => {
   const b = browser();
   const a = await openTab(b, 'A');
   await a.storage.addPart({ sha256: 'aa', units: 'mm', name: 'Bracket' }, bytes(84, 1));
   const good = b.records.value(`plates/${a.plate.plate_id}`);
   b.locks.closeTab('A');
-  b.records.map.set('plates/no-list', { ...good, plate_id: 'no-list', parts: { 0: 'not a list' }, last_used_ms: good.last_used_ms + 2 });
-  b.records.map.set('part-bytes/no-list/aa.mm', bytes(84, 1));
-  const { settings, ...withoutSettings } = good;
-  b.records.map.set('plates/no-settings', { ...withoutSettings, plate_id: 'no-settings', last_used_ms: good.last_used_ms + 1 });
-  // The tab names the broken plate, as a refresh of its tab would.
-  const c = await openTab(b, 'C', { tab: new FakeTab({ 'penguinslicer.plate_id': 'no-list' }) });
+  const names = Object.keys(UNREADABLE);
+  names.forEach((name, i) => {
+    const spoilt = UNREADABLE[name]({ ...structuredClone(good), plate_id: name, last_used_ms: good.last_used_ms + 1 + i });
+    b.records.map.set(`plates/${name}`, spoilt);
+    b.records.map.set(`part-bytes/${name}/aa.mm`, bytes(84, 1));
+  });
+  // The tab names a broken plate, as a refresh of its tab would.
+  const c = await openTab(b, 'C', { tab: new FakeTab({ 'penguinslicer.plate_id': 'instances-not-a-list' }) });
   assert.equal(c.plate.plate_id, a.plate.plate_id);          // the readable plate is taken up
   assert.equal(c.plate.parts.length, 1);
-  assert.deepEqual(b.records.keys().filter((k) => k.includes('no-list') || k.includes('no-settings')), []);
+  assert.deepEqual(b.records.keys().filter((k) => names.some((n) => k.includes(n)) || k.includes('another-plate')), []);
   assert.deepEqual(b.reports.map((r) => r.what), ['page_failed']);
-  assert.match(b.reports[0].detail, /2 stored plates/);
+  assert.match(b.reports[0].detail, new RegExp(`^${names.length} stored plates`));
   assert.equal(c.tab.get('penguinslicer.plate_id'), a.plate.plate_id);
 });
+
+// Each way on its own: the one spoilt plate is the most recently used, and is dropped, never taken
+// up, so no condition of the page's reading can be lost without a test failing.
+for (const [name, spoil] of Object.entries(UNREADABLE)) {
+  test(`a stored plate unreadable on its own (${name}) is dropped and the readable plate is taken up`, async () => {
+    const b = browser();
+    const a = await openTab(b, 'A');
+    await a.storage.addPart({ sha256: 'aa', units: 'mm', name: 'Bracket' }, bytes(84, 1));
+    const good = b.records.value(`plates/${a.plate.plate_id}`);
+    b.locks.closeTab('A');
+    b.records.map.set(`plates/${name}`, spoil({ ...structuredClone(good), plate_id: name, last_used_ms: good.last_used_ms + 1 }));
+    await b.clock.advance(HOUR);
+    const c = await openTab(b, 'C', { tab: new FakeTab({ 'penguinslicer.plate_id': name }) });
+    assert.equal(c.plate.plate_id, a.plate.plate_id);
+    assert.deepEqual(b.records.keys().filter((k) => k.includes(name) || k.includes('another-plate')), []);
+    assert.deepEqual(b.reports.map((r) => r.what), ['page_failed']);
+  });
+}
 
 test('a stored plate the page cannot read that another tab holds is left alone', async () => {
   const b = browser();

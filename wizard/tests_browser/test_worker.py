@@ -3,6 +3,7 @@ worker, started from its built files under the contract's content security polic
 STL and draws the part's picture; a malformed file ends in the worker's error report. The page is
 left on the real clock, and its heartbeat measures the longest hold of the main thread while the
 test waits for the worker's answer, an event: it stays under the 250 ms of the guide."""
+import json
 from pathlib import Path
 
 import pytest
@@ -56,6 +57,21 @@ def test_the_worker_reads_a_binary_stl_and_draws_its_picture_without_holding_the
     assert result["drawn"] > 88 * 88 * 0.1
     assert result["held"] < MAIN_THREAD_HOLD_MS, result
     assert w.problems == []
+
+
+def test_a_worker_that_cannot_start_is_sent_as_one_layout_failed_report(page, front_server):
+    """The page's entry point joins the worker's failure to the reports: the worker's script,
+    served here as a file that is no script, never runs, and the front server hears of it once."""
+    (worker,) = (WIZARD / "dist" / "assets").glob("geometry.worker.????????????.js")
+    front_server.files[f"/assets/{worker.name}"] = b"this is not a script"
+    with page.expect_request(lambda r: r.url.endswith("/api/reports/failure")) as sent:
+        w = Wizard(page, front_server, fake_clock=False)
+    body = json.loads(sent.value.post_data)
+    assert body["what"] == "layout_failed"
+    assert body["detail"].startswith("the worker failed: ")
+    read = w.run("return await wizard.geometry.read('a.stl', new ArrayBuffer(84), 'mm');")
+    assert read["error"]["code"] == "wizard.layout_failed"
+    assert [path for (_, path, _) in front_server.bodies if path == "/api/reports/failure"] == ["/api/reports/failure"]
 
 
 def test_a_malformed_stl_ends_in_the_worker_report_without_holding_the_page(page, front_server):

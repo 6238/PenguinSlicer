@@ -1501,7 +1501,10 @@ never holds a plate for ever.
 has not been used for 12 hours is dropped; a plate that an open tab holds is not dropped
 under it. A plate is also dropped when the user presses New plate in its tab or changes
 the current group, and every plate is cleared when a different user signs in at the
-browser ([Signing in](#signing-in)). The 12 hours are longer than the two hours a sliced
+browser ([Signing in](#signing-in)), the plates other open tabs are showing included,
+since they are the previous user's work. A stored plate the page cannot read, one that
+is damaged or was written wrongly, is dropped rather than opened, unless a tab is showing
+it, and the wizard reports it. The 12 hours are longer than the two hours a sliced
 file lasts, so a plate can outlive its slice, and then needs only slicing again
 ([A sliced plate that expires](#a-sliced-plate-that-expires)).
 

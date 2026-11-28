@@ -2049,15 +2049,19 @@ refresh and never takes up another, since it cannot tell which are held.
 
 **When a plate is dropped.** A stored plate that no tab holds and that has not been used for 12 hours
 is dropped, checked when any page opens; a plate an open tab holds is never dropped under it. A stored
-plate of the page's own format whose shape the page cannot use (its parts or instances not lists, its
-settings missing, its `plate_id` not its key's) is never taken up and is dropped, unless a tab holds
-it, with one `page_failed` report for the opening; a plate of a format the page does not know, which
-a later release's page wrote, is left alone. A plate
+plate of the page's own format whose shape the page cannot use (its `user` or `group` not a string;
+its parts not a list, or a part not an object with a string `sha256` and `units`; its instances not a
+list; its settings missing, their `changes` not an object, or their `filament` or `profile` neither
+a name nor null; its `step` not one of the five steps; its `last_used_ms` missing or not a finite
+number; its `plate_id` not its key's) is never taken up and is dropped, unless a tab holds it, with
+one `page_failed` report for the opening; a plate of a format the page does not know, which a later
+release's page wrote, is left alone. A plate
 is also dropped when the user presses New plate in its tab or changes the current group (its records
 deleted while the tab still holds its lock, which is let go only then, so no tab opening meanwhile
 takes up a plate half deleted), and every
 stored plate, with `uploadUnits` and `currentGroup`, is cleared when `/api/me` names a different user
-from `owner`.
+from `owner`: the plates other open tabs hold are cleared too, since they are the previous user's
+work, which a page for the new user never shows.
 
 **When storage fails.** The storage must hold 25 parts of up to 7.5 MB, about 190 MB, for each tab's
 plate. When the browser refuses to store a part, because the site's allowance is full, the part is
@@ -2068,7 +2072,9 @@ refused write of the plate itself gives one `storage_refused` report for the pag
 fail. A browser that will not open the storage at all gives one `storage_refused` report, and the
 page works from its memory. When the browser has cleared the
 storage, the wizard opens with an empty plate and sends a `storage_cleared` report, known by an
-`owner` record gone while `sessionStorage` still names a plate. Open: how often either happens
+`owner` record gone while the tab's `sessionStorage` still names a plate and says, by
+`penguinslicer.owner_stored`, that an earlier load of the tab found `owner` stored; so a storage the
+browser would not open on one load and opens on the next is not taken for a cleared one. Open: how often either happens
 ([Whether the browser's storage reliably holds a full plate](README.md#whether-the-browsers-storage-reliably-holds-a-full-plate));
 if refusals are common, the 12 hours or the number of plates kept may come down.
 
@@ -2093,14 +2099,23 @@ with its own fake `sessionStorage` (`FakeTab`) and all with one fake of the brow
 (`FakeLocks`, whose `closeTab` is a tab closing or crashing), in `tests/fakes/storage.js`; it reaches
 each of the tests above but the amber line, which is drawn with the part's row (item 8 of
 [By phase](#by-phase)); the module gives the row its `saved` flag and the sentence. It also reaches
-a duplicated tab, a refused write of the plate, a storage that will not open, a page without locks,
+a duplicated tab, a refused write of the plate, a storage that will not open (and one that opens on
+the next load, not reported as cleared), a page without locks, each way a plate can be unreadable on
+its own and all of them at once, a different user's sign-in clearing a plate an open tab holds,
 a plate of a later format, New plate (`newPlate`, which drops the plate, bytes and all, and keeps
 the settings when asked) and a part removed with its bytes. `tests_browser/test_storage.py` runs the
 same in Chromium with the real IndexedDB, `sessionStorage` and Web Locks: several tabs of one
 browser, a refresh, a closed tab's plate taken up, `owner` stored from the start, a storage cleared
 by the browser reported once, and the full plate of 25 parts of 7,500,084 bytes stored and read back
 after a refresh (1.35 s for the test in headless Chromium on the machine without a graphics card,
-none refused). The 12 hours are the fast suite's alone, on its fake clock.
+none refused). The 12 hours are the fast suite's alone, on its fake clock. That the locks seam never
+waits for a held lock is proved on an event by `tests/locks.test.js`, over a fake of
+`navigator.locks` that queues a request without `ifAvailable` as the standard does and says so; the
+duplicated tab in Chromium shows the same with the real locks. The page's entry point (`main.js`)
+joining the worker's failure and the opening's failure to the reports is reached in Chromium by
+`tests_browser/test_worker.py` (a worker script that cannot run, one `layout_failed` report) and
+`tests_browser/test_page.py` (an opening that throws, one `page_failed` report and the page marked
+failed).
 
 ## Inside Onshape's panel and in a tab
 

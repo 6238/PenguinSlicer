@@ -1,5 +1,6 @@
 """The built page loads in Chromium under the contract's content security policy, runs its
 code, and reads the version the front server filled in."""
+import json
 
 
 def open_page(page, front_server):
@@ -37,3 +38,15 @@ def test_the_page_asks_only_for_itself_its_assets_and_what_it_opens_with(page, f
     assert len(front_server.requests) > 1
     others = [path for path in front_server.requests[1:] if not path.startswith("/assets/") and path != "/favicon.ico"]
     assert sorted(others) == ["/api/configuration", "/api/me", "/api/settings-table"]
+
+
+def test_an_opening_that_throws_is_sent_as_a_page_failed_report_and_marks_the_page_failed(page, front_server):
+    """The page's entry point joins the opening's end to the reports: a fault of the page's own
+    code while it opens, made here by a structuredClone that throws, reaches the front server."""
+    page.add_init_script("globalThis.structuredClone = () => { throw new TypeError('made to fail by the test'); };")
+    with page.expect_request(lambda r: r.url.endswith("/api/reports/failure")) as sent:
+        page.goto(front_server.url)
+        page.wait_for_selector('html[data-opened="failed"]', state="attached")
+    body = json.loads(sent.value.post_data)
+    assert body["what"] == "page_failed"
+    assert body["detail"] == "opening the page: TypeError: made to fail by the test"

@@ -127,7 +127,8 @@ built is described in the details file's sections
     never taken up and is dropped, unless a tab holds it, with one `page_failed` report for the
     opening naming how many. The documents are silent. Readable means: `plate_id` equal to its
     key's, `user` and `group` strings, `parts` a list of objects with string `sha256` and `units`,
-    `instances` a list, `settings` an object with a `changes` object, `step` a string and
+    `instances` a list, `settings` an object with a `changes` object and a `filament` and
+    `profile` each a string or null, `step` one of the five steps (round 2, decision 33) and
     `last_used_ms` a finite number. Reason: the page knows its own format, so such a plate is a
     fault, not a later release's work, and keeping it would break every opening until it aged
     out (which it never would, its time being unreadable). `page_failed` because it is the page's
@@ -156,10 +157,11 @@ built is described in the details file's sections
     them, or not whole, is the page's fault, `wizard.layout_failed`. To overrule: change the two
     figures.
 30. **The *proposed* way of knowing a cleared storage is settled as built** (minor finding 5):
-    an `owner` record gone while the tab's `sessionStorage` still names a plate, reported once
-    as `storage_cleared`, since the opening writes `owner` again at once. Reason: `owner` is
-    written on every first opening, so its absence while the tab names a plate can only mean the
-    storage was cleared under the tab. It misses a storage cleared while no tab of the site was
+    an `owner` record gone while the tab's `sessionStorage` still names a plate and holds
+    `penguinslicer.owner_stored` (round 2, decision 34), reported once as `storage_cleared`,
+    since the opening writes `owner` again at once. Reason: `owner` is written on every opening
+    that opens the storage, so its absence while the tab says an earlier load found it stored
+    can only mean the storage was cleared under the tab. It misses a storage cleared while no tab of the site was
     open (no tab then names a plate), which is indistinguishable from a first visit. Tested in
     the fast suite and in Chromium with the real IndexedDB deleted. To overrule: keep a
     second marker outside IndexedDB (for example in `localStorage`) and compare the two.
@@ -169,6 +171,59 @@ built is described in the details file's sections
     whole is its own code failing. To overrule: report it as `page_failed`.
 
 No finding of the review was declined: each was checked against the code and reproduced.
+
+### Decisions of the review round 2 (finding numbers are the reviewer's second review of #37)
+
+32. **Every condition of `readable()` has a fast test of its own** (blocking finding 1). The
+    finding was right: removing `Array.isArray(p.instances)`, `Number.isFinite(p.last_used_ms)`
+    or `p.plate_id === plateId` left every test green. `tests/storage.test.js` now holds one
+    stored plate for each way a plate can be unreadable (15 ways, the table `UNREADABLE`), all at
+    once in the "cannot read" test and each on its own in a test of its own, each used more
+    recently than the readable plate so that a plate taken up by mistake is the one the tab
+    opens. Checked by removing each of the 14 conditions in turn from a scratch copy of
+    `storage.js` and running `storage.test.js` with `opening.test.js`: every removal fails at
+    least one test (most fail three). To overrule: nothing; a condition without a test is one a
+    later change can lose unseen.
+33. **A stored `step` must be one of the five steps, and `filament` and `profile` a name or
+    null** (minor finding 4). The finding was right: a `step` of "checkout" opened a panel with
+    every section hidden, and a `filament` of 7 reached the summary. Chosen: such a plate is
+    unreadable like the others (decision 25), dropped with the one `page_failed` report.
+    `storage.js` takes the steps from `panel/steps.js` (`stepIndex`), so the list is never
+    written twice. To overrule: open such a plate on its first step instead, keeping its parts.
+34. **A missing `owner` means a cleared storage only after the tab once found it stored**
+    (minor finding 3). The finding was right: a load on which the browser would not open the
+    storage left the tab naming a plate with no `owner` written, and the next load that opened
+    the storage reported `storage_cleared` falsely. Chosen: the tab's `sessionStorage` holds
+    `penguinslicer.owner_stored` from the first load that wrote or found `owner`, and the report
+    needs it. Kept in the tab, not in IndexedDB, because a storage cleared by the browser loses
+    everything in IndexedDB. A tab opened before this change has no marker and would miss one
+    clearing: the page is not yet released, so no such tab exists. To overrule: drop the marker
+    and accept the false report after a refused opening.
+35. **A different user's sign-in clears the plates other open tabs hold** (minor finding 5).
+    This was the behaviour and is now stated in the details file, "When a plate is dropped", and
+    in the guide, with a fast test. Reason: those plates are the previous user's work, and a page
+    for the new user must never show it; an open tab of the previous user keeps its plate in
+    memory and writes it again on its next change, as that user's, which the new user's tabs
+    never take up (it is not theirs) and which is dropped at 12 hours. To overrule: keep plates
+    held by open tabs until those tabs close.
+36. **The locks seam's "never waits" is proved by a fast test on an event** (minor finding 1).
+    `tests/locks.test.js` runs `webLocks()` over a fake of `navigator.locks` that, like the
+    standard, queues a request for a held lock made without `ifAvailable` and resolves a
+    `queued` promise when it does; the test races the copy's `tryHold` against it. With
+    `ifAvailable` removed the test fails in about 1 ms with "queued". The Chromium test of the
+    duplicated tab stays as the proof with the real locks, without its own 10 s bound (the
+    page's 10 s bound of `conftest.py` remains, as for every wait there).
+37. **The report wiring of `main.js` is reached in Chromium** (minor finding 2). Two tests:
+    `test_page.py` makes the opening throw (an init script replaces `structuredClone`, which only
+    the storage module uses, with one that throws) and sees one `page_failed` report sent and the
+    page marked failed; `test_worker.py` serves the worker's script as a file that is no script
+    and sees one `layout_failed` report, and every later question answered
+    `wizard.layout_failed`. With either report removed from `main.js` the matching test fails.
+    These two wait for a request that, when the wiring is lost, never comes, so they fail at
+    Playwright's 10 s bound: a positive event has no earlier proof of its absence. To overrule:
+    give the reports module an event a test can await, and fail on it.
+
+No finding of review round 2 was declined.
 
 ## Targets missed
 
@@ -201,7 +256,8 @@ None.
 - `make -C wizard test` and `make -C wizard test-browser`; the new tests are
   `wizard/tests/storage.test.js`, `wizard/tests/opening.test.js`, `wizard/tests/reports.test.js`,
   `wizard/tests/geometry/picture.test.js`, `wizard/tests/geometry-client.test.js`,
-  `wizard/tests_browser/test_storage.py` and `wizard/tests_browser/test_worker.py`.
+  `wizard/tests/locks.test.js`, `wizard/tests_browser/test_storage.py`,
+  `wizard/tests_browser/test_worker.py` and `wizard/tests_browser/test_page.py`.
 - With the three components started as
   [Running phase 2 on one machine](../../../../front/README-details.md#running-phase-2-on-one-machine)
   says: the header reads "Config: PenguinSlicer default"; a second tab gets its own plate; a

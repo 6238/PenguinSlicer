@@ -23,12 +23,17 @@
 // empty plate. A stored plate that no tab holds and that has not been used for PLATE_UNUSED_H is
 // dropped, checked when any page opens.
 
+import { stepIndex } from './panel/steps.js';
+
 export const PLATE_UNUSED_H = 12;
 // The format of a stored plate. A page leaves alone a plate of a format it does not know, which a
 // later release's page wrote.
 export const PLATE_FORMAT = 1;
 
 const TAB_PLATE = 'penguinslicer.plate_id';
+// Set in the tab once the storage holds `owner`: only then does a missing `owner` mean the
+// storage was cleared, and not that the browser would not open it on an earlier load.
+const TAB_STORED = 'penguinslicer.owner_stored';
 const PLATES = 'plates/';
 const BYTES = 'part-bytes/';
 const CHOICES = ['uploadUnits', 'currentGroup'];
@@ -47,15 +52,18 @@ function emptyPlate(plateId, user, group, now, settings = null) {
 }
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+const nameOrNull = (v) => v === null || typeof v === 'string';
 
 // Whether a stored plate of PLATE_FORMAT, under the key of `plateId`, has the shape the page
-// takes up and opens: anything else would throw while the page opens.
+// takes up and opens: anything else would throw while the page opens, or open a panel with no
+// step shown (a step not one of the five) or a filament or profile that is no name.
 function readable(p, plateId) {
   return p.plate_id === plateId && typeof p.user === 'string' && typeof p.group === 'string'
     && Array.isArray(p.parts) && p.parts.every((part) => isObject(part) && typeof part.sha256 === 'string' && typeof part.units === 'string')
     && Array.isArray(p.instances)
     && isObject(p.settings) && isObject(p.settings.changes)
-    && typeof p.step === 'string' && Number.isFinite(p.last_used_ms);
+    && nameOrNull(p.settings.filament) && nameOrNull(p.settings.profile)
+    && stepIndex(p.step) !== -1 && Number.isFinite(p.last_used_ms);
 }
 
 const failure = (err) => `${err && err.name ? err.name : 'Error'}: ${err && err.message ? err.message : String(err)}`;
@@ -153,15 +161,18 @@ export function createStorage({ openRecords, locks, tab, clock, newId, report })
       if (records) {
         try {
           const owner = await records.get('owner');
-          if (owner === undefined && named) {
+          if (owner === undefined && named && tab.get(TAB_STORED)) {
             report('storage_cleared', { detail: 'the owner record is gone while the tab still names its plate' });
           }
+          // A different user's sign-in clears every stored plate, the plates other open tabs hold
+          // included: they are the other user's work, and a page for the new user never shows it.
           if (owner !== undefined && owner !== user) {
             for (const key of await records.keys()) {
               if (key.startsWith(PLATES) || key.startsWith(BYTES) || CHOICES.includes(key)) await records.delete(key);
             }
           }
           if (owner !== user) await records.put('owner', user);
+          tab.set(TAB_STORED, '1');
           const stored = await records.get('currentGroup');
           if (typeof stored === 'string' && has(stored)) group = stored;
           // Drop every plate no tab holds and unused for PLATE_UNUSED_H.
