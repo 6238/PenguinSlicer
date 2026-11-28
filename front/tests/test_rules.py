@@ -120,22 +120,35 @@ def test_the_requests_offered_are_the_contracts_built_so_far(clock, log):
 @pytest.mark.parametrize("method, path", [
     ("GET", "/nothing"), ("POST", "/api/nothing"), ("GET", "/api/slices/j1/cancel"),
     ("DELETE", "/api/slices/j1"), ("PUT", "/test/json"), ("GET", "/test/json"),
-    ("OPTIONS", "/test/json"), ("OPTIONS", "*"), ("GET", "//test/raise"),
-    ("GET", "/test/raise/"), ("PATCH", "/"),
+    ("OPTIONS", "/test/json"), ("OPTIONS", "*"), ("GET", "/test//raise"),
+    ("GET", "/test/raise//"), ("GET", "/test/raise/"), ("PATCH", "/"),
 ])
 def test_a_path_or_method_not_offered_is_front_no_such_request(client, log, method, path):
     answer = client.open(path, method=method)
     report = assert_error_report(answer, "front.no_such_request", 404)
     assert method in report["detail"]
-    assert "Allow" not in answer.headers
+    assert "Allow" not in answer.headers and "Location" not in answer.headers
     assert log.lines[-1]["event"] == "error" and log.lines[-1]["code"] == \
         "front.no_such_request"
+
+
+@pytest.mark.parametrize("path_info", ["//test/raise", "///test/raise", "/test//raise"])
+def test_a_doubled_slash_anywhere_in_the_path_is_front_no_such_request(client, log,
+                                                                       path_info):
+    # The test client would read a path starting `//` as a host; the environment's path is
+    # set directly, as a server passes it for a request line `GET //test/raise`.
+    answer = client.get("/", environ_overrides={"PATH_INFO": path_info})
+    report = assert_error_report(answer, "front.no_such_request", 404)
+    assert path_info in report["detail"] and "Location" not in answer.headers
+    assert log.lines[-1]["path"] == path_info
 
 
 # Answers.
 
 @pytest.mark.parametrize("body", [b"", b"not json", b"{", b'{"a": NaN}', b"[1, Infinity]",
-                                  b'{"a": 1} trailing', b"\xff\xfe{}", b'"\xed\xa0\x80"'])
+                                  b'{"a": 1} trailing', b"\xff\xfe{}", b'"\xed\xa0\x80"',
+                                  b"[" * 100_000, b"[" * 50_000 + b"]" * 50_000,
+                                  b'{"a":' * 50_000 + b"1" + b"}" * 50_000])
 def test_a_body_that_is_not_json_is_front_bad_request(client, log, body):
     answer = client.post("/test/json", data=body, content_type="application/json")
     report = assert_error_report(answer, "front.bad_request", 400)
@@ -155,6 +168,7 @@ def test_an_exception_inside_is_front_unexpected_and_its_trace_goes_to_the_log(c
     report = assert_error_report(answer, "front.unexpected", 500)
     line = log.lines[-1]
     assert line["event"] == "error" and line["code"] == "front.unexpected"
+    assert "detail" not in line  # the report's detail says nothing the line needs
     assert "RuntimeError: a fault planted by the test" in line["trace"]
     assert "explode" in line["trace"]
     assert line["incident"] in report["detail"]

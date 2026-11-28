@@ -9,6 +9,7 @@ secret's value.
 import os
 import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -62,9 +63,10 @@ class Settings:
             raise SettingError("PENGUIN_COOKIE_KEY", "the cookie key is required unless the "
                                                      "development identity is on")
         version = env.get("PENGUIN_VERSION") or None
-        if version is not None and not is_version(version):
+        if version is not None and not _real_version(version):
             raise SettingError("PENGUIN_VERSION", f"{version!r} is not of the form "
-                                                  "YYYYMMDDTHHMMSSZ-<seven hex digits>")
+                                                  "YYYYMMDDTHHMMSSZ-<seven hex digits> "
+                                                  "with a real date and time")
         return cls(
             dev_identity=dev_identity,
             slice_url=_address(env, "PENGUIN_SLICE_URL", DEFAULT_SLICE_URL),
@@ -89,12 +91,29 @@ def _flag(env, name):
     raise SettingError(name, f"{value!r} is neither 1 (on) nor unset (off)")
 
 
+def _real_version(text):
+    """The version's form, and its moment a real one (no month 13, no 25 o'clock)."""
+    if not is_version(text):
+        return False
+    try:
+        datetime.strptime(text[:16], "%Y%m%dT%H%M%SZ")
+    except ValueError:
+        return False
+    return True
+
+
 def _address(env, name, default):
-    """An http or https address with no path: a scheme, a host and perhaps a port."""
+    """An http or https address with no path and no user: a scheme, a host and perhaps a
+    port from 1 to 65535."""
     value = env.get(name) or default
     parts = urlsplit(value)
+    try:
+        port = parts.port  # None when no port is given
+    except ValueError:  # a port that is not a number, or past 65535
+        port = 0
     if parts.scheme not in ("http", "https") or not parts.hostname \
-            or parts.path not in ("", "/") or parts.query or parts.fragment:
+            or parts.path not in ("", "/") or parts.query or parts.fragment \
+            or "@" in parts.netloc or port == 0:
         raise SettingError(name, f"{value!r} is not an address such as {default}")
     return value.rstrip("/")
 

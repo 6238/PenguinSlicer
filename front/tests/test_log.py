@@ -83,6 +83,48 @@ def test_a_value_json_cannot_hold_is_written_as_text(log):
     assert json.loads(json.dumps(log.write("e", where=object())))["where"].startswith("<object")
 
 
+def test_a_number_json_cannot_hold_is_written_as_text(log, stdout):
+    line = log.write("e", a=float("nan"), b=[float("inf")], c={"d": float("-inf")}, e=1.5)
+    printed = json.loads(stdout.getvalue(), parse_constant=lambda name: pytest.fail(name))
+    assert printed == line
+    assert (line["a"], line["b"], line["c"], line["e"]) == ("nan", ["inf"], {"d": "-inf"}, 1.5)
+
+
+def test_keys_that_are_not_text_are_written_as_text(log):
+    line = log.write("e", counts={1: "one", (2, 3): "pair", None: "none"})
+    assert line["counts"] == {"1": "one", "(2, 3)": "pair", "None": "none"}
+
+
+def test_a_value_that_holds_itself_is_written_and_the_line_kept(log, stdout):
+    circle = {"name": "circle"}
+    circle["self"] = circle
+    ring = [1]
+    ring.append(ring)
+    line = log.write("e", circle=circle, ring=ring)
+    assert line["circle"]["name"] == "circle" and isinstance(line["circle"]["self"], str)
+    assert line["ring"][0] == 1 and isinstance(line["ring"][1], str)
+    assert json.loads(stdout.getvalue()) == line
+
+
+def test_a_value_too_deep_to_write_is_written_as_a_note_and_the_line_kept(log, stdout):
+    deep = []
+    for _ in range(100_000):
+        deep = [deep]
+    line = log.write("e", deep=deep, kept="yes")
+    assert line["kept"] == "yes" and json.loads(stdout.getvalue()) == line
+    written, levels = line["deep"], 0
+    while isinstance(written, list):
+        written, levels = written[0], levels + 1
+    assert written == "<list nested past 64 levels>" and levels == 63
+
+
+def test_gathered_lines_json_cannot_hold_are_kept_as_text(log, bucket):
+    log.gather([{"component": "slice", "event": "e", "x": float("nan"), 7: "seven"}])
+    name = log.flush()
+    [kept] = lines_of(bucket, name)
+    assert kept["x"] == "nan" and kept["7"] == "seven"
+
+
 def test_a_line_may_be_written_for_another_component(log, stdout):
     line = log.write_as("wizard", "report_failure", what="storage_refused")
     assert line["component"] == "wizard" and json.loads(stdout.getvalue()) == line

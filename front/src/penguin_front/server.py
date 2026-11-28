@@ -16,7 +16,7 @@ from waitress import wasyncore
 from .app import EXTENSION, create_app
 from .buckets import FolderBucket
 from .clock import RealClock
-from .log import Log
+from .log import Log, line_text, utc_milliseconds
 from .settings import Settings, SettingError
 from .version import version_at
 
@@ -32,12 +32,17 @@ def build(settings, *, clock, stdout):
 
 def serve(args, *, environ=None, stdout, stderr, clock=None, on_listening=None):
     """Serve until stopped; 0 on a stop, 2 when a setting is refused."""
+    clock = clock or RealClock()
     try:
         settings = Settings.from_environ(environ)
     except SettingError as exc:
+        # The log's line, on standard output as every line is (the log bucket is not known
+        # yet: its folder is a setting), and the same words for whoever typed the command.
+        print(line_text({"time": utc_milliseconds(clock.now()), "component": "front",
+                         "event": "start_refused", "setting": exc.setting,
+                         "detail": str(exc)}), file=stdout, flush=True)
         print(f"penguin_front serve: {exc}", file=stderr, flush=True)
         return 2
-    clock = clock or RealClock()
     app, log = build(settings, clock=clock, stdout=stdout)
     server = waitress.create_server(app, host=args.host, port=args.port,
                                     threads=settings.threads, ident="")

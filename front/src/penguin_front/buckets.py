@@ -144,8 +144,9 @@ class FolderBucket:
             with _closed_on_failure(handle):
                 marker = self._marker_of(handle)
                 info = os.fstat(handle.fileno())
-        except (FileNotFoundError, NotADirectoryError):
-            # NotADirectoryError: a folder of the name is a file, so no such file exists.
+        except (FileNotFoundError, NotADirectoryError, IsADirectoryError):
+            # NotADirectoryError: a folder of the name is a file; IsADirectoryError: the name
+            # is a folder, of other files' names. Either way no such file exists.
             raise NotFound(name) from None
         except OSError as exc:
             raise BucketUnavailable(f"reading {name}: {exc}") from None
@@ -206,8 +207,8 @@ class FolderBucket:
         try:
             with self._lock:
                 path.unlink(missing_ok=True)
-        except NotADirectoryError:
-            return  # a folder of the name is a file, so no such file exists
+        except (NotADirectoryError, IsADirectoryError):
+            return  # a folder of the name is a file, or the name is a folder: no such file
         except OSError as exc:
             raise BucketUnavailable(f"deleting {name}: {exc}") from None
 
@@ -239,8 +240,8 @@ class FolderBucket:
                     if name.startswith(prefix):
                         info = path.stat()
                         entries.append(Entry(name, info.st_size, info.st_mtime_ns / 1e9))
-        except FileNotFoundError:
-            return []
+        except (FileNotFoundError, NotADirectoryError):
+            return []  # nothing there, or a file where the prefix's folder would be
         except OSError as exc:
             raise BucketUnavailable(f"listing {prefix!r}: {exc}") from None
         return sorted(entries, key=lambda e: e.name)

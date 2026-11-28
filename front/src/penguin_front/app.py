@@ -34,17 +34,19 @@ def create_app(settings, *, clock, log, version=None):
     """The front server's application. `log` takes `write(event, **fields)`; `version` is
     the release's, or else the settings', or else the one made from this moment."""
     app = Flask("penguin_front", static_folder=None)
-    app.url_map.merge_slashes = False
     app.extensions[EXTENSION] = {
         "settings": settings, "clock": clock, "log": log,
         "version": version or settings.version or version_at(clock.now()),
     }
 
     @app.before_request
-    def no_options():
-        if request.method == "OPTIONS":
+    def not_offered():
+        # A doubled slash anywhere is refused here, on the path as sent, before the handler
+        # runs: the web framework strips a path's leading slashes before matching it (so
+        # `//x` would be served as `/x`) and answers one elsewhere with a redirect.
+        if request.method == "OPTIONS" or "//" in request.environ.get("PATH_INFO", ""):
             raise FrontError("front.no_such_request",
-                             f"{request.method} {request.path} is not offered")
+                             f"{request.method} {_path()} is not offered")
 
     @app.errorhandler(FrontError)
     def refused(error):
@@ -54,7 +56,7 @@ def create_app(settings, *, clock, log, version=None):
     def failed(exc):
         if isinstance(exc, (NotFound, MethodNotAllowed)):
             return _answer_report(log, 404, error_report(
-                "front.no_such_request", f"{request.method} {request.path} is not offered"))
+                "front.no_such_request", f"{request.method} {_path()} is not offered"))
         if isinstance(exc, HTTPException) and exc.code < 500:
             return _answer_report(log, 400, error_report(
                 "front.bad_request", f"{exc.code} {exc.name}: {exc.description}"))
@@ -83,7 +85,8 @@ def page_file(response, cache_control):
 
 def json_body():
     """The request's body read as JSON, whatever its Content-Type says; a body that is not
-    JSON (empty, cut short, not UTF-8, or using NaN or Infinity) is `front.bad_request`."""
+    JSON (empty, cut short, not UTF-8, or using NaN or Infinity) is `front.bad_request`, as is
+    one nested too deeply for the reader, whether or not it is whole."""
     raw = request.get_data(cache=True)
 
     def no_constants(name):
@@ -93,11 +96,23 @@ def json_body():
         return json.loads(raw.decode("utf-8"), parse_constant=no_constants)
     except (UnicodeDecodeError, ValueError) as exc:
         raise FrontError("front.bad_request", f"the body is not JSON: {exc}") from None
+    except RecursionError:
+        raise FrontError("front.bad_request",
+                         "the body is not JSON the server can read: it is nested too "
+                         "deeply") from None
+
+
+def _path():
+    """The request's path as sent: the web framework's `request.path` with any leading
+    slashes it dropped put back."""
+    leading = len(request.environ.get("PATH_INFO", "")) - \
+        len(request.environ.get("PATH_INFO", "").lstrip("/"))
+    return "/" * max(leading - 1, 0) + request.path
 
 
 def _answer_report(log, status, report, **extra):
     line = {"code": report["code"], "status": status, "method": request.method,
-            "path": request.path}
+            "path": _path()}
     page = request.headers.get(PAGE_HEADER, "")
     if is_version(page):
         line["page_version"] = page

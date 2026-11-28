@@ -7,6 +7,7 @@ import threading
 
 import pytest
 
+from penguin_front import buckets
 from penguin_front.buckets import (BadName, BucketUnavailable, ConditionFailed, FolderBucket,
                                    NotFound)
 
@@ -95,6 +96,75 @@ def test_two_writers_racing_on_one_marker_leave_exactly_one_winner(bucket):
     for t in threads:
         t.join()
     assert sorted(results) == ["lost"] * 7 + ["won"]
+
+
+def test_a_writer_held_between_its_check_and_its_rename_shuts_out_a_second(tmp_path, clock,
+                                                                           monkeypatch):
+    # The folder form's own test: the first writer is held inside its rename, the second
+    # is started and either finishes (no lock: two winners) or reaches the lock; only then
+    # is the first let go. No duration is waited on.
+    bucket = FolderBucket(tmp_path / "bucket", clock, chunk_bytes=CHUNK)
+    marker = bucket.put("config/g.json", b"v1")
+    real_replace, real_lock = buckets.os.replace, bucket._lock
+    first_in_rename, let_first_go, second_got_on = (threading.Event(), threading.Event(),
+                                                    threading.Event())
+    results = {}
+
+    def held_replace(source, target):
+        if threading.current_thread().name == "first":
+            first_in_rename.set()
+            let_first_go.wait()
+        return real_replace(source, target)
+
+    class AnnouncingLock:
+        def __enter__(self):
+            if threading.current_thread().name == "second":
+                second_got_on.set()
+            return real_lock.__enter__()
+
+        def __exit__(self, *exc):
+            return real_lock.__exit__(*exc)
+
+    def writer():
+        name = threading.current_thread().name
+        try:
+            bucket.put("config/g.json", name.encode(), if_marker=marker)
+            results[name] = "won"
+        except ConditionFailed:
+            results[name] = "lost"
+        finally:
+            if name == "second":
+                second_got_on.set()
+
+    monkeypatch.setattr(buckets.os, "replace", held_replace)
+    bucket._lock = AnnouncingLock()
+    first = threading.Thread(target=writer, name="first")
+    first.start()
+    first_in_rename.wait()
+    second = threading.Thread(target=writer, name="second")
+    second.start()
+    second_got_on.wait()
+    let_first_go.set()
+    first.join()
+    second.join()
+    assert results == {"first": "won", "second": "lost"}
+    assert bucket.get("config/g.json")[0] == b"first"
+
+
+def test_a_name_that_is_a_folder_is_not_found_and_deleting_it_is_harmless(bucket):
+    bucket.put("a/b", b"a file under a")
+    with pytest.raises(NotFound):
+        bucket.get("a")
+    with pytest.raises(NotFound):
+        bucket.open("a")
+    bucket.delete("a")
+    assert bucket.get("a/b")[0] == b"a file under a"
+
+
+def test_a_listing_under_a_file_is_empty(bucket):
+    bucket.put("a", b"a file")
+    assert bucket.list("a/") == [] and bucket.list("a/b/") == []
+    assert [e.name for e in bucket.list("a")] == ["a"]
 
 
 def test_delete_removes_and_a_repeat_is_harmless(bucket):

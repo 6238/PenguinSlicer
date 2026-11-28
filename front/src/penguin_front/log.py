@@ -18,6 +18,7 @@ failure is said on standard output only.
 """
 
 import json
+import math
 import secrets
 import threading
 from datetime import datetime, timezone
@@ -36,6 +37,39 @@ NAME_ATTEMPTS = 5
 def _file_suffix():
     """The random part of a file's name, so two files of one second never share one."""
     return secrets.token_hex(4)
+
+
+def line_text(line):
+    """A line as one JSON object, whatever its fields hold: a value JSON cannot hold (an
+    object, `NaN` or an infinity) is written as its text, a key that is not text as its
+    text, a value met again inside itself as a note, and one nested past `MAX_DEPTH` as a
+    note, so writing a line never fails."""
+    return json.dumps(_jsonable(line, 0, set()), allow_nan=False)
+
+
+#: How deep a value is written before the rest of it is a note.
+MAX_DEPTH = 64
+
+
+def _jsonable(value, depth, holding):
+    if isinstance(value, float):
+        return value if math.isfinite(value) else str(value)
+    if value is None or isinstance(value, (str, int)):  # bool is an int
+        return value
+    if not isinstance(value, (dict, list, tuple)):
+        return str(value)
+    if id(value) in holding:
+        return f"<{type(value).__name__} holding itself>"
+    if depth >= MAX_DEPTH:
+        return f"<{type(value).__name__} nested past {MAX_DEPTH} levels>"
+    holding.add(id(value))
+    try:
+        if isinstance(value, dict):
+            return {k if isinstance(k, str) else str(k): _jsonable(v, depth + 1, holding)
+                    for k, v in value.items()}
+        return [_jsonable(v, depth + 1, holding) for v in value]
+    finally:
+        holding.discard(id(value))
 
 
 def utc_milliseconds(moment):
@@ -69,14 +103,14 @@ class Log:
         line = {"time": utc_milliseconds(self.clock.now()), "component": component,
                 "event": event}
         line.update((k, v) for k, v in fields.items() if k not in line)
-        text = json.dumps(line, default=str)
+        text = line_text(line)
         self._print(text)
         self._keep([text])
         return json.loads(text)
 
     def gather(self, lines):
         """Keep lines another component wrote (each already a dict with its component)."""
-        self._keep([json.dumps(line, default=str) for line in lines])
+        self._keep([line_text(line) for line in lines])
 
     def _print(self, text):
         with self._lock:

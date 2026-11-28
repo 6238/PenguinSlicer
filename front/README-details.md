@@ -190,12 +190,15 @@ below: [The cookie](#the-cookie), [Groups and the current group](#groups-and-the
   `errors.FRONT_REPORTS` with its status, `retryable` and its two sentences, added in the
   commit that first produces it. So far: `front.bad_request`, `front.no_such_request` and
   `front.unexpected`.
-- **Not offered** includes an `OPTIONS` request to any path and a path that differs from an
-  offered one only by a doubled or a trailing slash, all `404` `front.no_such_request`, with
-  no `Allow` header. A `HEAD` is answered wherever a `GET` is, as HTTP requires.
+- **Not offered** includes an `OPTIONS` request to any path, a path with a doubled slash
+  anywhere in it (at its start too: the check reads the path as sent, since the web
+  framework would otherwise drop leading slashes and serve `//x` as `/x`), and a path that
+  differs from an offered one only by a trailing slash, all `404` `front.no_such_request`,
+  never a redirect, with no `Allow` header; the report and the log line give the path as
+  sent. A `HEAD` is answered wherever a `GET` is, as HTTP requires.
 - **Not JSON** (`json_body()`): the body is read as JSON whatever its `Content-Type` says;
-  an empty body, one cut short, one not in UTF-8, or one using `NaN` or `Infinity` is `400`
-  `front.bad_request`. A refusal of the web framework's own below 500 (a body too large, a
+  an empty body, one cut short, one not in UTF-8, one using `NaN` or `Infinity`, or one
+  nested too deeply for Python's reader (whole or cut short) is `400` `front.bad_request`. A refusal of the web framework's own below 500 (a body too large, a
   header too long) is `front.bad_request` too, and one of 500 or more `front.unexpected`.
 - **Unexpected:** the report's `detail` names an incident id and nothing of the failure;
   the log line carries the same `incident` and the whole `trace`.
@@ -1282,7 +1285,11 @@ A file not there is `NotFound`; a conditional write whose condition does not hol
 `BucketUnavailable`, which a request answers `front.state_bucket_unreachable`; a name no file
 may have is `BadName`, a fault of the code. A name is 1 to 1,024 bytes of parts separated by
 `/`, none empty, `.` or `..`, none starting with `.`, with no `\` and no NUL, so no name
-leaves its bucket and both forms take the same names. Reads and writes pass in pieces of at
+leaves its bucket and both forms take the same names. A name that is a folder of other
+files' names in the folder form is not found and its delete is harmless, and a listing under
+a file is empty, as R2 answers. One difference remains and the layout never meets it: R2
+can hold a file `a` beside a file `a/b`, the folder form cannot, and a write that would make
+a name both a file and a folder is `BucketUnavailable` there. Reads and writes pass in pieces of at
 most `CHUNK_BYTES` (1 MiB), so a sliced file is never held whole in memory. *Proposed:* the
 R2 form uses R2's S3-compatible interface, with `If-Match` and `If-None-Match` for the
 conditional writes and the ETag as the marker. The folder form writes to a temporary file
@@ -1394,7 +1401,9 @@ the line and keep it. `gather(lines)` keeps lines another component wrote, which
 carry their component and are in that component's own output, so they are not printed again.
 A line's `time` is UTC, RFC 3339, to the millisecond, as the slice service's are; `time`,
 `component` and `event` come first and no field can replace them; a value JSON cannot hold
-is written as its text. `start()` runs the minute's loop on the front server's clock;
+(an object, `NaN`, an infinity) is written as its text, a key that is not text as its text,
+a value met again inside itself and anything nested past `MAX_DEPTH` (64) levels as a short
+note (`line_text`), so no field can make writing a line fail. `start()` runs the minute's loop on the front server's clock;
 `stop()` ends it and writes what is gathered. The running front server writes `start`
 (with `version`, `host`, `port`, `threads`, `dev_identity`) and, when stopped, `stop`.
 
@@ -1719,11 +1728,14 @@ used for the callback's address and the origin check). Each one's default is in
 
 **As built** (`penguin_front.settings.Settings.from_environ`), each is read once at start
 and checked for its form; one of the wrong form stops the start with `SettingError`, whose
-message begins with the setting's name and never quotes a secret, and the command exits with
-status 2. `PENGUIN_DEV_IDENTITY` is `1` (on), or unset, empty or `0` (off).
-`PENGUIN_SLICE_URL` and `PENGUIN_BASE_URL` are `http` or `https` addresses with no path (a
-trailing `/` is dropped). The three folders are absolute paths. `PENGUIN_VERSION` has the
-version's form. `PENGUIN_GROUPS_REREAD` is `never` (the default) or a whole number of
+message begins with the setting's name and never quotes a secret; the command writes the
+log line `start_refused` (`setting`, `detail`) on standard output, where every log line
+goes (the log bucket is itself a setting, so this line reaches no file), says the same
+words on standard error, and exits with status 2. `PENGUIN_DEV_IDENTITY` is `1` (on), or
+unset, empty or `0` (off). `PENGUIN_SLICE_URL` and `PENGUIN_BASE_URL` are `http` or `https`
+addresses with no path (a trailing `/` is dropped), no user or password, and a port, if
+given, from 1 to 65535. The three folders are absolute paths. `PENGUIN_VERSION` has the
+version's form and a real date and time. `PENGUIN_GROUPS_REREAD` is `never` (the default) or a whole number of
 seconds of at least 1. `PENGUIN_FRONT_THREADS` is a whole number from 1 to 1,000.
 `PENGUIN_FRONT_STOP_S` is unset or a whole number of at least 1. `PENGUIN_COOKIE_KEY`, when
 the development identity is off, must be set and not empty; its value never appears in the

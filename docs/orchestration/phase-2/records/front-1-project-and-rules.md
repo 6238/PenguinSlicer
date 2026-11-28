@@ -35,14 +35,25 @@ in [its guide](../../../../front/README.md#what-is-built-in-which-phase).
    refused as `front.no_such_request` (Flask would otherwise answer it, with an `Allow`
    header); `HEAD` is answered wherever `GET` is, as HTTP requires. To overrule: one line in
    `app.py`.
-5. **Slashes.** Silent. Chosen: a path differing from an offered one by a doubled or a
-   trailing slash is `404`, never a redirect. Reason: a redirect would be an answer the
-   contract does not list.
+5. **Slashes.** Silent. Chosen: a path with a doubled slash anywhere, its start included,
+   or differing from an offered one by a trailing slash is `404`, never a redirect; the
+   report and the line give the path as sent. Reason: a redirect would be an answer the
+   contract does not list. How (changed after review): one check before every handler reads
+   the path as the server passed it (`PATH_INFO`), since the web framework drops a path's
+   leading slashes before matching (and `request.path` drops them too), and waitress passes
+   a request line `GET //test/raise` with its path whole; the router's own
+   `merge_slashes` setting is not used, the check covering what it did. To overrule: the
+   check in `create_app`.
 6. **What counts as JSON.** The rule is "a body that is not JSON is `front.bad_request`".
    Chosen: the body is read as JSON whatever its `Content-Type` says; an empty body, one cut
    short, one not in UTF-8, and one using `NaN` or `Infinity` (which Python's reader would
    otherwise accept) are refused. Reason: the page sends JSON; refusing on the header alone
-   would only add a way to fail.
+   would only add a way to fail. Added after review: a body nested too deeply for Python's
+   reader (which raises `RecursionError`, whether the body is whole or cut short) is
+   `front.bad_request` too, not `front.unexpected`, which the page would retry quietly for
+   300 seconds. The depth at which the reader gives up is Python's own limit; no bound of
+   the front server's own is set, since no request of the page nests more than a few
+   levels. The tests send 50,000 and 100,000 levels.
 7. **The web framework's own refusals.** Silent. Chosen: a refusal of Flask's below 500
    (a body too large, a header too long) is `front.bad_request`, one of 500 or more is
    `front.unexpected`. Reason: no answer may be other than an error report of the front
@@ -133,6 +144,35 @@ in [its guide](../../../../front/README.md#what-is-built-in-which-phase).
     reserves memory of its own. The test of the running server sets four threads; the default
     of 100 is checked by the settings' test. The front server's memory at 100 threads is the
     guide's open item [the front server's memory](../../../../front/README.md#the-front-servers-memory).
+24. **The folder form's answers for a name that is a folder** (after review). The
+    documents say both forms take the same names. Chosen: in the folder form, reading a
+    name that is a folder of other files is `NotFound`, deleting it is harmless, and a
+    listing under a file is empty, as R2 answers; a write that would make one name both a
+    file and a folder (`a` beside `a/b`) stays `BucketUnavailable`, since a folder cannot
+    hold both. Reason: the layout of names (state and log) never puts a file where another
+    name's folder is, so the remaining difference is never met, and the cheap cases now
+    match R2. To overrule: escape names in the folder form, at the cost of files no longer
+    sitting at their names' paths.
+25. **Writing any value in a log line** (after review). The details file says a value JSON
+    cannot hold is written as its text. Chosen: `NaN` and the infinities are written as
+    text (`"nan"`, `"inf"`), keys that are not text as their text, a value met again inside
+    itself as a note, and anything past 64 levels as a note; the same for gathered lines.
+    Reason: a line must never fail inside the request that writes it, and every line must
+    be JSON for the reading command. To overrule: `line_text` in `log.py`.
+26. **Settings checked for range as well as form** (after review). Chosen: an address with
+    a user or password, or a port of 0, past 65535 or not a number, is refused; a
+    `PENGUIN_VERSION` whose date or time is not real (month 13, 25 o'clock, 31 November) is
+    refused. Reason: as decision 2, found at start. To overrule: `settings.py`.
+27. **The line of a refused start** (after review). The details file says a missing secret
+    stops the start "with a log line". Chosen: the line `start_refused` with `setting` and
+    `detail`, on standard output where every log line goes, plus the same words on
+    standard error for whoever typed the command; the line reaches no file of the log
+    bucket, whose folder is itself a setting and may be the one refused. To overrule:
+    `serve` in `server.py`.
+28. **Review findings declined.** The Onshape stand-in answers companies only, no
+    classrooms: declined, since decision 19 records its shapes as provisional and what
+    Onshape answers for a group is phase 3's to settle with the real interface; adding a
+    guessed shape now would be one more thing to correct.
 
 ## Targets missed
 

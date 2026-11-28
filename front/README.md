@@ -1345,8 +1345,8 @@ The phases are the plan's.
 
 - the front server as a project of its own, started by one command on one machine, with
   every setting read and checked at start, so that a setting of the wrong form, or a
-  missing secret, stops the start with a message that names the setting and never shows a
-  secret;
+  missing secret, stops the start with a line in the log that names the setting and never
+  shows a secret;
 - its everyday tests, with a clock the tests move, a stand-in for the slice service that
   answers exactly as the slice service's written interface and its examples say, and a
   stand-in for Onshape that counts every call; the tests reach nothing beyond the machine
@@ -1361,9 +1361,12 @@ The phases are the plan's.
   failure answered so that the page tries again while the full account of it goes to the
   log, every answer marked as not to be kept except the page files, and the version on
   every answer;
-- the log's writer: every line at once on standard output and, about once a minute, one new
-  file for all the lines gathered, in folders by year, month and day; a log that cannot be
-  written keeps its lines for the next minute and never changes an answer.
+- the log's writer: every line the front server writes, its own and those it writes for the
+  page, at once on standard output (the lines it gathers from the slice service are already
+  in the slice service's own output and are not printed twice) and, about once a minute,
+  one new file for all the lines kept, in folders by year, month and day; a log that cannot
+  be written keeps its lines for the next minute and never changes an answer, and no value
+  in a line can make writing it fail.
 
 **Phase 2: one machine, no Onshape, no printer.** The front server runs beside one
 slice service on one machine, with the development identity and a folder for each

@@ -20,19 +20,24 @@ def environ(tmp_path, **extra):
 
 
 def test_a_refused_setting_stops_the_start_with_status_2_naming_it(tmp_path):
-    stderr = io.StringIO()
+    stderr, stdout = io.StringIO(), io.StringIO()
     status = main(["serve", "--port", "0"], environ={"PENGUIN_FRONT_THREADS": "0",
                                                      "PENGUIN_DEV_IDENTITY": "1"},
-                  stdout=io.StringIO(), stderr=stderr)
+                  stdout=stdout, stderr=stderr)
     assert status == 2
     assert stderr.getvalue().startswith("penguin_front serve: PENGUIN_FRONT_THREADS: ")
+    [line] = [json.loads(text) for text in stdout.getvalue().splitlines()]
+    assert (line["component"], line["event"], line["setting"]) == \
+        ("front", "start_refused", "PENGUIN_FRONT_THREADS")
+    assert line["detail"].startswith("PENGUIN_FRONT_THREADS: ") and "time" in line
 
 
-def test_a_missing_cookie_key_stops_the_start_without_any_value(tmp_path):
-    stderr = io.StringIO()
-    assert main(["serve", "--port", "0"], environ={}, stdout=io.StringIO(),
-                stderr=stderr) == 2
+def test_a_missing_cookie_key_stops_the_start_with_a_log_line_without_any_value(tmp_path):
+    stderr, stdout = io.StringIO(), io.StringIO()
+    assert main(["serve", "--port", "0"], environ={}, stdout=stdout, stderr=stderr) == 2
     assert "PENGUIN_COOKIE_KEY" in stderr.getvalue()
+    [line] = [json.loads(text) for text in stdout.getvalue().splitlines()]
+    assert line["event"] == "start_refused" and line["setting"] == "PENGUIN_COOKIE_KEY"
 
 
 def test_the_built_front_server_uses_the_folders_of_its_settings(tmp_path, clock):
