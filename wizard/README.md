@@ -2455,7 +2455,10 @@ part, the print time and the grams of filament, and no printer), and one button,
 sliced file. Download first asks the front server about the sliced file, so that a file that has
 expired is told to the user on the step rather than in the browser's downloads, and then lets the
 browser save the file straight from the front server, so that the page never holds it; a
-notification then names the plate by its instances and gives the file's true size. The whole path
+notification then names the plate by its instances and gives the file's true size. While
+Download is asking, its button looks busy (a lighter blue and the waiting pointer) and a second
+press does nothing. An answer that arrives after the plate has expired or been sliced again is
+set aside: nothing is saved from it. The whole path
 of phase 2, from adding parts through laying out, slicing and inspecting the preview to
 downloading, has been walked in Chromium against the fake front server, and is a test. Pictures
 of the result and of the Send step beside the mockup's, at four widths, are kept with the build

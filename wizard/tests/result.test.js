@@ -13,7 +13,7 @@ import * as T from '../src/slicing-sentences.js';
 import { SLICED_FILE_KEEP_S } from '../src/page-constants.js';
 import { errorReport, events, example, steps } from './fakes/front_server.js';
 import {
-  A, B, EVENTS, JOB, S, doneReport, feedStream, hex, openPage, progress,
+  A, B, EVENTS, JOB, S, accepted, doneReport, feedStream, hex, openPage, progress,
 } from './fakes/preview-page.js';
 
 const SUMMARY = `/api/slices/${JOB}/summary`;
@@ -362,6 +362,87 @@ test('Download answered 200 without valid details: wizard.bad_answer for the Sen
     assert.equal(page.notices.length, 0);
     assert.equal(page.view().kind, 'done');
   }
+});
+
+// The request the page makes next, once it has been made.
+async function nextRequest(page) {
+  return page.server.arrived(page.server.requests.length + 1);
+}
+
+test('a Download whose details arrive after the plate has expired saves nothing, notifies nothing and leaves the expired message', async () => {
+  const page = await sliced({ expires_in_s: 1 });
+  await page.leave('send');
+  page.server.script('GET', SUMMARY, steps.hold());
+  const asked = nextRequest(page);
+  const downloading = page.result.download();
+  const request = await asked;
+  await page.clock.advance(1 * S);
+  assert.equal(page.view().kind, 'expired');
+  request.held.release(steps.answer(200, { sliced_file: details({ expires_in_s: 7200 }) }));
+  const outcome = await downloading;
+  assert.deepEqual(outcome, { ok: false });
+  assert.deepEqual(page.saved, []);
+  assert.equal(page.notices.length, 0);
+  assert.equal(page.view().kind, 'expired');
+  assert.equal(page.view().what, T.EXPIRED_WHAT);
+  assert.equal(page.store.get().expired, true);
+});
+
+test('a Download whose details arrive after a new slice has ended saves nothing and leaves the new slice\'s details', async () => {
+  const NEW = 'b7e10d44';
+  const page = await sliced();
+  await page.leave('send');
+  page.server.script('GET', SUMMARY, steps.hold());
+  const asked = nextRequest(page);
+  const downloading = page.result.download();
+  const request = await asked;
+  // the plate changed and sliced again while the details were on their way
+  await page.leave('layout');
+  const plate = page.storage.plate();
+  await page.storage.update({ instances: plate.instances.map((i, n) => (n === 0 ? { ...i, x: 90 } : i)) });
+  page.server.script('POST', '/api/slices', steps.answer(202, { slice: { ...accepted().slice, id: NEW } }));
+  feedStream(page, events.progress({ ...doneReport(41, { file: 'Bracket_plus1-new.gcode.3mf' }), job: NEW }));
+  await page.enter();
+  assert.equal(page.view().kind, 'done');
+  assert.equal(page.view().slice, NEW);
+  await page.leave('send');
+  request.held.release(steps.answer(200, { sliced_file: details({ file: 'old.gcode.3mf', expires_in_s: 5 }) }));
+  const outcome = await downloading;
+  assert.deepEqual(outcome, { ok: false });
+  assert.deepEqual(page.saved, []);
+  assert.equal(page.notices.length, 0);
+  assert.equal(page.view().slice, NEW);
+  assert.equal(page.view().details.file, 'Bracket_plus1-new.gcode.3mf');
+  await page.clock.advance(5 * S);
+  assert.equal(page.view().kind, 'done');           // the old details' expiry was not taken
+});
+
+test('the sliced file for the preview arriving after the plate has expired is not handed on', async () => {
+  const page = await sliced({ expires_in_s: 1 });
+  page.server.script('GET', FILE, steps.hold());
+  const asked = nextRequest(page);
+  const fetching = page.result.file();
+  const request = await asked;
+  await page.clock.advance(1 * S);
+  assert.equal(page.view().kind, 'expired');
+  request.held.release({ kind: 'answer', status: 200, body: 'PK-sliced', headers: { 'Content-Type': 'application/octet-stream' } });
+  assert.deepEqual(await fetching, { ok: false, stopped: true });
+  assert.equal(page.view().kind, 'expired');
+});
+
+test('a refusal as expired naming another sliced plate leaves this one sliced', async () => {
+  const page = await sliced();
+  page.slicing.expire(errorReport('front.sliced_file_expired'), 'another-slice');
+  assert.equal(page.view().kind, 'done');
+  assert.equal(page.store.get().sliced, true);
+});
+
+test('a size the details give below nothing is left out of the notification', async () => {
+  const page = await sliced();
+  await page.leave('send');
+  page.server.script('GET', SUMMARY, steps.answer(200, { sliced_file: details({ size_bytes: -5 }) }));
+  assert.equal((await page.result.download()).ok, true);
+  assert.equal(page.notices[0].what, R.DOWNLOADED_NO_SIZE(3));
 });
 
 test('Download with no sliced plate does nothing', async () => {

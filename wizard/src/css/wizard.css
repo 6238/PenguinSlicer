@@ -19,6 +19,9 @@ body { background: #f6f8fa; }
 
 /* Phase 2: the Send step's one button, Download the sliced file, without the printer's menu. */
 .split-btn #btn-do:only-child { border-radius: 6px; }
+/* While a Download asks the sliced file's details (designed here: the mockup never draws it), the
+   button is busy: the progress pointer and a lighter blue, still pressable, a second press ignored. */
+#wizard #btn-do[aria-busy="true"] { cursor: progress; opacity: 0.75; }
 
 /* The Parts step. The switch beside the upload area (designed in the guide): "Read STL files
    in:" and two radio buttons, in the mockup's line under the upload area. */

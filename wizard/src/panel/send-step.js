@@ -17,9 +17,12 @@ export function createSendStep(section, { slicing, result, store, root }) {
   const errors = $('#send-errors');
   const button = root.querySelector('#btn-do');
   button.textContent = R.DOWNLOAD;
-  let card = null;              // {slice, model}: the card of the sliced plate, kept through its expiry
+  // the button is busy (aria-busy, the progress pointer) while a Download asks its details
+  const setBusy = (on) => { busy = on; button.setAttribute('aria-busy', String(on)); };
+  let card = null;             // {slice, model}: the card of the sliced plate, kept through its expiry
   let refused = null;           // {slice, report}: a Download refused, shown until the plate changes
   let busy = false;
+  button.setAttribute('aria-busy', 'false');
 
   function dl(grid, term, ...content) {
     grid.append(el('dt', null, term));
@@ -61,13 +64,13 @@ export function createSendStep(section, { slicing, result, store, root }) {
 
   button.addEventListener('click', async () => {
     if (busy || store.get().step !== 'send') return;
-    busy = true;
+    setBusy(true);
     const slice = result.slice();
     try {
       const outcome = await result.download();
       refused = outcome.report ? { slice, report: outcome.report } : null;
     } finally {
-      busy = false;
+      setBusy(false);
       draw();
     }
   });

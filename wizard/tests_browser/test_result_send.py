@@ -312,9 +312,13 @@ def test_a_second_press_while_a_download_is_under_way_does_nothing(page, front_s
             break
         w.run("return true;")
     assert len(held) == 1
+    # the button looks busy while the details are on their way, and no longer once they are in
+    assert w.page.locator("#btn-do").get_attribute("aria-busy") == "true"
+    assert w.run("return getComputedStyle(document.querySelector('#btn-do')).cursor;") == "progress"
     with w.page.expect_download():
         held[0].continue_()
     w.page.wait_for_selector("#notices .notice")
+    assert w.page.locator("#btn-do").get_attribute("aria-busy") == "false"
     for _ in range(20):                      # a second request would be told in these round trips
         w.run("return true;")
     assert len(held) == 1

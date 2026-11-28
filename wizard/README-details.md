@@ -2394,18 +2394,29 @@ and the footer's `#btn-do`, "Download the sliced file", alone in `#final-action`
   (`saveLink`: a hidden link with `download`, clicked), so that the page never holds the file, and
   the panel's notification says "Downloaded the sliced file of 2 instances (1.8 MB)." (`DOWNLOADED`;
   `sizeText`: megabytes of 1,048,576 bytes to one decimal, as the contracts count the 50 MB cap,
-  whole kilobytes under a megabyte, else bytes). A press while one is under way does nothing.
+  whole kilobytes under a megabyte, else bytes; a `size_bytes` below 0 is left out, as `null`
+  is, with `DOWNLOADED_NO_SIZE`). Details that arrive once the view is no longer this sliced
+  plate's `done` (it expired, or a new slice ended) are set aside: `{ok: false}`, nothing saved,
+  no notification, nothing taken. While one is under way `#btn-do` is `aria-busy="true"`, with
+  the progress pointer and opacity 0.75 (`css/wizard.css`, designed here: the mockup draws no
+  busy button), and a press does nothing. `result.file()` sets aside a file that arrives after
+  the same change in the same way (`{ok: false, stopped: true}`), and `slicing.expire(report,
+  slice)` acts only on the sliced plate it names.
 - The panel shows `#final-action` on this step, off until the plate is sliced and hidden while the
   expired message shows (`panel.js`).
 
 Tests: `tests/result.test.js` gives the card's figures, Download's order (the details, then the link
 with the group, then the notification with the true size), its refusal as expired and otherwise,
-a `200` without valid details, and nothing done with no sliced plate;
+a `200` without valid details, details held until the plate has expired or a new slice has ended
+(nothing saved, no notification, the view unchanged), the file for the preview held across an
+expiry, a refusal as expired naming another sliced plate, a size below 0 left out, and nothing
+done with no sliced plate;
 `tests_browser/test_result_send.py` draws the step at 320 px with the card, the one button, no
 caret, no plate-clear line and no word naming a printer or pairing, saves the real sliced file by
 Chromium's download with its name and the group in its address, shows the notification, the two
 refusals and a `200` without valid details as red messages with nothing saved, a second press while
-the summary is held doing nothing (one summary, one save, one notification), and a refused
+the summary is held doing nothing (one summary, one save, one notification) and the button busy
+until the summary is in, and a refused
 Download's message gone once a changed plate is sliced.
 
 ### After Send

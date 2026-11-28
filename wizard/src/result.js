@@ -128,6 +128,8 @@ export function createResult({ api, slicing, store, panel, geometry, save }) {
       if (!m) return { ok: false };
       const summary = path(m.slice, 'summary');
       const answer = await api.get(summary);
+      // details that arrive after the plate expired or was sliced again are another plate's: nothing
+      // is saved and nothing is taken
       if (slicing.model().kind !== 'done' || slicing.model().slice !== m.slice) return { ok: false };
       if (!answer.ok) {
         if (answer.report.code === EXPIRED_CODE) {
@@ -142,7 +144,7 @@ export function createResult({ api, slicing, store, panel, geometry, save }) {
       save(api.link(path(m.slice, 'file')), details.file);
       // the plate in words by what it holds, as the Send step's card counts it
       const instances = m.body.instances.length;
-      const what = isNumber(details.size_bytes) ? R.DOWNLOADED(instances, sizeText(details.size_bytes)) : R.DOWNLOADED_NO_SIZE(instances);
+      const what = isNumber(details.size_bytes) && details.size_bytes >= 0 ? R.DOWNLOADED(instances, sizeText(details.size_bytes)) : R.DOWNLOADED_NO_SIZE(instances);
       panel.notify({ kind: 'info', what, key: 'downloaded' });
       return { ok: true };
     },

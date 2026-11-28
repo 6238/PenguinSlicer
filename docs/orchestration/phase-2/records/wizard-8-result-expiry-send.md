@@ -175,6 +175,44 @@ steps. One of its checks found the readout wrapping at 320 px (decision 12).
 30. **Which of the preview's failures offers Slice again** is now a named function,
     `offersSliceAgain` in `panel/preview-step.js`, so that a Node test holds it without a browser.
 
+### Decisions made in answer to the second review
+
+31. **Details that arrive after the plate expired or was sliced again are set aside.** The
+    review found that the check after `await api.get(summary)` in `result.download()` had no test:
+    without it, a summary held across the expiry saved the old slice's file and notified under the
+    expired message, and a summary held across a new slice put the old details (and their expiry)
+    on the new `done` view. The documents are silent on an answer that outlives its plate. Chosen:
+    keep the check, and hold it with two tests in `tests/result.test.js` (the summary held across
+    the expiry, and across a new slice of a changed plate with its own slice id): `{ok: false}`,
+    nothing saved, no notification, the view unchanged, and the old details' 5 s expiry not taken.
+    Each was seen to fail with the check removed. The reason: the answer is about a sliced plate
+    the user no longer has. To overrule it, remove the check and the two tests.
+32. **The same for the preview's file, and for `slicing.expire(report, slice)`** (minor findings 1
+    and 2): a test holds the file across an expiry (`{ok: false, stopped: true}`), and a test calls
+    `expire` naming another slice and sees the plate stay sliced. Both checks were redundant with
+    their callers, but the tests are cheap and keep each function true on its own. Each test was
+    seen to fail with its check removed.
+33. **The colour key's `pointerdown` stopPropagation is removed** (minor finding 3). The review was
+    right that it held nothing: `#btn-key` and `#pv-key` are the canvas's siblings inside
+    `#viewer-container`, OrbitControls listens on the canvas alone, and the only other
+    `pointerdown` listeners (`panel.js`, `tooltips.js`) listen in the capture phase, which a
+    stopPropagation at the target cannot stop. The browser test that a press on the key reaches
+    no listener on the canvas holds the behaviour, and the comment says why it is so. To overrule
+    it, put the line back with a test that puts a listener where it would matter.
+34. **`#btn-do` looks busy while Download asks its details** (minor finding 4): `aria-busy="true"`,
+    the progress pointer and opacity 0.75, from the press until the answer is handled. The mockup
+    draws no busy button, so the look is designed here (`css/wizard.css`); the button is not
+    disabled, so that it keeps its focus, and a second press is still ignored. The browser test of
+    a second press now checks the attribute and the pointer while the summary is held, and the
+    attribute after. To overrule it, change `setBusy` in `panel/send-step.js` and the rule in
+    `css/wizard.css`.
+35. **A `size_bytes` below 0 is left out of the notification** (minor finding 5), as `null` is:
+    the notification says "Downloaded the sliced file of 3 instances." The contract never sends
+    one; the check in `download()` costs one comparison, and `sizeText` is left as it is, since its
+    one caller no longer passes such a size.
+
+No finding of the second review was declined.
+
 ## Targets missed
 
 1. **Download's notification is not where the mockup puts it.** The mockup draws a grey box

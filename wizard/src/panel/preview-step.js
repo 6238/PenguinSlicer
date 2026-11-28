@@ -73,11 +73,11 @@ export function createPreviewStep(section, { slicing, store, clock, result = nul
   help.querySelector('p').textContent = R.HELP;
 
   // The colour key and the "?" each open from their icon and close on a click elsewhere or Escape;
-  // a press on them is never a turn of the view.
+  // a press on them is never a turn of the view, since they are the canvas's siblings and the
+  // view's controls listen on the canvas alone (tests_browser/test_result_send.py holds it).
   const setKey = (open) => { key.hidden = !open; keyButton.setAttribute('aria-expanded', String(open)); };
   const setHelp = (open) => { help.hidden = !open; helpButton.setAttribute('aria-expanded', String(open)); };
   keyButton.addEventListener('click', (e) => { e.stopPropagation(); setKey(key.hidden); });
-  for (const node of [keyButton, key]) node.addEventListener('pointerdown', (e) => e.stopPropagation());
   key.addEventListener('click', (e) => e.stopPropagation());
   helpButton.addEventListener('click', (e) => { e.stopPropagation(); setHelp(help.hidden); });
   help.addEventListener('click', (e) => e.stopPropagation());
