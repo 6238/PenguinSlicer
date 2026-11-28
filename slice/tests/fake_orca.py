@@ -33,6 +33,8 @@ Modes:
     truncated     exit 0 with an archive cut off half way;
     corrupt       exit 0 with an archive whose G-code entry fails its checksum;
     hang          send one progress message, then wait for a signal;
+    gate          make the FIFO fake-orca.gate in --outputdir, send one progress message, wait
+                  until a test writes a byte into the FIFO (open_gate), then slice as `ok` does;
     hang_hard     the same, ignoring SIGTERM;
     tmp_then_hang      write the whole archive under Orca's temporary name (<archive>.tmp) only,
                        say "All done, Success", then wait for a signal: the real Orca at
@@ -61,6 +63,7 @@ SLICE_INFO = ('<?xml version="1.0" encoding="UTF-8"?>\n<config><plate>'
               '<metadata key="prediction" value="600"/><metadata key="weight" value="4.5"/>'
               '<filament id="1" used_m="1.5" used_g="4.5"/></plate></config>\n')
 FLOOD_BYTES = 8 * 1024 * 1024
+GATE = "fake-orca.gate"           # mode gate's FIFO, in --outputdir
 GENERAL = "Failed slicing the model. Please verify the slicing of all plates on Orca Slicer before uploading."
 # Orca's words on stdout, as the pinned Orca prints them (tests_orca pins them).
 NO_LAYERS = ("No layers were detected. You might want to repair your STL file(s) or check their size or thickness "
@@ -136,6 +139,13 @@ def main(argv):
     names = [obj.get("name") for obj in root.iter(NS + "object")]
     if mode in ("hang", "hang_hard"):
         wait_for_a_signal(pipe, mode == "hang_hard")
+    if mode == "gate":
+        gate = out / GATE
+        os.mkfifo(gate)
+        pipe.send("Slicing mesh", 7)
+        with open(gate, "rb") as fh:          # blocks until the test opens the gate and writes to it
+            fh.read(1)
+        mode = "ok"
     if mode == "child":
         # The child holds an exclusive lock on fake-orca-child.lock for as long as it lives,
         # so a test can wait for its death without sleeping.

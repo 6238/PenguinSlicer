@@ -9,7 +9,7 @@ known, the part, instance or height (`where`). The adapter adds the `remedy`, th
 (POST /parts) answers with service.UPLOAD_REMEDIES instead, and no action. Orca's return codes and their error codes are in
 slicer.ORCA_RETURN_CODES, the one table of them.
 """
-from .jobs import GENERIC_FAILURE, JobFailure, QueueFull, exception_text
+from .jobs import GENERIC_FAILURE, JobFailure, QueueFull, Stopping, exception_text
 from .mesh import MeshError
 from .plate import TOO_CLOSE_REMEDY
 from .print_config import ProfileError
@@ -19,6 +19,8 @@ from .slicer import UNSTARTABLE_MESSAGE, SliceCancelled, SliceError
 
 # The queue's refusal had no sentence of its own; this is the original route's.
 BUSY_MESSAGE = "The slicer is busy, try again in a minute."
+# A submission while the slice service stops (contracts/examples/slice-http/stopping.json).
+STOPPING_MESSAGE = "The slicer is restarting."
 SERVER_REMEDY = "Slice again; if it fails again, ask a mentor to check the print server."
 REEXPORT_REMEDY = "Export the part again and send a new slice."
 
@@ -31,9 +33,9 @@ CODES = {
     "slice.bad_plate_configuration": ("checking", False, None,
                                       "Lay out the plate again and send a new slice."),
     "slice.too_many_instances": ("checking", False, "lower_quantities",
-                                 "Lower the quantities and print the rest on a second plate."),
+                                 "Lower the quantities and print the rest on a new plate."),
     "slice.too_many_parts": ("checking", False, None,
-                             "Use fewer different parts on this plate and print the rest on a second plate."),
+                             "Use fewer different parts on this plate and print the rest on a new plate."),
     "slice.unknown_printer": ("checking", False, None,
                               "Choose a printer from the list, or ask a mentor to add this one."),
     "slice.profiles_not_offered": ("checking", False, "choose_profiles",
@@ -66,6 +68,8 @@ CODES = {
     "slice.placement_too_close": ("checking", False, "arrange", TOO_CLOSE_REMEDY),
     "slice.busy": ("queued", True, None,
                    "Wait a minute and slice again."),
+    "slice.stopping": ("queued", True, None,
+                       "Your plate will be sliced as soon as the slicer is back."),
     "slice.scratch_unwritable": ("building", True, None,
                                  "Ask a mentor to check the print server's free disk space and its work folder, "
                                  "then slice again."),
@@ -78,7 +82,7 @@ CODES = {
     "slice.cancelled": ("slicing", True, None,
                         "Send the slice again when you want it."),
     "slice.out_of_memory": ("slicing", False, "lower_quantities",
-                            "Remove some instances or the largest part and print them on a second plate."),
+                            "Remove some instances or the largest part and print them on a new plate."),
     "slice.orca_crashed": ("slicing", False, None,
                            "Try another orientation or other print settings; if it crashes again, ask a mentor "
                            "to check the part."),
@@ -101,6 +105,9 @@ CODES = {
                                "Move the instances onto the plate, or press Arrange, and slice again."),
     "slice.orca_failed": ("slicing", False, None,
                           "Try another orientation or other print settings, and slice again."),
+    "slice.rests_on_an_edge": ("slicing", False, "choose_orientation",
+                               "Lay the part on one of its own flat faces, or turn on supports with a raft, and "
+                               "slice again."),
     "slice.no_output": ("slicing", True, None, SERVER_REMEDY),
     "slice.unreadable_output": ("slicing", True, None, SERVER_REMEDY),
     "slice.no_gcode": ("slicing", True, None, SERVER_REMEDY),
@@ -162,6 +169,8 @@ def error_report(exc):
                        getattr(exc, "remedy", None), getattr(exc, "no_action", False))
     if isinstance(exc, QueueFull):
         return _report("slice.busy", BUSY_MESSAGE, "the job queue is full")
+    if isinstance(exc, Stopping):
+        return _report("slice.stopping", STOPPING_MESSAGE, exc.detail)
     if isinstance(exc, JobFailure) and exc.__cause__ is not None:
         return error_report(exc.__cause__)
     if isinstance(exc, JobFailure):

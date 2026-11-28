@@ -90,6 +90,15 @@ def busy(scene):
     pool.submit()
 
 
+def stopping(scene):
+    """A plate configuration submitted through the HTTP interface after the slice service was
+    asked to stop."""
+    client, pool = scene.web()
+    upload(client, BOX)
+    pool.stop()
+    return submit(client, plate_configuration()).get_json()
+
+
 def stl(scene, data):
     """`data` uploaded as a part (the checks on arrival)."""
     scene.upload(data)
@@ -155,6 +164,19 @@ def fake_orca(mode, **slice_kwargs):
     def produce(scene):
         install_fake_orca(scene.tmp, scene.monkeypatch, mode)
         scene.slice(**slice_kwargs)
+    return produce
+
+
+ON_AN_EDGE = [0.923879533, 0.382683432, 0.0, 0.0]     # the box turned 45 degrees about x: on one edge
+
+
+def rests_on_an_edge(supports="0"):
+    """Orca's general failure (-100) on a plate whose one instance touches the plate only
+    along an edge: the pinned Orca's reason, an empty first layer, reaches no file."""
+    def produce(scene):
+        install_fake_orca(scene.tmp, scene.monkeypatch, "general")
+        instance = {"ref": "box", "rotation": ON_AN_EDGE, "angle": 0, "x": 50.0, "y": 50.0}
+        scene.slice(plate_configuration(instances=[instance], overrides={"enable_support": supports}))
     return produce
 
 
@@ -238,10 +260,10 @@ TWO = [{"ref": "box", "orientation": "+z", "angle": 0, "x": 50.0, "y": 50.0},
 SPACED = [dict(TWO[0]), dict(TWO[1], x=80.0)]
 SERVER = "Slice again; if it fails again, ask a mentor to check the print server."
 # Written out, not imported, so a change to the remedies fails a test.
-TOO_CLOSE_REMEDY = ("Spread the instances out (or press Arrange), or move some instances to a second plate, and "
+TOO_CLOSE_REMEDY = ("Spread the instances out (or press Arrange), or move some instances to a new plate, and "
                     "slice again.")
 TOO_CLOSE_SUPPORTS_REMEDY = ("Spread the instances out (or press Arrange), turn supports off, or move some instances "
-                             "to a second plate, and slice again.")
+                             "to a new plate, and slice again.")
 ASCII_BOX = b"solid box\n facet normal 0 0 1\n  outer loop\n   vertex 0 0 0\n" + b" " * 100 + b"\nendsolid box\n"
 LOOSE = (FIXTURES / "bad_stls" / "single_triangle.stl").read_bytes()
 EMPTY_LAYERS = "Box #1 has nothing to print between 9.9 and 11.34 mm high, so the layers above would start in mid-air."
@@ -264,14 +286,14 @@ EXPECTED = {
         False, None, "Lay out the plate again and send a new slice.", "it has no instances"),
     "slice.too_many_instances": Expected(
         lambda s: s.read(plate_configuration(instances=[TWO[0]] * 151)),
-        "This plate has 151 instances; the slicer takes up to 150 on one plate, so print the rest on a second plate.",
-        "checking", False, "lower_quantities", "Lower the quantities and print the rest on a second plate.",
+        "This plate has 151 instances; the slicer takes up to 150 on one plate, so print the rest on a new plate.",
+        "checking", False, "lower_quantities", "Lower the quantities and print the rest on a new plate.",
         "151 instances, cap 150"),
     "slice.too_many_parts": Expected(
         lambda s: s.read(plate_configuration(parts={f"p{i}": part_entry("Box", BOX) for i in range(26)},
                                              instances=[dict(TWO[0], ref=f"p{i}") for i in range(26)])),
-        "This plate uses 26 different parts; the slicer takes up to 25 on one plate, so print the rest on a second "
-        "plate.", "checking", False, None, "Use fewer different parts on this plate and print the rest on a second "
+        "This plate uses 26 different parts; the slicer takes up to 25 on one plate, so print the rest on a new "
+        "plate.", "checking", False, None, "Use fewer different parts on this plate and print the rest on a new "
         "plate.",
         "26 different parts, cap 25"),
     "slice.unknown_printer": Expected(
@@ -338,6 +360,10 @@ EXPECTED = {
     "slice.busy": Expected(
         busy, "The slicer is busy, try again in a minute.", "queued", True, None, "Wait a minute and slice again.",
         "the job queue is full"),
+    "slice.stopping": Expected(
+        stopping, "The slicer is restarting.", "queued", True, None,
+        "Your plate will be sliced as soon as the slicer is back.",
+        "asked to stop; finishing the running slice job before exiting"),
     "slice.scratch_unwritable": Expected(
         disk_full, "The print server could not write the slicer's working files.", "building", True, None,
         "Ask a mentor to check the print server's free disk space and its work folder, then slice again.",
@@ -357,7 +383,7 @@ EXPECTED = {
     "slice.out_of_memory": Expected(
         over_the_memory_ceiling(SPACED), "This plate is too large to slice: the slicer needed more than the 2,000 MB "
                                          "of memory the print server allows.", "slicing", False,
-        "lower_quantities", "Remove some instances or the largest part and print them on a second plate.",
+        "lower_quantities", "Remove some instances or the largest part and print them on a new plate.",
         "Orca's processes reached a peak of 2,099,200 kB (the watchdog's high-water reading of Orca's processes)"),
     "slice.orca_crashed": Expected(
         fake_orca("segv"), "The slicer crashed while slicing this plate.", "slicing", False, None,
@@ -399,6 +425,11 @@ EXPECTED = {
         fake_orca("general"), "The slicer could not slice this plate.", "slicing", False, None,
         "Try another orientation or other print settings, and slice again.",
         "orca code -100\nexit code 156\norca error_string: Failed slicing the model."),
+    "slice.rests_on_an_edge": Expected(
+        rests_on_an_edge(), "Box #1 touches the plate only along an edge or at a point, so the slicer can give it no "
+                            "first layer.", "slicing", False, "choose_orientation",
+        "Lay the part on one of its own flat faces, or turn on supports with a raft, and slice again.",
+        "orca code -100\nresting on no face of its own: Box #1\nexit code 156\norca error_string: Failed slicing"),
     "slice.no_output": Expected(
         fake_orca("no_output"), "The slicer finished without writing the sliced file.", "slicing", True, None,
         SERVER, ""),
@@ -483,6 +514,25 @@ def test_failure_produces_its_code(code, tmp_path, monkeypatch):
     assert report.get("orca_sentence") == (ORCAS_GAP_SENTENCE if code in ORCA_SENTENCE_CODES else None)
 
 
+# The codes whose remedy is another plate: they say "a new plate", the words of the wizard's
+# panel (item 15 of the details file's phase 2), never "a new plate".
+NEW_PLATE_CODES = ("slice.too_many_instances", "slice.too_many_parts", "slice.out_of_memory",
+                   "slice.placement_too_close", "slice.orca_too_close", "slice.output_too_large")
+
+
+@pytest.mark.parametrize("code", list(EXPECTED))
+def test_no_report_says_a_second_plate_and_another_plate_is_a_new_plate(code, tmp_path, monkeypatch):
+    _exc, report = produce(code, tmp_path, monkeypatch)
+    assert "second plate" not in report["message"] + " " + report["remedy"]
+    assert ("a new plate" in report["remedy"]) is (code in NEW_PLATE_CODES)
+
+
+def test_the_supports_remedy_of_two_instances_too_close_says_a_new_plate():
+    from penguin_slice import plate
+    for remedy in (plate.TOO_CLOSE_REMEDY, plate.TOO_CLOSE_SUPPORTS_REMEDY):
+        assert "a new plate" in remedy and "second plate" not in remedy
+
+
 @pytest.mark.parametrize("code", list(EXPECTED))
 def test_only_the_two_gap_failures_ever_carry_orcas_sentence(code):
     """Even an exception that carries a sentence of Orca's gives it only on the two codes."""
@@ -494,6 +544,220 @@ def test_only_the_two_gap_failures_ever_carry_orcas_sentence(code):
 @pytest.mark.parametrize("code", ORCA_SENTENCE_CODES)
 def test_a_gap_failure_without_orcas_sentence_leaves_it_out(code):
     assert "orca_sentence" not in error_report(slicer.SliceError("A sentence.", "detail", error_code=code))
+
+
+class TestRestsOnAnEdge:
+    """Orca's general failure is explained by the slice service when an instance touches the
+    plate along an edge or at a point only: the pinned Orca refuses such an instance ("One
+    object has an empty first layer", which reaches no file) with supports off and on."""
+
+    def test_with_supports_on_the_remedy_is_a_raft(self, tmp_path, monkeypatch):
+        with pytest.raises(slicer.SliceError) as caught:
+            rests_on_an_edge("1")(Scene(tmp_path, monkeypatch))
+        report = error_report(caught.value)
+        assert report["code"] == "slice.rests_on_an_edge" and report["where"]["instance"] == "Box #1"
+        assert report["remedy"] == "Lay the part on one of its own flat faces, or add a raft, and slice again."
+
+    def test_the_first_instance_on_an_edge_is_named_and_every_one_listed(self, tmp_path, monkeypatch):
+        scene = Scene(tmp_path, monkeypatch)
+        install_fake_orca(tmp_path, monkeypatch, "general")
+        instances = [dict(TWO[0], x=40.0), {"ref": "box", "rotation": ON_AN_EDGE, "angle": 0, "x": 90.0, "y": 50.0},
+                     {"ref": "box", "rotation": ON_AN_EDGE, "angle": 30, "x": 150.0, "y": 50.0}]
+        with pytest.raises(slicer.SliceError) as caught:
+            scene.slice(plate_configuration(instances=instances, overrides={"enable_support": "0"}))
+        report = error_report(caught.value)
+        assert report["message"].startswith("Box #2 touches the plate only along an edge")
+        assert "resting on no face of its own: Box #2, Box #3" in report["detail"]
+
+    def test_instances_that_rest_on_faces_keep_orcas_general_failure(self, tmp_path, monkeypatch):
+        scene = Scene(tmp_path, monkeypatch)
+        install_fake_orca(tmp_path, monkeypatch, "general")
+        with pytest.raises(slicer.SliceError) as caught:
+            scene.slice(plate_configuration(instances=SPACED))
+        assert error_report(caught.value)["code"] == "slice.orca_failed"
+
+    @pytest.mark.parametrize("curved, laid", [
+        (("Ball", "ball"), {"orientation": "+z"}),                               # on its pole: a point
+        (("Tube", "tube"), {"rotation": [0.5 ** 0.5, 0.0, -(0.5 ** 0.5), 0.0]})])  # on a line of vertices
+    def test_a_curved_part_that_prints_is_not_blamed_for_anothers_failure(self, curved, laid, tmp_path,
+                                                                           monkeypatch):
+        """A ball or a lying tube touches the plate at a point or along a line, yet its first
+        layer is millimetres across, so it prints: beside a part that fails for another reason
+        (the stand-in's -100 with no reason), the report stays Orca's general failure."""
+        from helpers import ball_stl, cylinder_stl
+        name, ref = curved
+        stl = ball_stl() if ref == "ball" else cylinder_stl(10, 40, segments=48)
+        scene = Scene(tmp_path, monkeypatch)
+        scene.upload(stl)
+        install_fake_orca(tmp_path, monkeypatch, "general")
+        data = plate_configuration(instances=[{"ref": ref, **laid, "angle": 0, "x": 60.0, "y": 100.0},
+                                              dict(TWO[0], x=160.0, y=100.0)])
+        data["parts"][ref] = part_entry(name, stl)
+        with pytest.raises(slicer.SliceError) as caught:
+            scene.slice(data)
+        report = error_report(caught.value)
+        assert report["code"] == "slice.orca_failed", report
+        assert name not in report["message"] and "instance" not in report.get("where", {})
+
+    @pytest.mark.parametrize("beside", [False, True])
+    def test_a_part_on_a_face_of_its_own_narrower_than_a_line_is_not_said_to_rest_on_an_edge(self, beside, tmp_path,
+                                                                                          monkeypatch):
+        """The face-area condition: the block on a stem stands on the stem's own face, 0.16 mm2
+        on the plate, which is narrower at its first layer than one line. It gets Orca's general
+        failure, not "touches the plate only along an edge"; beside the box on its edge, only
+        the box is named."""
+        from helpers import block_on_a_stem_stl
+        stem = block_on_a_stem_stl()
+        scene = Scene(tmp_path, monkeypatch)
+        scene.upload(stem)
+        install_fake_orca(tmp_path, monkeypatch, "general")
+        instances = [{"ref": "block", "orientation": "+z", "angle": 0, "x": 40.0, "y": 100.0}]
+        if beside:
+            instances.append({"ref": "box", "rotation": ON_AN_EDGE, "angle": 0, "x": 120.0, "y": 100.0})
+        data = plate_configuration(instances=instances, overrides={"enable_support": "0"})
+        data["parts"]["block"] = part_entry("Block", stem)
+        with pytest.raises(slicer.SliceError) as caught:
+            scene.slice(data)
+        report = error_report(caught.value)
+        assert "Block" not in report["message"], report
+        if beside:
+            assert report["code"] == "slice.rests_on_an_edge" and report["where"]["instance"] == "Box #1"
+            assert "resting on no face of its own: Box #1\n" in report["detail"] + "\n"
+        else:
+            assert report["code"] == "slice.orca_failed" and "instance" not in report.get("where", {})
+
+    @pytest.mark.parametrize("overrides", [
+        {"initial_layer_line_width": "0.25"},                                    # 0.3 mm across, lines 0.25
+        {"initial_layer_line_width": "0.5", "initial_layer_print_height": "0.6"}])   # 0.6 mm across, lines 0.5
+    def test_a_first_layer_as_wide_as_the_processs_line_is_not_explained_so(self, overrides, tmp_path, monkeypatch):
+        """The width that counts is the process's own first layer: the box on its edge is
+        twice as wide, at the middle of the first layer, as that layer is high (0.3 mm under
+        the default 0.3 mm layer), and with lines narrower than that Orca can lay one in it."""
+        scene = Scene(tmp_path, monkeypatch)
+        install_fake_orca(tmp_path, monkeypatch, "general")
+        instance = {"ref": "box", "rotation": ON_AN_EDGE, "angle": 0, "x": 50.0, "y": 50.0}
+        with pytest.raises(slicer.SliceError) as caught:
+            scene.slice(plate_configuration(instances=[instance], overrides=overrides))
+        assert error_report(caught.value)["code"] == "slice.orca_failed"
+
+    @pytest.mark.parametrize("overrides", [
+        {"initial_layer_line_width": "0.4"},          # 0.3 mm across at 0.15 mm up, lines 0.4: no room
+        {"initial_layer_print_height": "0.4"}])       # 0.4 mm across at 0.2 mm up, lines 0.62: no room
+    def test_a_first_layer_just_narrower_than_the_processs_line_is_explained(self, overrides, tmp_path,
+                                                                            monkeypatch):
+        """Near the threshold, the rule's own figures decide: the section is taken at half the
+        first layer's height and must hold one whole line (half a line inward from each side)."""
+        scene = Scene(tmp_path, monkeypatch)
+        install_fake_orca(tmp_path, monkeypatch, "general")
+        instance = {"ref": "box", "rotation": ON_AN_EDGE, "angle": 0, "x": 50.0, "y": 50.0}
+        with pytest.raises(slicer.SliceError) as caught:
+            scene.slice(plate_configuration(instances=[instance], overrides=overrides))
+        assert error_report(caught.value)["code"] == "slice.rests_on_an_edge"
+
+    @pytest.mark.parametrize("first_layer, code", [
+        ({"initial_layer_line_width": "0.25"}, "slice.orca_failed"),        # 0.3 mm across, lines 0.25
+        ({"initial_layer_print_height": "0.8"}, "slice.orca_failed"),       # 0.8 mm across, lines 0.62
+        ({"initial_layer_line_width": "0.9", "initial_layer_print_height": "0.8"}, "slice.rests_on_an_edge")])
+    def test_the_first_layer_is_read_from_the_slice_jobs_own_process_file(self, first_layer, code, tmp_path,
+                                                                          monkeypatch):
+        """A process profile whose first layer differs from the default process's, with no
+        overrides: the rule reads that file, not the default figures."""
+        import dataclasses
+        scene = Scene(tmp_path, monkeypatch)
+        install_fake_orca(tmp_path, monkeypatch, "general")
+        process = json.loads(slicer.DEFAULT_PROFILES.process.read_text(encoding="utf-8"))
+        process.update(first_layer)
+        own = tmp_path / "own-process.json"
+        own.write_text(json.dumps(process), encoding="utf-8")
+        instance = {"ref": "box", "rotation": ON_AN_EDGE, "angle": 0, "x": 50.0, "y": 50.0}
+        configuration = scene.read(plate_configuration(instances=[instance]))
+        assert configuration.overrides.get("initial_layer_line_width") is None
+        configuration.profiles = dataclasses.replace(configuration.profiles, process=own)
+        with pytest.raises(slicer.SliceError) as caught:
+            slice_plate_configuration(configuration, scene.out)
+        assert error_report(caught.value)["code"] == code
+
+    def test_the_contracts_bracket_on_its_hull_face_is_explained_under_the_default_process(self, tmp_path,
+                                                                                         monkeypatch):
+        """The bracket of contracts/examples/plate-configuration-phase-2.json, laid by its
+        fourth instance's rotation on a hull face that touches the plate on two edges: 0.325 mm
+        across at 0.15 mm up, under the default process's 0.62 mm line."""
+        bracket = (CONTRACTS / "examples" / "parts" / "bracket.stl").read_bytes()
+        scene = Scene(tmp_path, monkeypatch)
+        scene.upload(bracket)
+        install_fake_orca(tmp_path, monkeypatch, "general")
+        rotation = [0.707106781, -0.588348405, 0.39223227, 0.0]
+        data = plate_configuration(instances=[{"ref": "bracket", "rotation": rotation, "angle": 0,
+                                               "x": 100.0, "y": 100.0}])
+        data["parts"] = {"bracket": part_entry("Bracket", bracket)}
+        with pytest.raises(slicer.SliceError) as caught:
+            scene.slice(data)
+        report = error_report(caught.value)
+        assert report["code"] == "slice.rests_on_an_edge" and report["where"]["instance"] == "Bracket #1"
+
+    @pytest.mark.parametrize("width", ["0", "150%"])
+    def test_a_line_width_that_is_no_length_is_taken_as_the_default_processs(self, width, tmp_path, monkeypatch):
+        scene = Scene(tmp_path, monkeypatch)
+        install_fake_orca(tmp_path, monkeypatch, "general")
+        instance = {"ref": "box", "rotation": ON_AN_EDGE, "angle": 0, "x": 50.0, "y": 50.0}
+        with pytest.raises(slicer.SliceError) as caught:
+            scene.slice(plate_configuration(instances=[instance], overrides={"initial_layer_line_width": width}))
+        assert error_report(caught.value)["code"] == "slice.rests_on_an_edge"
+
+    def test_orcas_debug_log_naming_only_other_instances_keeps_its_general_failure(self, tmp_path, monkeypatch):
+        """Orca's debug log warns of Box #1 (the stand-in names the first object), which rests
+        on its face; Box #2 rests on an edge, but Orca named another instance, so the slice
+        service does not claim to know which one failed."""
+        scene = Scene(tmp_path, monkeypatch)
+        install_fake_orca(tmp_path, monkeypatch, "general_warned")
+        instances = [dict(TWO[0], x=40.0), {"ref": "box", "rotation": ON_AN_EDGE, "angle": 0, "x": 90.0, "y": 50.0}]
+        with pytest.raises(slicer.SliceError) as caught:
+            scene.slice(plate_configuration(instances=instances, overrides={"enable_support": "0"}))
+        report = error_report(caught.value)
+        assert report["code"] == "slice.orca_failed"
+        assert "Box #1 has floating regions" in report["message"]
+
+    def test_orcas_debug_log_naming_the_instance_on_an_edge_is_explained(self, tmp_path, monkeypatch):
+        scene = Scene(tmp_path, monkeypatch)
+        install_fake_orca(tmp_path, monkeypatch, "general_warned")
+        instances = [{"ref": "box", "rotation": ON_AN_EDGE, "angle": 0, "x": 40.0, "y": 50.0}, dict(TWO[0], x=90.0)]
+        with pytest.raises(slicer.SliceError) as caught:
+            scene.slice(plate_configuration(instances=instances, overrides={"enable_support": "0"}))
+        report = error_report(caught.value)
+        assert report["code"] == "slice.rests_on_an_edge" and report["where"]["instance"] == "Box #1"
+        assert "orca debug log warning: It seems object Box #1 has floating regions" in report["detail"]
+
+    def test_orcas_debug_log_naming_an_instance_whose_name_holds_has_is_explained(self, tmp_path, monkeypatch):
+        """A part named "Arm has holes": its instance's label is "Arm_has_holes #1" (a label
+        holds letters, digits, - and _ before its " #n", never a space), so Orca's warning
+        "It seems object Arm_has_holes #1 has floating regions" names it whole."""
+        scene = Scene(tmp_path, monkeypatch)
+        install_fake_orca(tmp_path, monkeypatch, "general_warned")
+        instances = [{"ref": "box", "rotation": ON_AN_EDGE, "angle": 0, "x": 40.0, "y": 50.0}]
+        data = plate_configuration(instances=instances, overrides={"enable_support": "0"})
+        data["parts"] = {"box": part_entry("Arm has holes", BOX)}
+        with pytest.raises(slicer.SliceError) as caught:
+            scene.slice(data)
+        report = error_report(caught.value)
+        assert report["code"] == "slice.rests_on_an_edge" and report["where"]["instance"] == "Arm_has_holes #1"
+
+    def test_another_failure_of_orcas_is_not_explained_so(self, tmp_path, monkeypatch):
+        scene = Scene(tmp_path, monkeypatch)
+        install_fake_orca(tmp_path, monkeypatch, "unknown_code")
+        instance = {"ref": "box", "rotation": ON_AN_EDGE, "angle": 0, "x": 50.0, "y": 50.0}
+        with pytest.raises(slicer.SliceError) as caught:
+            scene.slice(plate_configuration(instances=[instance]))
+        assert error_report(caught.value)["code"] == "slice.orca_failed"
+
+    def test_a_part_that_cannot_be_read_again_keeps_orcas_general_failure(self, tmp_path, monkeypatch):
+        from penguin_slice import plate_configuration as module
+        scene = Scene(tmp_path, monkeypatch)
+        install_fake_orca(tmp_path, monkeypatch, "general")
+        monkeypatch.setattr(module, "read_binary_stl", lambda *a, **k: 1 / 0)
+        instance = {"ref": "box", "rotation": ON_AN_EDGE, "angle": 0, "x": 50.0, "y": 50.0}
+        with pytest.raises(slicer.SliceError) as caught:
+            scene.slice(plate_configuration(instances=[instance]))
+        assert error_report(caught.value)["code"] == "slice.orca_failed"
 
 
 def test_the_contracts_orca_sentence_example_is_what_the_code_produces(tmp_path, monkeypatch):
