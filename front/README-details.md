@@ -2,12 +2,17 @@
 
 This is the builder's document for the front server. The guide beside it,
 [README.md](README.md), is what the owner reads and decides from. Where the two differ, the
-guide is right and this file is to be corrected. Of the front server, items 1 to 4 of
+guide is right and this file is to be corrected. Of the front server, items 1 to 9 of
 [Phase 2](#phase-2-one-machine-no-onshape-no-printer) are built: the project and its fakes,
 [the bucket interface](#the-bucket-interface) in its folder form,
 [the rules for every request](#rules-for-every-request) with
-[the version on every answer](#the-version-and-old-and-new-versions-together), and
-[the log's writer](#the-log). What this file says of those is true of the code in `front/`;
+[the version on every answer](#the-version-and-old-and-new-versions-together),
+[the log's writer](#the-log), [the development identity](#the-development-identity) and
+[the cookie](#the-cookie) with one cookie key,
+[serving the wizard's pages](#serving-the-wizards-pages),
+[the current group's check and `GET /api/me`](#groups-and-the-current-group),
+[the configuration](#the-configuration) and [the table of settings](#the-table-of-settings).
+What this file says of those is true of the code in `front/`;
 every other sentence is design: it restates each requirement of the guide in the builder's
 terms, with the code-level names (requests, settings, constants, error codes, records) and
 the tests each requirement needs.
@@ -188,8 +193,13 @@ below: [The cookie](#the-cookie), [Groups and the current group](#groups-and-the
 - A handler refuses by raising `FrontError(code, detail)`; the application answers its
   report with the code's status. Each code the front server produces is in
   `errors.FRONT_REPORTS` with its status, `retryable` and its two sentences, added in the
-  commit that first produces it. So far: `front.bad_request`, `front.no_such_request` and
-  `front.unexpected`.
+  commit that first produces it. So far: `front.bad_request`, `front.no_such_request`,
+  `front.unexpected`, `front.not_signed_in`, `front.group_not_allowed`,
+  `front.configuration_changed`, `front.configuration_invalid`, `front.slice_unreachable`
+  and `front.state_bucket_unreachable`. A report whose sentence must say what in particular
+  went wrong (`front.configuration_invalid`) passes its own `message`. Another component's
+  report is passed by raising `PassedReport(status, body, report)`, answered with its bytes
+  unchanged.
 - **Not offered** includes an `OPTIONS` request to any path, a request target whose path
   does not start with a slash (`GET x`, or `GET http://host` with no path at all), a path
   with a doubled slash anywhere in it, its start included, a path holding an encoded slash
@@ -212,7 +222,8 @@ below: [The cookie](#the-cookie), [Groups and the current group](#groups-and-the
   the log line carries the same `incident` and the whole `trace`.
 - **One line for each error report answered**, event `error`: `code`, `status`, `method`,
   `path` (never the query string, which carries Onshape's code from phase 3), `detail`
-  except on a `500`, and `page_version` when `X-PenguinSlicer-Page` has the version's form
+  except on a `500`, `user_key` and `group` once the request has read the cookie and
+  checked the current group, and `page_version` when `X-PenguinSlicer-Page` has the version's form
   (a header of any other form is not written).
 - **The page files** are marked by `page_file(response, cache_control)`; every other answer,
   an error report from a page file's request included, gets `Cache-Control: no-store`.
@@ -270,7 +281,22 @@ followed by `-0000000`. A hosted release's image holds the built folder.
 - **Starting without the page files.** A folder without `index.html`, or an `index.html`
   without the placeholder, stops the start with a log line naming the folder.
 
+**As built** (`penguin_front.pages`): `load_pages(folder, version)` reads `index.html` (UTF-8)
+and the bytes of every file directly in `assets/` once, at start, so a rebuild of the folder
+while the front server runs changes nothing it serves; a file in a folder inside `assets/`
+or one whose name starts with `.` is not served. A folder that cannot be served raises
+`PagesUnusable`, a `SettingError` of `PENGUIN_WIZARD_DIST`, so the start writes
+`start_refused` naming the setting and the folder and exits with status 2. `GET /` without
+a sign-in answers `302` to `/signin?return=` followed by the path and query as sent,
+percent-encoded whole. An asset answers with its kind from a fixed table (`.js` and `.mjs`
+`text/javascript`, `.css`, `.woff2`, `.woff`, `.svg`, `.png`, `.json`, `.wasm`, `.map`), and
+otherwise the machine's, and `X-Content-Type-Options: nosniff`. The policy's
+`frame-ancestors` is Onshape's address whenever `PENGUIN_BASE_URL` is `https`, and `'self'`
+otherwise (`CSP_HOSTED`, `CSP_ONE_MACHINE`).
+
 ### Tests
+
+Built: `tests/test_pages.py`, except the Safari page (phase 3) and the Connect page (phase 4).
 
 - `GET /` with no cookie answers `302` to `/signin` with `return`, and the answer holds no
   byte of the wizard's built files; `GET /assets/<file>` with no cookie answers `401`
@@ -450,7 +476,26 @@ user signs in again. The steps are written in the repository as a procedure
 whether Chrome always sends this cookie to the page embedded in Onshape. Build the cookie
 as above; phase 4 tries it in real Chrome first.
 
+**As built** (`penguin_front.cookie`, `penguin_front.identity`): the fields are one JSON
+object (`format` 1, `user` `id` and `name`, `groups` each `id` and `name`, `tokens`, null
+for the development identity, and `used_at` in whole seconds), sealed with AES-256-GCM
+under a key derived from `PENGUIN_COOKIE_KEY` by HKDF-SHA256, a fresh 12-byte nonce each
+time, written as unpadded base64url. `CookieKey.open` gives None for text over 8,192
+characters or of the wrong form, a changed byte, another key, a format other than 1 to
+`COOKIE_FORMAT`, a shape it does not read, or `used_at` thirty days or more ago. The thirty
+days (`COOKIE_LIFETIME_S`) move on when more than `COOKIE_EXTEND_AFTER_S` (86,400 s) has
+passed since `used_at`, on every answer to a request that read the cookie, an error
+included; a request that reads no cookie (a path not offered) carries none. The cookie goes
+out with `Max-Age` of the thirty days; `Secure; SameSite=None` whenever `PENGUIN_BASE_URL`
+is `https`, `SameSite=Lax` otherwise. A cookie set over `COOKIE_SIZE_LINE_BYTES` (3,800)
+writes `cookie_large` with `bytes`, `user_key` and `groups` (the count). Measured: the
+development identity's cookie is far under it; one of a user in sixty groups of
+80-character names, with two 40-character tokens, is 10,360 bytes, which no browser keeps
+([Whether the cookie fits](README.md#whether-the-cookie-fits) stays open for phase 3).
+
 ### Tests
+
+Built: `tests/test_identity.py`, except the previous cookie key (phase 3).
 
 On a fake clock:
 
@@ -551,7 +596,18 @@ document costs a call for each document; without the user, nothing triggers the 
 Also open there: what a user meets for a document of a company they are not in, answered
 `front.group_not_allowed` as designed. Phase 4's design counts the calls before building.
 
+**As built** (`penguin_front.identity`): `signed_in()` gives the cookie's `Identity` or
+raises `front.not_signed_in`; `current_group(identity)` reads the header, and on a `GET` or
+`HEAD` the query's `group` (a changing request naming its group in the query alone names
+none), compares the id exactly with the cookie's, and on a refusal writes `refused`
+(`reason` `group_not_allowed`, `why`, `user_key`, `method`, `path`, and the `header` and
+`query` named, each cut to 200 characters) before the `error` line. Each request that acts
+for a group is marked `@acts_for_group`, which is how the tests find them. `/api/me` keeps
+the cookie's order of groups; with the development identity that is its one group.
+
 ### Tests
+
+Built: `tests/test_groups.py`, except those marked phase 4.
 
 - On every request that acts for a group, enumerated from the application, a request naming
   a group the cookie lists is accepted; one naming another group, one naming none, and one
@@ -640,7 +696,12 @@ front server signs in when a setting tells it to (`PENGUIN_DEV_IDENTITY=1`), for
 machine; its four fixed values are under
 [Running phase 2 on one machine](#running-phase-2-on-one-machine). With it on, `/signin` sets the development identity's cookie at once
 with no call to Onshape. Everything else runs as it does hosted: the cookie, the current
-group's check, the user key. Built in phase 2.
+group's check, the user key. Built in phase 2 (`penguin_front.identity.DEV_IDENTITY`):
+`/signin` sets the cookie, writes `sign_in` (`user_key`, `user_name`, `groups`,
+`dev_identity` true) and answers `302` to `return` when it is a path of this site (a single
+leading `/`, no `\`, which a browser reads as a slash, and no control character), and to `/`
+otherwise. With the development identity off, `/signin` answers `404`
+`front.no_such_request` until phase 3 builds signing in with Onshape.
 
 **It can never be on in the hosted service** (phase 3). The command that starts the hosted
 front server never sets it, and the front server refuses to start with it on when it finds
@@ -714,6 +775,11 @@ The front server never uses the slice service's request to cancel a slice job
 the page no request to cancel one. A slice service that does not answer is, to the page,
 `503` `front.slice_unreachable`, a quiet retry. A slice service's answer of `slice.no_user_key`
 is a fault of the front server's and is answered `500` `front.unexpected`.
+
+**As built** (`penguin_front.slice_client.SliceClient`, used so far by the table of
+settings): one httpx client for `PENGUIN_SLICE_URL`; `get_raw(path, headers)` gives the
+status, the headers and the answer's bytes as sent, never decompressed; no connection, a
+connection cut, or nothing for `SLICE_TIMEOUT_S` (30 s, *proposed*) is `SliceUnreachable`.
 
 ### Tests
 
@@ -1224,7 +1290,27 @@ is built for it while there is one format.
 **Open:** [a configuration that names a profile the catalog has lost](README.md#a-configuration-that-names-a-profile-the-catalog-has-lost),
 settled at the first Orca upgrade; build no comparison.
 
+**As built** (`penguin_front.configuration`): the built-in default is
+`penguin_front/default_configuration.json`, the contract's example file byte for byte. A
+saved document over `MAX_CONFIGURATION_BYTES` (262,144) is not read. The line for an invalid
+one is `configuration_invalid` (`group`, `user_key`, `rule` 1 to 6, `path`, empty for the
+whole document, `why` in plain words, `revision`). The first rule broken is the lowest
+number broken, and within it the first mistake in the document's order. The rules are those
+of the contract and no more: a `note` is text of at most 2,000 characters, a colour's
+hexadecimal digits may be of either case, names are compared exactly. A write checks the
+document as sent, its own `format` included, and writes it with `records.record_bytes`, the
+one canonical form; a write whose condition fails is answered `200` with the saved marker
+when the saved bytes are exactly the bytes it would write, `409` otherwise (a `based_on`
+of a document that is gone included). A body that is not an object holding `based_on` (a
+revision of at least one character, or null) and `configuration` is `400`
+`front.bad_request`. `configuration_edited` holds `group`, `user_key`, `user_name`,
+`revision` and `changes`, each `{"path", "old", "new"}` for a leaf that differs, null for a
+field not there; an old document that cannot be read counts as empty. A state bucket that
+fails is `503` `front.state_bucket_unreachable` on either request.
+
 ### Tests
+
+Built: `tests/test_configuration.py`.
 
 - A group with no document gets `source` `"default"`, `name` `"PenguinSlicer default"`,
   `revision` `null`, and a configuration equal to the contract's default example file.
@@ -1263,7 +1349,17 @@ the table under a running front server; it asks the slice service each time, whi
 (the page asks once when it opens, and again only when a configuration read again names a
 printer its table lacks).
 
+**As built** (`penguin_front.settings_table`): the front server asks with
+`Accept-Encoding: gzip` when the browser's `Accept-Encoding` names `gzip` or `*` with a
+weight above zero (`accepts_gzip`), and `identity` otherwise, and answers the bytes and the
+`Content-Encoding` as the slice service sent them, with `Vary: Accept-Encoding`. It sends no
+user key. A failure answered with the slice service's own error report (a JSON object whose
+`code` starts `slice.`, not compressed) is passed byte for byte with its status; any other
+failure answer is `500` `front.unexpected`, its status and first bytes in the trace.
+
 ### Tests
+
+Built: `tests/test_settings_table.py`.
 
 - The answer is the stand-in's table, byte for byte once decompressed, compressed when the
   request accepts it.
@@ -1814,7 +1910,7 @@ the new files, and an open page then reloads itself for the new version.
 
 **The cookie key on one machine.** With the development identity on and `PENGUIN_COOKIE_KEY`
 unset, the front server makes a random key at start, keeps it in memory only and writes one
-log line saying so. A restart then makes every cookie unreadable; the page's next request
+log line saying so (built: `cookie_key_made`, just after the `start` line). A restart then makes every cookie unreadable; the page's next request
 is answered `front.not_signed_in`, it makes the trip, and `/signin` signs the development
 identity in again at once, so nothing is lost. A test of the restart table sets the key. With
 the development identity off, a missing key stops the start, as every missing secret does.
@@ -2103,7 +2199,7 @@ From [the guide](README.md#what-is-built-in-which-phase).
 
 The front server runs beside one slice service process on one machine, with the development
 identity and a folder for each bucket. Build in this order; each item rests on those before
-it, and each is done with its tests. Items 1 to 4 are built.
+it, and each is done with its tests. Items 1 to 9 are built.
 
 1. **The project and its fakes** (built). `front/` as a `uv` project with its make targets; the
    fake clock; the stand-in for the slice service on the requests of
@@ -2120,23 +2216,23 @@ it, and each is done with its tests. Items 1 to 4 are built.
    contract: [Rules for every request](../contracts/wizard-front-server.md#rules-for-every-request)).
 4. **The log's writer** (built): lines on standard output and gathered into one file a minute in the
    log folder, by year, month and day ([The log](#the-log); guide: [The log](README.md#the-log)).
-5. **The development identity and the cookie, with one cookie key:** `GET /signin` for the
+5. **The development identity and the cookie, with one cookie key** (built): `GET /signin` for the
    development identity, the cookie's thirty days extended by use
    ([The development identity](#the-development-identity), [The cookie](#the-cookie);
    contract: [`GET /signin`](../contracts/wizard-front-server.md#get-signin--start-the-trip),
    [Signed in](../contracts/wizard-front-server.md#signed-in)).
-6. **Serving the wizard's pages:** `GET /` and `GET /assets/<file>`, `frame-ancestors 'self'`
+6. **Serving the wizard's pages** (built): `GET /` and `GET /assets/<file>`, `frame-ancestors 'self'`
    ([Serving the wizard's pages](#serving-the-wizards-pages); contract:
    [The page files](../contracts/wizard-front-server.md#the-page-files-and-the-version)).
-7. **The current group's check and `GET /api/me`**
+7. **The current group's check and `GET /api/me`** (built)
    ([Groups and the current group](#groups-and-the-current-group); contract:
    [The current group](../contracts/wizard-front-server.md#the-current-group),
    [`GET /api/me`](../contracts/wizard-front-server.md#get-apime)).
-8. **The configuration:** the built-in default, reading, the default served in place of an
+8. **The configuration** (built): the built-in default, reading, the default served in place of an
    invalid document with its log line, and the conditional write
    ([The configuration](#the-configuration); contract:
    [`GET` and `PUT /api/configuration`](../contracts/wizard-front-server.md#the-configuration)).
-9. **The table of settings** passed from the slice service
+9. **The table of settings** passed from the slice service (built)
    ([The table of settings](#the-table-of-settings); contract:
    [`GET /api/settings-table`](../contracts/wizard-front-server.md#get-apisettings-table)).
 10. **The user key, and uploading a part,** with its limit on how fast
