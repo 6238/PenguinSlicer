@@ -65,6 +65,28 @@ def test_a_newer_version_reloads_the_page_at_a_move_between_steps_on_that_step_s
     assert w.problems == []
 
 
+def test_a_page_loaded_before_a_deploy_draws_the_layer_preview_when_its_files_are_gone_from_the_server(page, front_server):
+    # the page fetches every file of its own code when it loads and nothing later by name: the
+    # preview's worker, started only when a sliced plate is shown, included
+    w = Wizard(page, front_server)
+    w.until("return true;")
+    front_server.assets_gone = True
+    from tests_browser.test_preview_step import PARTS
+    from tests_browser.test_parts_step import choose
+    w.page.check("#upload-units input[value=mm]")
+    choose(w, ("Bracket.stl", (PARTS / "bracket.stl").read_bytes()), ("Spacer.stl", (PARTS / "spacer.stl").read_bytes()))
+    w.until("return wizard.parts.rows().length === 2 && wizard.parts.rows().every((r) => !r.arriving && r.drawn);")
+    w.page.click("#stepbar li[data-step=layout]")
+    w.until("return wizard.store.get().step === 'layout' && wizard.layout.model().instances.length === 2 "
+            "&& wizard.layout.model().instances.every((i) => i.bounds) && wizard.layout.model().status.ok;")
+    w.run("await wizard.layout.idle();")
+    w.page.click("#stepbar li[data-step=preview]")
+    w.until("return wizard.slicing.model().kind === 'done';")
+    until_drawn(w)
+    assert [p for p in front_server.requests if p.startswith("/assets/")] == [p for p in front_server.requests[:w.opening_requests] if p.startswith("/assets/")]
+    assert w.page.locator(".preview-view-message").inner_text() == ""
+
+
 def test_an_uncaught_error_and_an_unhandled_rejection_are_each_sent_as_page_failed(page, front_server):
     # on the real clock: Playwright's fake clock throws a timer's error to the test, not to the page
     w = Wizard(page, front_server, fake_clock=False)
@@ -106,6 +128,32 @@ def test_leaving_the_layout_step_after_a_drag_sends_one_drawing_summary_with_no_
     assert summary["in_onshape"] is False
     assert "first_layer_ms" not in summary
     assert "Spacer" not in text and "Bracket" not in text
+    assert w.problems == []
+
+
+LOSE_LAYOUT = """
+    const view = wizard.layoutStep.view(), ext = view.renderer.getContext().getExtension('WEBGL_lose_context');
+    await new Promise((resolve) => { view.canvas.addEventListener('webglcontextlost', resolve, { once: true }); ext.loseContext(); });
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const before = view.frames();
+    await new Promise((resolve) => { view.canvas.addEventListener('webglcontextrestored', resolve, { once: true }); ext.restoreContext(); });
+    for (let i = 0; i < 200 && view.frames() === before; i += 1) await new Promise((r) => requestAnimationFrame(r));
+    return view.frames() > before;
+"""
+
+
+def test_the_layout_view_draws_again_after_its_drawing_context_is_lost_twice_and_reports_each_loss(page, front_server):
+    from tests_browser.test_layout_step import PIXELS
+    w = open_layout(page, front_server, [spacer(), bracket()])
+    w.run("wizard.layoutStep.view().viewPlate(true); await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));")
+    for n in (1, 2):
+        with page.expect_request(lambda r: r.url.endswith("/api/reports/failure")) as sent:
+            assert w.run(LOSE_LAYOUT) is True, (n, "a frame drawn after the context came back")
+        assert json.loads(sent.value.post_data)["what"] == "drawing_context_lost"
+        assert json.loads(sent.value.post_data)["step"] == "layout"
+        shares = w.run(PIXELS)
+        assert 0.35 < shares["plate"] < 0.95, (n, shares)
+        assert 0.002 < shares["coloured"] < 0.2, (n, shares)
     assert w.problems == []
 
 

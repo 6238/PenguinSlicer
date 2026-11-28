@@ -118,6 +118,9 @@ class FakeFrontServer:
         self.lock = threading.Lock()
         self.stopping = threading.Event()        # set at the stop, which ends every stream held open
         self.held = []
+        # True once a deploy has replaced the page files: this release's assets are answered 404,
+        # as the new front server answers a name it does not have
+        self.assets_gone = False
         server = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -140,7 +143,7 @@ class FakeFrontServer:
                 if method == "GET" and self.path.startswith("/assets/"):
                     name = self.path.removeprefix("/assets/")
                     asset = server.dist / "assets" / name
-                    if "/" not in name and asset.is_file():
+                    if "/" not in name and asset.is_file() and not server.assets_gone:
                         self.answer(200, TYPES.get(asset.suffix, "application/octet-stream"), asset.read_bytes(),
                                     cache="private, max-age=31536000, immutable")
                     else:

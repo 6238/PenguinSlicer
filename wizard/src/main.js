@@ -16,7 +16,7 @@ import { createLayoutStep } from './panel/layout-step.js';
 import { createSendStep } from './panel/send-step.js';
 import { createResult } from './result.js';
 import { saveLink } from './seams/download.js';
-import { startPreviewWorker } from './seams/preview-worker.js';
+import { startPreviewWorker, warmPreviewWorker } from './seams/preview-worker.js';
 import { createLayoutView } from './panel/layout-view.js';
 import { realFrames } from './seams/frames.js';
 import { endOpening, openWizard } from './opening.js';
@@ -56,6 +56,8 @@ const storage = createStorage({
   report: (what, fields) => reports.failure(what, fields),
 });
 const geometry = createGeometryClient(geometryWorker(), { report: (what, fields) => reports.failure(what, fields) });
+// the layer preview's worker, its code fetched now, while this release's files are served
+warmPreviewWorker();
 const holdMeter = createHoldMeter(realClock);
 
 const parts = createParts({ api, storage, geometry, store, panel, report: (what, fields) => reports.failure(what, fields) });
@@ -63,7 +65,9 @@ const partsStep = createPartsStep(document.querySelector('section.step[data-step
 const layout = createLayout({ geometry, storage, store, parts, panel });
 const layoutStep = createLayoutStep(document.querySelector('section.step[data-step="layout"]'), {
   layout, parts, geometry, frames: realFrames, store, reportDrawing,
-  createView: (container, options) => createLayoutView(container, { ...options, software: softwareDrawing(), clock: realClock }),
+  createView: (container, options) => createLayoutView(container, {
+    ...options, software: softwareDrawing(), clock: realClock, report: (what, fields) => reports.failure(what, fields),
+  }),
 });
 const settings = createSettings({ store, storage });
 const settingsStep = createSettingsStep({ root: document.getElementById('wizard'), settings, store, window });

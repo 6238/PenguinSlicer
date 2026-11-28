@@ -119,7 +119,8 @@ function lights(scene) {
 //              a software renderer several times the work of each frame
 //   clock      the clock seam, for the heartbeat that measures the main thread's longest hold in
 //              each use of the view (its drawing summary)
-export function createLayoutView(container, { layout, geometry, frames, colourOf, software = false, clock = null }) {
+//   report(what, {detail})  a report about the page itself: drawing_context_lost
+export function createLayoutView(container, { layout, geometry, frames, colourOf, software = false, clock = null, report = () => {} }) {
   const canvas = document.createElement('canvas');
   canvas.className = 'gl-canvas';
   canvas.tabIndex = 0;
@@ -141,6 +142,13 @@ export function createLayoutView(container, { layout, geometry, frames, colourOf
   overlay.className = 'gl-overlay';
   container.append(overlay);
 
+  // A lost drawing context (the browser reclaiming it, as Chrome does to a page with too many):
+  // reported, and drawn again when the browser gives it back, without a reload. The renderer itself
+  // keeps the page from losing the context for good and sets itself up again on its return.
+  canvas.addEventListener('webglcontextlost', () => {
+    report('drawing_context_lost', { detail: 'the Layout view lost its 3D drawing context' });
+  });
+  canvas.addEventListener('webglcontextrestored', () => { invalidate(); });
   canvas.addEventListener('pointerdown', onDown, true);
   canvas.addEventListener('wheel', onWheel, { capture: true, passive: false });
   const controls = new OrbitControls(camera, canvas);
