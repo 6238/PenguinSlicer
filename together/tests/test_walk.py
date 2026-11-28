@@ -3,10 +3,12 @@ user is, the configuration and the table of settings, upload real parts, submit 
 follow its progress stream to the end, read the sliced file's details and download it."""
 
 import io
+import json
 import re
 import zipfile
 
-from joined.plates import CLAMP_PLATE, PULLEY, Placed, clamp_plate, first_profile, plate
+from joined.paths import EXAMPLES
+from joined.plates import CLAMP_PLATE, PULLEY, Placed, box_stl, clamp_plate, first_profile, plate
 
 DEV_ME = {"user": {"id": "dev-user", "name": "Development User"},
           "groups": [{"id": "dev-group", "name": "Development Group"}]}
@@ -35,6 +37,16 @@ def test_sign_in_and_read_what_a_page_reads_when_it_opens(page, slice_service):
     assert profile["filament"] in [f["name"] for f in catalog["filaments"]]
     assert profile["process"] in [p["name"] for p in catalog["processes"]]
     assert set(table["process_values"][profile["process"]]) == {s["name"] for s in table["settings"]}
+
+
+def test_a_part_record_is_the_contracts_example_and_its_units_travel_beside_it(page, tmp_path):
+    bracket = EXAMPLES / "parts" / "bracket.stl"
+    assert page.upload(bracket) == json.loads((EXAMPLES / "slice-http" / "part-record.json").read_text())
+    box = tmp_path / "box.stl"
+    box.write_bytes(box_stl(10.0, 8.0, 2.0))
+    in_mm, in_inches = page.upload(box, units="mm"), page.upload(box, units="in")
+    assert in_inches["sha256"] == in_mm["sha256"] and in_inches["units"] == "in"
+    assert in_inches["measurements"]["size_mm"] == [round(v * 25.4, 3) for v in in_mm["measurements"]["size_mm"]]
 
 
 def test_a_quiet_slice_keeps_both_streams_open(page, slice_service, front_server):

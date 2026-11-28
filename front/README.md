@@ -1349,11 +1349,22 @@ Rules a manager can hold the builder to:
   tests of such a place.
 
 Beside these everyday tests, one joined suite runs the real front server and the real
-slice service together on one machine, with the slice service's stand-in for Orca, and
-drives the wizard in a browser: from adding parts to downloading the sliced file, and
-through each row of the architecture's table of what a restart of the slice container does
-([Keeping it true](../docs/architecture.md#keeping-it-true)). The front server's builder
-writes it once the three components exist.
+slice service together on one machine, with the slice service's stand-in for Orca: from
+adding parts to downloading the sliced file, and through each row of the architecture's
+table of what a restart of the slice container does
+([Keeping it true](../docs/architecture.md#keeping-it-true)). Its first half is built: it
+makes the front server's requests as the wizard makes them, without a browser, and covers
+signing in, reading the configuration and the table of settings, uploading real parts of
+the robot, slicing, following the progress to its end, the sliced file's details and the
+download; a slice that fails, with the slice service's own report reaching the page
+unchanged; a part the part store has forgotten; the same plate sliced again; a submission sent
+twice; the slice service's lines in the gathered log; a quiet slice whose streams stay
+open; and the slice container's restart rows that need no page, with two of the front
+server's own. Beside it, one walk from upload to download runs with the real Orca, apart
+from the everyday tests and under the machine's one-Orca-at-a-time lock. Its second half,
+driving the wizard in a browser over the same two servers, is written once the wizard's
+steps exist. What the joining found, where the two sides read their contract differently,
+is in the [record of the seam](../docs/orchestration/phase-2/seam-front-slice.md).
 
 What only the real thing can prove: how Railway behaves at a deploy; that Cloudflare
 and Railway pass progress on as it is sent; that a 7.5 MB upload and a 50 MB download
@@ -1485,8 +1496,8 @@ is what the two hours count from.
 slice service on one machine, with the development identity and a folder for each
 bucket. Built here, beyond what is listed above as built so far:
 
-- the joined suite, which runs the front server and the slice service together and drives
-  the wizard in a browser, once the wizard's steps exist
+- the joined suite's second half, which drives the wizard in a browser over the two
+  servers the first half already runs together, once the wizard's steps exist
   ([How it is tested](#how-it-is-tested)).
 
 The tests that run the previous version's page and the previous slice service against the

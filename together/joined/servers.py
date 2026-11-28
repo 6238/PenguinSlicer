@@ -213,21 +213,25 @@ class FrontServer:
         return self
 
     def stop(self):
-        """Stop it as a deploy does (SIGTERM) and wait until it has exited, its log written."""
+        """Stop it as a deploy does (SIGTERM) and wait until it has exited, its log written.
+        A stop is clean or the test fails: exit status 0 and the stop line written."""
         self.running.signal(signal.SIGTERM)
         code = self.running.wait_for_exit()
         self.previous.append(self.running)
+        assert code == 0, f"the front server's stop ended with exit status {code}"
+        assert self.running.events("stop"), "the front server's stop wrote no stop line"
         return code
 
     def restart(self):
         return self.start()
 
     def gathered(self):
-        """Every line in the log folder's files, oldest file first."""
+        """Every line in the log folder's files, in the order of their `time`: two files of
+        the same second are named in no order of writing."""
         lines = []
-        for path in sorted(self.log_dir.rglob("*.jsonl")):
+        for path in self.log_dir.rglob("*.jsonl"):
             lines.extend(json.loads(text) for text in path.read_text().splitlines() if text)
-        return lines
+        return sorted(lines, key=lambda line: line.get("time", ""))
 
     def close(self):
         for running in _each(self.previous, self.running):

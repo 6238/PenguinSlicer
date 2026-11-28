@@ -18,9 +18,10 @@ def test_the_gathered_log_holds_the_slice_services_lines_in_their_group(page, sl
                                         "the new front server asking for the log", since=since)
     front_server.stop()
 
-    gathered = [line for line in front_server.gathered() if line.get("component") == "slice"]
+    gathered = sorted((line for line in front_server.gathered() if line.get("component") == "slice"),
+                      key=lambda line: line["n"])
     own = slice_service.lines()
-    assert [line["n"] for line in gathered] == list(range(1, len(gathered) + 1)), "each line once, in order"
+    assert [line["n"] for line in gathered] == list(range(1, len(gathered) + 1)), "each line once"
     assert len(gathered) >= len([line for line in own if line.get("event") == "slice_job"])
     of_the_job = [line for line in gathered if line.get("job") == accepted["id"]]
     states = [line["state"] for line in of_the_job if line["event"] == "slice_job"]

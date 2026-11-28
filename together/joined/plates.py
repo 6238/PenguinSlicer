@@ -2,6 +2,7 @@
 profile to a plate configuration"): the parts by name, hash and units, the instances where
 the Layout step put them, the chosen profile's three names and its overrides."""
 
+import struct
 from dataclasses import dataclass
 
 from .page import local_time, new_id
@@ -11,6 +12,21 @@ from .paths import REAL_PARTS
 CLAMP_PLATE = REAL_PARTS / "clamp-plate-inner.stl"    # 4.762 x 50.8 x 50.8 mm, 437,884 bytes
 PULLEY = REAL_PARTS / "pulley-v3.stl"                 # 17.78 x 19.05 x 19.05 mm, 230,484 bytes
 ELEVATOR_TOP = REAL_PARTS / "elevator-top-inner.stl"  # 50.8 x 25.4 x 57.15 mm, 969,684 bytes
+
+
+def box_stl(sx, sy, sz):
+    """A closed box as binary STL, wound outwards: a part small enough to try in inches,
+    which no real part of the repository is."""
+    corners = [(x, y, z) for x in (0.0, sx) for y in (0.0, sy) for z in (0.0, sz)]
+    faces = [(0, 2, 3), (0, 3, 1), (4, 5, 7), (4, 7, 6), (0, 1, 5), (0, 5, 4),
+             (2, 6, 7), (2, 7, 3), (0, 4, 6), (0, 6, 2), (1, 3, 7), (1, 7, 5)]
+    body = bytearray(b"\0" * 80 + struct.pack("<I", len(faces)))
+    for face in faces:
+        body += struct.pack("<3f", 0.0, 0.0, 0.0)
+        for corner in face:
+            body += struct.pack("<3f", *corners[corner])
+        body += b"\0\0"
+    return bytes(body)
 
 
 @dataclass

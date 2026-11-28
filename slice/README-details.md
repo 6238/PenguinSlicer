@@ -560,10 +560,22 @@ the stopping answer of [Submitting a plate configuration](../contracts/wizard-fr
    be collected; such a file is lost with the process (`files_lost` in the last log line), and
    its slice runs again when its page submits again. A third stop changes nothing.
 
+4. **Before it exits,** after either way of stopping, `serve` waits for the answers being
+   written to finish, at most `STOP_ANSWERS_S` (10 s, *proposed*): above all the answer to
+   the `DELETE /slices/<job>/file` that drained it, which tells the front server its copy is
+   deleted; without it, the front server would ask again until a new slice service answered.
+   The count is
+   kept by the web server's request handler (`__main__.InFlight.handler`), from a
+   connection's acceptance to the end of its handling, since the development server closes
+   each connection after one answer and skips the app's `close` when its client has gone
+   away. Answers still being written at the bound are cut, with a line
+   `slice_service_answers_cut` naming them (`answering`, `waited_s`). Tests:
+   `tests/test_serve_stop.py`, the answer that drains it and the answer cut at the bound.
+
 The log lines: `slice_service_stopping` with `stop` 1, the ids of the waiting slice jobs it
 ended (`waiting_ended`) and whether the pool was drained at once; `slice_service_stopping`
-with `stop` 2 at a second stop; and `slice_service_stopped` with `how` (`drained` or
-`second_stop`) and `files_lost`. Past the time Railway gives a stopping container, Railway
+with `stop` 2 at a second stop; `slice_service_stopped` with `how` (`drained` or
+`second_stop`) and `files_lost`; and `slice_service_answers_cut` when answers are cut. Past the time Railway gives a stopping container, Railway
 kills the process and Orca dies with it (`PR_SET_PDEATHSIG`). Open: how long Railway gives a
 stopping container, whether it starts the new one first, and how long a new slice service
 takes to start ([Unmeasured](README.md#unmeasured)). Tests: `tests/test_jobs.py`

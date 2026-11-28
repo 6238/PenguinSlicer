@@ -1182,7 +1182,9 @@ deployed continuously, so this happens while people are slicing. It does four th
 
 1. **It finishes the slice it is running,** bounded by the time limit, and keeps
    answering until the front server has fetched and stored that sliced file. Then it
-   exits.
+   finishes writing the answers it is in the middle of, above all the one that tells the
+   front server its copy is deleted, waiting at most ten seconds for them, and exits, so
+   that the front server is never left asking again for an answer that was cut off.
 2. **It ends the slice jobs still waiting,** each ended early with the reason that the
    slice service was asked to stop, so that its page submits the plate again by itself.
 3. **It answers each new submission with an answer of its own,** different from "busy",

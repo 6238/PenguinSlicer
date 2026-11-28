@@ -156,6 +156,80 @@ def test_a_stop_while_orca_runs_finishes_the_slice_and_exits_once_its_file_is_de
     assert log.lines[-1] == {**log.lines[-1], "event": "slice_service_stopped", "how": "drained", "files_lost": []}
 
 
+def test_the_answer_to_the_delete_that_ends_the_drain_is_written_before_serve_returns(tmp_path, monkeypatch):
+    # Found by the joined suite: the front server's DELETE of the last sliced file drained
+    # the slice service, which exited before that DELETE's answer was written, so the front
+    # server never heard its file was stored. Here that answer is held until the drain's
+    # last line is written, and must still be written before serve returns.
+    install_fake_orca(tmp_path, monkeypatch, "ok")
+    written, watch = threading.Event(), []
+    real = cli.make_server
+
+    def holding(host, port, app, **kwargs):
+        def held(environ, start_response):
+            body = app(environ, start_response)
+            if environ["REQUEST_METHOD"] == "DELETE" and environ["PATH_INFO"].endswith("/file"):
+                watch[0].wait_for(event("slice_service_stopped"))
+                return _Closing(body, written)
+            return body
+        return real(host, port, held, **kwargs)
+    monkeypatch.setattr(cli, "make_server", holding)
+
+    def drive(client, log, returned):
+        watch.append(log)
+        job = submitted(client, "s1")
+        client.until(job, lambda r: r["state"] == "done")
+        os.kill(os.getpid(), signal.SIGTERM)
+        log.wait_for(event("slice_service_stopping", stop=1))
+        assert client.json("DELETE", f"/slices/{job}/file") == (200, {"job": job, "file": "deleted"})
+    monkeypatch.setattr(jobs.JobPool, "start_sweeper", lambda self, *args, **kwargs: None)
+    code, log, failure = serve_with(tmp_path, monkeypatch, drive)
+    assert written.is_set(), "serve returned before the answer that drained it was written"
+    assert failure is None, failure
+    assert code == 0
+
+
+def test_an_answer_still_being_written_past_the_bound_is_cut_and_logged(tmp_path, monkeypatch):
+    install_fake_orca(tmp_path, monkeypatch, "ok")
+    monkeypatch.setattr(cli, "STOP_ANSWERS_S", 0)
+    held, releases = threading.Event(), []
+    real = cli.make_server
+
+    def holding(host, port, app, **kwargs):
+        def slow(environ, start_response):
+            if environ["PATH_INFO"] == "/settings-table":
+                held.set()
+                releases[0].wait(FAILSAFE_S)        # until serve has returned
+            return app(environ, start_response)
+        return real(host, port, slow, **kwargs)
+    monkeypatch.setattr(cli, "make_server", holding)
+
+    def drive(client, log, returned):
+        releases.append(returned)
+        threading.Thread(target=client.request, args=("GET", "/settings-table"), daemon=True).start()
+        assert held.wait(FAILSAFE_S)
+        os.kill(os.getpid(), signal.SIGTERM)
+    code, log, failure = serve_with(tmp_path, monkeypatch, drive)
+    assert failure is None, failure
+    assert code == 0
+    cut = log.wait_for(event("slice_service_answers_cut"))
+    assert (cut["answering"], cut["waited_s"]) == (["GET /settings-table"], 0)
+
+
+class _Closing:
+    """An answer's body that, once written and closed, sets `written`, then closes the body."""
+
+    def __init__(self, body, written):
+        self._body, self._written = body, written
+
+    def __iter__(self):
+        return iter(self._body)
+
+    def close(self):
+        self._written.set()
+        getattr(self._body, "close", lambda: None)()
+
+
 def test_a_waiting_slice_job_ends_with_shutdown_at_the_stop(tmp_path, monkeypatch):
     install_fake_orca(tmp_path, monkeypatch, "gate")
     seen = {}

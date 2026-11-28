@@ -153,9 +153,18 @@ def test_a_finished_slice_job_followed_already_is_counted_in_no_kind(app, standi
     # Every count but `listed`, `left` and `unreadable` is of the followings the start began.
     if record == "stored":
         write_stored(bucket, "jdone")
-    add_done(standin, "jdone")
+    # The following is begun on a slice job still running, so that it is certainly alive when
+    # the collection runs: begun on a done one, with its record stored, it could end before
+    # the collection asked to follow it, which then began a following of its own.
+    standin.add_job("jdone", USER, "plate-jdone", "submission-jdone", running("jdone", 4))
     context(app)["follower"].follow(USER, "jdone", GROUP)
+    standin.changes.wait_for(lambda: standin.open_streams("jdone") == 1, "the following's stream")
+    # Done, as the list shows it, before its stream has carried the report.
+    with standin._lock:
+        job = standin.jobs["jdone"]
+        job.progress, job.file, job.summary, job.ended_at = done("jdone", 9), FILE, SUMMARY, LISTED_END
     collect(app)
+    standin.report("jdone", done("jdone", 9))
     wait_for_delete(standin, "jdone")
     [line] = log.events("slices_collected")
     assert (line["listed"], line["followed"], line["collecting"], line["already_stored"],
