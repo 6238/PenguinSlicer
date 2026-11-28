@@ -42,9 +42,10 @@ is answered 202 with that slice job and starts nothing (a repeat, logged as
 `slice_repeat`). One that passes its checks ends the same user key's earlier unfinished
 slice job of the same plate_id (jobs.JobPool, the replacement); a refused one ends nothing.
 A slice job, once accepted, runs to its end whether or not anything follows its progress. A slice job's files live under
-`work_dir/<job folder>/`: its hold on each of its parts' files (`parts/`), the scratch folder
-of the slice, and the sliced file, all removed when the slice job ends without a file or
-when its record expires. The part store is a folder of its own under `work_dir`, new in each
+`work_dir/<job folder>/`: its hold on each of its parts' files (`parts/`), given up once the
+plate is sliced, the scratch folder of the slice, and the sliced file, deleted once the
+front server has stored it; the folder is removed when the slice job ends without a file or
+when its record expires, two hours after the slice job ended. The part store is a folder of its own under `work_dir`, new in each
 process. At start the app refuses a bad setting (limits.SettingError), removes the scratch
 and the part store left by a process that died (service.clean_stale_scratch) and starts the
 job pool's sweeper, which sweeps the part store too.
@@ -127,9 +128,12 @@ def _logged(user_key):
 
 
 def slice_worker(job_id, configuration, context):
-    """The pool's worker: slice a checked PlateConfiguration into its slice job's folder."""
+    """The pool's worker: slice a checked PlateConfiguration into its slice job's folder. A
+    sliced plate's job gives up its hold on its parts at once (contracts/sliced-file.md): only
+    its sliced file stays, and the part store keeps each part by its own rule."""
     out = configuration.work_dir / "out"
     sliced = slice_plate_configuration(configuration, out, stop=context.stop, on_progress=context.progress)
+    shutil.rmtree(configuration.work_dir / JOB_PARTS, ignore_errors=True)
     result = {"path": str(sliced.path), "summary": sliced.summary, "file": sliced.path.name,
               "peak_rss_kb": sliced.peak_rss_kb, "orca_wall_s": sliced.wall_s,
               "work_dir": str(configuration.work_dir)}

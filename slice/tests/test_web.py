@@ -827,6 +827,16 @@ class TestTheSlicedFileOnceStored:
             assert "deleted" in gone.get_json()["detail"]
         assert client.get(f"/slices/{job_id}", headers=HEADERS).get_json()["state"] == "done"
 
+    def test_a_done_slice_job_keeps_no_hold_on_its_parts(self, tmp_path, monkeypatch, work):
+        """contracts/sliced-file.md: a slice job holds its parts while it runs and none once
+        it ends; the part store keeps each part by its own rule."""
+        client, pool, _logs, job_id = self.done_job(tmp_path, monkeypatch, work)
+        (folder,) = job_folders(work)
+        assert not (folder / "parts").exists()
+        assert Path(pool.result(job_id)["path"]).is_file()
+        assert upload(client, BOX).status_code == 201           # the part store still holds the part
+        assert submit(client, plate_configuration()).status_code == 202
+
     def test_a_second_delete_answers_as_the_first(self, tmp_path, monkeypatch, work):
         client, _pool, _logs, job_id = self.done_job(tmp_path, monkeypatch, work)
         first = client.delete(f"/slices/{job_id}/file", headers=HEADERS)
