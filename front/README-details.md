@@ -2075,9 +2075,13 @@ by the running server after the `start` line; `collected` is set when it has end
   holding a slash or otherwise unable to name a folder; a `progress` without a `state`)
   writes `slices_entry_unreadable` with the entry cut to 300 characters, and is skipped;
 - the end writes `slices_collected`: `listed`, `followed`, `collecting`, `already_stored`,
-  `left` and `unreadable`. A slice job already followed (a page asked about it first) is
-  not followed twice, and is counted in none of `followed`, `collecting` and
-  `already_stored`, which count the followings the start began;
+  `left`, `unreadable` and `ended_at_refused`. A slice job already followed (a page asked
+  about it first) is not followed twice, and is counted in none of `followed`, `collecting`
+  and `already_stored`, which count the followings the start began. `ended_at_refused`
+  counts those of `collecting` whose `ended_at` was not of the form above, so that their
+  two hours count from when the following hears the slice is done: the moment written then
+  has the same form as the list's and usually the same second, and only this count tells a
+  taken `ended_at` from a refused one;
 - asked to stop while it waits, it ends at once.
 
 | What the user did | Where it is | After a restart of the front server |
@@ -2126,7 +2130,14 @@ together is closed `why` `stopping`. Tested in `tests/test_server.py`: a page's 
 over HTTP on the running server is closed `why` `stopping` before the `stop` line; and in
 `tests/test_streams.py`, a stream given both at once. That the sweep and the
 once-a-minute line are stopped is not checked: both run on daemon threads that end with the
-process.
+process. The signals are taken before the `start` line is written (`server.serve`), so a
+stop sent the moment that line appears ends the serving the same way, `stop` line and
+gathered lines included, never by the signal's default action; a stop that arrives before
+the web server runs is caught there (`KeyboardInterrupt`) and ends the same. Once the stop
+has begun, a second `SIGTERM` or Ctrl-C is ignored, so the stop is never cut short before its
+`stop` line and the gathered lines are written; a host that will not wait ends the process
+outright. Tested in `tests/test_server.py`, in the main thread where the handlers are taken
+(the second stop: `test_a_second_stop_during_the_stop_still_writes_what_the_log_gathered`).
 
 Asked to stop (`SIGTERM`, as at every deploy), the front server takes no new requests, lets
 uploads and downloads in progress finish, closes its progress streams and, from phase 5,
@@ -2403,19 +2414,54 @@ without one the built-in default is served.
 
 **The joined suite.** One suite outside the three fast suites runs the components together,
 as printer delivery's `test-together` does for its two halves. It is its own `uv` project at
-the repository's root, `together/`, run with `make -C together test`. It starts the real
+the repository's root, `together/` ([its README](../together/README.md)), run with
+`make -C together test` (`install` once). It starts the real
 slice service with the slice service's stand-in Orca (`PENGUIN_SLICE_ORCA` naming a small
 executable wrapper the suite writes, which runs `slice/tests/fake_orca.py` with Python, as
 `install_fake_orca` in `slice/tests/helpers.py` does; the file is not executable by itself)
 and the real front server with the development identity, each on
-a port the system chooses and each with fresh folders, builds the wizard, and drives the
-wizard in Chromium through Playwright: the phase's "Done when" from adding parts to the
-download, and each row of the architecture's table "The slice container restarts", the slice
-service being restarted at that row's moment
-([Keeping it true](../docs/architecture.md#keeping-it-true)). It waits on events, never on a
-duration, behind a backstop that fails the test. The front server's builder writes it, as the
-last item of phase 2, once the three components exist; it reaches the components only
-through their interfaces and their start commands, never by importing their code.
+a port the system chooses and each with fresh folders, for each test. It waits on events,
+never on a duration, behind a backstop that fails the test (`joined/waits.py`, 60 s an
+event); it reaches the components only through their start commands, their HTTP interfaces
+and the folders it gave them, never by importing their code. As built:
+
+- **The start commands** are run from each component's own environment
+  (`slice/.venv/bin/python -m penguin_slice serve --work … --port 0`,
+  `front/.venv/bin/python -m penguin_front serve --port 0`), not through `uv run`, so that a
+  signal the suite sends reaches the server and is not passed on a second time by a wrapper.
+  Each is found listening by its start line (`slice_service_started`, `start`) and its
+  `port`. A restart of the slice service starts a new process on the same port, since the
+  front server was given one address.
+- **The stand-in Orca's mode** is read by the wrapper from a file at each slice, so a test
+  sets how the next slice goes (`ok`, `empty_layers`, `gate` to hold Orca until the test lets
+  it go) without a restart.
+- **The front server** is given `PENGUIN_COOKIE_KEY`, so a restart signs nobody out, and a
+  folder of page files holding a one-line `index.html` with the version's placeholder, until
+  the browser tests give it the wizard's build.
+- **The page** (`joined/page.py`) makes the wizard's requests over HTTP: the trip that signs
+  in, `X-PenguinSlicer-Group`, `X-PenguinSlicer-Page`, `X-PenguinSlicer-Wizard` on each
+  changing request, and the progress stream read as server-sent events on a thread of its
+  own.
+- **The tests** (`together/tests/`): the walk from upload to download on real parts; the
+  configuration and the table of settings, compressed and plain; failures and refusals
+  passed byte for byte (a slice that fails, a plate off its plate, a part refused, the busy
+  answer, the two refusals for size); a repeated submission, a replacement, another plate
+  not replaced; a part the part store forgot; the gathered log; a quiet slice's 15-second
+  repeat and keep-alive (about 16 s, the suite's slowest test); the rows of "The slice
+  container restarts" that need no page; and two rows of "The front server restarts" (a
+  slice running, and one that ended while it was down).
+- **One walk with the real Orca**, `make -C together test-orca`, outside `make -C together
+  test`: the same walk for one small real plate with the pinned Orca, under the real-Orca
+  lock (`flock /var/tmp/penguin-locks/real-orca.lock`), the downloaded sliced file checked
+  as [the sliced file's contract](../contracts/sliced-file.md) describes a real one.
+
+What the joining found is in [the record of the seam](../docs/orchestration/phase-2/seam-front-slice.md).
+To be built, as the last item of phase 2 once the wizard's steps exist: the browser half,
+which builds the wizard and drives it in Chromium through Playwright over the same two
+servers (the fixtures `slice_service` and `front_server`): the phase's "Done when" from
+adding parts to the download, and each row of the architecture's table "The slice container
+restarts", the slice service being restarted at that row's moment
+([Keeping it true](../docs/architecture.md#keeping-it-true)).
 
 ### Tests
 
@@ -2773,8 +2819,10 @@ release's page and the previous slice service's stand-in, which wait for a secon
     release's page and the previous slice service's stand-in against the new front server
     (from the second release on, not yet built); forty progress streams with short requests
     still answered (built); no secret in any log line or answer (built).
-20. **The joined suite,** `together/`, once the wizard and the slice service's phase 2
-    exist ([Running phase 2 on one machine](#running-phase-2-on-one-machine)).
+20. **The joined suite,** `together/` ([Running phase 2 on one machine](#running-phase-2-on-one-machine)):
+    the two servers run together, driven over HTTP as the wizard drives them, and one walk
+    with the real Orca (built); the browser half, once the wizard's steps exist (to be
+    built).
 
 In phase 2 the page sends the wizard's mark, and the front server does not yet check it.
 

@@ -62,6 +62,9 @@ def test_the_unfinished_is_followed_and_the_finished_unstored_stored_with_its_re
     assert followed["group"] == "group-of-run" and followed["user_key"] == USER
     [line] = log.events("slices_collected")
     assert (line["listed"], line["followed"], line["collecting"]) == (2, 1, 1)
+    # The line says the list's end was taken: the joined suite reads this, since the moment
+    # of collecting is written in the same form and usually in the same second.
+    assert line["ended_at_refused"] == 0
 
 
 def test_a_slice_job_with_no_record_is_followed_without_a_group(app, standin, bucket, log):
@@ -153,9 +156,18 @@ def test_a_finished_slice_job_followed_already_is_counted_in_no_kind(app, standi
     # Every count but `listed`, `left` and `unreadable` is of the followings the start began.
     if record == "stored":
         write_stored(bucket, "jdone")
-    add_done(standin, "jdone")
+    # The following is begun on a slice job still running, so that it is certainly alive when
+    # the collection runs: begun on a done one, with its record stored, it could end before
+    # the collection asked to follow it, which then began a following of its own.
+    standin.add_job("jdone", USER, "plate-jdone", "submission-jdone", running("jdone", 4))
     context(app)["follower"].follow(USER, "jdone", GROUP)
+    standin.changes.wait_for(lambda: standin.open_streams("jdone") == 1, "the following's stream")
+    # Done, as the list shows it, before its stream has carried the report.
+    with standin._lock:
+        job = standin.jobs["jdone"]
+        job.progress, job.file, job.summary, job.ended_at = done("jdone", 9), FILE, SUMMARY, LISTED_END
     collect(app)
+    standin.report("jdone", done("jdone", 9))
     wait_for_delete(standin, "jdone")
     [line] = log.events("slices_collected")
     assert (line["listed"], line["followed"], line["collecting"], line["already_stored"],
@@ -169,6 +181,21 @@ def test_an_end_time_of_another_form_counts_the_two_hours_from_when_it_is_heard(
     collect(app)
     wait_for_delete(standin, "jdone")
     assert sliced.read(bucket, USER, "jdone", log)["slice_ended_at"] == sliced.utc(clock.now())
+    [line] = log.events("slices_collected")
+    assert (line["collecting"], line["ended_at_refused"]) == (1, 1)
+
+
+def test_an_end_time_is_counted_refused_only_for_a_slice_job_collected(app, standin, bucket,
+                                                                       log):
+    # A stored record is not stored again, so its listed end is used for nothing; nor is a
+    # running slice job's absent one.
+    write_stored(bucket, "jkept")
+    add_done(standin, "jkept", ended_at="yesterday")
+    standin.add_job("jrun", USER, "plate-run", "submission-run", running("jrun", 4))
+    collect(app)
+    wait_for_delete(standin, "jkept")
+    [line] = log.events("slices_collected")
+    assert (line["already_stored"], line["followed"], line["ended_at_refused"]) == (1, 1, 0)
 
 
 @pytest.mark.parametrize("entry", [

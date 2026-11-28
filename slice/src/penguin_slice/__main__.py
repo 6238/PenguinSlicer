@@ -28,7 +28,7 @@ import signal
 import sys
 import threading
 
-from werkzeug.serving import make_server
+from werkzeug.serving import WSGIRequestHandler, make_server
 
 from .limits import SettingError
 
@@ -37,6 +37,9 @@ STOP_SIGNALS = (signal.SIGINT, signal.SIGTERM)
 M_ARENA_MAX = -8          # glibc's mallopt parameter for the most malloc arenas
 MALLOC_ARENAS = 2         # the request threads' and the slice jobs' threads share these
 STOP, DRAINED = "stop", "drained"     # what run_until_stopped waits for, in its queue
+# Once stopped, the longest serve waits for the answers being written to finish (*proposed*):
+# every answer after the drain is short (each slice job has ended), so this bounds a hang.
+STOP_ANSWERS_S = 10
 
 
 def cap_malloc_arenas(libc=None):
@@ -87,6 +90,48 @@ def run_until_stopped(pool, events, log):
     return how
 
 
+class InFlight:
+    """The connections being answered, counted by the web server's request handler (`handler`)
+    from the moment one is accepted until its handling ends, the answer written or the
+    connection dropped. The development server closes each connection after one answer, so
+    one connection is one request. `wait_idle(seconds)` returns True once none is being
+    answered, False when `seconds` pass first. (Counting at the WSGI app's `close` would miss
+    an answer whose client went away: the server then skips the close.)"""
+
+    def __init__(self):
+        self._answering = {}          # a token for each connection: "METHOD path" once known
+        self._changed = threading.Condition()
+        in_flight = self
+
+        class Handler(WSGIRequestHandler):
+            def handle(self):
+                token = object()
+                with in_flight._changed:
+                    in_flight._answering[token] = "(reading the request)"
+                self._penguin_token = token
+                try:
+                    super().handle()
+                finally:
+                    with in_flight._changed:
+                        in_flight._answering.pop(token, None)
+                        in_flight._changed.notify_all()
+
+            def run_wsgi(self):
+                with in_flight._changed:
+                    in_flight._answering[self._penguin_token] = f"{self.command} {self.path[:80]}"
+                return super().run_wsgi()
+        self.handler = Handler
+
+    def answering(self):
+        """The requests being answered now, as "METHOD path"."""
+        with self._changed:
+            return sorted(self._answering.values())
+
+    def wait_idle(self, seconds):
+        with self._changed:
+            return self._changed.wait_for(lambda: not self._answering, seconds)
+
+
 def serve(args, stderr):
     from .web import create_app
 
@@ -100,10 +145,11 @@ def serve(args, stderr):
         print(f"penguin_slice serve: {exc}", file=stderr, flush=True)
         return 2
     pool, log = app.extensions["penguin_slice_pool"], app.extensions["penguin_slice_log"]
+    answering = InFlight()
     events = queue.SimpleQueue()          # put() is safe in a signal handler
     with _on_signals(lambda _signum, _frame: events.put(STOP)):
         try:
-            server = make_server(args.host, args.port, app, threaded=True)
+            server = make_server(args.host, args.port, app, threaded=True, request_handler=answering.handler)
         except OSError as exc:
             print(f"penguin_slice serve: cannot listen on {args.host}:{args.port}: {exc}", file=stderr, flush=True)
             pool.shutdown()
@@ -113,6 +159,12 @@ def serve(args, stderr):
         log({"event": "slice_service_started", "host": args.host, "port": server.server_port, "pid": os.getpid()})
         try:
             run_until_stopped(pool, events, log)
+            # The answers being written are finished before the process exits: above all the
+            # front server's DELETE of the last sliced file, which is what drained it, and
+            # whose answer tells the front server its file is stored.
+            if not answering.wait_idle(STOP_ANSWERS_S):
+                log({"event": "slice_service_answers_cut", "answering": answering.answering(),
+                     "waited_s": STOP_ANSWERS_S})
         finally:
             server.shutdown()
             server.server_close()

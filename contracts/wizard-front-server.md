@@ -186,7 +186,10 @@ marked as [The page files](#the-page-files-and-the-version) says.
 - The page acts on a report's `code` and `retryable`, never on the status alone. It treats a
   code it does not know as a failure to show, not to retry by itself.
 - A time is a string in UTC, RFC 3339, to the second (`2026-11-27T22:14:05Z`). A length of
-  time is a number of whole seconds, in a field whose name ends `_s`. Where the page must act
+  time is a number of whole seconds, in a field whose name ends `_s`, except inside a
+  [progress report](progress-report.md), whose `elapsed_s` and `expected_s` are the
+  component's own and are passed unchanged: the slice service's carry a fraction of a second.
+  Where the page must act
   at a moment the front server reckons (a sliced file's expiry), the answer gives the seconds
   from the answer to that moment, so that the page counts them on its own clock from the
   moment the answer arrived and is never misled by a clock that is wrong.
@@ -681,7 +684,9 @@ The slice job, in the answer to a submission:
 {"slice": {"id": "3f9a1c2b", "plate_id": "…", "submission_id": "…", "progress": { "job": "3f9a1c2b", "state": "queued", "ahead": 2, "...": "..." }}}
 ```
 
-`progress` is the slice job's first [progress report](progress-report.md). See
+`progress` is the slice job's latest [progress report](progress-report.md) when the answer is
+made: its first, `queued` with `ahead`, or a later one when the slice has already started, as
+it does at once when nothing is ahead of it. See
 [examples/wizard-front/slice-accepted.json](examples/wizard-front/slice-accepted.json).
 
 **Signed in:** yes. **Group:** yes. **Mark:** yes. **Repeat:** recognised by the slice

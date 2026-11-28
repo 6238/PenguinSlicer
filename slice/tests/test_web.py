@@ -521,6 +521,14 @@ class TestRefusals:
         assert body["detail"] == "it is a multipart form, not a JSON body"
         assert logs[-1]["state"] == "refused"
 
+    def test_a_multipart_body_over_the_cap_is_refused_as_multipart(self, work):
+        # The contract: the form is looked at before the size, so it is 400, not 413.
+        client, _pool, _logs = app_with(work)
+        answer = client.post("/slices", headers=HEADERS, data=b"{}" + b" " * 1_048_576,
+                             content_type="multipart/form-data; boundary=b")
+        assert answer.status_code == 400
+        assert answer.get_json()["detail"] == "it is a multipart form, not a JSON body"
+
     @pytest.mark.parametrize("raw", [b"{not json", b"[" * 100_000, b"", b"\xff\xfe"])
     def test_a_body_that_is_not_json(self, work, raw):
         client, _pool, _logs = app_with(work)

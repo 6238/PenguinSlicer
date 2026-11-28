@@ -224,6 +224,12 @@ def test_an_open_progress_stream_is_closed_at_the_stop_and_carries_on_when_opene
     reader = Reader(first.get(f"/api/slices/{job}/events", headers=DEV_GROUP,
                               buffered=False))
     reader.wait(lambda r: r.progress(), "the first report")
+    # The page's first report can come before the first front server's following has opened
+    # its stream to the stand-in. Stopped then, the following's stream could open after the
+    # stand-in was told to close the slice job's streams, and stay open beside the second
+    # front server's: the count below would never fall to one.
+    standin.changes.wait_for(lambda: standin.open_streams(job) == 1,
+                             "the first front server's following's stream")
     restarts.stop(first.application)
     reader.wait_for_end()
     assert first.application.penguin_log.events("stream_closed")[-1]["why"] == "stopping"

@@ -120,6 +120,9 @@ class SliceStandIn:
         self.next_job_ids = []
         self.expected_s = 75
         self.stopping = False
+        #: True: a slice job with nothing ahead starts before its `202` is made, which then
+        #: carries its latest report, `running`, as the real slice service's often does.
+        self.starts_at_once = False
         self.log_capacity = 10_000
         self.log_page = 1_000
         self.settings_table = (EXAMPLES / "settings-table.json").read_bytes()
@@ -345,22 +348,39 @@ class SliceStandIn:
     # Slice jobs.
 
     def _submit(self, key):
+        # The real slice service reads the body as JSON first, in this order: a multipart
+        # form (whatever its size, 400), then a body over the cap (413), then one that is not
+        # JSON (400, nesting too deep for the parser included), each refused before the
+        # repeat and the stopping answer (slice/src/penguin_slice/web.py, `submit`).
+        if request.mimetype.startswith("multipart/"):
+            raise _bad_plate("a multipart form, not a JSON body")
         length = request.content_length or 0
         if length > MAX_PLATE_CONFIGURATION_BYTES:
             raise Refusal(413, example("error-report-plate-configuration-over-size.json")
                           | {"detail": f"plate configuration Content-Length {length:,} "
                                        f"bytes, cap {MAX_PLATE_CONFIGURATION_BYTES:,}"})
-        plate = _plate_configuration(request.get_data())
+        body = request.get_data()
+        try:
+            json.loads(body)
+        except (ValueError, RecursionError) as exc:
+            raise _bad_plate(f"not JSON: {exc}") from None
         with self._lock:
+            # A remembered submission is answered before any check, and the stopping answer
+            # comes before the plate's form is read, as the real slice service does.
+            submission_id = _submission_id(body)
             for record in self.jobs.values():
-                if record.user_key == key and record.submission_id == plate["submission_id"]:
+                if record.user_key == key and record.submission_id == submission_id:
                     return self._accepted(record), 202
             if self.stopping:
                 raise Refusal(503, example("slice-http/stopping.json"))
+        plate = _plate_configuration(body)
+        with self._lock:
             held = self.parts.get(key, {})
+            # Only the parts an instance names are read (the plate configuration's contract).
+            named = {i.get("ref") for i in plate.get("instances") or [] if isinstance(i, dict)}
             missing = [{"key": k, "sha256": p["sha256"], "units": p["units"]}
                        for k, p in plate["parts"].items()
-                       if (p.get("sha256"), p.get("units")) not in held]
+                       if k in named and (p.get("sha256"), p.get("units")) not in held]
             if missing:
                 raise Refusal(422, _parts_missing(missing))
             live = [r for r in self.jobs.values() if not r.ended]
@@ -382,6 +402,12 @@ class SliceStandIn:
                 "job": job, "state": "queued", "stage": "queued",
                 "stage_label": "Waiting for the slicer", "elapsed_s": 0,
                 "expected_s": self.expected_s, "sequence": 1, "ahead": ahead})
+            if self.starts_at_once and ahead == 0:
+                # Nothing ahead: the slice starts before the answer is made, and the answer
+                # carries the latest report, as the real slice service's does.
+                record.progress = {"job": job, "state": "running", "stage": "building_plate",
+                                   "stage_label": "Building the plate", "elapsed_s": 0.012,
+                                   "expected_s": self.expected_s, "sequence": 2}
             self.jobs[job] = record
         self.changes.announce()
         return self._accepted(record), 202
@@ -546,11 +572,14 @@ def _measure(body, units):
             "warnings": []}
 
 
+def _bad_plate(why):
+    return Refusal(400, _report(
+        "slice.bad_plate_configuration", "This plate configuration could not be read.",
+        "Lay out the plate again and send a new slice.", why))
+
+
 def _plate_configuration(body):
-    def refused(why):
-        return Refusal(400, _report(
-            "slice.bad_plate_configuration", "This plate configuration could not be read.",
-            "Lay out the plate again and send a new slice.", why))
+    refused = _bad_plate
 
     try:
         plate = json.loads(body)
@@ -564,6 +593,16 @@ def _plate_configuration(body):
     if not isinstance(plate.get("parts"), dict):
         raise refused("parts is not an object")
     return plate
+
+
+def _submission_id(body):
+    """The `submission_id` of a body, when it is a JSON object holding one as text; else None."""
+    try:
+        plate = json.loads(body)
+    except ValueError:
+        return None
+    value = plate.get("submission_id") if isinstance(plate, dict) else None
+    return value if isinstance(value, str) else None
 
 
 def _parts_missing(missing):
