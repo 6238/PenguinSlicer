@@ -127,6 +127,32 @@ fails under it with `ahead` 0 where 1 is right), the race of two submits (decisi
 reports against their examples (decision 14), and the tests named after subscribers, now
 followers.
 
+Fixes made after the second review of pull request #32:
+
+16. **The test of a finished slice job under a replacement now reads the log.**
+    `TestReplacement::test_a_finished_one_is_not_touched` compared only the progress
+    report, which a wrongly replaced done slice job does not change, so dropping the
+    condition `r["state"] not in FINAL` from `JobPool.submit` survived. The test now also
+    requires that the replacement writes no log line for the earlier slice job and that,
+    once swept, its lines are `queued, running, done, expired` with no `cancel_reason`.
+    Seen to fail under the mutation (an extra `cancelling` line), and pass without it. No
+    code changed: the code was right.
+17. **A failed report is tested to carry no stage.** The worker of
+    `TestFailure::test_a_failure_carries_its_error_report` now reports `slicing_mesh` before
+    it fails, and the test requires no `stage`, `stage_label` or `fraction` in the failed
+    report. Without the stage reported first, keeping the stage on `failed` in
+    `JobPool._finish` changed nothing visible; the test now fails under that mutation.
+
+Findings of the second review declined:
+
+- **The race of `shutdown()` between the pool's lock and `self._executor.submit` in
+  `JobPool.submit`** is real and predates this batch: the slice job is accepted, then
+  ended with `shutdown` by the stop, and the executor's `RuntimeError` makes `POST /slices`
+  answer 500. Not fixed here, as the reviewer suggests: item 14 decides what a stopping
+  slice service answers (`slice.stopping`) and rewrites `JobPool.shutdown`, so the fix
+  belongs with it; fixing it now would settle an answer item 14 has to change. Listed under
+  "Not done".
+
 ## Targets missed
 
 None.
@@ -137,7 +163,10 @@ None.
   repeat is recognised for an hour, not two: item 10 changes that and is not in this batch.
 - A stopping slice service still answers a new submission `slice.busy`, and its stop still
   ends the running slice job with `shutdown`: item 14 is not in this batch. The repeat is
-  already looked for before the stop, as item 14 needs.
+  already looked for before the stop, as item 14 needs. With it stays a race: a submission
+  that passes the closing check just before the stop begins reaches an executor already
+  shut down, and `POST /slices` answers 500 instead of an error report
+  that says the service is stopping.
 - The real-Orca suite was not run: nothing in this batch changes how Orca is run, and the
   batch names no other suite.
 

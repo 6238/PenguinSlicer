@@ -168,12 +168,14 @@ class TestReports:
 class TestFailure:
     def test_a_failure_carries_its_error_report(self):
         def worker(job_id, payload, context):
+            context.progress("slicing_mesh", 0.07)    # a failed report keeps no stage it reached
             raise SliceError("Two instances are too close together.", "detail", -101,
                              error_code="slice.orca_too_close", reason="too close")
         pool, logs = make_pool(worker)
         job_id = pool.submit(describe={"instances": 2})
         report = pool.get(job_id)
         assert report["state"] == "failed"
+        assert "stage" not in report and "stage_label" not in report and "fraction" not in report
         assert report["error"]["code"] == "slice.orca_too_close"
         assert report["error"]["detail"] == "orca code -101\ndetail"
         failed = logs[-1]
@@ -713,11 +715,18 @@ class TestReplacement:
         assert [pool.get(j)["state"] for j in (mine, other_plate, other_user)] == ["cancelled", "queued", "queued"]
 
     def test_a_finished_one_is_not_touched(self):
-        pool, _ = make_pool()
+        pool, logs = make_pool()
         earlier = pool.submit(user_key="a", plate_id="p1", submission_id="s1")
         before = pool.get(earlier)
+        lines_before = [e for e in logs if e["job"] == earlier]
         pool.submit(user_key="a", plate_id="p1", submission_id="s2")
         assert pool.get(earlier) == before and before["state"] == "done"
+        # The replacement writes no line for it, and its later lines name no cancel reason.
+        assert [e for e in logs if e["job"] == earlier] == lines_before
+        pool.sweep(now=pool._clock() + 10 ** 9)
+        earlier_lines = [e for e in logs if e["job"] == earlier]
+        assert [e["state"] for e in earlier_lines] == ["queued", "running", "done", "expired"]
+        assert all("cancel_reason" not in e for e in earlier_lines)
 
     def test_with_every_place_taken_by_one_user_key_a_changed_plate_is_accepted_and_another_refused(self):
         gates = Gates(stoppable=False)
