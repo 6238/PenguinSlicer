@@ -121,6 +121,13 @@ class FakeFrontServer:
         # True once a deploy has replaced the page files: this release's assets are answered 404,
         # as the new front server answers a name it does not have
         self.assets_gone = False
+        # The sign-in, as the real front server keeps it: off until a test turns it on with
+        # `new_cookie_key()`, which makes every cookie set before unreadable, as a front server
+        # restarted on one machine with no cookie key given does. Then a request without the
+        # current cookie is answered 401 front.not_signed_in (`/` sends the browser on the trip),
+        # and `/signin` sets the cookie and sends the browser back to `return`.
+        self.sign_in_required = False
+        self.cookie = "0"
         server = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -136,6 +143,20 @@ class FakeFrontServer:
                     test_file = server.files.get(self.path) if method == "GET" else None
                 if test_file is not None:
                     self.answer(200, "application/octet-stream", test_file)
+                    return
+                if method == "GET" and self.path.startswith("/signin"):
+                    # The development identity's trip: its cookie at once, and back to `return`.
+                    back = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get("return", ["/"])[0]
+                    self.answer(302, "text/plain", b"", headers={
+                        "Location": back if back.startswith("/") and not back.startswith("//") else "/",
+                        "Set-Cookie": f"penguinslicer={server.cookie}; HttpOnly; Path=/; SameSite=Lax"})
+                    return
+                if server.sign_in_required and not self.signed_in():
+                    if method == "GET" and self.path.split("?")[0] == "/":
+                        self.answer(302, "text/plain", b"", headers={
+                            "Location": "/signin?return=" + urllib.parse.quote(self.path, safe="")})
+                    else:
+                        self.json(401, error_report("front.not_signed_in"))
                     return
                 if method == "GET" and self.path == "/":
                     self.answer(200, TYPES[".html"], server.page.encode("utf-8"), page=True)
@@ -161,6 +182,10 @@ class FakeFrontServer:
                     self.answer(status, "application/octet-stream", content, headers=rest[0] if rest else {})
                 else:
                     self.json(status, content, rest[0] if rest else {})
+
+            def signed_in(self):
+                cookies = [c.strip() for c in (self.headers.get("Cookie") or "").split(";")]
+                return f"penguinslicer={server.cookie}" in cookies
 
             def stream(self, answer):
                 self.send_response(200)
@@ -220,6 +245,12 @@ class FakeFrontServer:
         self.url = f"http://127.0.0.1:{self.httpd.server_address[1]}/"
         # A short poll, so that shutting the server down at the end of a test is quick.
         self.thread = threading.Thread(target=self.httpd.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True)
+
+    def new_cookie_key(self):
+        """Every cookie set so far becomes unreadable, and the sign-in is required from now on."""
+        with self.lock:
+            self.sign_in_required = True
+            self.cookie = str(int(self.cookie) + 1)
 
     def script(self, method, path, *answers):
         with self.lock:

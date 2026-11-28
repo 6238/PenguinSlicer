@@ -446,7 +446,11 @@ below.
 
 Every user signs in with Onshape; PenguinSlicer has no accounts or passwords of its own.
 On one machine (phase 2) there is no sign-in at all: the front server signs in a fixed
-made-up user and group, and the wizard opens straight on its first step. From phase 3:
+made-up user and group, and the wizard opens straight on its first step. A page already
+open whose sign-in is lost, as when the front server on that machine restarts without a
+lasting key, makes the trip described below by itself at a quiet moment; on one machine the
+trip signs the made-up user in again at once and the page comes back to the same step with
+the plate as it was, so the user sees only a moment's navigation. From phase 3:
 
 **Signing in is not something a user manages.** Inside Onshape's panel the aim is that
 being signed in to PenguinSlicer is not felt as separate from being signed in to

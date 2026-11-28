@@ -12,6 +12,8 @@ import { ATTEMPT_TIMEOUT_S, RETRY_TOTAL_S, ROW_SLOW_S, UPLOAD_ATTEMPT_TIMEOUT_S 
 import { createRetryBoard, isQuietRetry, retryWaitS } from './retry.js';
 import { badAnswer } from './sentences.js';
 
+// The refusal that sends the page on the sign-in trip (signing-in.js).
+const NOT_SIGNED_IN = 'front.not_signed_in';
 // The requests that act for no group (the contract's "Group: none").
 const NO_GROUP = new Set(['/api/me', '/api/settings-table', '/api/signout']);
 const CHANGING = new Set(['POST', 'PUT', 'DELETE']);
@@ -99,7 +101,10 @@ async function attemptOnce({ transport, clock, method, path, headers, body, time
   }
 }
 
-// createApi({transport, clock, version, currentGroup, random}):
+// createApi({transport, clock, version, currentGroup, random, signIn}):
+//   signIn (signing-in.js): told an answer front.not_signed_in, `refused(report)`, which is true
+//     when the page leaves on the sign-in trip (the request then never resolves), and every other
+//     answer of the front server, `answered()`. Not told on a report about the page (`once`).
 //   request(method, path, options) resolves to {ok: true, status, body} or
 //     {ok: false, status, report}, the report an error report shown as it is. It retries every
 //     quiet failure until it is answered, never giving up: after RETRY_TOTAL_S it waits for Try
@@ -123,7 +128,7 @@ async function attemptOnce({ transport, clock, method, path, headers, body, time
 //   heard(version): a version heard otherwise, as a progress stream's `version` event, told the same way.
 //   onSettled(listener): told each time the last pending request ends.
 //   board: the retry board, for the panel line.
-export function createApi({ transport, clock, version, currentGroup = () => null, random = Math.random }) {
+export function createApi({ transport, clock, version, currentGroup = () => null, random = Math.random, signIn = null }) {
   const board = createRetryBoard(clock);
   const versionListeners = new Set();
   const settledListeners = new Set();
@@ -177,6 +182,14 @@ export function createApi({ transport, clock, version, currentGroup = () => null
           if (outcome.answer) {
             board.done(entry);
             board.answered();
+            const refusal = outcome.answer.ok ? null : outcome.answer.report;
+            if (signIn && refusal && refusal.code === NOT_SIGNED_IN) {
+              // the page leaves on the sign-in trip: the request waits for nothing, and nothing
+              // is shown; a trip that already failed is shown as the refusal it is
+              if (signIn.refused(refusal)) return new Promise(() => {});
+            } else if (signIn) {
+              signIn.answered();
+            }
             return outcome.answer;
           }
           const now = clock.now();

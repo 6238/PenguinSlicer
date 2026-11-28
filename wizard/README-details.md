@@ -11,7 +11,8 @@ geometry the second tried ([The geometry, in a worker](#the-geometry-in-a-worker
 [Every request: headers, answers and retrying](#every-request-headers-answers-and-retrying);
 who the user is and the configuration, as phase 2 has them ([The current group](#the-current-group),
 [The configuration and the table of settings](#the-configuration-and-the-table-of-settings));
-[What the browser keeps](#what-the-browser-keeps), but for `signInTrip` (phase 3); the
+[What the browser keeps](#what-the-browser-keeps), `signInTrip` with it; the trip itself
+in its phase 2 form ([Signing in and signing out](#signing-in-and-signing-out)); the
 worker's reading of a part and its picture ([The geometry, in a worker](#the-geometry-in-a-worker));
 [What the wizard reports about itself](#what-the-wizard-reports-about-itself);
 [The Parts step](#the-parts-step); [The Settings step](#the-settings-step) with advanced mode;
@@ -747,9 +748,29 @@ contract's [Signing in and signing out](../contracts/wizard-front-server.md#sign
 **Phase 2.** The front server signs in a fixed made-up user and group, the development
 identity. `GET /` without a cookie answers `302` to `/signin`, which sets the development
 identity's cookie and returns at once; `GET /api/me` names that user and group. The wizard
-opens straight on its first step, with no sign-in screen and no Sign out link. The page's
-code for the trip is built in phase 3, but every request already goes through the module that
-will handle `front.not_signed_in`.
+opens straight on its first step, with no sign-in screen and no Sign out link.
+
+The trip of an open page is built (`src/signing-in.js`, joined to every request by the module
+that makes them, `src/api.js`). A request answered `front.not_signed_in` notes the trip in the
+tab's `sessionStorage` (`penguinslicer.sign_in_trip`, the moment: the record `signInTrip`) and
+goes to `/signin?return=<the page's path and query>` at the next quiet moment (no pointer down,
+the focus in no field one types in: `quietMoments`; an open menu or confirmation is not yet
+counted), and the request is left unanswered, so nothing is shown, as is every other request
+refused while the page waits to leave. The development identity's `/signin` sends the browser
+straight back, and the page opens on its stored step with the plate as it was, uploading again
+any part whose upload was refused. Any other answer of the front server clears the note. A
+refusal while the note stands is a trip that failed: the page does not leave again, and the
+refusal is shown where the request was made, as any error report is. The case it is for in
+phase 2 is a front server restarted on one machine with no cookie key given, which makes every
+cookie unreadable
+([The cookie key on one machine](../front/README-details.md#running-phase-2-on-one-machine)).
+From phase 3 the trip goes through Onshape, and the failed trip's own message, below, takes
+the place of the refusal shown. Tests: `tests/signing-in.test.js`, the three `sign-in trip`
+tests of `tests/api.test.js`, and
+`test_a_request_answered_not_signed_in_makes_the_trip_and_comes_back_to_the_plate` in
+`tests_browser/test_coming_back.py`, against the fake front server's sign-in
+(`new_cookie_key()`); the joined suite's `together/tests/test_browser_sign_in.py` against the
+real front server.
 
 **From phase 3, outside Onshape:**
 
