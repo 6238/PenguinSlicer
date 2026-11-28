@@ -37,6 +37,20 @@ body { background: #f6f8fa; }
 /* New plate, under the line that counts the plate (designed in the guide). */
 .new-plate { margin-top: 4px; }
 
+/* The Settings step: the chosen filament's colour beside its name, inside the Filament menu's box
+   (the guide's departure from decision 10). */
+#wizard .filament-pick { position: relative; display: block; }
+#wizard .filament-swatch { position: absolute; left: 10px; top: 50%; width: 12px; height: 12px; margin-top: -6px;
+                           border-radius: 3px; border: 1px solid rgba(31, 35, 40, 0.3); pointer-events: none; }
+#wizard .filament-pick.has-colour select { padding-left: 30px; }
+/* Advanced mode: a number that may be a percentage, and a text, which a number field cannot hold,
+   in the number field's look. */
+#wizard .adv-row .ctl input.num-text { width: 78px; padding: 4px 6px; font-size: 13px; text-align: right; }
+#wizard .adv-row .ctl input.text-value { width: 150px; padding: 4px 6px; font-size: 13px; }
+#wizard .adv-rail button .n[hidden] { display: none; }
+/* Reset all's confirmation sits over advanced mode. */
+.advanced .confirm-pop { z-index: 60; }
+
 /* A confirmation (designed in the guide): a small box joined to the pressed control, in the
    look of the panel's other joined boxes. */
 .confirm-pop { position: absolute; z-index: 45; background: var(--panel); color: var(--ink);

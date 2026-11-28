@@ -137,6 +137,13 @@ and, in plain words, in the guide's [What is to be built, by phase](../../../../
     which joining instances are put still leaves out every instance wholly to the right of the
     plate. To overrule: `parked`, `markParked` and `besideIndex` in `wizard/src/layout.js`; to
     keep the mark across a reopening, a field of the stored plate's instances (decision 13).
+26. **The Settings step's changes reach the Layout step through the page's entry point.** Found
+    merging the Settings step from `main`: its quick change Supports writes the stored plate's
+    changes and tells its own listeners, and nothing told the Layout step, so its spacing stayed
+    at 5 mm after supports were turned on. `wizard/src/main.js` now subscribes the Layout step's
+    `settingsChanged` to the Settings step, which rechecks and moves nothing; a browser test
+    turns supports on and sees the too-close message, and fails without the subscription. To
+    overrule: that line of `main.js`.
 
 ## Review of pull request #43, findings and what became of them
 

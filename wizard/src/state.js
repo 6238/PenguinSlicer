@@ -17,6 +17,8 @@
 //   plate         {parts, instances, arriving, arrivingInstances, filament, filamentFull, profile,
 //                 changes}: parts and instances count the parts that have arrived, arriving and
 //                 arrivingInstances those still arriving (parts.js)
+//                 changes, the change details' lines (settings.js)
+//   advanced      whether advanced mode is open, over the Settings step (settings.js)
 //   layoutProblem the Layout step's first problem, which holds Next, or null
 //   sliced        whether the plate has a sliced file
 export function createStore() {
@@ -32,6 +34,7 @@ export function createStore() {
     settingsTable: null,
     printer: null,
     plate: { parts: 0, instances: 0, arriving: 0, arrivingInstances: 0, filament: null, filamentFull: null, profile: null, changes: [] },
+    advanced: false,
     layoutProblem: null,
     sliced: false,
   };

@@ -116,6 +116,21 @@ def test_a_drag_moves_an_instance_and_a_problem_shows_its_message(page, front_se
     assert w.problems == []
 
 
+def test_supports_turned_on_in_the_settings_step_widen_the_layout_steps_spacing_and_move_nothing(page, front_server):
+    w = open_layout(page, front_server, [spacer()], quantities={0: 2})
+    a, b = w.run("return wizard.layout.model().instances.map((i) => ({ id: i.id, x: i.x, y: i.y }));")
+    # 7 mm apart: enough with supports off
+    w.run("wizard.layout.place([{ id: arg[0], x: arg[1], y: arg[2] }]); await wizard.layout.endDrag();", [b["id"], a["x"], a["y"] + 37])
+    settle(w)
+    assert w.run("return wizard.layout.model().problems.length;") == 0
+    w.run("wizard.settings.setQuick('supports', '1');")
+    settle(w)
+    assert w.run("return wizard.layout.model().problems.map((p) => p.what);") == [
+        "Spacer #1 and Spacer #2 are 7 mm apart; instances need 12 mm between them with supports on."]
+    assert w.run("return wizard.layout.model().instances[1].y;") == a["y"] + 37
+    assert w.problems == []
+
+
 def test_a_click_selects_an_instance_and_the_selection_line_names_it(page, front_server):
     w = open_layout(page, front_server, [spacer()])
     w.run("wizard.layoutStep.view().topView(); await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));")

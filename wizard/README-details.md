@@ -277,8 +277,8 @@ of `index.html` and its style the matching section of `css/panel.css`.
 panel as a whole (`#wiz-header` with `.brand`, `#config-info`, `#stepbar`, `#step-why`;
 `#wiz-body` with `.summary-wrap`, `#wiz-summary`, `#chg-pop`, `#notices` and one
 `section.step` for each step holding only its title; `#wiz-nav` with `#btn-back`, `#btn-next`
-and `#final-action`). The printer-status icon (`#pstat`, `#pstat-pop`) waits for phase 5,
-advanced mode (`#advanced`) for the Settings step, and each step's body for its step;
+and `#final-action`; and `#advanced`, with the Settings step). The printer-status icon (`#pstat`,
+`#pstat-pop`) waits for phase 5, and each step's body for its step;
 `tests/page.test.js` checks every id of the page is one of the mockup's, in the mockup's order,
 apart from the configuration line's three (`#config-status`, `#config-name`,
 `#config-refresh`), which the mockup's script made without ids. `wizard/src/css/panel.css` is
@@ -321,8 +321,8 @@ and place) and `tests_browser/test_panel.py` in Chromium, on Playwright's fake c
 
 Tests: each width at its own figure and one pixel under it (320, 479, 480, 519, 520, 679,
 680), every step rendered and checked for no sideways scroll; a panel resized across 480 px
-keeps advanced mode's open and closed sections (with advanced mode, item 9 of
-[By phase](#by-phase)). As built, every step's panel as a whole is checked at the seven
+keeps advanced mode's open and closed sections (built with advanced mode:
+[Advanced mode](#advanced-mode)). As built, every step's panel as a whole is checked at the seven
 widths, with no element reaching past the panel's right edge, and the step tabs below and
 from 480 px and across a widening; `make -C wizard look` writes pictures of the panel beside
 the mockup's at 320, 480, 520 and 680 px into `docs/orchestration/phase-2/look/wizard-2/`, with
@@ -493,7 +493,7 @@ Settings). The page acts on a report's `code` and `retryable`, never on the stat
 | Printer delivery's, from phase 5: a send refused, a print that failed or waits for a person, a wrong pairing code, a limit passed | `delivery.*` | Printer delivery | Shows them as they are |
 | The front server's own: a sign-in that could not be made, a group the user is not in, a sliced file that has expired or would be too large | `front.*` ([its list](../contracts/wizard-front-server.md#the-front-servers-error-reports)) | The front server | Shows them as they are |
 | The Onshape integration's, from phase 4: a part Onshape cannot export | Named in phase 4 | The Onshape integration | Shows them as they are |
-| In the browser: no answer from the front server, an answer of the front server the page cannot read, the page's own checks before sending (a file over the size limit, a twenty-sixth part, a plate over 150 instances), every placement problem on the Layout step, a file the page itself cannot read, a 3D view that is lost, storage that fails | `wizard.*` (`wizard.bad_answer`, `wizard.layout_failed`, `wizard.part_not_drawable`, `wizard.part_over_size`, `wizard.file_unreadable`, `wizard.too_many_parts`, `wizard.too_many_instances`, …): the wizard's own, gathered in `wizard/src/sentences.js` and, for the geometry, `wizard/src/geometry/errors.js` (not `messages.js`, a name the worker's module has) | The wizard | Writes them |
+| In the browser: no answer from the front server, an answer of the front server the page cannot read, the page's own checks before sending (a file over the size limit, a twenty-sixth part, a plate over 150 instances, a setting's value that does not fit), every placement problem on the Layout step, a file the page itself cannot read, a 3D view that is lost, storage that fails | `wizard.*` (`wizard.bad_answer`, `wizard.layout_failed`, `wizard.part_not_drawable`, `wizard.part_over_size`, `wizard.file_unreadable`, `wizard.too_many_parts`, `wizard.too_many_instances`, `wizard.setting_refused`, …): the wizard's own, gathered in `wizard/src/sentences.js` and, for the geometry, `wizard/src/geometry/errors.js` (not `messages.js`, a name the worker's module has) | The wizard | Writes them |
 
 States that are not failures are the wizard's to put into words, from the figures it is
 sent: a slice waiting behind others or waiting while the slicer restarts, a busy printer, a
@@ -876,8 +876,8 @@ keeps the table in the page's memory only. `503`
 
 As built: both are read as [The current group](#the-current-group) says and held in the store; a
 new plate starts with the first filament and its first profile, which the plate summary shows and
-the stored plate keeps by name. The menus, `upload_units` on the switch and the profile's value come
-with the Parts and Settings steps (items 8 and 9 of [By phase](#by-phase)).
+the stored plate keeps by name; `upload_units` starts the Parts step's switch; the menus and the
+profile's value are the Settings step's ([The Settings step](#the-settings-step)).
 
 ### The profile's value of a setting
 
@@ -891,7 +891,8 @@ value is no change.
 Tests: the Filament menu shows each filament's colour; picking a filament picks its first
 profile; a profile's purpose is its option's tooltip; the plate's size and height come from
 the catalog entry the configuration names; the profile's value is the override when there is
-one and the process value otherwise.
+one and the process value otherwise. Built: `profileValues` and `profileValue` in
+`wizard/src/settings.js`, tested in `tests/settings.test.js`.
 
 ## The Parts step
 
@@ -1101,13 +1102,52 @@ The quick changes' menus offer the mockup's values (`QUICK` in the mockup's
 | Brim | "Auto", "Off", "Outer only" | `brim_type` `"auto_brim"`, `"no_brim"`, `"outer_only"` |
 
 A menu shows the value the plate will be sliced with: the user's change when there is one,
-else the profile's value. Supports shows On when `enable_support` is `"1"`, whatever
+else the profile's value, with no "Default (…)" entry (the mockup's menus start with one; the
+guide's menu is the list itself). Supports shows On when `enable_support` is `"1"`, whatever
 `support_type` is. Choosing the profile's own value removes the change, since a change put
-back to the profile's value is no change. A value off a menu's list, the profile's or one
-set in advanced mode, is the open item
-[A quick change whose value is not on its menu](README.md#a-quick-change-whose-value-is-not-on-its-menu);
-build its recommendation: the value as one more entry at the top of the menu, written as
-advanced mode writes it, and chosen.
+back to the profile's value is no change; Supports Off writes `enable_support` and leaves any
+change of `support_type` as it stands. Values are compared as numbers where the setting is a
+number (`"40.0%"` is the list's `"40%"`; a percentage is never a plain number). A value off a
+menu's list, the profile's or one set in advanced mode, is the open item
+[A quick change whose value is not on its menu](README.md#a-quick-change-whose-value-is-not-on-its-menu),
+built as its recommendation until the owner answers: the value as one more entry at the top of
+the menu, written as advanced mode writes it (`formatValue`: "35 %", "Mouse ear"), and chosen;
+the profile's entry stays while it is the profile's value; when both the profile's value and
+the user's change are off the list, the profile's entry comes first. Counted at the pinned Orca
+2.4.2: none of the catalog's 16 process profiles has a value off any of the four lists.
+
+**The changes box and the change details** take one line for each change, in the order the
+changes were made, from the store's `plate.changes` (`{name, section, label, value, profile}`),
+which `wizard/src/settings.js` keeps: a setting with a quick change named in the quick change's
+words and its listed values in the menu's words ("Others › Brim: Off (profile Auto)"), any other
+in Orca's label and advanced mode's words ("Quality › Layer height: 0.2 mm (profile 0.24 mm)").
+The box's heading is "1 setting changed from Structural" or "2 settings changed from
+Structural"; the caution says "your change." for one and "your 2 changes." for more, as the
+mockup does. A quick change's menu has the tooltip "Sparse infill density in advanced mode"; a
+line of the box, "Open advanced mode at Sparse infill density"; a profile's option, "For
+strong brackets and plates" (the mockup's "For " before the purpose).
+
+**The filament's colour.** A browser's own menu cannot be relied on to draw a colour in its open
+list (Chrome on a Mac draws its native menu, which ignores an option's style), so the chosen
+filament's colour is a 12 px square inside the Filament menu's box, before the name
+(`.filament-pick` and `.filament-swatch` in `css/wizard.css`), set only from a colour of the form
+`#rgb` or `#rrggbb`; a colour of any other form draws no square.
+
+**As built.** The step's behaviour is `createSettings` in `wizard/src/settings.js` (`filaments`,
+`profiles`, `chooseFilament`, `chooseProfile`, `quick`, `setQuick`, `set`, `reset`, `resetAll`,
+`changes`, `changedIn`, `sections`, `caution`, `boxTitle`, `openAdvanced`, `closeAdvanced`,
+`subscribe`, `resume`), with the pure `QUICK`, `formatValue`, `readInput`, `sameValue`,
+`quickMenu`, `profileValues` and `sectionsOf`. `setQuick` takes only a value its menu offers
+(`quickMenu`'s entries) and ignores any other. It holds the changes in memory in the order made
+and writes them at once into the stored plate's `settings.changes`, with the filament and the
+profile when they change; a change of filament or profile from any cause (a menu, or the
+configuration read again without the plate's own) clears them. It hears the store and publishes
+the change details' lines after the store's listeners are told, and only when they differ, so no
+listener is handed an older state after a newer one. The step's drawing is `createSettingsStep` in
+`wizard/src/panel/settings-step.js`, into the mockup's markup of the step, which `index.html`
+holds before the Parts step's as the mockup does. The page's entry point takes up the stored
+changes (`settings.resume`) once the opening has read who the user is, before the parts; the
+running wizard exports both (`wizard.settings`, `wizard.settingsStep`).
 
 ### Advanced mode
 
@@ -1125,7 +1165,7 @@ one value. Nothing is designed by hand for a single setting.
 |---|---|---|
 | Its header | "PenguinSlicer" with the printer-status icon; "Advanced mode", the profile and the changed count ("Structural, 2 changed"); **Reset all**, which asks in a confirmation before putting every setting back | [decision 13](../docs/mockups/print-wizard/DECISIONS.md#settings-step-step-2) |
 | The way out | **Back to Settings** at the bottom is the only way out; Escape does not close advanced mode | [decision 13](../docs/mockups/print-wizard/DECISIONS.md#settings-step-step-2) |
-| Sections | The table's sections, as Orca has them (Quality, Strength, Speed, Support, Others), each with its collapsible setting groups (such as Precision). No search box, no common/all switch, no "changed only" filter | [decision 13](../docs/mockups/print-wizard/DECISIONS.md#settings-step-step-2), M26 |
+| Sections | The table's sections, as Orca has them and in its order (at Orca 2.4.2 six: Quality, Strength, Speed, Support, Multimaterial, Others, with 39 setting groups), each with its collapsible setting groups (such as Precision). No search box, no common/all switch, no "changed only" filter | [decision 13](../docs/mockups/print-wizard/DECISIONS.md#settings-step-step-2), M26 |
 | Below 480 px | An accordion of bordered cards: a section's heading with a chevron and its changed count ("Strength · 1 changed"); its setting groups are rows inside. Each card opens and closes by itself | [decision 13](../docs/mockups/print-wizard/DECISIONS.md#settings-step-step-2) |
 | From 480 px | A rail of section names down the left, each with a changed count, the chosen section's setting groups beside it | [decision 13](../docs/mockups/print-wizard/DECISIONS.md#settings-step-step-2) |
 | Setting groups | Always one column, at most 480 px wide. A heading has a chevron and no count of its settings, only a changed count ("Precision · 1 changed"). One icon button, a double chevron, expands or collapses every setting group of a section | [decision 13](../docs/mockups/print-wizard/DECISIONS.md#settings-step-step-2) |
@@ -1137,13 +1177,87 @@ one value. Nothing is designed by hand for a single setting.
 A change is kept as Orca's `name` and its value written as Orca writes it, a string, so that
 it goes into the plate configuration's `overrides` as it is.
 
+**Each control.** A `choice` is a menu of its `choices` by `label` (an on-and-off setting is a
+menu "Off"/"On", not the mockup's box to tick); a `number` of form `integer`, `decimal` or
+`percent` is a number field (`step` 1 for a whole number, `any` otherwise; `min` and `max` from
+the entry; a percentage shown without its sign, Orca's `%` after it), and one of form
+`decimal_or_percent` a text field in the number field's look (`input.num-text`), since a number
+field cannot hold "110%", with Orca's whole unit ("mm or %") after it; a `text` is a text field of
+at most `max_length`. Orca's `explanation` is the label's tooltip, followed for a setting with a
+quick change by "Also on the Settings step as Infill." Ids are the mockup's: `adv-row-<name>`,
+`adv-<name>`, `adv-reset-<name>`, `adv-sec-<section>`, `adv-grp-<section>-<group>`,
+`adv-tab-<section>`, `adv-expand-<section>`, each section's and group's words with every run of
+other characters than letters and digits made one `-`; words that fold to an id already drawn
+("A/B" after "A B") get `-2`, `-3` after it in the table's order, so each id is unique and the
+same at each drawing. Which sections and setting groups are closed is kept by their words, never
+by their ids.
+
+**A value refused where it is typed** (`readInput`), as the slice service would refuse it
+(`slice/src/penguin_slice/settings_table.py`): a number must match its form in ASCII digits
+(`-?[0-9]+`, a decimal `-?[0-9]+(\.[0-9]+)?`, a percentage that decimal with `%`, which is added
+when typed without it, or either), be at most 40 characters, a whole number within a C++ int,
+and within `min` and `max` (a value at either bound accepted); a text at most `max_length`
+characters counted by code points, as the slice service's Python counts them (a character outside
+the basic plane, an emoji, is one; the field's own `maxlength`, which counts UTF-16 units, is
+twice `max_length` so that it never refuses first), with no control character and no lone
+surrogate; a choice one of its values. The refusal is the wizard's own error report
+`wizard.setting_refused` (`settingRefused` in `wizard/src/sentences.js`), shown in red under the
+setting (`.bad`) with the field marked `invalid`, and nothing changes: "Wall loops must be between
+0 and 1000. Kept 4.", "Layer height must be at least 0 mm.", "Wall loops must be a whole number.",
+"Name can be at most 4 characters long." The refusal remembers the value its sentence names as
+kept, and `refreshRow` drops it (the class `invalid` and the `.bad` line) and shows the setting's
+value once that value changes, as Reset all does to a changed setting; a refusal whose value
+stays is kept with the text refused. An accepted number is written the
+shortest way by its own digits, with only the zeros that change nothing dropped ("0.20" is "0.2",
+"05" is "5", "-0" is "0"), so a figure of more digits than a double holds keeps every digit. A
+change stored in an earlier load that the table no longer holds, whose value no longer fits, or
+that is the profile's value, is dropped from the stored plate once both the table and the
+configuration have arrived; until then the stored changes are kept as they are. One that fits but
+is not written as `readInput` writes it (" 35 ", or "35" for a percentage, which the slice service
+refuses without its sign) is replaced by `readInput`'s value.
+
+**Advanced mode as built.** It fills the panel as `#advanced` in `index.html`, after `#wiz-nav`
+as in the mockup, with "PenguinSlicer" alone in its name line until phase 5 brings the
+printer-status icon. It is open while the store's `advanced` is true, which `settings.js` writes
+into the stored plate's `advanced`; a page opening on the Settings step with `advanced` stored
+reopens it, and on any other step does not. Its width class `wide` follows the panel's own width
+at `ADVANCED_WIDE_PX` (480) by a `ResizeObserver`, so a panel dragged across 480 px redraws it.
+While it is open `#wiz-header`, `#wiz-body` and `#wiz-nav` are `inert`. Which sections and
+setting groups are closed, and the rail's chosen section, live in `createSettingsStep`'s closure
+and nowhere else. A changed value never redraws advanced mode as a whole: each drawn row is
+brought up to date in place (its value, its look as changed, the line under it) and the changed
+counts are written again, and the line under a changed row is kept in place, so that a press on
+Reset that blurs the field still lands.
+Reset all is disabled with no change and asks with the confirmation of
+[How the panel tells the user something](#how-the-panel-tells-the-user-something), inside
+`#advanced`: "Put all 2 changed settings back to Structural’s values?" (for one, "Put the changed
+setting back to Structural’s values?") with Keep my changes, first and focused, and Reset all.
+Kept, the focus returns to Reset all; reset, Reset all is disabled and the focus goes where
+opening puts it, the first section's heading.
+The page's reports name the step `advanced` while it is open.
+
 Tests: changing the filament clears the changes and picks the first profile; the caution
 shows from the first change and goes when cleared; a line of the changes box opens advanced
 mode at its setting with its section and setting group open; Escape does nothing in advanced
 mode; closed sections survive leaving and reopening and a resize across 480 px, and are all
 open after a reload; changes survive a reload; a value out of range is refused where typed; a
 control is drawn for each `kind` and `number_form` of the contract's example table; focus goes
-where the table says; Reset all asks and puts every setting back.
+where the table says; Reset all asks and puts every setting back. Built:
+`tests/settings.test.js` without a browser window (the menus, the quick changes and their values,
+a value off a list, Supports, the profile's value, every refusal of `readInput` on purpose, the
+change details' lines, the changes and `advanced` kept through a reload, a stored change dropped,
+one written again as Orca writes it and one kept while the table has not arrived, a long figure
+written with every digit, New plate keeping the changes) and
+`tests_browser/test_settings_step.py` in Chromium (every test above, the real table's 338 settings
+in six sections drawn, a Reset press, Reset all dropping a refusal whose value it changed and
+keeping one whose value stays, a text field taking four characters outside the basic plane at a
+`max_length` of 4 and refusing five plain ones, the rail's counts and Expand all, no sideways scroll at the
+seven widths with changes and in advanced mode, hostile words of the table and the configuration
+shown as text and a colour of another form drawing no square). `make -C wizard
+look-settings-step` writes pictures of the mockup's Settings step and advanced mode beside the
+built ones at 320, 480, 520 and 680 px, in each state the mockup shows, into
+`docs/orchestration/phase-2/look/wizard-5a/`, the built page given a configuration and table made
+from the mockup's own sample of settings and profiles.
 
 ## The Layout step
 
@@ -2688,6 +2802,7 @@ rewritten nor refused, and the content security policy is what stops it loading.
 | `look-parts-step` | After `build`: the mockup's Parts step beside the built one, the whole panel, at 320, 480, 520 and 680 px, in each state the mockup shows and in the screens it never drew, into `docs/orchestration/phase-2/look/wizard-4/` with an `index.html` of the pairs (`wizard/tests_browser/look_parts_step.py`) |
 | `look-layout-step` | After `build`: the mockup's Layout step beside the built one at 320, 480, 520 and 680 px, in each state the mockup shows, into `docs/orchestration/phase-2/look/wizard-5b/` with an `index.html` of the pairs (`wizard/tests_browser/look_layout_step.py`) |
 | `measure-layout` | After `build`: the Layout view's frame rate while dragging and turning at 150 instances, in Chromium on this machine, into `docs/orchestration/phase-2/look/wizard-5b/frame-rate.json` (`wizard/tests_browser/measure_layout.py`) |
+| `look-settings-step` | After `build`: the mockup's Settings step and advanced mode beside the built ones, the whole panel, at 320, 480, 520 and 680 px, in each state the mockup shows, the built page given a configuration and table of settings made from the mockup's own sample, into `docs/orchestration/phase-2/look/wizard-5a/` with an `index.html` of the pairs (`wizard/tests_browser/look_settings_step.py`) |
 | `offered-faces` | Writes the pose of every face offered on the real parts into `contracts/examples/placement/offered-faces/real-parts.json` ([The faces offered, against the real Orca](#the-faces-offered-against-the-real-orca)) |
 | `trials` | Both opening trials' measurements, as [How the trials and measurements are run](#how-the-trials-and-measurements-are-run) says: runs `trials-preview` and `trials-geometry`, the second even when the first fails, and fails when either does |
 | `trials-preview` | The first trial: `wizard/trials/preview/run.py` (needs the three sliced files in `wizard/trials/sliced/`, made by `wizard/trials/make_sliced_files.py`) |
@@ -2868,8 +2983,9 @@ The page opened directly in a browser, with the development identity and no sign
    ([Every request](#every-request-headers-answers-and-retrying)).
 3. **Retrying and the panel line.** Built ([Retrying](#retrying)), with a part's row saying it
    is slow.
-4. **The panel as a whole.** Built ([The panel as a whole](#the-panel-as-a-whole)), but for
-   advanced mode's sections across 480 px, which come with advanced mode.
+4. **The panel as a whole.** Built ([The panel as a whole](#the-panel-as-a-whole)); advanced
+   mode's sections across 480 px were built with advanced mode in item 9
+   ([Advanced mode](#advanced-mode)).
 5. **Who the user is and the configuration.** Built ([The current group](#the-current-group),
    [The configuration and the table of settings](#the-configuration-and-the-table-of-settings)).
 6. **The browser's storage.** Built ([What the browser keeps](#what-the-browser-keeps)), with a
@@ -2880,11 +2996,13 @@ The page opened directly in a browser, with the development identity and no sign
 8. **The Parts step:** the upload area and its switch, part sets, one part one row, the page's own
    limits, `POST /api/parts` and each refusal and warning, a part the page cannot draw, New plate.
    Built ([The Parts step](#the-parts-step); [Parts](../contracts/wizard-front-server.md#parts),
-   [the part set](../contracts/part-set.md)), but for a part's instances laid down and joining the
-   plate, which come with the Layout step, item 10.
+   [the part set](../contracts/part-set.md)), a part's instances laid down and joining the
+   plate with the Layout step, item 10.
 9. **The Settings step and advanced mode,** drawn from the table of settings, with the quick
-   changes' values of [The Settings step](#the-settings-step)
-   ([The Settings step](README.md#the-settings-step); [the table of settings](../contracts/settings-table.md)).
+   changes' values of [The Settings step](#the-settings-step). Built
+   ([The Settings step](#the-settings-step), [Advanced mode](#advanced-mode);
+   [The Settings step](README.md#the-settings-step); [the table of settings](../contracts/settings-table.md)),
+   a value off a quick change's list as the open item's recommendation.
 10. **The Layout step:** the view and its gestures, the rotation handle, laying on a face, auto-orient,
     Arrange, the placement check and its messages, against the shared plates. Built
     ([The Layout step](#the-layout-step), on the geometry of
@@ -2964,6 +3082,9 @@ M23, M25, M26 and the 11 px pointer line as the mockup has them. M18 is a depart
 | [decision 42](../docs/mockups/print-wizard/DECISIONS.md#send-step), [decision 44](../docs/mockups/print-wizard/DECISIONS.md#the-printer-status-icon) | With no printer paired, a message and the "How to pair a printer" link | The pairing form in the printer details only, with that link; the Send step's message links to the printer details by "Pair a printer" and has no form ([Pairing a printer](#pairing-a-printer), [When Send is not offered](#when-send-is-not-offered)) |
 | [decision 2](../docs/mockups/print-wizard/DECISIONS.md#whole-panel); fake 25 | The header names the configuration; its name links nowhere and the reload glyph reloads nothing | The header names the configuration in use, the group's or "PenguinSlicer default"; plain text for a user in one group, a button opening the group details for a user in several outside Onshape; the reload glyph reads it again ([The current group](#the-current-group)) |
 | [decision 10](../docs/mockups/print-wizard/DECISIONS.md#settings-step-step-2) | Filaments named, with no colour | A colour for each filament from the configuration, beside its name in the Filament menu, never in the layer preview ([The Settings step](#the-settings-step)) |
+| [decision 12](../docs/mockups/print-wizard/DECISIONS.md#settings-step-step-2); `QUICK` in the mockup's `js/settings.js` | Each quick change's menu starts with "Default (40 %)", the profile's value, then the other listed values | The menu is the list of values, the profile's among them and chosen when there is no change, with no "Default" entry; a value off the list is one more entry at its top ([The Settings step](#the-settings-step)) |
+| [decision 13](../docs/mockups/print-wizard/DECISIONS.md#settings-step-step-2), an on-and-off setting | A box to tick | A menu of "Off" and "On", as the table of settings gives its choices ([Advanced mode](#advanced-mode)) |
+| [decision 13](../docs/mockups/print-wizard/DECISIONS.md#settings-step-step-2), Reset all | The button arms itself ("Reset all 2?") and a second press resets | A confirmation joined to the button, Keep my changes first ([Advanced mode](#advanced-mode)) |
 | [decision 13](../docs/mockups/print-wizard/DECISIONS.md#settings-step-step-2) | Advanced mode's changes last for this page load | The changes are in the browser's storage and outlast a refresh; only the open and closed sections live in memory ([Advanced mode](#advanced-mode)) |
 | Fake 13 | Advanced mode shows a sample of 99 settings | Every parameter setting of Orca's, from the table of settings, with Orca's own labels, groups and explanations ([Advanced mode](#advanced-mode)) |
 | [decision 17](../docs/mockups/print-wizard/DECISIONS.md#parts-step-step-1) | After 20 seconds of failed retries, a notification that the part was not added, to be clicked or uploaded again | Quiet retries; from 20 seconds the panel line with its countdown and Retry now; up to 300 seconds, then "The server could not be reached." with Try again; nothing dropped, the part keeps its row ([Retrying](#retrying)) |
@@ -3025,7 +3146,8 @@ above. Build what each line says is safe; do not build past it.
   Onshape, which only the owner can supply. Safe: the rules as built, with their angles as constants.
 - **A quick change whose value is not on its menu**
   ([its item](README.md#a-quick-change-whose-value-is-not-on-its-menu)). Safe: its recommendation,
-  the value as one more entry at the top of the menu.
+  the value as one more entry at the top of the menu, which is built
+  ([The Settings step](#the-settings-step)); open is only the owner's answer.
 - **After a print is no longer followed**
   ([its item](README.md#after-a-print-is-no-longer-followed)). Safe: never show it as Failed.
 - **Saying that a part will need supports**

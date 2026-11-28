@@ -12,9 +12,9 @@
 </head>
 <body>
 <!-- The panel: the mockup's markup (docs/mockups/print-wizard/index.html, version 8) from
-     #wizard down, as far as the panel as a whole and the Parts step's body; each other step's
-     body comes with its step. The
-     printer-status icon comes in phase 5, advanced mode with the Settings step. -->
+     #wizard down, as far as the panel as a whole, the Settings step's and the Parts step's
+     bodies and advanced mode; each other step's body comes with its step. The printer-status
+     icon comes in phase 5. -->
 <div id="wizard">
   <header id="wiz-header">
     <div class="brand-row">
@@ -42,6 +42,25 @@
     </div>
     <div id="notices" aria-live="polite"></div>
 
+    <!-- the Settings step comes first in the markup, as in the mockup -->
+    <section class="step" data-step="settings" hidden>
+      <h2>Settings</h2>
+      <div class="setup-grid">
+        <label class="field"><span>Filament</span><select id="p-filament"></select></label>
+        <label class="field"><span>Profile</span><select id="p-profile"></select></label>
+      </div>
+      <p class="caution" id="p-profile-clears" hidden></p>
+      <fieldset class="field print-overrides" id="p-overrides" aria-label="Change for this print">
+        <label><span>Infill</span><select id="ov-infill"></select></label>
+        <label><span>Walls</span><select id="ov-walls"></select></label>
+        <label><span>Supports</span><select id="ov-supports"></select></label>
+        <label><span>Brim</span><select id="ov-brim"></select></label>
+      </fieldset>
+      <div class="adv-entry" id="adv-entry">
+        <button type="button" class="btn small" id="btn-advanced">Advanced mode</button>
+      </div>
+      <div id="adv-effect" class="adv-effect" hidden></div>
+    </section>
     <section class="step" data-step="parts">
       <h2>Parts</h2>
       <!-- outside Onshape: the upload area, binary STL only, and beside it the switch that says
@@ -59,9 +78,6 @@
       <p class="hint" id="parts-total"></p>
       <!-- New plate (designed in the guide) -->
       <div class="new-plate"><button type="button" class="btn small"></button></div>
-    </section>
-    <section class="step" data-step="settings" hidden>
-      <h2>Settings</h2>
     </section>
     <section class="step" data-step="layout" hidden>
       <h2>Layout</h2>
@@ -109,6 +125,18 @@
       <button type="button" id="btn-do" class="btn primary" disabled>Download the sliced file</button>
     </div>
   </footer>
+
+  <!-- advanced mode: fills the whole panel; the printer-status icon joins its name line in phase 5 -->
+  <div id="advanced" class="advanced" hidden>
+    <div class="brand-row adv-brand" id="adv-brand"><div class="brand">PenguinSlicer</div></div>
+    <div class="adv-head">
+      <div class="adv-title"><strong>Advanced mode</strong><span id="adv-sub"></span></div>
+      <button type="button" class="btn small" id="adv-reset-all">Reset all</button>
+    </div>
+    <!-- below 480 px of panel an accordion of the sections; from 480 px a rail of sections -->
+    <div class="adv-body" id="adv-body"></div>
+    <div class="adv-foot"><button type="button" class="btn primary" id="adv-done">Back to Settings</button></div>
+  </div>
 </div>
 </body>
 </html>

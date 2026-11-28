@@ -1,5 +1,5 @@
 .PHONY: install check-node sync install-browser test test-page test-tools test-browser build look look-parts look-parts-step \
-	look-layout-step measure-layout \
+	look-layout-step measure-layout look-settings-step \
 	offered-faces trials trials-preview trials-geometry trials-parts trials-serve
 
 UV ?= uv
@@ -84,6 +84,11 @@ look-layout-step: build
 # docs/orchestration/phase-2/look/wizard-5b/frame-rate.json.
 measure-layout: build
 	$(PY) $(CURDIR)/tests_browser/measure_layout.py
+
+# Pictures of the Settings step and advanced mode beside the mockup's, in each state the mockup
+# shows, at 320, 480, 520 and 680 px, into docs/orchestration/phase-2/look/wizard-5a/.
+look-settings-step: build
+	$(PY) $(CURDIR)/tests_browser/look_settings_step.py
 
 # The two opening trials of phase 2, each its own entry point: both run, even when the
 # first fails, and the target fails when either does.

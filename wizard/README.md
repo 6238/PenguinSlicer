@@ -323,7 +323,7 @@ detail kept for the log.
 | Printer delivery's, from phase 5: a send it refuses, a print that failed or waits for a person, a wrong pairing code | Printer delivery | Shows them as they are |
 | The front server's own: a sign-in that could not be made, a group the user is not in, a sliced file that has expired | The front server | Shows them as they are |
 | The Onshape integration's, from phase 4: a part Onshape cannot export | The Onshape integration | Shows them as they are |
-| Something that happens in the browser: no answer from the front server, a check the page makes before sending anything (a file over the size limit, a twenty-sixth part, a plate over 150 instances), every problem of placement on the Layout step, a file the page itself cannot read, a 3D view that is lost, storage that fails | The wizard | Writes them |
+| Something that happens in the browser: no answer from the front server, a check the page makes before sending anything (a file over the size limit, a twenty-sixth part, a plate over 150 instances, a setting's value in advanced mode that does not fit), every problem of placement on the Layout step, a file the page itself cannot read, a 3D view that is lost, storage that fails | The wizard | Writes them |
 
 "As they are" means that the wizard neither rewords a sentence nor replaces it with one
 of its own made from the report's code. What the wizard adds is its own: where the report
@@ -434,7 +434,7 @@ below.
 
 | From | What changes |
 |---|---|
-| 480 px | The step circles become named tabs. On the Settings step the Filament and Profile menus sit side by side and the quick changes (four menus for the commonest settings) two to a row. Advanced mode, the view of every setting, shows its five sections as a column of names down the left |
+| 480 px | The step circles become named tabs. On the Settings step the Filament and Profile menus sit side by side and the quick changes (four menus for the commonest settings) two to a row. Advanced mode, the view of every setting, shows its sections as a column of names down the left |
 | 520 px | The figures of a print on the Send step (percent, layer, time left) sit in one row. The 3D views of the Layout and Preview steps become 4:3 instead of square |
 | 680 px | The Parts step's list of parts has two columns, and the Send step has two columns |
 
@@ -725,10 +725,18 @@ Infill, Walls, Supports and Brim. They sit one to a row below 480 px and two to 
 there. A quick change is a change like any other: it and advanced mode edit one shared set
 of changes. Each offers the mockup's values: Infill 15, 25, 40, 60 and 100 percent; Walls
 2, 3, 4 and 6; Supports Off, and On, which is tree supports placed automatically; Brim
-Auto, Off and Outer only. A menu set to the profile's own value is no change. What a menu
-shows when the profile's value, or a change made in advanced mode, is not one of its
-values is not decided
+Auto, Off and Outer only. Each menu shows the value the plate will be sliced with: the
+user's change when there is one, and otherwise the profile's own value, which is not marked
+as a default. A menu set to the profile's own value is no change. When the profile's value,
+or a change made in advanced mode, is not one of a menu's values, the menu shows that value
+as one more entry at its top, in advanced mode's words ("35 %", "Mouse ear"), chosen; the
+profile's entry stays while it is the profile's value. That is the recommendation of an item
+the owner has still to confirm
 ([A quick change whose value is not on its menu](#a-quick-change-whose-value-is-not-on-its-menu)).
+
+The Filament menu shows the chosen filament's colour as a small square beside its name,
+inside the menu's box; whether the open list shows each filament's colour depends on the
+browser, since a browser draws its own open menus, and Chrome on a Mac shows none.
 
 **Changing the filament or the profile clears every change,** because a change is a
 departure from one profile and means nothing against another. From the first change until
@@ -773,8 +781,10 @@ mode", the profile and how many settings are changed ("Structural, 2 changed"), 
 Settings** at the bottom is the only way out; Escape does not close advanced mode, so a
 stray key cannot throw the user out of a long list.
 
-**The settings are in five sections,** as in Orca (Quality, Strength, Speed, Support,
-Others), and each section's settings are in collapsible **setting groups** such as
+**The settings are in Orca's sections,** in Orca's order: at the pinned Orca six of them
+(Quality, Strength, Speed, Support, Multimaterial, Others) with 39 setting groups between
+them; the sections come from the table of settings, so a new Orca version may change them.
+Each section's settings are in collapsible **setting groups** such as
 Precision. There is no search box, no switch between common and all settings and no
 "changed only" filter: the changes box, the change details and the changed counts already
 find a changed setting.
@@ -794,16 +804,32 @@ mode is shown, and advanced mode remembers what the user closes for as long as t
 loaded: across steps, across closing and reopening advanced mode, and as the panel is
 dragged across 480 px either way. A reload forgets it, and everything is open again.
 
+**Each setting's control** comes from its kind: a menu of Orca's choices (a setting that is
+on or off is a menu of "Off" and "On", not a box to tick), a number field with Orca's unit
+after it, or a text field. A setting that takes either a length or a percentage of one
+("0.62" or "110%") is typed as text, since a number field cannot hold the sign. Orca's
+explanation of a setting is its name's tooltip.
+
 **A changed setting** has a tinted background, a bar on its left and a dot after its name.
 The line under it gives the profile's value and a link that puts it back: "Profile 0.012
-mm · Reset". A value outside a setting's allowed range is refused where it is typed.
+mm · Reset". A value that does not fit its setting, outside its allowed range or not of its
+form (a fraction for a whole number, letters for a number, a text too long), is refused
+where it is typed, in red under it, with what the setting must be and the value it keeps
+("Layer height must be between 0.08 and 0.42 mm. Kept 0.3 mm."): the page's own check of
+what the slice service would refuse, so nothing is sent. The refusal stays only while the
+value it names is still the setting's value: once Reset all puts the setting at another
+value, the refusal goes and the field shows the new value. A change stored
+in an earlier load that the table of settings no longer holds, or whose value no longer fits
+it, is dropped when the page opens, since the slice service would refuse the plate; one that
+fits but is written another way (a percentage without its sign) is written the way the page
+writes it.
 
 **By keyboard,** opening advanced mode puts focus on the first section's heading, or on
 the setting when a line of the changes box opened it; what advanced mode covers cannot be
 reached; and closing it returns focus to the line or button that opened it.
 
-Changes are part of the user's work: they are kept in the browser's storage and come back
-after a refresh.
+Changes are part of the user's work: they are kept in the browser's storage, in the order
+they were made, and come back after a refresh, as does advanced mode itself when it was open.
 
 ## The Layout step
 
@@ -2327,7 +2353,15 @@ of the largest part allowed dragged at 14 to 41 (the target is 10). The page was
 longer than its quarter of a second during a drag: 0.39 to 0.49 s on the plate of real parts,
 0.22 to 0.46 s on a plate of 150 small spacers and up to 0.28 s on 150 of the largest part,
 which the record of the build lists as missed. Pictures of the built step beside the
-mockup's, at four widths and in each state the mockup shows, are kept with the build records. Pictures of the built
+mockup's, at four widths and in each state the mockup shows, are kept with the build records.
+
+The Settings step and advanced mode are built: the Filament and
+Profile menus with the filament's colour, the four quick changes with a value off a menu's
+list as its top entry, the caution and the changes box, and advanced mode drawn from the
+table of settings with its accordion and its rail, what it remembers, its keyboard, a value
+refused where it is typed and Reset all with its confirmation; the changes are kept in the
+browser's storage, and advanced mode reopens after a refresh. Their pictures beside the
+mockup's are kept with the build records too. Pictures of the built
 panel beside the mockup's, at four widths, are kept with the build records. For the two trials, the eight real parts
 of the Popcorn Penguins' robot are kept beside the contracts, and two made parts beside
 the trials: a round hub at the largest size a part may have (150,000 triangles) and the
@@ -2425,12 +2459,14 @@ options with what each costs, and a recommendation.
 Outer only), while the setting under it can hold any value the table of settings allows.
 The profile's own value may be off the list (a profile with 18 percent infill, or five
 walls, or a mouse-ear brim), and so may a value the user set in advanced mode. What the
-menu then shows is not decided. It matters in phase 2, when the Settings step is built.
+menu then shows is the owner's to decide. The Settings step, built in phase 2, does what is
+recommended below, the first option, until the owner answers.
 
 **What is known.** The mockup draws the menus from these lists only, and its made-up
-profiles never meet the case. How many of the profile catalog's process profiles use
-values off the lists has not been counted; the table of settings gives each profile's
-values, so the count is made when the Settings step is built.
+profiles never meet the case. Counted when the Settings step was built: none of the 16
+process profiles of the pinned Orca's catalog has a value off any of the four lists, so the
+case comes only from a configuration profile's own changes (the hand-written example's
+"Stiff bracket" has 35 percent infill) and from advanced mode.
 
 | Option | What a user sees | What it costs |
 |---|---|---|
