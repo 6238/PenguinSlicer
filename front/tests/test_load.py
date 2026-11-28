@@ -16,11 +16,11 @@ def test_the_line_counts_the_followings_and_streams_held_and_the_threads_in_use(
     follower = ctx["follower"]
     standin.add_job("j1", USER, "p", "s", queued("j1"))
     standin.add_job("j2", USER, "p", "s", running("j2", 3))
-    told = Told()
     for job in ("j1", "j2"):
         follower.follow(USER, job, GROUP)
-        follower.subscribe(USER, job, told)
-    told.wait_for(lambda: len(told.items) == 2, "both followings' first reports")
+        told = Told()
+        if follower.subscribe(USER, job, told).latest is None:
+            told.wait_for(lambda: told.items, f"{job}'s first report")
     streams = [ctx["streams"].open(USER, "j1") for _ in range(3)]
     assert None not in streams
     line = Load(follower=follower, streams=ctx["streams"], threads=100, busy=lambda: 4,
