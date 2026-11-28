@@ -358,13 +358,13 @@ class JobPool:
             discards = []
             for job_id in expired:
                 record = self._jobs.pop(job_id)
-                discards.append((None if record["file_deleted"] else record["result"], record["payload"]))
+                discards.append((job_id, None if record["file_deleted"] else record["result"], record["payload"]))
                 self._log_transition(job_id, "expired", record=record)
             self._changed.notify_all()
-        for result, payload in discards:
+        for job_id, result, payload in discards:
             if result is not None:
                 self._on_discard(result)
-            self._cleanup(payload)
+            self._cleanup(payload, job_id)
         return len(expired)
 
     def start_sweeper(self, interval_s=SWEEP_INTERVAL_S, also=(), wait=None):
@@ -484,9 +484,9 @@ class JobPool:
         """Outside the lock, for each (job_id, record) _end_early ended or asked: a job that
         never started has its files removed; a started one has its stop set (which changes
         nothing once its worker has returned)."""
-        for _job_id, record in ended:
+        for job_id, record in ended:
             if record["started"] is None:
-                self._cleanup(record["payload"])
+                self._cleanup(record["payload"], job_id)
             else:
                 record["stop"].set(reason)
 
@@ -604,10 +604,10 @@ class JobPool:
         if discard is not None:
             self._on_discard(discard)
         if state != "done":
-            self._cleanup(payload)
+            self._cleanup(payload, job_id)
 
-    def _cleanup(self, payload):
+    def _cleanup(self, payload, job_id):
         try:
             self._cleanup_payload(payload)
         except Exception:      # a cleanup that fails must not take the pool with it
-            self._log({"event": "slice_cleanup_error", "traceback": traceback.format_exc()})
+            self._log({"event": "slice_cleanup_error", "job": job_id, "traceback": traceback.format_exc()})

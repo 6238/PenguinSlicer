@@ -218,8 +218,8 @@ phase.
 [The user key, the part store, units and the plate configuration](#the-user-key-the-part-store-units-and-the-plate-configuration).
 What they leave to later items: the three
 routes that answer for the whole slice service and are not scoped to a user key (the table
-of settings, item 5, built; the list of slice jobs, item 11, built; the log, item 16) ignore the
-header. A plate's id and a submission's value are compared among the slice jobs of one user
+of settings, item 5, built; the list of slice jobs, item 11, built; the log, item 16, built)
+ignore the header. A plate's id and a submission's value are compared among the slice jobs of one user
 key (item 7) and the first progress report carries `ahead` (item 8), both built.
 
 **5 and 6. The table of settings, and every setting that is a parameter.** Built: see
@@ -275,25 +275,9 @@ Built: see [Asked to stop](#asked-to-stop). What it leaves to later items: nothi
 **15. "A new plate" in the sentences.** Built: see "A new plate" under
 [Error codes](#error-codes). What it leaves to later items: nothing.
 
-**16. The log collected by the front server** ([The log](README.md#the-log)). A route,
-[`GET /log?after=<n>`](../contracts/slice-http-interface.md#get-logaftern), answers
-`{process, lines, dropped, more}`: the lines written after the line numbered `n`, at most
-1,000, each with its number `n`, so the front server passes back the last it received; the
-process's random id, which changes when the process restarts and numbering begins again;
-how many lines after `n` were dropped from the buffer; and whether more remain. The lines
-wait in a buffer of the most recent 10,000 in memory (`LOG_BUFFER_LINES`, *proposed* name);
-each line also goes to stderr, as built, so one dropped from a full buffer is still in the
-process's output. Every line carries `n`, `time` (UTC, RFC 3339 to the millisecond),
-`"component": "slice"`, `event`, and the `user_key` and `job` it concerns, the user key
-being the one the request carried. The front server writes the slice service's lines, with
-every other component's, into one file each minute, in a folder on the one machine in
-phase 2 and in the log bucket from phase 3, adding the group. Replaces: lines on stderr
-only, with no time and no user key. Tests: lines come in order and only those after the
-number passed; more than 1,000 come over two answers with `more`; a full buffer drops the
-oldest and counts it in `dropped`; every line carries the time from the fake clock, the
-component, and the user key of the request it concerns; a new process answers a new
-`process`; a failing buffer never changes an answer; the shape equals
-[the contract's example](../contracts/examples/slice-http/log.json).
+**16. The log collected by the front server.** Built: see "The log the front server
+collects" under [Progress, cancellation and cleanup](#progress-cancellation-and-cleanup).
+What it leaves to later items: nothing.
 
 **17. One shared set of plates for the two placement checks.** Built: see
 [Shared plates for the placement checks](#shared-plates-for-the-placement-checks), each
@@ -595,8 +579,7 @@ a done slice job's sliced file is uncollected makes `serve` exit at once.
 ## The HTTP interface
 
 `penguin_slice.web.create_app(work_dir)` is a Flask app factory, built to
-[the contract](../contracts/slice-http-interface.md) for the routes below; the contract's
-other route, `GET /log`, is still [to be built](#phase-2-one-machine):
+[the contract](../contracts/slice-http-interface.md), every route of which it answers:
 
 | Request | Answer |
 |---|---|
@@ -610,8 +593,9 @@ other route, `GET /log`, is still [to be built](#phase-2-one-machine):
 | `GET /slices/<job>/summary` | The sliced file's summary ([sliced-file.md](../contracts/sliced-file.md), "Summary") as a JSON body |
 | `DELETE /slices/<job>/file` | The front server has stored the sliced file: `{"job", "file": "deleted"}`, the slice service's copy deleted at once and the record kept until it expires (see "Remembered for two hours" under [Progress, cancellation and cleanup](#progress-cancellation-and-cleanup)) |
 | `GET /settings-table` | The table of settings whole, `gzip`-encoded when the request accepts it; the user key is not looked at (see [The table of settings](#the-table-of-settings)) |
+| `GET /log?after=<n>` | `{process, lines, dropped, more}`, the log lines after the line numbered `n`; the user key is not looked at (see "The log the front server collects" under [Progress, cancellation and cleanup](#progress-cancellation-and-cleanup)) |
 
-**The user key.** Every one of these requests but `GET /slices` and `GET /settings-table` carries the user key in the header
+**The user key.** Every one of these requests but `GET /slices`, `GET /settings-table` and `GET /log` carries the user key in the header
 `X-Penguin-User-Key` (`web.USER_KEY_HEADER`). One without it, or with an empty one, is
 refused with `slice.no_user_key` (HTTP 400; [the contract's example](../contracts/examples/slice-http/no-user-key.json)),
 whose detail names the method, the path and whether the header was missing or empty. The
@@ -636,7 +620,8 @@ read, and for an upload over `MAX_PART_TRIANGLES`; 422 for a part or plate confi
 check refused, and for parts missing from the part store; 500 for the server's own failure
 (`slice.scratch_unwritable` when the work folder or the part store cannot be written, a full
 disk for one, `slice.unexpected` for a bug, logged with its traceback); 503 when the queue is
-full; and a `failed` report's `slice.output_too_large` for a sliced file over 50 MB
+full (`slice.busy`) or the slice service has been asked to stop (`slice.stopping`); 400 for a
+`GET /log` whose `after` is not a whole number (`slice.bad_request`); and a `failed` report's `slice.output_too_large` for a sliced file over 50 MB
 (see [Plate limits](#plate-limits)). The file and summary routes answer alike for a slice job that is unknown, failed,
 cancelled or not finished. A part is checked when it is uploaded and a plate configuration
 when it arrives, before a slice job is queued for it, so a refusal comes back at once.
@@ -1914,6 +1899,36 @@ leaves one line `{"event": "slice_repeat", ...}` with the `job` it was answered 
 `user_key`, `plate_id`, `submission_id`, `http_status` 202 and that slice job's `state`. No
 payload, path of the caller or environment variable is logged.
 
+**The log the front server collects.** Item 16 of [Phase 2](#phase-2-one-machine), built
+([The log](README.md#the-log)). The slice service holds no credential to store its log, so
+every line goes into a buffer in memory (`log_buffer.LogBuffer`, the log sink `create_app`
+gives the pool and the routes, through `jobs.SafeLog`) from which the front server fetches
+it with [`GET /log?after=<n>`](../contracts/slice-http-interface.md#get-logaftern). The buffer
+numbers each line from 1 (`n`), stamps it with `time` (the wall clock, UTC, RFC 3339 to the
+millisecond, `2026-11-27T22:13:05.412Z`) and `"component": "slice"`, puts those three first,
+keeps a value JSON cannot hold as its words, keeps the most recent 10,000 lines
+(`log_buffer.LOG_BUFFER_LINES`, *proposed* and settled at that figure), and passes each line
+on to its sink: under `serve`, one JSON line on stderr, so a line dropped from a full buffer is
+still in the process's output. The answer is `200` `{process, lines, dropped, more}`: the
+lines numbered after `after`, oldest first, at most 1,000 (`log_buffer.LOG_ANSWER_LINES`);
+`process`, `p` and 8 random hexadecimal characters made when the process starts, so that a
+restarted process, which numbers from 1 again, is told apart; `dropped`, how many lines after
+`after` the buffer no longer holds; and `more`, whether lines remain after the last one in
+`lines`. `after` left out is 0; one that is not 1 to 18 ASCII digits (`-1`, `1.5`, `²`, empty)
+is refused `400` `slice.bad_request` ("The slicer was asked for its log after a line that is
+not a whole number."). The route answers for the whole slice service and does not look at the
+user key. Every line about a request carries the user key the request carried (`user_key`,
+cut to 200 characters, `null` on a request without one), and every line about a slice job its
+`job`, a failed cleanup's (`slice_cleanup_error`) among them. A buffer or a sink that fails is
+counted by `SafeLog` and never changes an answer; a buffer that cannot be read answers `500`
+`slice.unexpected`. The front server adds the group as it gathers. Tests
+(`tests/test_log_buffer.py`): lines in order and only those after the number passed; 1,001
+lines over two answers with `more`; a full buffer that drops the oldest and counts them; the
+time from the fake clock, the component and the user key of each request's line, over
+uploads, submissions, a repeat, refusals and a slice job's transitions; a new process's new
+`process` and numbering; a failing buffer that changes no answer; the shape of
+[the contract's example](../contracts/examples/slice-http/log.json).
+
 ### A plate's slice jobs: repeats, replacement and the places
 
 Item 7 of [Phase 2](#phase-2-one-machine), built ([Run one slice at a time, and let a few wait](README.md#run-one-slice-at-a-time-and-let-a-few-wait),
@@ -1985,7 +2000,9 @@ slice job as it was; the race of two attempts at once.
 | `print_config.py` | The profile catalog, the profile choice, the overrides written over the process profile and whether supports are on |
 | `settings_table.py` | The table of settings (`settings/table.json`, with `settings/classification.json`) and the check of the overrides against it |
 | `slicer.py` | Everything that runs Orca or reads what it writes |
-| `jobs.py` | The job queue: the places, progress reports with the count ahead, ending early and its reason, the replacement and the repeat, expiry, the log |
+| `jobs.py` | The job queue: the places, progress reports with the count ahead, ending early and its reason, the replacement and the repeat, expiry, the stop, the log lines of the slice jobs |
+| `log_buffer.py` | The log lines kept for the front server to collect, numbered, with their time and component |
+| `__main__.py` | `serve`: the server on a thread of its own, the stop signals and the order of the stop |
 | `limits.py` | Every cap, the memory and time models, the memory ceiling setting, and the sentences that refuse them |
 
 ## Error codes

@@ -1213,9 +1213,8 @@ the new front server.
 ## The log
 
 *Built today: one line for every change of a slice job's state, written to the process's
-output. To be built in phase 2: the collecting of the lines by the front server, with
-the name of the component, the time and the user key on every line. To be built in
-phase 3: the three new kinds of line.*
+output and kept for the front server to collect, with the name of the component, the time
+and the user key on every line. To be built in phase 3: the three new kinds of line.*
 
 The owner runs the service alone and cannot look at a user's screen, so the log has
 to answer what went wrong and whether the service is the right size. The slice service
@@ -1232,7 +1231,11 @@ and its Orcas hold together and the number of slices running and waiting, which 
 close the container came to its limit. And a line for every exception and every refusal.
 
 The slice service does not store its own log: hosted, it holds no credential to store
-anything with. The front server fetches the slice service's new lines and writes them,
+anything with. It keeps its most recent 10,000 lines in memory, each numbered and stamped
+with the time to the thousandth of a second, and writes every line to its own output as
+well, so a line that falls out of memory before the front server fetches it is still in
+the host's log view; the front server is told how many it missed. The front server fetches
+up to 1,000 of the slice service's new lines at a time and writes them,
 with every other component's, into one file each minute, adding the user's group, which
 the slice service never knows. Every line carries the component that wrote it, so a
 reader of the one log can pick out the slice service's lines or read them among the
@@ -1409,15 +1412,15 @@ hostile inputs are tried.
 - "a new plate" in every sentence whose remedy is another plate;
 - finishing the running slice when asked to stop, ending the waiting ones, answering new
   submissions meanwhile with an answer of its own, and stopping the running slice too on a
-  second request to stop.
+  second request to stop;
+- its log lines kept for the front server to collect, each carrying the component's name,
+  the time and the user key.
 
 **Built today and left as it is, unused:** the request that cancels a slice job. The
 front server never sends it.
 
 **Phase 2, on one machine, adds besides:**
 
-- the log lines collected by the front server, each carrying the component's name, the
-  time and the user key;
 - a test for each row of the architecture's table of what a restart of the slice container
   does.
 

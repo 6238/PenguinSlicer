@@ -1248,8 +1248,9 @@ class TestEdges:
         def cleanup(payload):
             raise OSError("busy")
         pool, logs = make_pool(worker, cleanup=cleanup)
-        pool.submit()
+        job_id = pool.submit()
         assert logs[-1]["event"] == "slice_cleanup_error" and "OSError: busy" in logs[-1]["traceback"]
+        assert logs[-1]["job"] == job_id                # the line names the slice job it concerns
 
 
 class TestAskedToStop:

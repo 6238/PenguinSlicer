@@ -57,6 +57,7 @@ accepted its slice job, and a server that runs several worker processes behind o
 address loses slice jobs.
 """
 import json
+import re
 import shutil
 import tempfile
 import traceback
@@ -68,6 +69,7 @@ from werkzeug.exceptions import HTTPException
 from . import limits, part_store, settings_table
 from .errors import error_report, report_for_code
 from .jobs import FINAL, JobPool, QueueFull, RepeatedSubmission, SafeLog, Stopping, exception_text
+from .log_buffer import LogBuffer
 from .mesh import MeshError
 from .service import (BAD_CONFIGURATION_MESSAGE, UPLOAD_REMEDIES, clean_stale_scratch, make_scratch, parts_missing,
                       read_plate_configuration, slice_plate_configuration, upload_part)
@@ -83,6 +85,8 @@ BAD_UNITS_MESSAGE = "The slicer was not told whether this part is in millimetres
 NO_LENGTH_MESSAGE = "The slicer was not told how large this part is."
 PART_STORE_UNWRITABLE_MESSAGE = "The slicer could not keep this part."
 UPLOAD_NOT_WHOLE_MESSAGE = "This part did not arrive whole."
+BAD_AFTER_MESSAGE = "The slicer was asked for its log after a line that is not a whole number."
+WHOLE_NUMBER = re.compile(r"[0-9]{1,18}")      # GET /log's `after`: ASCII digits only, never "²"
 TOO_LARGE_PROBLEM = f"it is larger than {limits.MAX_PLATE_CONFIGURATION_BYTES:,} bytes"
 JOB_PARTS = "parts"           # a slice job's hold on its parts' files, in its folder
 STORE_LABEL = "parts-"        # the part store's folder: slice-<pid>-<start>-parts-<random>
@@ -162,7 +166,10 @@ def create_app(work_dir=None, pool=None, *, log=None, start_sweeper=True, enviro
     store_bytes = part_store.max_bytes(environ)
     work_dir = Path(work_dir or tempfile.mkdtemp(prefix="penguin-slice-")).resolve()
     work_dir.mkdir(parents=True, exist_ok=True)
-    log = log if isinstance(log, SafeLog) else SafeLog(log or (lambda entry: None))     # a failing sink is counted
+    # Every line goes into the buffer the front server collects (GET /log) and on to `log`;
+    # a failing buffer or sink is counted (SafeLog) and changes no answer.
+    buffer = log if isinstance(log, LogBuffer) else LogBuffer(sink=log)
+    log = SafeLog(buffer)
     clean_stale_scratch(work_dir)
     if store is None:
         store = part_store.PartStore(make_scratch(work_dir, STORE_LABEL), store_bytes)
@@ -175,6 +182,7 @@ def create_app(work_dir=None, pool=None, *, log=None, start_sweeper=True, enviro
     app.extensions["penguin_slice_pool"] = pool
     app.extensions["penguin_slice_store"] = store
     app.extensions["penguin_slice_log"] = log
+    app.extensions["penguin_slice_log_buffer"] = buffer
 
     @app.after_request
     def no_store(answer):
@@ -466,6 +474,16 @@ def create_app(work_dir=None, pool=None, *, log=None, start_sweeper=True, enviro
             answer = Response(table.raw, mimetype="application/json")
         answer.headers["Vary"] = "Accept-Encoding"
         return answer
+
+    @app.get("/log")
+    def log_lines():
+        """The log lines written after the line numbered `after` (0 when left out), for the
+        front server to collect. It answers for the whole slice service, so the user key is
+        not looked at."""
+        after = request.args.get("after", "0")
+        if not WHOLE_NUMBER.fullmatch(after):
+            return _report("slice.bad_request", BAD_AFTER_MESSAGE, f"GET /log with after {after[:40]!r}", 400)
+        return jsonify(buffer.read(int(after)))
 
     @app.get("/slices")
     def every_slice_job():
