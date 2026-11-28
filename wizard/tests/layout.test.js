@@ -348,8 +348,27 @@ test('an instance the user drags wholly off the plate\'s right edge crosses that
   assert.deepEqual(problemWhats(page), ['Spacer #1 is not fully on the plate: it crosses the right edge.']);
   assert.equal(page.layout.model().problems[0].todo, 'Drag it inward, or press Arrange.');
   assert.equal(inst(page, 0).beside, false);
-  assert.deepEqual(page.layout.model().selection, { text: '1 instance on the plate.' });
   assert.equal(statusOf(page).first, problemWhats(page)[0]);
+});
+
+test('the selection line counts an instance the user dragged wholly off the plate neither on the plate nor beside it', async () => {
+  const page = await openPage();
+  await addParts(page, [['Spacer.stl', contractPart('spacer.stl')]]);
+  page.parts.setQuantity(page.parts.rows()[0].key, 2);
+  await enterLayout(page);
+  const [a] = page.layout.model().instances;
+  page.layout.clearSelection();
+  assert.deepEqual(page.layout.model().selection, { text: '2 instances on the plate.' });
+  // partly across an edge it is still on the plate
+  await moveTo(page, a.id, 10, 160);
+  page.layout.clearSelection();
+  assert.deepEqual(page.layout.model().selection, { text: '2 instances on the plate.' });
+  // wholly off any edge of the 340 by 320 mm plate it is on it no longer
+  for (const [x, y] of [[420, 160], [-100, 160], [170, -100], [170, 450]]) {
+    await moveTo(page, a.id, x, y);
+    page.layout.clearSelection();
+    assert.deepEqual(page.layout.model().selection, { text: '1 instance on the plate.' }, `at (${x}, ${y})`);
+  }
 });
 
 test('an instance the user drags wholly off the right edge while Arrange\'s message is shown has its own message, which Arrange\'s does not count', async () => {
@@ -396,7 +415,8 @@ test('Arrange\'s message counts only the instances still waiting beside the plat
   assert.match(m.problems[0].what, /is not fully on the plate: it crosses the right/);
   assert.equal(m.status.more, '+1 more ↓');
   page.layout.clearSelection();
-  assert.deepEqual(page.layout.model().selection, { text: '2 instances on the plate, 1 beside it.' });
+  // the one dragged wholly off the plate is on it no longer, nor beside it
+  assert.deepEqual(page.layout.model().selection, { text: '1 instance on the plate, 1 beside it.' });
   // the last one waiting, dragged too: the message goes
   await moveTo(page, waiting[1].id, waiting[1].x + 600, waiting[1].y + 300);
   assert.deepEqual(page.layout.model().notes, []);

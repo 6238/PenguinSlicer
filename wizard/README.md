@@ -860,7 +860,9 @@ From top to bottom:
   below the body size, that says what is under the pointer (an instance's name, "Lay it on
   this face: 0.250 in tall", "Drag to turn · Shift: 45° steps").
 - **The selection line** under the view: with nothing selected, "90 instances on the
-  plate, 10 beside it."; with one instance selected, its name, footprint and height in its
+  plate, 10 beside it." An instance the user has dragged wholly off the plate is counted
+  in neither, since it is on the plate no longer and the wizard did not put it beside the
+  plate; its own message names it. With one instance selected, its name, footprint and height in its
   part's units; with several, "5 instances move and turn together". Beside it, one link at
   most: "Lay it the best way" when the selection does not lie its best way, "Put back as
   modelled" when it has been laid down differently from the model, and nothing when it
