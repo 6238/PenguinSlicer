@@ -91,6 +91,18 @@ def box_stl(sx=10.0, sy=20.0, sz=30.0, origin=(0.0, 0.0, 0.0)):
     return mesh_stl(corners, faces)
 
 
+def block_on_a_stem_stl():
+    """A 20 x 20 x 5 mm block on a stem 0.4 mm across and 30 mm tall, too thin for the
+    nozzle: the stem stands on a face of its own (0.16 mm2 on the plate), narrower than one
+    line of the first layer. The pinned Orca fails it with only its general error_string (its
+    own reason, "One object has an empty first layer", is thrown, collected and lost), and its
+    debug log holds the warning it reported while slicing: floating regions."""
+    stem, block = (read_binary_stl(box_stl(*size, origin=origin), "x") for size, origin in
+                   (((0.4, 0.4, 30.5), (9.8, 9.8, 0.0)), ((20, 20, 5), (0.0, 0.0, 30.0))))
+    return mesh_stl(np.vstack([stem.vertices, block.vertices]),
+                    np.vstack([stem.faces, block.faces + len(stem.vertices)]))
+
+
 def l_prism_stl(origin=(0.0, 0.0, 0.0)):
     """An L-shaped prism with unequal arms and its top sheared in x and y, so that no view of
     it is symmetric: a reversed angle or a wrong orientation changes its footprint."""
@@ -120,6 +132,29 @@ def cylinder_stl(radius=10.0, height=15.0, segments=64):
         j = (i + 1) % segments
         faces += [(i, j, segments + j), (i, segments + j, segments + i), (bottom, j, i),
                   (top, segments + i, segments + j)]
+    return mesh_stl(vertices, faces)
+
+
+def ball_stl(radius=20.0, rings=32):
+    """A closed UV sphere resting on z = 0 at one pole: it touches the plate at a point only,
+    and its section a first layer above the plate is millimetres across, so it prints."""
+    vertices = [[0.0, 0.0, 0.0]]
+    for i in range(1, rings):
+        t = np.pi * (1 - i / rings)                      # from the bottom pole up
+        for j in range(2 * rings):
+            p = np.pi * j / rings
+            vertices.append([radius * np.sin(t) * np.cos(p), radius * np.sin(t) * np.sin(p),
+                             radius + radius * np.cos(t)])
+    vertices.append([0.0, 0.0, 2 * radius])
+    top, per = len(vertices) - 1, 2 * rings
+
+    def ring(i, j):
+        return 1 + (i - 1) * per + j % per
+    faces = [(0, ring(1, j + 1), ring(1, j)) for j in range(per)]
+    for i in range(1, rings - 1):
+        for j in range(per):
+            faces += [(ring(i, j), ring(i, j + 1), ring(i + 1, j + 1)), (ring(i, j), ring(i + 1, j + 1), ring(i + 1, j))]
+    faces += [(ring(rings - 1, j), ring(rings - 1, j + 1), top) for j in range(per)]
     return mesh_stl(vertices, faces)
 
 
@@ -180,6 +215,14 @@ def install_fake_orca(directory, monkeypatch, mode="ok"):
     wrapper.chmod(wrapper.stat().st_mode | stat.S_IXUSR)
     monkeypatch.setenv("PENGUIN_SLICE_ORCA", str(wrapper))
     return wrapper
+
+
+def open_gate(directory):
+    """Let the fake Orca of mode `gate` under `directory` go on and slice: write one byte into
+    its FIFO, which it made before its first progress message."""
+    (gate,) = Path(directory).rglob("fake-orca.gate")
+    with open(gate, "wb") as fh:
+        fh.write(b"g")
 
 
 class ManualTimer:

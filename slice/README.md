@@ -274,11 +274,23 @@ in a fixed order and stop at the first failure:
    given to Orca, turn it the same way.
 
 A turn that lays a part on a face of its outline that is not a face of the part itself (the
-face across the open corner of an L-shaped bracket, for one) leaves the part touching the
-plate along two edges. The check accepts such a plate, since its outline is sound, and the
-pinned Orca then fails the slice with its general reason ("floating regions" in its log,
-with supports off). The slice service's own tests slice a part laid by a general rotation on
-a face of the part itself, and Orca prints it within 0.6 mm of where the check put it.
+face across the open corner of an L-shaped bracket, for one) can leave the part touching the
+plate only along edges or at points. Its first layer is then a few strips narrower than any
+line the printer lays down (about 0.2 mm wide for the bracket), and the pinned Orca refuses
+the plate, with supports off and with supports on, because the part has no first layer; it
+slices the plate with supports and a raft. The check accepts such a plate, since its outline
+is sound, and the wizard and the slice service agree on that. When Orca then refuses it, the
+slice service names the instance and says that it touches the plate only along an edge or at
+a point, and what to do: lay the part on one of its own flat faces, or turn on supports with
+a raft. Orca writes its own reason nowhere the slice service can read, so the slice service
+finds the instance itself: one whose own faces lying on the plate have almost no area and
+whose cut through the middle of the first layer is nowhere as wide as one line of that
+layer. A ball or a tube lying on its side also touches the plate only at a point or along a
+line, but is millimetres across a first layer up and prints, so it is never named. When
+Orca's own warnings name other instances only, the slice service names none and gives the
+general sentence with those warnings. A part
+laid by a general rotation on a face of the part itself slices, and Orca prints it within
+0.6 mm of where the check put it.
 
 The placement rules, with what each protects:
 
@@ -332,9 +344,10 @@ that a check which turns the part the wrong way round, or turns it about the ver
 laying it down, gets a different answer on one of them: those are the usual mistakes in such
 geometry, and a plate that cannot tell them apart would let them through. Each plate goes
 through the slice service's front door like any other plate: its parts are uploaded, the
-plate is submitted, and the answer is compared with the one the plate expects. One thing is
-still turned on the way in: until the settings take Orca's own names later in phase 2, the
-plate's setting for supports is given in the form the slice service reads today.
+plate is submitted exactly as it is, its setting for supports under Orca's own name, and the
+answer is compared with the one the plate expects. The slanted-face plates are checked, never
+sliced: their face bridges the open corner of the bracket, which Orca cannot give a first
+layer without supports and a raft (see [Check a plate before it is sliced](#check-a-plate-before-it-is-sliced)).
 
 The slice service keeps the points of a footprint to a thousandth of a millimetre, so its
 distances can differ from the exact ones by under a thousandth; the hundredth between each
@@ -1096,6 +1109,7 @@ one exception described under
 | Nothing printable was found | That no layers were found (a surface with holes, a part too thin), or that the print is empty (a part thinner than the nozzle prints), naming the part when the plate has one | Repair the part in CAD, or check its size |
 | An instance lies partly or wholly off the plate in Orca's eyes | That it is not on the plate | Move it |
 | Orca failed and gave only a general reason | "The slicer could not slice this plate.", with Orca's warnings added and labelled as possibly unrelated | Act on a warning if one fits |
+| Orca failed so, and an instance touches the plate only along an edge or at a point, too narrow there for one line of the first layer | Which instance, and that the slicer can give it no first layer | Lay the part on one of its own flat faces, or turn on supports with a raft (with supports already on, add a raft) |
 | Orca crashed, or something on the server killed it | That the slicer crashed, or was stopped before it finished | Slice again |
 | Orca finished but its file is missing, damaged or incomplete | That the sliced file is damaged or missing | Slice again |
 | The sliced file is larger than 50 MB | That the sliced file is too large, and how large it may be | Fewer instances or a new plate; for a single instance, split or simplify the part |
@@ -1114,13 +1128,16 @@ describes.
 
 In these sentences "the print server" is the old word for the slice service. Where a
 remedy is another plate, the sentences say "a new plate", the words of the wizard's
-panel, from phase 2; today they say "a second plate".
+panel.
 
-Two failures have a known weak spot. A part whose very first layer is empty (a needle
-thinner than the nozzle prints, for example) fails with only the general sentence, because
-the pinned Orca writes that reason nowhere the slice service can read. That is a known
-limit and stays as it is: no check is added for such a part and Orca is not patched for
-it. And the sentences that tell a user to ask someone for help still use the old words
+Two failures have a known weak spot. A part whose very first layer is empty because the
+part is too thin where it stands (a needle thinner than the nozzle prints, for example)
+fails with only the general sentence, because the pinned Orca writes that reason nowhere
+the slice service can read. That is a known limit and stays as it is: no check is added for
+such a part and Orca is not patched for it. The one empty first layer the slice service
+explains is a part resting on no face of its own, as described under the placement check
+above, found by the slice service's own measure and never by a reason Orca did not give.
+And the sentences that tell a user to ask someone for help still use the old words
 for people; changing them is known future work.
 
 ### Orca's own sentence in an error report
@@ -1158,13 +1175,10 @@ one loss is time: a slice that was cut off runs again from its start.
 
 ### What a user sees while the slice service stops
 
-*Built today: a stop that ends every slice job early. To be built in phase 2: everything else
-in this section.*
+*Built in phase 2, except what Railway itself does, which phase 3 measures.*
 
 **When asked to stop.** A deploy asks the slice service to stop, and the project is
-deployed continuously, so this happens while people are slicing. Today the slice service
-ends every slice job early, says so on each progress stream, waits until every Orca is gone,
-and exits. From phase 2 it does four things:
+deployed continuously, so this happens while people are slicing. It does four things:
 
 1. **It finishes the slice it is running,** bounded by the time limit, and keeps
    answering until the front server has fetched and stored that sliced file. Then it
@@ -1174,7 +1188,14 @@ and exits. From phase 2 it does four things:
 3. **It answers each new submission with an answer of its own,** different from "busy",
    which says the slice service is stopping.
 4. **On a second request to stop it stops the running slice too,** which is then ended
-   early for the same reason.
+   early for the same reason, and exits as soon as Orca is gone, without waiting for any
+   sliced file to be collected; a sliced file not yet collected is lost with it, and that
+   slice runs again when its page submits again.
+
+A slice that finished before the request to stop, and whose sliced file the front server
+has not yet collected, holds the stop just as the running slice does. Run by hand on one
+machine with no front server, nothing collects a sliced file, so a slice service that has
+sliced anything waits for the second request to stop.
 
 Nothing else holds a submission meanwhile. The front server keeps nothing back for
 later: it passes the slice service's answer to the page
@@ -1209,9 +1230,8 @@ the new front server.
 ## The log
 
 *Built today: one line for every change of a slice job's state, written to the process's
-output. To be built in phase 2: the collecting of the lines by the front server, with
-the name of the component, the time and the user key on every line. To be built in
-phase 3: the three new kinds of line.*
+output and kept for the front server to collect, with the name of the component, the time
+and the user key on every line. To be built in phase 3: the three new kinds of line.*
 
 The owner runs the service alone and cannot look at a user's screen, so the log has
 to answer what went wrong and whether the service is the right size. The slice service
@@ -1228,7 +1248,11 @@ and its Orcas hold together and the number of slices running and waiting, which 
 close the container came to its limit. And a line for every exception and every refusal.
 
 The slice service does not store its own log: hosted, it holds no credential to store
-anything with. The front server fetches the slice service's new lines and writes them,
+anything with. It keeps its most recent 10,000 lines in memory, each numbered and stamped
+with the time to the thousandth of a second, and writes every line to its own output as
+well, so a line that falls out of memory before the front server fetches it is still in
+the host's log view; the front server is told how many it missed. The front server fetches
+up to 1,000 of the slice service's new lines at a time and writes them,
 with every other component's, into one file each minute, adding the user's group, which
 the slice service never knows. Every line carries the component that wrote it, so a
 reader of the one log can pick out the slice service's lines or read them among the
@@ -1401,23 +1425,20 @@ hostile inputs are tried.
 - the list of slice jobs, for a restarted front server;
 - the limit of 50 MB on a sliced file;
 - Orca's own sentence in the error reports of the two failures about a gap with nothing
-  under it.
+  under it;
+- "a new plate" in every sentence whose remedy is another plate;
+- finishing the running slice when asked to stop, ending the waiting ones, answering new
+  submissions meanwhile with an answer of its own, and stopping the running slice too on a
+  second request to stop;
+- its log lines kept for the front server to collect, each carrying the component's name,
+  the time and the user key;
+- a test of its own part in each row of the architecture's table of what a restart of the
+  slice container does.
 
-**Built today and replaced in phase 2:** the stop that ends every slice job early; "a
-second plate" in the sentences whose remedy is another plate.
+With that, everything phase 2 asks of the slice service is built.
 
 **Built today and left as it is, unused:** the request that cancels a slice job. The
 front server never sends it.
-
-**Phase 2, on one machine, adds besides:**
-
-- "a new plate" in every sentence whose remedy is another plate;
-- finishing the running slice when asked to stop, and answering new submissions meanwhile
-  with an answer of its own;
-- the log lines collected by the front server, each carrying the component's name, the
-  time and the user key;
-- a test for each row of the architecture's table of what a restart of the slice container
-  does.
 
 **Phase 3, hosted on Railway, adds:**
 

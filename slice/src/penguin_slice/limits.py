@@ -76,9 +76,9 @@ TOO_DETAILED_MESSAGE = ("{name} is too detailed to print here "
 TOO_DETAILED_BYTES_MESSAGE = ("{name} is too detailed to print here "
                               f"(over {MAX_PART_BYTES:,} bytes, the size of {MAX_PART_TRIANGLES:,} triangles).")
 TOO_MANY_INSTANCES_MESSAGE = ("This plate has {count:,} instances; the slicer takes up to "
-                              f"{MAX_INSTANCES} on one plate, so print the rest on a second plate.")
+                              f"{MAX_INSTANCES} on one plate, so print the rest on a new plate.")
 TOO_MANY_PARTS_MESSAGE = ("This plate uses {count:,} different parts; the slicer takes up to "
-                          f"{MAX_PARTS} on one plate, so print the rest on a second plate.")
+                          f"{MAX_PARTS} on one plate, so print the rest on a new plate.")
 OUTPUT_TOO_LARGE_MESSAGE = ("The sliced file of this plate is larger than the "
                             f"{MAX_SLICED_FILE_BYTES // (1024 * 1024)} MB a sliced file may be.")
 TOO_SMALL_MESSAGE ="{name} is too small to print ({x} x {y} x {z} mm)."
