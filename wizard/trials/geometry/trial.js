@@ -69,11 +69,41 @@ function must({ reply, ms }) {
 
 const fetchPart = async (url) => (await fetch(url)).arrayBuffer();
 
-// The longest stretch the main thread was held, by the browser's long-task timing.
-let longest = 0;
+// The stretches the main thread was held, by the browser's long-task timing, and the windows in
+// which the steps were timed: the page's own drawing of pictures and its untimed checks hold the
+// main thread too, which the wizard would not do there, so only the timed windows count.
+const tasks = [];
+const windows = [];
 new PerformanceObserver((list) => {
-  for (const entry of list.getEntries()) longest = Math.max(longest, entry.duration);
+  for (const entry of list.getEntries()) tasks.push([entry.startTime, entry.duration]);
 }).observe({ type: 'longtask', buffered: true });
+// A heartbeat on the main thread every 10 ms while a step is timed: the longest gap between two
+// beats is the longest the main thread could not answer, however the browser counts its tasks.
+async function timed(label, work) {
+  const start = performance.now();
+  let last = start, gap = 0;
+  const beat = setInterval(() => {
+    const now = performance.now();
+    gap = Math.max(gap, now - last);
+    last = now;
+  }, 10);
+  try {
+    return await work();
+  } finally {
+    clearInterval(beat);
+    windows.push([start, performance.now(), label, gap]);
+    // What follows (a picture drawn) starts in a task of its own, outside the window.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+}
+// For each timed step: the longest long task the browser reported in it, and the longest gap
+// between heartbeats: [{step, longTaskMs, heartbeatGapMs}].
+const heldWhileTimed = () => windows.map(([a, b, label, gap]) => ({
+  step: label,
+  longTaskMs: Math.max(0, ...tasks.filter(([at]) => at >= a && at <= b).map(([, d]) => d)),
+  heartbeatGapMs: +gap.toFixed(1),
+}));
+const longestAnyMs = () => Math.max(0, ...tasks.map(([, d]) => d));
 
 const stats = (values) => {
   const s = values.slice().sort((a, b) => a - b);
@@ -86,7 +116,7 @@ async function part({ url, key, name, units = 'mm', runs = 5 }) {
   const bytes = await fetchPart(url);
   const read = [], arrival = [], selecting = [], cold = [];
   let faces = null, orient = null, positions = null;
-  for (let r = 0; r < runs; r++) {
+  await timed(`${key}: read, auto-orient, faces`, async () => { for (let r = 0; r < runs; r++) {
     // As on arrival: read, then auto-orient, which finds the faces on the way.
     startWorker();
     const a = must(await ask({ op: 'read', key, buffer: bytes.slice(0), units }));
@@ -102,7 +132,7 @@ async function part({ url, key, name, units = 'mm', runs = 5 }) {
     startWorker();
     must(await ask({ op: 'read', key, buffer: bytes.slice(0), units }));
     cold.push(must(await ask({ op: 'faces', key })).ms);
-  }
+  } });
   const picture = drawPicture({ name, positions, faces, orient });
   return {
     name, key, triangles: positions.length / 9, flatFaces: flatFaces(bytes.slice(0), units),
@@ -149,11 +179,13 @@ async function arrange({ parts, printer, supports = false, runs = 5 }) {
   const plateConfiguration = { parts: plateParts, instances };
   const times = [];
   let result = null;
-  for (let r = 0; r < runs; r++) {
-    const a = must(await ask({ op: 'arrange', plateConfiguration, geometry, printer, supports }));
-    times.push(a.ms);
-    result = a.result;
-  }
+  await timed(`Arrange of ${instances.length} instances`, async () => {
+    for (let r = 0; r < runs; r++) {
+      const a = must(await ask({ op: 'arrange', plateConfiguration, geometry, printer, supports }));
+      times.push(a.ms);
+      result = a.result;
+    }
+  });
   const check = must(await ask({ op: 'check', plateConfiguration: onPlate(result), geometry, printer, supports }));
   const points = {};
   for (const p of parts) points[p.key] = analysePart(readBinaryStl(await fetchPart(p.url), 'mm')).hull.points;
@@ -214,18 +246,20 @@ async function drag({ plateConfiguration, parts, printer, supports = false, step
   const x0 = moving.x;
   const times = [];
   let problems = 0;
-  for (let s = 0; s < steps; s++) {
-    moving.x = x0 + ((s % 30) - 15) * stepMm;
-    const c = must(await ask({ op: 'check', plateConfiguration: pc, geometry, printer, supports }));
-    times.push(c.ms);
-    problems = Math.max(problems, c.result.problems.length);
-  }
+  await timed(`a drag at ${pc.instances.length} instances`, async () => {
+    for (let s = 0; s < steps; s++) {
+      moving.x = x0 + ((s % 30) - 15) * stepMm;
+      const c = must(await ask({ op: 'check', plateConfiguration: pc, geometry, printer, supports }));
+      times.push(c.ms);
+      problems = Math.max(problems, c.result.problems.length);
+    }
+  });
   return { instances: pc.instances.length, steps, checkMs: stats(times), firstCheckMs: +times[0].toFixed(2), mostProblems: problems };
 }
 
 window.trial = {
   part, arrange, drag,
-  longestTaskMs: () => longest,
+  heldWhileTimed, longestAnyMs,
   machine: () => ({ userAgent: navigator.userAgent, hardwareConcurrency: navigator.hardwareConcurrency, deviceMemory: navigator.deviceMemory ?? null }),
 };
 document.documentElement.dataset.ready = 'true';

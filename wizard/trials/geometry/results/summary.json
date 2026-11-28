@@ -14,37 +14,37 @@
   "times": [
     {
       "what": "patches of hub-150k.stl after selecting it",
-      "worst_ms": 1.8,
+      "worst_ms": 4.1,
       "target_ms": 100,
       "met": true
     },
     {
       "what": "auto-orient of hub-150k.stl after it arrives",
-      "worst_ms": 277.4,
+      "worst_ms": 272.5,
       "target_ms": 1000,
       "met": true
     },
     {
       "what": "Arrange of 150 hex-spacer.stl",
-      "worst_ms": 38.9,
+      "worst_ms": 29.6,
       "target_ms": 2000,
       "met": true
     },
     {
       "what": "Arrange of a mix of 150 real parts",
-      "worst_ms": 68.6,
+      "worst_ms": 55.6,
       "target_ms": 2000,
       "met": true
     },
     {
       "what": "placement check of a drag at 150 hex-spacer.stl",
-      "worst_ms": 7,
+      "worst_ms": 2.2,
       "target_ms": 100,
       "met": true
     },
     {
       "what": "placement check of a drag at 150 of the mix",
-      "worst_ms": 4.2,
+      "worst_ms": 4.4,
       "target_ms": 100,
       "met": true
     }
@@ -170,7 +170,80 @@
       "packer": "shelf"
     }
   },
-  "longest_main_thread_task_ms": 1225,
+  "main_thread_held_while_timed": [
+    {
+      "step": "clamp-plate-inner: read, auto-orient, faces",
+      "longTaskMs": 139,
+      "heartbeatGapMs": 11.6
+    },
+    {
+      "step": "elevator-block-bottom-inner: read, auto-orient, faces",
+      "longTaskMs": 337,
+      "heartbeatGapMs": 12.8
+    },
+    {
+      "step": "elevator-block-carriage: read, auto-orient, faces",
+      "longTaskMs": 226,
+      "heartbeatGapMs": 12.4
+    },
+    {
+      "step": "elevator-block-top: read, auto-orient, faces",
+      "longTaskMs": 222,
+      "heartbeatGapMs": 12.5
+    },
+    {
+      "step": "elevator-top-inner: read, auto-orient, faces",
+      "longTaskMs": 0,
+      "heartbeatGapMs": 12.2
+    },
+    {
+      "step": "inner-spacer: read, auto-orient, faces",
+      "longTaskMs": 0,
+      "heartbeatGapMs": 10.5
+    },
+    {
+      "step": "outer-clamp: read, auto-orient, faces",
+      "longTaskMs": 94,
+      "heartbeatGapMs": 10.4
+    },
+    {
+      "step": "pulley-v3: read, auto-orient, faces",
+      "longTaskMs": 54,
+      "heartbeatGapMs": 12
+    },
+    {
+      "step": "hub-150k: read, auto-orient, faces",
+      "longTaskMs": 910,
+      "heartbeatGapMs": 14.8
+    },
+    {
+      "step": "hex-spacer: read, auto-orient, faces",
+      "longTaskMs": 0,
+      "heartbeatGapMs": 10.3
+    },
+    {
+      "step": "Arrange of 150 instances",
+      "longTaskMs": 0,
+      "heartbeatGapMs": 11.8
+    },
+    {
+      "step": "a drag at 150 instances",
+      "longTaskMs": 0,
+      "heartbeatGapMs": 10.3
+    },
+    {
+      "step": "Arrange of 150 instances",
+      "longTaskMs": 0,
+      "heartbeatGapMs": 13.8
+    },
+    {
+      "step": "a drag at 150 instances",
+      "longTaskMs": 0,
+      "heartbeatGapMs": 10.2
+    }
+  ],
+  "main_thread_held_by_the_trial_page_itself_ms": 910,
+  "main_thread_note": "For each timed step: the longest gap between beats of a 10 ms heartbeat on the main thread (how long the page could not answer while the worker worked) and the longest long task the browser reported in the same time. On hub-150k the browser reports a long task of about a second that no heartbeat gap and no answer's time shows, so the heartbeat is the figure that counts. The second figure includes the trial page's own drawing of its pictures and its untimed counts on the main thread, which the wizard does not do.",
   "page_errors": [],
   "round_parts": "The round parts exported from Onshape at its coarse and fine settings can only come from the owner; until they arrive the trial's round parts are pulley-v3.stl and inner-spacer.stl, as wizard/README-details.md says.",
   "missed": []

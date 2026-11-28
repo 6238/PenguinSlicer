@@ -165,7 +165,8 @@ def main():
                 picture = arranged.pop("picture")
                 (PICTURES / f"{name}.png").write_bytes(base64.b64decode(picture.split(",", 1)[1]))
                 write_json(RESULTS / f"{name}.json", {**arranged, "drag": dragged})
-            longest = page.evaluate("window.trial.longestTaskMs()")
+            held = page.evaluate("window.trial.heldWhileTimed()")
+            held_any = page.evaluate("window.trial.longestAnyMs()")
             page_machine = page.evaluate("window.trial.machine()")
             version = browser.version
             browser.close()
@@ -205,7 +206,15 @@ def main():
                     for key in parts},
         "arrange": {"spacers-150": {"placed": spacers["placed"], "packer": spacers["packer"]},
                     "mix-150": {"placed": mix["placed"], "packer": mix["packer"]}},
-        "longest_main_thread_task_ms": longest,
+        "main_thread_held_while_timed": held,
+        "main_thread_held_by_the_trial_page_itself_ms": held_any,
+        "main_thread_note": "For each timed step: the longest gap between beats of a 10 ms heartbeat on the main "
+                            "thread (how long the page could not answer while the worker worked) and the longest "
+                            "long task the browser reported in the same time. On hub-150k the browser reports a "
+                            "long task of about a second that no heartbeat gap and no answer's time shows, so the "
+                            "heartbeat is the figure that counts. The second figure includes the trial page's own "
+                            "drawing of its pictures and its untimed counts on the main thread, which the wizard "
+                            "does not do.",
         "page_errors": errors,
         "round_parts": "The round parts exported from Onshape at its coarse and fine settings can only come "
                        "from the owner; until they arrive the trial's round parts are pulley-v3.stl and "
