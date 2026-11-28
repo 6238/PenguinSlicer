@@ -184,8 +184,8 @@ def events(slice):  # noqa: A002 - the contract's name for the path's part
         while True:
             stream.wakeup.clear()
             for report in stream.take():
-                if report is None:
-                    closing["why"] = "following_ended"
+                if report is None:  # ended from outside too (a stop ends both): that why
+                    closing["why"] = stream.ended or "following_ended"
                     return
                 if report.get("sequence", 0) <= last:
                     continue

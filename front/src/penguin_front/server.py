@@ -77,10 +77,11 @@ def serve(args, *, environ=None, stdout, stderr, clock=None, on_listening=None):
         # The slice jobs being followed are left to run; a front server started later
         # follows them again. The web server's threads are no longer adjusted, so that a
         # following ending now starts none after the shutdown. The pages' progress streams
-        # end, and each page opens its stream again on the front server started next.
+        # end, and each page opens its stream again on the front server started next; they
+        # end first, so that each is closed as `stopping`, not as its following's end.
         follower.on_count = None
-        follower.stop()
         ctx["streams"].stop()
+        follower.stop()
         ctx["sweeper"].stop()
         ctx["load_loop"].stop()
         server.task_dispatcher.shutdown()

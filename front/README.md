@@ -671,7 +671,10 @@ The front server enforces the rule itself, in three ways.
   and deletes it. A user who presses Send or Download on one is told that it has expired
   and that the plate must be sliced again.
 - **It sweeps.** At regular intervals it deletes every sliced file that has passed both
-  limits, so that a file nobody asks for again is still gone on time.
+  limits, so that a file nobody asks for again is still gone on time. A file the sweep
+  cannot handle, because the bucket refuses or its record is damaged, is noted in the log
+  and the sweep goes on to every other file; a damaged record and its file stay until
+  somebody looks, noted again at every sweep.
 - **From phase 5, a sliced file whose print is under way is kept;** its two hours are
   counted from the moment that print ends.
 

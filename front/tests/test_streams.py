@@ -173,6 +173,24 @@ def test_a_stream_with_nothing_to_report_sends_a_comment_line_every_fifteen_seco
     assert reader.text.endswith("\n\n: keep-alive\n\n")
 
 
+def test_the_fifteen_seconds_count_again_from_a_progress_event_sent(client, standin, clock):
+    running_job(standin, "j1", 1)
+    reader = open_stream(client, "j1")
+    reader.wait(lambda r: len(r.progress()) == 1, "the first report")
+    following_open(standin, "j1")
+    clock.wait_for_sleepers(1)
+    clock.advance(10)
+    standin.report("j1", running("j1", 2))
+    reader.wait(lambda r: len(r.progress()) == 2, "the new report")
+    clock.wait_for_sleepers(1)
+    # Sent 10 s into the wait: the next comment line is 15 s after it, not 5.
+    assert clock.waits[-1] == streaming.PROGRESS_KEEPALIVE_S
+    clock.advance(14)
+    clock.advance(1)
+    reader.wait(lambda r: len(r.events()) == 4, "a comment line")
+    assert reader.events()[3] == ("comment", None, ": keep-alive")
+
+
 def test_the_keep_alive_is_the_contracts_comment_line():
     assert streaming.KEEPALIVE == b": keep-alive\n\n"
     assert ": keep-alive\n\n" in SLICE_EVENTS
@@ -234,7 +252,7 @@ def test_a_running_report_is_written_as_the_contracts_event():
 
 
 def test_a_following_that_ends_without_a_final_report_closes_the_stream(client, standin,
-                                                                       clock):
+                                                                       clock, log):
     running_job(standin, "j1", 2)
     reader = open_stream(client, "j1")
     reader.wait(lambda r: len(r.progress()) == 1, "the first report")
@@ -244,6 +262,8 @@ def test_a_following_that_ends_without_a_final_report_closes_the_stream(client, 
     clock.advance(1)
     reader.wait_for_end()
     assert [p["state"] for p in reader.progress()] == ["running"]
+    [closed] = log.events("stream_closed")
+    assert closed["why"] == "following_ended"
 
 
 # Four at most for one user.
@@ -382,6 +402,23 @@ def test_stopping_ends_every_stream(app, client, standin, log):
     assert streams(app).open(USER, "j9") is None
 
 
+def test_a_following_ended_by_the_stop_closes_its_stream_as_stopping(app, client, standin,
+                                                                    clock, log):
+    # At a stop the followings end too, each telling its streams with None: the stream is
+    # closed as `stopping`, whichever of the two it sees first.
+    running_job(standin, "j1")
+    reader = open_stream(client, "j1")
+    reader.wait(lambda r: len(r.events()) == 2, "the stream's events")
+    clock.wait_for_sleepers(1)
+    with clock._cond:  # the stream's thread sees both at once, as it may at a real stop
+        [stream] = streams(app)._held[USER]
+        streams(app).stop()
+        stream.deliver(None)
+    reader.wait_for_end()
+    [closed] = log.events("stream_closed")
+    assert closed["why"] == "stopping"
+
+
 def test_a_final_report_given_between_the_answer_and_the_subscription_is_sent_and_closes(
         app, client, standin, monkeypatch):
     from penguin_front.following import Subscription
@@ -401,10 +438,12 @@ def test_a_final_report_given_between_the_answer_and_the_subscription_is_sent_an
 
 
 def test_a_subscription_refused_because_the_following_ended_sends_the_report_and_closes(
-        app, client, standin, monkeypatch):
+        app, client, standin, monkeypatch, log):
     running_job(standin, "j1")
     monkeypatch.setattr(context(app)["follower"], "subscribe", lambda *_args: None)
     reader = open_stream(client, "j1")
     reader.wait_for_end()
     assert reader.progress() == [running("j1", 5)]
     assert streams(app).count() == 0
+    [closed] = log.events("stream_closed")
+    assert closed["why"] == "following_ended"

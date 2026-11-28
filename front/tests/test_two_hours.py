@@ -205,6 +205,32 @@ def test_an_item_whose_record_cannot_be_read_fails_without_a_group(app, bucket, 
     assert line["slice"] == JOB and line["group"] is None
 
 
+@pytest.mark.parametrize("record, why", [
+    ({"slice": "broken", "group": GROUP, "state": "stored"}, "slice_ended_at"),
+    ({"slice": "broken", "group": GROUP, "state": "stored", "slice_ended_at": "noon"},
+     "noon"),
+    ({"slice": "broken", "group": GROUP, "state": "submitted", "submitted_at": 5}, "str"),
+    ({"slice": "broken", "group": GROUP, "state": "expired", "expired_at": None}, "str"),
+], ids=["missing", "malformed", "wrong-type", "null"])
+def test_a_record_with_a_missing_or_malformed_field_fails_alone_and_the_sweep_goes_on(
+        app, bucket, clock, log, record, why):
+    from penguin_front.records import write_record
+
+    # "aaaa" sorts before USER: the broken record is checked before the due file.
+    write_record(bucket, sliced.record_name("aaaa", "broken"), sliced.KIND, record)
+    write_stored(bucket)
+    at(clock, ENDED + 7200)
+    counts = sweeper(app).sweep()
+    assert counts["failed"] == 1 and counts["files_expired"] == 1 and counts["checked"] == 2
+    assert read_state(bucket) == "expired"
+    [line] = log.events("sweep_item_failed")
+    assert line["user_key"] == "aaaa" and line["slice"] == "broken"
+    assert line["group"] == GROUP and why in line["why"]
+    [summary] = log.events("sweep")
+    assert summary["failed"] == 1 and summary["files_expired"] == 1
+    assert sliced.record_name("aaaa", "broken") in names(bucket)
+
+
 def test_a_lone_file_that_cannot_be_deleted_fails_without_a_group(app, bucket, clock, log):
     bucket.put(sliced.file_name(USER, JOB), FILE)
     at(clock, START + 7200)

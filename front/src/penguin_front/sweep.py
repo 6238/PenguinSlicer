@@ -19,8 +19,10 @@ Once at start and then every `SWEEP_INTERVAL_S` on the front server's clock, the
 
 A slice job the front server follows is left alone: its storing may be under way. A record
 this front server cannot read (a newer format) is left alone, as is any name the front server
-does not make. A failure on one file writes `sweep_item_failed` (with the record's group once
-the record is read, else none: a sweep has no current group) and the sweep goes on; a
+does not make. A failure on one file, whether the bucket refuses or the record has a field
+missing or malformed, writes `sweep_item_failed` (with the record's group once the record is
+read, else none: a sweep has no current group) and the sweep goes on; a malformed record and
+its file are left as they are, and fail again at every sweep; a
 listing that fails writes `sweep_failed`. Each sweep ends with the line `sweep` and its
 counts.
 """
@@ -85,6 +87,14 @@ class Sweeper:
                 counts["failed"] += 1
                 self._log.write("sweep_item_failed", user_key=user_key,
                                 group=seen.get("group"), slice=job, why=str(exc))
+                continue
+            except (KeyError, ValueError, TypeError) as exc:
+                # A record of a readable format with a field missing or malformed: it is
+                # left as it is, and written at every sweep until somebody looks.
+                counts["failed"] += 1
+                self._log.write("sweep_item_failed", user_key=user_key,
+                                group=seen.get("group"), slice=job,
+                                why=f"the record is malformed: {type(exc).__name__}: {exc}")
                 continue
             if outcome is not None:
                 counts[outcome] += 1

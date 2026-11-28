@@ -1464,9 +1464,16 @@ clock):
 - A slice job the front server follows is left alone, since its storing may be under way;
   so is a record this front server cannot read (a newer format) and any name it does not
   make (`sliced/<user_key>/<slice>.json` and `.gcode.3mf` only).
+- A record of a format the front server reads but with a field missing or malformed (no
+  `slice_ended_at` on a `stored` record, a `submitted_at` or `expired_at` that is not an
+  RFC 3339 time) is counted `failed` and written as `sweep_item_failed` with `why`
+  `the record is malformed: <the fault>`; the record and its file are left as they are,
+  and fail the same way at every sweep until somebody looks. The sweep goes on to every
+  other file.
 - The lines: `sliced_file_expired` (`by` `sweep`); `sliced_record_deleted` (`state`,
   `age_s`); `sliced_file_deleted` (`why` `no record`, `size_bytes`); `sweep_item_failed`
-  for a file that cannot be deleted, which the next sweep tries again; `sweep_failed` when
+  for a file that cannot be deleted, which the next sweep tries again, or a malformed
+  record; `sweep_failed` when
   the listing fails; and at the end of each sweep `sweep` with its counts (`checked`,
   `files_expired`, `records_deleted`, `files_deleted`, `failed`). A fault inside a loop
   writes `loop_failed` (`loop`, `trace`) and the loop goes on.
@@ -1980,11 +1987,13 @@ repeated submission is answered with the first attempt's slice job. For a repeat
 ## Stopping
 
 Guide: [Restarts and deploys](README.md#restarts-and-deploys). Phase 3. Built in phase 2:
-when the running server's serving ends, it stops following, ends every page's progress
-stream (`stream_closed` `why` `stopping`), stops the sweep and the once-a-minute line, and
-writes the `stop` line and what the log has gathered; it does not yet let downloads in
-progress finish. Tested in `tests/test_server.py`: a page's stream open over HTTP on the
-running server is closed `why` `stopping` before the `stop` line. That the sweep and the
+when the running server's serving ends, it ends every page's progress stream
+(`stream_closed` `why` `stopping`), then stops following, stops the sweep and the
+once-a-minute line, and writes the `stop` line and what the log has gathered; it does not
+yet let downloads in progress finish. A stream that sees its following's end and the stop
+together is closed `why` `stopping`. Tested in `tests/test_server.py`: a page's stream open
+over HTTP on the running server is closed `why` `stopping` before the `stop` line; and in
+`tests/test_streams.py`, a stream given both at once. That the sweep and the
 once-a-minute line are stopped is not checked: both run on daemon threads that end with the
 process.
 

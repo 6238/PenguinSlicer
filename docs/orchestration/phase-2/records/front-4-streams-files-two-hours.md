@@ -208,6 +208,48 @@ on how full the server is. Written Fri 2026-11-27, Pacific time.
     The fast suite after these fixes: 891 tests, 7.5 s on one worker with other builders
     running on the machine; the new tests in `tests/test_server.py` take about 0.3 s for the
     whole file, and passed twenty runs in a row.
+24. **The third review's findings, Sat 2026-11-28.**
+    - Blocking, real, fixed: a record of a readable format with a field missing or
+      malformed (a `stored` record without `slice_ended_at`, a `submitted_at` that is not a
+      time) raised `KeyError`, `ValueError` or `TypeError` out of `Sweeper.sweep`, so the
+      sweep stopped at that record every time, and every file sorted after it, other users'
+      among them, outlived its two hours. The documents say only that "a failure on one file"
+      fails alone. Decided: `KeyError`, `ValueError` and `TypeError` from one item are
+      counted `failed` and written as `sweep_item_failed` with `why` `the record is
+      malformed: <the fault>`, and the sweep goes on. The broken record and any file beside
+      it are left as they are, not deleted: the front server never writes such a record, so
+      one means a fault or a hand edit somebody should see, and deleting what cannot be
+      understood could destroy a file a user is still within its two hours of; it fails
+      again, with its line, at every sweep. The cost: such a file outlives its two hours
+      until somebody looks (or R2's three-day backstop from phase 3). Tested by
+      `test_a_record_with_a_missing_or_malformed_field_fails_alone_and_the_sweep_goes_on`
+      (four records: field missing, malformed, wrong type, null), the broken record under
+      user key `aaaa` sorted before a due file, all four seen to fail (`KeyError`,
+      `ValueError`, `TypeError`) before the fix. The details file's "As built" for the sweep and the
+      guide's "It sweeps" say so. To overrule (delete such a record and its file once old
+      enough): the new `except` in `Sweeper.sweep`, which would need an age the record
+      cannot give, such as the bucket's own stored time.
+    - Minor, fixed: `stream_closed`'s `why` `following_ended` is now asserted in
+      `test_a_following_that_ends_without_a_final_report_closes_the_stream` and
+      `test_a_subscription_refused_because_the_following_ended_sends_the_report_and_closes`;
+      removing either `closing["why"] = "following_ended"` fails its test.
+    - Minor, fixed: `test_the_fifteen_seconds_count_again_from_a_progress_event_sent` sends a
+      report ten seconds into the stream's wait and finds the next wait asked for is 15 s;
+      with `sent_at = clock.now()` after the progress event removed it asks for 5 s and
+      fails.
+    - Minor, fixed: "Targets missed" now gives the one-worker figure after the batch too.
+    - The reviewer's fourth note confirms round 2's fixes; nothing to do.
+    - Found while running the suite in random order, fixed:
+      `test_the_running_servers_stop_ends_each_pages_progress_stream_before_its_stop_line`
+      failed about one run in twenty with `why` `following_ended`. Cause: `serve` stopped
+      the follower before the streams, so a stream's thread could see its following's end
+      (None) before `stopping`, a real wrong line at every deploy. Decided: `serve` ends the
+      streams first, and a stream that sees None after it was ended from outside closes
+      with the outside why. `test_a_following_ended_by_the_stop_closes_its_stream_as_stopping`
+      in `tests/test_streams.py` holds the fake clock's lock while it stops the streams and
+      delivers None, so the stream sees both at once; it failed before the fix every time.
+      The server test then passed forty runs in a row. The details file's "Stopping" says
+      so. To overrule: the order in `serve` and the line in `streams.events`.
 
 ## Targets missed
 
@@ -223,7 +265,12 @@ on how full the server is. Written Fri 2026-11-27, Pacific time.
   logged, but its `why` says "another user's" only in that case.
 - **The fast suite "finishes in seconds":** met, at about 3.8 s on one worker before this
   batch's tests and 3.7 to 4.3 s on two workers after, on a quiet machine; with four
-  builders on the machine single runs took up to 10 s.
+  builders on the machine single runs took up to 10 s. After the batch on one worker: 5.2 to
+  6.5 s (the third review's measure), 7.5 s with other builders running (decision 23), and
+  4.7 to 5.2 s for 897 tests after the third review's fixes. "Seconds" is met; the figure on
+  one worker is about 1.4 s over the figure before the batch.
+- **The last fixes were not reviewed.** The fixes of the third review (decision 24) were
+  merged without a further review, as the workflow asked.
 
 ## Not done
 
