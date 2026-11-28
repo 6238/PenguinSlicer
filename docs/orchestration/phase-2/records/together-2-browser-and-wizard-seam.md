@@ -44,19 +44,22 @@ Written Sat 2026-11-28, Pacific time.
    the first that leaves the plate fitting, so the test does not depend on where Arrange put
    the parts. To overrule: `move_first_instance` in `tests/test_browser_scenarios.py`.
 6. **The scenarios chosen** (asked for: two or three of common use, from what the review finds
-   least covered): a slice that fails, with its action; a plate changed while slicing and
-   after; and, in place of the owner's third (a page reloaded while its slice runs), settings
-   changed in advanced mode with every setting of the real table tried at its bounds. Reason:
-   the review found the two checks of a setting's value, the wizard's and the slice service's,
-   written separately and never compared, the wizard's tests reading a hand-written table of
-   nine settings; while a page coming back to running work is already crossed by the restart
-   rows (a closed page reopened mid-slice). The reasons are in
+   least covered): the owner's three (a slice that fails, with its action; a plate changed
+   while slicing and after; a page reloaded while its slice runs, following the same slice job
+   to its result with no second submission), and a fourth, settings changed in advanced mode
+   with every setting of the real table tried at its bounds. Reason for the fourth: the review
+   found the two checks of a setting's value, the wizard's and the slice service's, written
+   separately and never compared, the wizard's tests reading a hand-written table of nine
+   settings. The reload scenario was first left out, as crossed by the restart rows, and added
+   by the builder who finished the batch: those rows show a page coming back only to a slice
+   job the slice service lost, never to one still running. It passed when first run, the
+   seam holding there. The reasons are in
    [the record of the seam](../seam-wizard-front.md#which-scenarios-the-joined-suite-adds). To
-   overrule: add the reload test; it is a few lines on `Wizard.reload`.
+   overrule: drop a test from `tests/test_browser_scenarios.py` or `test_browser_settings.py`.
 7. **The bounds check asks the slice service directly, with a plate naming a part it does not
    hold.** The slice service checks the overrides before the parts, so a value it accepts is
    answered `slice.part_missing` and one it refuses `slice.bad_overrides`, and no slice job
-   starts either way; about 1,500 values take 17 seconds. Through the front server, the
+   starts either way; the 1,299 values take 17 seconds. Through the front server, the
    accepted ones would each start a slice job and its limit of 30 submissions a minute would
    stop the test. The front server passes the overrides unchanged, which the first half
    shows. To overrule: `test_every_setting_at_its_bounds_…` in
@@ -135,17 +138,15 @@ Each in full, with its evidence, in [the record of the seam](../seam-wizard-fron
 
 ## Not done
 
-1. **The third scenario the owner named, a page reloaded while its slice runs,** was replaced
-   by the settings scenario (decision 6).
-2. **The front server's restart rows that need a page**, other than the sign-in across a
+1. **The front server's restart rows that need a page**, other than the sign-in across a
    restart with a new key: the task asked for the slice container's rows, and the wizard's own
    suite shows a page reloading for a newer version against its fake.
-3. **A drawing summary across the seam:** the page sends one only for a use of a view whose
+2. **A drawing summary across the seam:** the page sends one only for a use of a view whose
    frames were measured, which the joined walk does not make; a failure report is checked
    instead.
-4. **Expiry at two hours, a fifth progress stream, and the limits on how fast** are still
+3. **Expiry at two hours, a fifth progress stream, and the limits on how fast** are still
    shown only against fakes; each would need a duration or a setting neither server has.
-5. **Mismatches 3 and 4 are not fixed** (decision 11).
+4. **Mismatches 3 and 4 are not fixed** (decision 11).
 
 ## For the owner to look at
 

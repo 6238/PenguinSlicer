@@ -2489,8 +2489,9 @@ and the folders it gave them, never by importing their code. As built:
   needs a page (an open page after a crash mid-slice, a closed page opened again, a waiting
   slice ended by a stop and shown waiting while the slicer restarts, a finished slice
   unchanged), the slice service restarted at that row's moment; a failed slice with the slice
-  service's sentences and the wizard's buttons; a plate changed while it slices and after;
-  settings changed in advanced mode, and every setting of the real table at its bounds
+  service's sentences and the wizard's buttons; a plate changed while it slices and after; a
+  page reloaded while its slice runs, following the same slice job to its result with no
+  second submission; settings changed in advanced mode, and every setting of the real table at its bounds
   accepted by the slice service exactly when the wizard takes it; and the open page's sign-in
   trip across a front server restarted with a new cookie key. The address-space limit is given
   to each server (`JOINED_SERVER_AS_BYTES`), not to pytest, since Chromium cannot start

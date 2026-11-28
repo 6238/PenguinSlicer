@@ -422,7 +422,7 @@ in the wizard; the rest of it waits for phase 5.
     ([Keeping it true](../architecture.md#keeping-it-true)). It is built: the two servers
     run together and driven over HTTP as the wizard drives them, through the same walk and
     every row that needs no page; the real wizard driven in Chromium over them, through the
-    "Done when", every row that needs a page and four scenarios of common use; and a walk of
+    "Done when", every row that needs a page and five scenarios of common use; and a walk of
     each with the real Orca. What the joining found is in the records of the two seams,
     [the front server and the slice service](../orchestration/phase-2/seam-front-slice.md)
     and [the wizard and the front server](../orchestration/phase-2/seam-wizard-front.md).

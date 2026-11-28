@@ -173,7 +173,7 @@ it showed until a report names one.
   unchanged, opens advanced mode; for every setting, every choice, both bounds and the value
   just past each, a text at its longest and one longer, and a value of the wrong form, the
   wizard's check of what a user types and the slice service's check of an override give the
-  same verdict (1,500 or so values; `together/tests/test_browser_settings.py`). Settings changed
+  same verdict (1,299 values; `together/tests/test_browser_settings.py`). Settings changed
   in advanced mode reach the slice service in Orca's form (`0.20` as `0.2`, `35` as `35%`), and
   with the real Orca the sliced file carries them.
 - **Failures.** The slice service's error report reaches the page's red message with its
@@ -203,11 +203,13 @@ of common use, chosen from what is least covered across both seams. Chosen:
    this the least covered of all: the wizard's tests read a hand-written table of nine
    settings, the HTTP half sends only a configuration's own overrides, and the two checks of a
    value (the wizard's and the slice service's) were written separately against the contract's
-   words. It took the place of the third scenario the owner named, a page reloaded while its
-   slice runs, which the restart rows already go a long way to cover: a page closed mid-slice
-   and opened again comes back to its plate through the same asking and following.
+   words.
+4. **A page reloaded while its slice runs**, the third the owner named: it comes back to the
+   Preview step following the same slice job, submits nothing again, and shows that slice
+   job's result. The restart rows cover a closed page opened again only after the slice job
+   was lost; none had shown a page keeping a slice job that still runs across a refresh.
 
-The sign-in scenario of mismatch 1 is a fourth, added because the review found it.
+The sign-in scenario of mismatch 1 is a fifth, added because the review found it.
 
 ## What only a fake still exercises
 

@@ -6,6 +6,8 @@ Chromium over the real front server and the real slice service with the stand-in
   the wizard's buttons for its code, and its one action slices the plate again.
 - A plate changed while it slices and again after it is sliced: each later slice replaces the
   earlier one, and the page shows the newest result and downloads its sliced file.
+- A page reloaded while its slice runs: it comes back to the same slice job, submits nothing
+  again, and shows that slice job's result.
 """
 
 import pytest
@@ -116,4 +118,25 @@ def test_a_plate_changed_while_slicing_and_after_replaces_its_slice_and_shows_th
     assert download.suggested_filename == third["file"]
     made = slice_service.sliced_files()
     assert len(made) == 2 and body == made[-1]
+    assert w.problems == []
+
+
+def test_a_page_reloaded_while_its_slice_runs_follows_the_same_slice_job_to_its_result(
+        wizard, slice_service):
+    slice_service.orca_mode("gate")
+    w = wizard()
+    w.to_preview([CLAMP_PLATE])
+    w.card_stage(SLICING_MESH)
+    [running] = slice_job_lines(slice_service, "running")
+
+    # A refresh mid-slice: the page comes back to the Preview step following the slice job it
+    # submitted, with no second submission, and shows that slice job's result when it ends.
+    w.reload()
+    assert w.step() == "preview"
+    w.card_stage(SLICING_MESH)
+    slice_service.release_orca()
+    details = w.sliced()
+    assert details["slice"] == running["job"]
+    assert [line["job"] for line in slice_job_lines(slice_service, "queued")] == [running["job"]]
+    w.layer_preview_drawn()
     assert w.problems == []

@@ -126,6 +126,10 @@ file, nothing else.
   from the project's environment under a time limit and a memory limit. A timeout placed
   on a wrapper such as `uv run` kills the wrapper and leaves pytest running; a test that
   loops on a fake clock can then grow to gigabytes.
+- **Chromium cannot start under an address-space limit** (`prlimit --as`, 4 GB): it dies on
+  `SIGTRAP` at launch and leaves a core file in the working folder. A suite that drives a
+  browser puts the limit on the servers it starts, not on pytest (`together/`,
+  `JOINED_SERVER_AS_BYTES`).
 - **Orca reports progress through its `--pipe` option**, one message per stage with a
   percentage. Its real reason for a failed slice is in `result.json` (`error_string`,
   `warning_message`), which must be read before the scratch folder is removed; the

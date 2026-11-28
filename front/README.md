@@ -1367,9 +1367,10 @@ is built too: the real wizard, as the front server serves it, driven in a browse
 graphics card over the same two servers. It walks the phase from adding real parts to the
 download, the downloaded bytes being the ones the slicer made and the layer preview drawing
 them; goes through each row of the slice container's restart table that needs a page, the
-slice service restarted at that row's moment; and adds four scenarios of common use: a slice
+slice service restarted at that row's moment; and adds five scenarios of common use: a slice
 that fails, shown with the slice service's own sentences and the right buttons; a plate
-changed while it slices and after; settings changed in advanced mode, with every setting of
+changed while it slices and after; a page refreshed while its plate slices, coming back to
+the same slice and then its result; settings changed in advanced mode, with every setting of
 the real table tried at its limits on both sides; and an open page signing in again after
 the front server restarts on one machine with a new key. The same browser walk runs once
 with the real Orca, so that a plate the page made is sliced by Orca itself. What the joining
