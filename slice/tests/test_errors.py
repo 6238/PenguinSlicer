@@ -23,7 +23,12 @@ from penguin_slice.service import slice_plate_configuration
 from penguin_slice.slicer import OrcaExit
 
 REQUIRED = {"code": str, "message": str, "remedy": str, "retryable": bool, "detail": str}
-OPTIONAL = {"where": dict, "action": str}
+OPTIONAL = {"where": dict, "action": str, "orca_sentence": str}
+# The two failures about a gap with nothing under it, the only ones whose report carries
+# Orca's own sentence (contracts/error-report.md, orca_sentence), and that sentence as the
+# fake Orca writes it, which is the pinned Orca's (tests_orca pins it).
+ORCA_SENTENCE_CODES = ("slice.empty_layers", "slice.empty_layers_with_supports")
+ORCAS_GAP_SENTENCE = "Object can't be printed for empty layer between 9.9 and 11.34."
 WHERE_KEYS = {"part", "instance", "other_instance", "height_mm", "stage", "missing_parts"}
 STAGES = {"checking", "queued", "building", "slicing", "saving", "fetching"}
 BOX = box_stl(20, 20, 10)
@@ -178,6 +183,13 @@ def orca_missing(scene):
 def output_is_a_file(scene):
     scene.out.write_text("a file where the output folder should be")
     scene.slice()
+
+
+def output_too_large(scene):
+    """A sliced file over the limit, which the test lowers to 1 byte: the third guard."""
+    install_fake_orca(scene.tmp, scene.monkeypatch, "ok")
+    scene.monkeypatch.setattr(limits, "MAX_SLICED_FILE_BYTES", 1)
+    scene.slice(plate_configuration(instances=SPACED))
 
 
 def disk_full(scene):
@@ -404,6 +416,10 @@ EXPECTED = {
         output_is_a_file, "The print server could not save the sliced file.", "saving", False, None,
         "Ask a mentor to check that the print server can write to its output folder, then slice again.",
         "File exists"),
+    "slice.output_too_large": Expected(
+        output_too_large, "The sliced file of this plate is larger than the 50 MB a sliced file may be.", "saving",
+        False, None, "Remove some instances, or move some of them to a new plate, and slice again.",
+        "bytes, over the limit of 1 bytes"),
     "slice.unknown_job": Expected(
         through_the_web("progress"), "The print server does not know this slice; it may have expired.", "fetching",
         False, None, "Send the slice again.", "job 'j0000'"),
@@ -464,6 +480,31 @@ def test_failure_produces_its_code(code, tmp_path, monkeypatch):
     assert report.get("action") == expected.action
     assert report["remedy"] == expected.remedy
     assert expected.detail in report["detail"]
+    assert report.get("orca_sentence") == (ORCAS_GAP_SENTENCE if code in ORCA_SENTENCE_CODES else None)
+
+
+@pytest.mark.parametrize("code", list(EXPECTED))
+def test_only_the_two_gap_failures_ever_carry_orcas_sentence(code):
+    """Even an exception that carries a sentence of Orca's gives it only on the two codes."""
+    exc = slicer.SliceError("A sentence.", "detail", error_code=code)
+    exc.orca_sentence = ORCAS_GAP_SENTENCE
+    assert ("orca_sentence" in error_report(exc)) is (code in ORCA_SENTENCE_CODES)
+
+
+@pytest.mark.parametrize("code", ORCA_SENTENCE_CODES)
+def test_a_gap_failure_without_orcas_sentence_leaves_it_out(code):
+    assert "orca_sentence" not in error_report(slicer.SliceError("A sentence.", "detail", error_code=code))
+
+
+def test_the_contracts_orca_sentence_example_is_what_the_code_produces(tmp_path, monkeypatch):
+    """contracts/examples/error-report-orca-sentence.json: the fake Orca's empty-layer
+    refusal of one instance of a part named Tower, field for field."""
+    example = json.loads((CONTRACTS / "examples" / "error-report-orca-sentence.json").read_text())
+    scene = Scene(tmp_path, monkeypatch)
+    install_fake_orca(tmp_path, monkeypatch, "empty_layers")
+    with pytest.raises(slicer.SliceError) as caught:
+        scene.slice(plate_configuration(parts={"box": part_entry("Tower", BOX)}))
+    assert error_report(caught.value) == example
 
 
 def upload_without_a_length(scene):

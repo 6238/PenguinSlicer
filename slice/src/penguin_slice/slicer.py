@@ -177,6 +177,8 @@ TOO_CLOSE_SUPPORTS_CLAUSE = ", most likely their supports, which need more room 
 # Orca's reasons, as its result.json and log word them (pinned Orca).
 EMPTY_LAYER_RE = re.compile(r"empty layer between (-?\d+(?:\.\d+)?) and (-?\d+(?:\.\d+)?)")
 OBJECT_RE = re.compile(r"^Object: (.+)$", re.M)
+# The longest sentence of Orca's an error report quotes (contracts/error-report.md, orca_sentence).
+ORCA_SENTENCE_MAX_CHARS = 300
 # Words in Orca's output that mean an allocation failed (std::bad_alloc under RLIMIT_AS).
 OUT_OF_MEMORY_RE = re.compile(r"bad_alloc|out of memory|Cannot allocate memory", re.I)
 # Orca's own reasons on stdout for a plate with nothing to slice (return code -100, its
@@ -259,6 +261,7 @@ class SliceError(Exception):
         self.wall_s = run.wall_s if run else None
         self.remedy = None
         self.no_action = False
+        self.orca_sentence = None       # Orca's own sentence, kept for the two failures about a gap
 
 
 class SliceCancelled(Exception):
@@ -988,7 +991,9 @@ def orca_failure(run, output_dir, supports_on=None):
         message = (EMPTY_LAYERS_MESSAGE.format(instance=instance, low=low, high=high) if instance
                    else EMPTY_LAYERS_NO_INSTANCE_MESSAGE.format(low=low, high=high))
         error_code = "slice.empty_layers_with_supports" if supports_on else "slice.empty_layers"
-        return SliceError(message, details, code, error_code=error_code, where=where, reason=reason, run=run)
+        error = SliceError(message, details, code, error_code=error_code, where=where, reason=reason, run=run)
+        error.orca_sentence = _gap_sentence(empty)
+        return error
     if said:
         _text, error_code, message = said[0]
         return SliceError(message, details, code, error_code=error_code, reason=reason, run=run)
@@ -1005,6 +1010,17 @@ def orca_failure(run, output_dir, supports_on=None):
             details = "\n".join([first] + [f"orca debug log warning: {w}" for w in logged] + [rest])
             reason = "\n".join([reason] + logged).strip()
     return SliceError(message, details, code, error_code=error_code, reason=reason, run=run)
+
+
+def _gap_sentence(match):
+    """Orca's own sentence about the gap, for the error report's orca_sentence: the line of
+    its warning that EMPTY_LAYER_RE `match`ed, exactly as Orca wrote it but for the spaces
+    around it; None when that line is over ORCA_SENTENCE_MAX_CHARS, since a cut quotation
+    would no longer be Orca's words."""
+    text = match.string
+    end = text.find("\n", match.end())
+    line = text[text.rfind("\n", 0, match.start()) + 1:end if end >= 0 else len(text)].strip()
+    return line if len(line) <= ORCA_SENTENCE_MAX_CHARS else None
 
 
 def _too_close(error, output_dir, supports_on):

@@ -4,7 +4,8 @@
 Each exception the slice service raises carries its error code (`error_code`), its
 sentence for the user (`message`), the evidence for the log (`details`) and, when
 known, the part, instance or height (`where`). The adapter adds the `remedy`, the `action`,
-`retryable` and the stage from CODES. The remedies of CODES are a slice's; an upload
+`retryable` and the stage from CODES, and, on the two failures about a gap
+(ORCA_SENTENCE_CODES), Orca's own sentence. The remedies of CODES are a slice's; an upload
 (POST /parts) answers with service.UPLOAD_REMEDIES instead, and no action. Orca's return codes and their error codes are in
 slicer.ORCA_RETURN_CODES, the one table of them.
 """
@@ -108,6 +109,8 @@ CODES = {
     "slice.output_unwritable": ("saving", False, None,
                                 "Ask a mentor to check that the print server can write to its output folder, "
                                 "then slice again."),
+    "slice.output_too_large": ("saving", False, None,
+                               "Remove some instances, or move some of them to a new plate, and slice again."),
     "slice.unknown_job": ("fetching", False, None,
                           "Send the slice again."),
     "slice.not_ready": ("fetching", True, None,
@@ -119,6 +122,11 @@ CODES = {
                           "offer it."),
     "slice.unexpected": ("slicing", False, None, SERVER_REMEDY),
 }
+
+# The two failures about a gap with nothing under it: the only codes whose report carries
+# Orca's own sentence (orca_sentence, contracts/error-report.md), and only when Orca wrote one
+# (slicer.SliceError.orca_sentence). No other code ever carries words of Orca's for a user.
+ORCA_SENTENCE_CODES = ("slice.empty_layers", "slice.empty_layers_with_supports")
 
 # The slice service's own exceptions: each carries message, details, error_code and where.
 _OWN = (PlateConfigurationRefused, MeshError, ProfileError, OverrideError, TableUnreadable, SliceError, SliceCancelled)
@@ -145,7 +153,10 @@ def error_report(exc):
     sets them)."""
     if isinstance(exc, SliceError):
         detail = f"orca code {exc.code}\n{exc.details}" if exc.code is not None else exc.details
-        return _report(exc.error_code, exc.message, detail, exc.where, exc.remedy, exc.no_action)
+        report = _report(exc.error_code, exc.message, detail, exc.where, exc.remedy, exc.no_action)
+        if exc.error_code in ORCA_SENTENCE_CODES and exc.orca_sentence:
+            report["orca_sentence"] = exc.orca_sentence
+        return report
     if isinstance(exc, _OWN):
         return _report(exc.error_code, exc.message, exc.details, getattr(exc, "where", None),
                        getattr(exc, "remedy", None), getattr(exc, "no_action", False))

@@ -7,6 +7,7 @@ and calls run_plate_configuration in the slice job's own scratch directory.
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import limits
 from .plate_3mf import check_plate_names, write_plate_3mf
 from .print_config import write_process_with_overrides
 from .slicer import SCRATCH_UNWRITABLE_MESSAGE, SliceError, SliceProfiles, plate_object_names, slice_plate
@@ -87,10 +88,11 @@ PART_REASONS = ("slice.no_layers", "slice.print_empty")
 
 def _fit_to_plate(exc, configuration):
     """What Orca's failure can say about this plate that Orca did not: on a plate of one
-    instance, out of memory or a timeout cannot be helped by removing instances; with one
+    instance, out of memory, a sliced file too large or a timeout cannot be helped by
+    removing instances; with one
     part, Orca's reason for an empty print is that part's."""
     if len(configuration.instances) == 1:
-        if exc.error_code == "slice.out_of_memory":
+        if exc.error_code in ("slice.out_of_memory", "slice.output_too_large"):
             exc.remedy, exc.no_action = ONE_INSTANCE_MEMORY_REMEDY, True
         elif exc.error_code == "slice.timeout":
             exc.remedy, exc.no_action = ONE_INSTANCE_TIMEOUT_REMEDY, True
@@ -125,4 +127,18 @@ def run_plate_configuration(configuration, scratch, stop=None, on_progress=None)
         raise
     report("reading_result", None, "Reading the sliced file")
     check_plate_names(names, plate_object_names(result.output_path))
+    try:
+        _check_size(result.output_path)
+    except SliceError as exc:
+        _fit_to_plate(exc, configuration)
+        raise
     return result
+
+
+def _check_size(path):
+    """The third guard after a good slice: a sliced file is at most limits.MAX_SLICED_FILE_BYTES."""
+    size, cap = Path(path).stat().st_size, limits.MAX_SLICED_FILE_BYTES
+    if size > cap:
+        raise SliceError(limits.OUTPUT_TOO_LARGE_MESSAGE,
+                         f"{Path(path).name}: {size:,} bytes, over the limit of {cap:,} bytes",
+                         error_code="slice.output_too_large")
