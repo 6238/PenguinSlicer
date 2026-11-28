@@ -565,7 +565,12 @@ reports about itself are never retried, and a progress stream is reopened, not r
   time is aborted, and one cut off partway (a restart) fails at once; both are quiet retries,
   never `wizard.bad_answer`, which is for a whole body the page cannot read. A body that keeps
   arriving is read to its end however long it takes, so a sliced file of up to 50 MB loads
-  on any connection that delivers some of it every 15 seconds.
+  on any connection that delivers some of it every 15 seconds. A body that declares its
+  length (`Content-Length`) is written into one buffer of that length as it arrives, so it is
+  held once and not again in parts; a declared length the body overruns falls back to
+  keeping the parts. Tests run both the fake transport and the browser's own
+  (`fetchTransport`, with `fetch` replaced) on the fake clock, and one holds the headers
+  10 s and the first bytes 12 s more and expects one attempt.
 - **An upload's sending has no such allowance:** the browser's `fetch` tells nothing of a
   request body's progress, so the 60 s of `POST /api/parts` cover sending the whole part.
   A part of 7.5 MB (the most allowed) needs about 1 Mbit/s of upload speed

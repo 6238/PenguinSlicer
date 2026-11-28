@@ -319,6 +319,16 @@ def test_three_without_the_vendor_folder_is_refused(tmp_path):
     assert "main.js imports three, which is neither a file of the page nor three" in str(raised.value)
 
 
+def test_index_html_naming_a_vendored_file_is_refused(tmp_path):
+    # A vendored file is reached only from a module, never named by the page itself.
+    vendor = vendor_folder(tmp_path)
+    index = f'<html><head>{VERSION_META}<script type="module" src="vendor/three/build/three.module.min.js"></script></head></html>'
+    src = page(tmp_path, {"main.js": "export {};\n"}, index=index)
+    with pytest.raises(build.BuildError) as raised:
+        build.build(src, tmp_path / "dist", vendor=vendor)
+    assert "index.html names vendor/three/build/three.module.min.js, which is not in" in str(raised.value)
+
+
 def test_a_page_file_and_a_vendored_file_of_the_same_name_are_refused(tmp_path):
     vendor = vendor_folder(tmp_path)
     src = page(tmp_path, {"main.js": "export {};\n", "OrbitControls.js": "export {};\n"})

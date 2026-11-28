@@ -173,8 +173,9 @@ Decided while fixing the second review's findings:
     sets a slowest connection, and this rule sets none. The fake front server has a step
     `trickle` whose body arrives in parts the test releases; four tests cover a stalled
     sliced file, one arriving a part every 14 s for 168 s, one that stops after its first
-    part (failed 15 s after it) and a JSON body arriving in parts. To overrule: `arm` in
-    `attemptOnce` in `wizard/src/api.js`.
+    part (failed 15 s after it) and a JSON body arriving in parts. Those four go through the
+    fake transport; the browser's own transport is covered by the tests of decision 33.
+    To overrule: `arm` in `attemptOnce` in `wizard/src/api.js`.
 30. **The figure and its unit on the amber line are joined by a no-break space** (minor
     finding 2), so at 320 px the line no longer wraps between "11" and "s.". The guide's
     sentence reads the same. To overrule: `SERVER_SLOW` in `wizard/src/sentences.js`.
@@ -186,7 +187,36 @@ Decided while fixing the second review's findings:
     was built and untested; a test now presses Try again at 100 s and checks the request
     still makes its last attempt at 300 s and then shows the red line, not a silent restart.
 
+Decided while fixing the third review's findings (the code was right; the tests were missing):
+
+33. **The browser's own transport is tested in Node with `fetch` replaced** (blocking
+    finding 1, minor finding 3). Two tests in `tests/api.test.js`: one checks that
+    `fetchTransport`'s `text` and `bytes` tell `onProgress` of each part of a body built from
+    a `ReadableStream`; the other runs `createApi` on `fetchTransport` with a `fetch` whose
+    body arrives a part every 14 s on the fake clock and fails on abort as the real one does,
+    and expects one attempt. Dropping `onProgress` from either line of `fetchTransport` fails
+    them. I chose Node over a browser test against the fake front server because it needs no
+    real time: the browser test would have had to wait real seconds for parts. To overrule:
+    the tests named "the browser's transport …" and "the page's requests through the
+    browser's transport …".
+34. **A test holds the headers 10 s and the first part 12 s more** (blocking finding 2),
+    in `tests/retry.test.js`, and expects one attempt; deleting the `arm()` before the body
+    is read fails it.
+35. **The build's refusal of `vendor/` named from `index.html` has a test** (minor finding 1);
+    removing the refusal fails it.
+36. **A body that declares its length is read into one buffer of that length** (minor
+    finding 2): `readBody` writes each part into it as it arrives, so a 50 MB sliced file is
+    held about once instead of about twice. A declared length the body overruns (a
+    compressed answer declares its compressed length) or does not reach falls back to
+    keeping the parts or to a trimmed copy; a test reads bodies under right, short, long,
+    unreadable and zero lengths. No fast test can see the memory itself. To overrule:
+    `readBody` in `wizard/src/seams/transport.js`.
+
 Findings of the review declined, with the reason:
+
+- Of the third review: none.
+
+Of the earlier reviews:
 
 - **A report about the page itself answered with a quiet-retry code does not clear the panel
   line** (minor finding 5). Declined: for every request, an answer whose error report is a
@@ -238,6 +268,7 @@ Findings of the review declined, with the reason:
    connection would need a request whose sending can be followed (`XMLHttpRequest`'s upload
    progress, through the transport seam) or a longer time; that is for the Parts step
    (item 7) to decide with its row.
+10. **The third review's fixes (decisions 33 to 36) were merged without a further review.**
 
 ## Not done
 

@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createApi } from '../src/api.js';
-import { readBody } from '../src/seams/transport.js';
+import { fetchTransport, readBody } from '../src/seams/transport.js';
 import { FakeClock } from './fakes/clock.js';
 import { FakeFrontServer, errorReport, errorReportProblems, example, steps } from './fakes/front_server.js';
 
@@ -147,6 +147,93 @@ test('the browser\'s transport reads a body whole and tells of each part as it a
   assert.equal(new TextDecoder().decode(whole), 'G1 X0\nG1 X1\nG1 X22\n');
   assert.deepEqual(told, [6, 6, 7]);
   assert.equal((await readBody(new Response(null))).byteLength, 0);
+});
+
+// A body whose length is declared is written into one buffer as it arrives (so a 50 MB sliced
+// file is held once, not once in parts and again whole); a declared length that is wrong, as
+// with a compressed body, still gives the whole body and nothing more.
+test('a body of a declared length, right or wrong, is read whole', async () => {
+  for (const declared of ['12', '4', '40', 'x', '0']) {
+    const stream = new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode('G1 X0\n')); c.enqueue(new TextEncoder().encode('G1 X1\n')); c.close(); } });
+    const whole = await readBody(new Response(stream, { headers: { 'Content-Length': declared } }));
+    assert.equal(new TextDecoder().decode(whole), 'G1 X0\nG1 X1\n', `declared ${declared}`);
+  }
+});
+
+// The browser's own transport, with fetch replaced by one whose answer's body arrives in parts:
+// text and bytes must tell the caller of each part, or the page's attempt timer would abort a
+// slow body that is still arriving.
+async function withFetch(parts, run) {
+  const original = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (path, init) => {
+    calls.push({ path, init });
+    const stream = new ReadableStream({ start(c) { for (const p of parts) c.enqueue(new TextEncoder().encode(p)); c.close(); } });
+    return new Response(stream, { status: 200, headers: { 'X-PenguinSlicer-Version': 'v' } });
+  };
+  try {
+    await run(calls);
+  } finally {
+    globalThis.fetch = original;
+  }
+}
+
+test('the browser\'s transport tells of each part of the body through text and bytes', async () => {
+  await withFetch(['{"a":', '1}'], async (calls) => {
+    const told = [];
+    const answer = await fetchTransport.send({ method: 'GET', path: '/api/me', headers: { 'X-PenguinSlicer-Page': PAGE } });
+    assert.equal(answer.status, 200);
+    assert.equal(answer.header('X-PenguinSlicer-Version'), 'v');
+    assert.equal(await answer.text((n) => told.push(n)), '{"a":1}');
+    assert.deepEqual(told, [5, 2]);
+    assert.equal(calls[0].path, '/api/me');
+    assert.equal(calls[0].init.credentials, 'same-origin');
+    assert.equal(calls[0].init.cache, 'no-store');
+  });
+  await withFetch(['G1 X0\n', 'G1 X22\n'], async () => {
+    const told = [];
+    const answer = await fetchTransport.send({ method: 'GET', path: '/api/slices/3f9a1c2b/file', headers: {} });
+    const bytes = await answer.bytes((n) => told.push(n));
+    assert.equal(new TextDecoder().decode(bytes), 'G1 X0\nG1 X22\n');
+    assert.deepEqual(told, [6, 7]);
+  });
+});
+
+test('the page\'s requests through the browser\'s transport read a slow body in one attempt', async () => {
+  // fetch's body arrives a part every 14 s on the fake clock; each part must give the attempt
+  // its 15 s afresh, through the transport the page itself runs.
+  const clock = new FakeClock();
+  const original = globalThis.fetch;
+  let fetches = 0;
+  globalThis.fetch = async (path, { signal }) => {
+    fetches += 1;
+    const parts = ['G1 X0\n', 'G1 X1\n', 'G1 X2\n'];
+    const stream = new ReadableStream({
+      start(c) {                                   // as the real fetch does, an abort fails the body
+        signal.addEventListener('abort', () => c.error(new DOMException('aborted', 'AbortError')), { once: true });
+      },
+      pull(c) {
+        if (!parts.length) { c.close(); return undefined; }
+        const part = parts.shift();
+        return new Promise((resolve) => clock.after(14_000, () => {
+          if (!signal.aborted) c.enqueue(new TextEncoder().encode(part));
+          resolve();
+        }));
+      },
+    });
+    return new Response(stream, { status: 200, headers: { 'X-PenguinSlicer-Version': 'v' } });
+  };
+  try {
+    const api = createApi({ transport: fetchTransport, clock, version: PAGE, random: () => 0.5 });
+    const result = api.get('/api/slices/3f9a1c2b/file', { expect: 'bytes' });
+    for (let i = 0; i < 4; i += 1) await clock.advance(14_000);
+    assert.equal(fetches, 1);                      // before awaiting: a second attempt would never end here
+    const answer = await result;
+    assert.equal(answer.ok, true);
+    assert.equal(new TextDecoder().decode(answer.body), 'G1 X0\nG1 X1\nG1 X2\n');
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('a request counts as pending from its sending until its answer', async () => {

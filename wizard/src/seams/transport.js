@@ -9,19 +9,31 @@
 //     the caller can tell a body that is arriving slowly from one that has stalled.
 // Requests go to the page's own address only: `path` is a path such as "/api/me", and the
 // browser attaches the cookie, which the page never reads.
-// Reads a response's whole body into one ArrayBuffer, telling onProgress of each part.
+// Reads a response's whole body into one ArrayBuffer, telling onProgress of each part. When the
+// answer declares its length, each part is written into one buffer of that length as it
+// arrives, so that a large body (a sliced file of up to 50 MB) is held once rather than once in
+// parts and again whole; a declared length the body overruns (a compressed body declares the
+// compressed length) falls back to keeping the parts.
 export async function readBody(response, onProgress) {
   if (!response.body) return new ArrayBuffer(0);
   const reader = response.body.getReader();
+  const declared = Number(response.headers.get('Content-Length'));
+  let into = Number.isInteger(declared) && declared > 0 ? new Uint8Array(declared) : null;
   const parts = [];
   let length = 0;
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    parts.push(value);
+    if (into && length + value.byteLength <= into.byteLength) {
+      into.set(value, length);
+    } else {
+      if (into) { parts.push(into.subarray(0, length)); into = null; }
+      parts.push(value);
+    }
     length += value.byteLength;
     if (onProgress) onProgress(value.byteLength);
   }
+  if (into) return length === into.byteLength ? into.buffer : into.buffer.slice(0, length);
   const whole = new Uint8Array(length);
   let at = 0;
   for (const part of parts) { whole.set(part, at); at += part.byteLength; }

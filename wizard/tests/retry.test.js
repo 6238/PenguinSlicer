@@ -372,6 +372,26 @@ test('a body that stops arriving counts as failed 15 s after its last bytes, not
   assert.equal((await result).ok, true);
 });
 
+test('the attempt\'s 15 s start afresh when the headers arrive: late headers, then a late first part, are one attempt', async () => {
+  const { clock, server, api } = setUp();
+  recordMoments(server, clock);
+  const body = steps.trickle(200, ['G1 X0\n', 'G1 X1\n']);
+  server.script('GET', '/api/slices/3f9a1c2b/file', steps.hold());
+  const result = api.get('/api/slices/3f9a1c2b/file', { expect: 'bytes' });
+  const record = await server.arrived(1);
+  await clock.advanceTo(10 * S);
+  record.held.release(body);                       // the headers at 10 s: 5 s left of the first 15
+  await clock.advanceTo(22 * S);
+  body.trickle.next();                             // the first bytes 12 s after the headers
+  await clock.advanceTo(23 * S);
+  body.trickle.next();
+  await clock.advance(0);
+  const answer = await result;
+  assert.equal(answer.ok, true);
+  assert.equal(new TextDecoder().decode(answer.body), 'G1 X0\nG1 X1\n');
+  assert.deepEqual(moments(server, clock, 'GET', '/api/slices/3f9a1c2b/file'), [0]);
+});
+
 test('a JSON body that keeps arriving is read to its end too', async () => {
   const { clock, server, api } = setUp();
   const text = JSON.stringify(example('wizard-front/me.json'));
