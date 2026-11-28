@@ -13,7 +13,7 @@
 // always passes the placement check; it may leave up to about a millimetre more than the spacing.
 import { ARRANGE_CELL_MM, ARRANGE_SLACK_MM, PILE_GRID_MM, PILE_REFINE_MM } from './constants.js';
 import { area as outlineArea, bounds, grown } from './outline.js';
-import { turnedFootprint } from './placement.js';
+import { checkPlate, turnedFootprint } from './placement.js';
 
 const BESIDE_GAP_MM = 20;
 
@@ -189,6 +189,122 @@ function pileOf(items, f) {
     pile = union(pile, boxOf(item, i, j));
   }
   return { spots, pile };
+}
+
+// ---- One instance, the others where they stand (the Layout step: a lay-down that no longer
+// fits, a part that joins a plate already laid out).
+
+// The turns the wizard tries on an instance it has just laid down itself and that is then too
+// long for the plate: a quarter, an eighth, three eighths of a turn, the first that fits
+// (wizard/README.md, "Arrange").
+export const FIT_TURNS = [90, 45, 135];
+
+const turned = (instance, add) => ({ ...instance, angle: (((instance.angle + add) % 360) + 360) % 360 });
+
+// Whether the instance's footprint, as it is turned, fits inside the printable area less the
+// margin at some place: its width and depth no larger than the frame's.
+function fitsFrame(instance, pointsByPart, plate, cache) {
+  const [x0, y0, x1, y1] = turnedFootprint(instance, pointsByPart, cache).bounds;
+  const f = frame(plate);
+  return x1 - x0 <= f.width / K + 1e-9 && y1 - y0 <= f.depth / K + 1e-9;
+}
+
+// {fits: true, angle} with the instance's own angle when it fits the plate as it is turned, or
+// the angle of the first of FIT_TURNS that makes it fit; {fits: false, angle} with its own
+// angle when none does.
+export function turnToFit(instance, pointsByPart, plate, cache = new WeakMap()) {
+  if (fitsFrame(instance, pointsByPart, plate, cache)) return { fits: true, angle: instance.angle };
+  for (const add of FIT_TURNS) {
+    const t = turned(instance, add);
+    if (fitsFrame(t, pointsByPart, plate, cache)) return { fits: true, angle: t.angle };
+  }
+  return { fits: false, angle: instance.angle };
+}
+
+// The map of the plate with every instance but `skip` marked where it stands, as Arrange marks
+// them: grown by half the spacing and the slack, so that a spot free on it is at least the
+// spacing from each of them.
+function standingMap(plateConfiguration, pointsByPart, plate, skip, cache) {
+  const f = frame(plate);
+  const map = new PlateMap(f.w, f.h);
+  const r = (plate.spacing + ARRANGE_SLACK_MM) / 2;
+  plateConfiguration.instances.forEach((instance, index) => {
+    if (index === skip) return;
+    const fp = turnedFootprint(instance, pointsByPart, cache);
+    const absolute = grown(fp.coarse, r).map(([x, y]) => [(x + instance.x - f.x0) * K, (y + instance.y - f.y0) * K]);
+    map.take(spans(absolute), 0, 0);
+  });
+  return { f, map };
+}
+
+// The free spot nearest `target` ([x, y], the centre of the footprint in millimetres) for
+// instance `index`, every other instance standing where it is: {x, y}, or null when none is
+// free. Spots are tried on a PILE_GRID_MM grid nearest first, then refined a square at a time
+// towards the target.
+export function placeNear(plateConfiguration, pointsByPart, plate, index, target, cache = new WeakMap()) {
+  const { f, map } = standingMap(plateConfiguration, pointsByPart, plate, index, cache);
+  const instance = plateConfiguration.instances[index];
+  const fp = turnedFootprint(instance, pointsByPart, cache);
+  const mask = spans(grown(fp.coarse, (plate.spacing + ARRANGE_SLACK_MM) / 2).map(([x, y]) => [x * K, y * K]));
+  const item = { bounds: fp.bounds.map((v) => v * K) };
+  const { i0, i1, j0, j1 } = range(item, f);
+  if (i0 > i1 || j0 > j1) return null;
+  const ti = (target[0] - f.x0) * K, tj = (target[1] - f.y0) * K;
+  const near = (i, j) => (i - ti) * (i - ti) + (j - tj) * (j - tj);
+  const clampI = (i) => Math.min(i1, Math.max(i0, i));
+  const clampJ = (j) => Math.min(j1, Math.max(j0, j));
+  const spots = [[clampI(Math.round(ti)), clampJ(Math.round(tj))]];
+  for (let j = Math.ceil(j0 / GRID) * GRID; j <= j1; j += GRID) {
+    for (let i = Math.ceil(i0 / GRID) * GRID; i <= i1; i += GRID) spots.push([i, j]);
+  }
+  spots.sort((a, b) => near(a[0], a[1]) - near(b[0], b[1]));
+  const found = spots.find(([i, j]) => map.free(mask, i, j));
+  if (!found) return null;
+  let best = found;
+  for (let dj = -GRID; dj <= GRID; dj++) {
+    for (let di = -GRID; di <= GRID; di++) {
+      const i = found[0] + di, j = found[1] + dj;
+      if (i < i0 || i > i1 || j < j0 || j > j1) continue;
+      if (near(i, j) < near(best[0], best[1]) && map.free(mask, i, j)) best = [i, j];
+    }
+  }
+  return { x: round3(f.x0 + best[0] / K), y: round3(f.y0 + best[1] / K) };
+}
+
+// Where an instance waits beside the plate: to its right, clear of it, under every instance
+// already waiting there, at least the spacing from each.
+function besideSpot(plateConfiguration, pointsByPart, plate, index, instance, cache) {
+  let y = plate.min[1];
+  plateConfiguration.instances.forEach((other, k) => {
+    if (k === index) return;
+    const [bx0, , , by1] = turnedFootprint(other, pointsByPart, cache).bounds;
+    if (other.x + bx0 > plate.max[0]) y = Math.max(y, other.y + by1 + plate.spacing + ARRANGE_SLACK_MM);
+  });
+  const [bx0, by0] = turnedFootprint(instance, pointsByPart, cache).bounds;
+  return { x: round3(plate.max[0] + BESIDE_GAP_MM - bx0), y: round3(y - by0) };
+}
+
+// After instance `index` was laid down another way: {how, instance}, its new place and angle.
+//   'fits'    it breaks no rule of the margin or the spacing where it stands: unchanged
+//   'moved'   it was moved to the nearest free spot
+//   'turned'  it was moved to the nearest free spot, turned by one of FIT_TURNS to fit there
+//   'beside'  no spot is free: it waits beside the plate, turned to fit the plate first when it
+//             is too long for it as it lay, so that Arrange can place it
+// Every other instance stays where it is: laying down never moves another instance.
+export function settleInstance(plateConfiguration, pointsByPart, plate, index, cache = new WeakMap()) {
+  const instance = plateConfiguration.instances[index];
+  const placing = checkPlate(plateConfiguration, pointsByPart, plate, cache)
+    .filter((p) => p.rule !== 'too_tall' && p.instances.includes(index));
+  if (placing.length === 0) return { how: 'fits', instance: { ...instance } };
+  for (const add of [0, ...FIT_TURNS]) {
+    const t = turned(instance, add);
+    const pc = { ...plateConfiguration, instances: plateConfiguration.instances.map((o, k) => (k === index ? t : o)) };
+    const spot = placeNear(pc, pointsByPart, plate, index, [instance.x, instance.y], cache);
+    if (spot) return { how: add ? 'turned' : 'moved', instance: { ...t, ...spot } };
+  }
+  const fit = turnToFit(instance, pointsByPart, plate, cache);
+  const waiting = { ...instance, angle: fit.angle };
+  return { how: 'beside', instance: { ...waiting, ...besideSpot(plateConfiguration, pointsByPart, plate, index, waiting, cache) } };
 }
 
 const pileArea = (pile) => (pile ? ((pile[2] - pile[0]) * (pile[3] - pile[1])) / (K * K) : 0);

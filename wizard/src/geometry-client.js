@@ -45,6 +45,15 @@ export function createGeometryClient(port, { report = () => {} } = {}) {
     // The part's picture for its row: px by px RGBA pixels in `colour` (0xrrggbb).
     picture: (key, px, colour) => ask('picture', { key, px, colour }),
     forget: (key) => ask('forget', { key }),
+    // The Layout step's questions (geometry/messages.js): a part's patches and its best way, and,
+    // for a plate (`plate` is {plateConfiguration, geometry, printer, supports}), the placement
+    // check, Arrange, where one instance goes after a lay-down and the turn that makes it fit.
+    faces: (key) => ask('faces', { key }),
+    orient: (key) => ask('orient', { key }),
+    check: (plate) => ask('check', plate),
+    arrange: (plate) => ask('arrange', plate),
+    settle: (plate, index) => ask('settle', { ...plate, index }),
+    fit: (plate, index) => ask('fit', { ...plate, index }),
     // How many questions are waiting for their reply.
     waiting: () => waiting.size,
   };

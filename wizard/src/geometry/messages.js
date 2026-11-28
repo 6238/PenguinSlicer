@@ -7,17 +7,24 @@
 //   orient   {key}                      the way it lies best, and how the plate configuration
 //                                       carries that turn
 //   arrange  {plateConfiguration, geometry, printer, supports}
-//   check    {plateConfiguration, geometry, printer, supports}
+//   check    {plateConfiguration, geometry, printer, supports}  the problems, in the slice
+//                                       service's order, and each instance's footprint
+//                                       `bounds` ([x0, y0, x1, y1] on the plate) and `heights`
+//   settle   {plateConfiguration, geometry, printer, supports, index}  after a lay-down: where
+//                                       instance `index` goes, the others where they stand
+//                                       ({how, instance}, arrange.js settleInstance)
+//   fit      {plateConfiguration, geometry, printer, supports, index}  the turn that makes it
+//                                       fit the plate ({fits, angle}, arrange.js turnToFit)
 //   picture  {key, px, colour}          the part's picture for its row, px by px RGBA pixels
 //                                       (a Uint8ClampedArray, transferred), drawn as modelled
 //   forget   {key}
 // `geometry` maps each part key of the plate configuration to the key it was read under;
 // `printer` is the printable area ({min, max, height}) and `supports` whether supports are on.
-import { arrangePlate } from './arrange.js';
+import { arrangePlate, settleInstance, turnToFit } from './arrange.js';
 import { GeometryError, LAYOUT_FAILED, errorReport } from './errors.js';
 import { autoOrient } from './orient.js';
 import { analysePart } from './part.js';
-import { checkPlate, plateOf } from './placement.js';
+import { checkPlate, placedOutlines, plateOf } from './placement.js';
 import { MAX_PICTURE_PX, MIN_PICTURE_PX, drawPicture } from './picture.js';
 import { readBinaryStl } from './stl.js';
 import { ORIENTATION_MATRICES, instanceTurn } from './turn.js';
@@ -59,6 +66,13 @@ function checkInstances(plateConfiguration, geometry) {
     const fault = instanceFault(instance) || refFault(instance, plateConfiguration, geometry);
     if (fault) throw new PageFault(`instance ${i}: ${fault}`);
   });
+}
+
+// `index` names one instance of the message's plate configuration.
+function checkIndex(m) {
+  if (!Number.isInteger(m.index) || m.index < 0 || m.index >= m.plateConfiguration.instances.length) {
+    throw new PageFault(`index ${JSON.stringify(m.index)} names no instance of the plate configuration`);
+  }
 }
 
 const patchSummary = (p) => ({
@@ -117,7 +131,22 @@ export function createGeometry() {
     },
     check(m) {
       checkInstances(m.plateConfiguration, m.geometry);
-      return [{ problems: checkPlate(m.plateConfiguration, pointsFor(m.geometry), plateFor(m), footprints) }, []];
+      const points = pointsFor(m.geometry);
+      const placed = placedOutlines(m.plateConfiguration, points, footprints);
+      return [{
+        problems: checkPlate(m.plateConfiguration, points, plateFor(m), footprints),
+        bounds: placed.map((p) => p.bounds), heights: placed.map((p) => p.height),
+      }, []];
+    },
+    settle(m) {
+      checkInstances(m.plateConfiguration, m.geometry);
+      checkIndex(m);
+      return [settleInstance(m.plateConfiguration, pointsFor(m.geometry), plateFor(m), m.index, footprints), []];
+    },
+    fit(m) {
+      checkInstances(m.plateConfiguration, m.geometry);
+      checkIndex(m);
+      return [turnToFit(m.plateConfiguration.instances[m.index], pointsFor(m.geometry), plateFor(m), footprints), []];
     },
     picture(m) {
       const part = partOf(m.key);

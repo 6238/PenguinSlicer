@@ -177,6 +177,37 @@ test('the placement check follows the part each part key points at, never a foot
   assert.deepEqual(check(g, 7, 'spacer-mm'), inInches);
 });
 
+test('the check gives each instance\'s footprint bounds and height, for the Layout step\'s drawing and lines', () => {
+  const g = createGeometry();
+  ask(g, { id: 1, op: 'read', key: 'spacer-key', buffer: fileBuffer(join(MADE_PARTS, 'hex-spacer.stl')), units: 'mm' });
+  const plateConfiguration = { parts: { spacer: { name: 'Spacer' } }, instances: [{ ref: 'spacer', orientation: '+z', angle: 0, x: 100, y: 50 }] };
+  const { result } = ask(g, { id: 2, op: 'check', plateConfiguration, geometry: { spacer: 'spacer-key' }, printer: H2S, supports: false }).reply;
+  const [[x0, y0, x1, y1]] = result.bounds;
+  // The spacer is 5/8 inch across (15.875 mm) and 1/8 inch thick (3.175 mm).
+  assert.ok(Math.abs(x1 - x0 - 15.875) < 0.01 && Math.abs((x0 + x1) / 2 - 100) < 1e-6 && Math.abs((y0 + y1) / 2 - 50) < 1e-6);
+  assert.ok(Math.abs(result.heights[0] - 3.175) < 1e-3);
+});
+
+test('settle and fit answer through the messages, and a malformed instance is the page\'s fault', () => {
+  const g = createGeometry();
+  ask(g, { id: 1, op: 'read', key: 'spacer-key', buffer: fileBuffer(join(MADE_PARTS, 'hex-spacer.stl')), units: 'mm' });
+  const geometry = { spacer: 'spacer-key' };
+  const plateConfiguration = {
+    parts: { spacer: { name: 'Spacer' } },
+    instances: [{ ref: 'spacer', orientation: '+z', angle: 0, x: 100, y: 50 }, { ref: 'spacer', orientation: '+z', angle: 0, x: 102, y: 50 }],
+  };
+  const settled = ask(g, { id: 2, op: 'settle', plateConfiguration, geometry, printer: H2S, supports: false, index: 1 }).reply;
+  assert.equal(settled.ok, true);
+  assert.equal(settled.result.how, 'moved');
+  const fit = ask(g, { id: 3, op: 'fit', plateConfiguration, geometry, printer: H2S, supports: false, index: 0 }).reply;
+  assert.deepEqual(fit.result, { fits: true, angle: 0 });
+  for (const [id, index] of [[4, 2], [5, -1], [6, 0.5]]) {
+    const { reply } = ask(g, { id, op: 'settle', plateConfiguration, geometry, printer: H2S, supports: false, index });
+    assert.equal(reply.error.code, 'wizard.layout_failed');
+    assert.match(reply.error.detail, /index/);
+  }
+});
+
 test('forgetting a part lets its memory go; asking about it after is the page\'s fault', () => {
   const g = createGeometry();
   ask(g, { id: 1, op: 'read', key: 'spacer', buffer: fileBuffer(join(MADE_PARTS, 'hex-spacer.stl')), units: 'mm' });
