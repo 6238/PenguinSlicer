@@ -10,6 +10,7 @@ import threading
 import httpx
 import pytest
 
+from front_fakes import loopback_client
 from slice_standin import EXAMPLES, SliceStandIn, example
 
 USER = "5f1e0c2a9b3d4e6f7a8b9c0d"
@@ -30,7 +31,7 @@ def standin(clock):
 
 @pytest.fixture
 def http(standin):
-    with httpx.Client(base_url=standin.url, timeout=10) as client:
+    with loopback_client(standin.url) as client:
         yield client
 
 
@@ -235,7 +236,7 @@ def test_three_streams_on_one_slice_job_are_three_connections(standin, http):
     texts = []
 
     def follow():
-        with httpx.Client(base_url=standin.url, timeout=10) as client:
+        with loopback_client(standin.url) as client:
             with client.stream("GET", "/slices/j1/events", headers=KEY) as stream:
                 chunks = stream.iter_text()
                 text = next(chunks)
