@@ -625,10 +625,10 @@ usually refused on this step; one that passes fails the height or plate checks o
 Layout step. A row has no switch of its own: a part read in the wrong units is removed
 and added again.
 
-**New plate.** A **New plate** button on this step empties the plate: the parts, the
-layout and the slice go, and the filament, the profile and the changes stay, since the
-next plate is usually printed the same way. When the plate holds parts it asks first, in
-a confirmation: "Start a new plate? The parts and layout of this one are cleared." A
+**New plate.** A **New plate** button on this step, under the list while the plate holds
+parts, empties the plate: the parts, the layout and the slice go, and the filament, the
+profile and the changes stay, since the next plate is usually printed the same way. It asks
+first, in a confirmation: "Start a new plate? The parts and layout of this one are cleared." A
 plate that is printing goes on printing; it is then shown as a print, in the
 printer-status icon and the printer details, and no longer as this tab's plate. No count
 of plates is kept or shown.
@@ -2202,7 +2202,8 @@ The screens designed here follow the decisions recorded in the body.
 
 ## What is to be built, by phase
 
-Of what a user sees, the panel as a whole is built, and none of the steps' contents. The
+Of what a user sees, the panel as a whole and the Parts step are built, and none of the
+other steps' contents. The
 mockup is kept in the repository as the reference for the look, and its style sheet for the
 panel is taken over whole, unchanged, as the cheap way to match it; its scripts were faked,
 and the wizard's behaviour is built from this guide
@@ -2240,9 +2241,23 @@ cleared storage to the server's log. A full plate of 25 parts of the largest siz
 stored and read back in Chromium on the machine without a graphics card with nothing
 refused. The worker reads a part's file and draws the small picture of it that its row
 will show, in software, so that even the largest part holds the page for no more than a
-hundredth of a second or so. What a step holds comes with the later items of phase 2: the
-rows that show those pictures, the amber line of a part that could not be saved, and the
-notification of a part the page cannot draw come with the Parts step. Pictures of the built
+hundredth of a second or so.
+
+The Parts step is built as this guide describes it: the upload area, taking files dropped
+or chosen, with the switch beside it that says how they are read and remembers the user's
+choice; one row for each part, with its picture, name, size in its own units, quantity and
+remove button, a thin moving bar while it is uploaded and the slow sentence after four
+seconds without an answer; the page's own three limits, checked before anything is sent; every
+refusal of the slice service shown with its own sentences, naming the part, and every warning
+on its row in amber; a part the page cannot draw refused with the wizard's own sentences and
+reported to the server's log; the amber line of a part the browser could not save; the line
+counting the plate and the red message past 150 instances; the notification of a part that
+arrives after the user has moved on; and New plate with its confirmation. A part removed, or a
+plate emptied, while its upload is still being retried has that upload stopped. A page opened
+again takes up its stored parts and uploads again any part whose upload was never answered.
+Only the joining of a part's instances to the plate waits for the Layout step. Pictures of the
+built step beside the mockup's, at four widths and in each state the mockup shows, are kept
+with the build records. Pictures of the built
 panel beside the mockup's, at four widths, are kept with the build records. For the two trials, the eight real parts
 of the Popcorn Penguins' robot are kept beside the contracts, and two made parts beside
 the trials: a round hub at the largest size a part may have (150,000 triangles) and the
