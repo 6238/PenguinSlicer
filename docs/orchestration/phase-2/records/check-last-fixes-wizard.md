@@ -13,7 +13,31 @@ seeds 706388085 and 229716422 for Node) and the whole browser suite once (191 pa
 After the fixes for the review of #48 it passed three times in random order (924 Node tests and
 184 tool tests each; Node seeds 2111700516, 766168280 and 620349901, the third after merging `origin/main`, which had
 nothing new). The browser suites were not run again: the changes are to the fast suite's tests, one
-comment in `slicing.js` and the documents.
+comment in `slicing.js` and the documents. After the fixes for the second review of #48 it passed
+twice more in random order (924 Node tests and 184 tool tests each; Node seeds 1541244713 and
+2485684801); `origin/main` had nothing new to merge.
+
+## The second review of #48
+
+- **Blocking 1, partly across an edge tested at the left edge only: fixed in this batch.** The
+  test "the selection line counts an instance the user dragged wholly off the plate neither on
+  the plate nor beside it" now moves the spacer partly across each edge, at (10, 160), (330, 160),
+  (170, 10) and (170, 310), checks that its box truly crosses an edge there, and asserts
+  "2 instances on the plate." each time. Each of the reviewer's three mutations of
+  `whollyOffPlate` was made by hand and fails it: `b[2] > p.max[0]` at (330, 160), `b[3] > p.max[1]`
+  at (170, 310), `b[1] < p.min[1]` at (170, 10). The code was right and is unchanged.
+- **Blocking 2, the record and the details gave different Node figures: fixed in this batch.**
+  The first two sessions' runs had not been kept, so which of 290 or 298 ms (the star) and 153
+  or 156 ms (the L) was right could not be settled from them. A third session from the bytes
+  (item 5) went lower than either, so both documents now give the range over every run, which
+  holds whichever was right: the star 275 to 494 ms, the L 149 to 258 ms.
+- **Minor 1, a test name lost its space after a colon: fixed.**
+- **Minor 2, the selection line's paragraph in the guide: rewrapped.**
+- **Minor 3, the hub timed slower by the reviewer: taken in.** The reviewer's 184 to 434 ms and
+  the third session's 156 to 202 ms join the first session's 163 to 211 ms: 156 to 434 ms on
+  Node in item 5's table, in decision 5 and in the details' row. Within `AUTO_ORIENT_MS`; the
+  guide's row gives no Node figure for the hub, so it is unchanged.
+- **Minor 4, round 1's findings fixed: nothing to do.**
 
 ## The findings
 
@@ -46,21 +70,27 @@ comment in `slicing.js` and the documents.
 5. **The even-odd search was quadratic: fixed and tested as found; measured afresh.** With the
    ray kept along x (`alongY = false` in `firstLayerHoldsALine`), "the inside of a section of
    long finely cut strips is found with work in proportion to it" fails. Measured from the STL's
-   bytes to the best way (read, `analysePart`, `autoOrient`), in two sessions of six runs for each
-   strip part (eleven on Node, the first session's warm-up run left out) and one session for the
-   hub, on this machine shared with other builders (8 processors), against `AUTO_ORIENT_MS`
-   (1,000 ms):
+   bytes to the best way (read, `analysePart`, `autoOrient`), on this machine shared with other
+   builders (8 processors), against `AUTO_ORIENT_MS` (1,000 ms). In Chromium: two sessions of six
+   runs for each strip part and one for the hub. On Node: the same sessions (eleven runs for each strip
+   part, the first session's warm-up run left out, and six for the hub), then, after the review of #48, a third session of
+   eleven runs for each strip part and the hub (Sat 11-28 04:32 PT, warm-up left out: the star
+   275 to 436 ms, the L 149 to 258 ms, the hub 156 to 202 ms), and the reviewer's own seven runs
+   of the hub (184 to 434 ms). The Node column is the range over every one of those runs. The
+   first two sessions' runs were not kept, and the record and the details had written their
+   lowest figures differently (290 and 298 ms for the star, 153 and 156 ms for the L); since the
+   third session went lower than either, the ranges below hold whichever was right:
 
    | Part | Triangles | Faces step 5 drops | Node 24 | Chromium 159, module worker |
    |---|---|---|---|---|
-   | Twelve-pointed star prism (radii 50 and 30 mm, 100 mm long), sides cut into 3,000 strips | 144,048 | 12 | 290 to 494 ms | 244 to 372 ms |
-   | The L of `first-layer.test.js`, 100 mm long, sides cut into 12,000 strips | 144,008 | 1 | 153 to 192 ms | 171 to 940 ms (one run of twelve; the others 171 to 229 ms) |
+   | Twelve-pointed star prism (radii 50 and 30 mm, 100 mm long), sides cut into 3,000 strips | 144,048 | 12 | 275 to 494 ms | 244 to 372 ms |
+   | The L of `first-layer.test.js`, 100 mm long, sides cut into 12,000 strips | 144,008 | 1 | 149 to 258 ms | 171 to 940 ms (one run of twelve; the others 171 to 229 ms) |
    | A saw bar of 20 pointed teeth, 100 mm long, sides cut into 1,700 strips | 146,282 | 1 | 252 to 333 ms | 214 to 550 ms |
-   | `hub-150k.stl` (no face dropped), for comparison | 150,000 | 0 | 163 to 211 ms | 153 to 669 ms |
+   | `hub-150k.stl` (no face dropped), for comparison | 150,000 | 0 | 156 to 434 ms | 153 to 669 ms |
 
    Every run is within the target. The fixer's 0.2 to 0.4 s holds for the typical run; the
-   slowest runs in Chromium (0.94 s once, 0.67 s on the hub, which drops nothing) are spikes of a
-   shared machine, not of the search. The guide's and the details' Auto-orient rows said no
+   slowest runs (0.94 s once in Chromium, 0.67 s in Chromium and 0.43 s on Node on the hub, which
+   drops nothing) are spikes of a shared machine, not of the search. The guide's and the details' Auto-orient rows said no
    browser had measured such a part; they now carry these figures.
 6. **A triangle doubled or missing near the plate kept the bridging face: fixed and tested as
    found; compared afresh with the slice service.** With `section` returning the cuts unjoined
@@ -170,7 +200,8 @@ comment in `slicing.js` and the documents.
    instances shown. Test first: the new test "the selection line counts an instance the user
    dragged wholly off the plate neither on the plate nor beside it" (all four edges) and the
    changed assertion in Arrange's message test ("1 instance on the plate, 1 beside it.") failed
-   before the change; the test also fails with any one edge left out of `whollyOffPlate`. The
+   before the change; the test also fails with any one edge left out of `whollyOffPlate`, and, since the second
+   review of #48, with the wrong coordinate of the box tested at any one edge. The
    guide and the details say so. To overrule: return to counting every instance not beside the
    plate as on it in `selectionLine` of `wizard/src/layout.js`, or add a third count, which needs
    a sentence in the guide.
@@ -200,7 +231,7 @@ comment in `slicing.js` and the documents.
    long instance turned 45 degrees just past a corner.
 5. **The Auto-orient rows carry the hub's figures measured again beside the trial's** (minor
    finding 2). The details' row kept "at most 236 ms for `hub-150k.stl`" from the second trial; it
-   now also gives this batch's 163 to 211 ms on Node and 153 to 669 ms in Chromium, and the guide's
+   now also gives this batch's 156 to 434 ms on Node (three sessions, item 5) and 153 to 669 ms in Chromium, and the guide's
    row the Chromium range in seconds. The trial's figure stays, since it is the one measured under
    the trial's conditions; the slowest Chromium run is taken as a spike of the shared machine, as
    item 5 says. To overrule: replace the trial's figure with the fresh range in both rows.

@@ -864,8 +864,9 @@ From top to bottom:
   in neither, since it is on the plate no longer and the wizard did not put it beside the
   plate; its own message names it. Wholly off means the rectangle around its footprint is
   clear of the plate, so an instance turned at a slant that sits just past a corner, its
-  rectangle still over the plate's corner, is still counted on the plate. With one instance selected, its name, footprint and height in its
-  part's units; with several, "5 instances move and turn together". Beside it, one link at
+  rectangle still over the plate's corner, is still counted on the plate. With one
+  instance selected, its name, footprint and height in its part's units; with several,
+  "5 instances move and turn together". Beside it, one link at
   most: "Lay it the best way" when the selection does not lie its best way, "Put back as
   modelled" when it has been laid down differently from the model, and nothing when it
   lies as modelled and that is its best way.

@@ -359,10 +359,15 @@ test('the selection line counts an instance the user dragged wholly off the plat
   const [a] = page.layout.model().instances;
   page.layout.clearSelection();
   assert.deepEqual(page.layout.model().selection, { text: '2 instances on the plate.' });
-  // partly across an edge it is still on the plate
-  await moveTo(page, a.id, 10, 160);
-  page.layout.clearSelection();
-  assert.deepEqual(page.layout.model().selection, { text: '2 instances on the plate.' });
+  // partly across any edge of the 340 by 320 mm plate it is still on the plate
+  for (const [x, y] of [[10, 160], [330, 160], [170, 10], [170, 310]]) {
+    await moveTo(page, a.id, x, y);
+    page.layout.clearSelection();
+    const m = page.layout.model();
+    const b = m.instances.find((i) => i.id === a.id).bounds;
+    assert.ok(b[0] < 0 || b[2] > 340 || b[1] < 0 || b[3] > 320, `at (${x}, ${y}) it crosses an edge`);
+    assert.deepEqual(m.selection, { text: '2 instances on the plate.' }, `at (${x}, ${y})`);
+  }
   // wholly off any edge of the 340 by 320 mm plate it is on it no longer
   for (const [x, y] of [[420, 160], [-100, 160], [170, -100], [170, 450]]) {
     await moveTo(page, a.id, x, y);

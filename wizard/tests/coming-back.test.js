@@ -184,7 +184,7 @@ test('coming back to a slice still running that then finishes: the Send step has
   assert.equal(submitted(page), 1);
 });
 
-test('a slice job unknown and submitted less than two hours ago:the Preview step, and the plate submitted again with a new value, the card from the start', async () => {
+test('a slice job unknown and submitted less than two hours ago: the Preview step, and the plate submitted again with a new value, the card from the start', async () => {
   const page = await sliced();
   await page.clock.advance(SLICED_FILE_KEEP_S * S - 1);
   page.server.script('POST', '/api/slices', steps.answer(202, { slice: { ...accepted().slice, id: 'job-2' } }));
