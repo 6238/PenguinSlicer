@@ -59,6 +59,32 @@ test('instances are named as the slice service names them', () => {
   assert.deepEqual(instanceLabels(pc), ['L_Bracket #1', 'L-Bracket #1', 'L_Bracket #2', 'part #1']);
 });
 
+test('a name outside the Basic Multilingual Plane is reduced one character at a time, as the slice service does', () => {
+  // The slice service replaces each code point once: 'Bracket 🐧' is 'Bracket__', and 50
+  // penguins are 40 underscores, the most a name keeps.
+  const pc = {
+    parts: { a: { name: 'Bracket 🐧' }, b: { name: '🐧'.repeat(50) }, c: { name: '🐧'.repeat(30) } },
+    instances: [{ ref: 'a' }, { ref: 'b' }, { ref: 'c' }, { ref: 'a' }],
+  };
+  assert.deepEqual(instanceLabels(pc), [
+    'Bracket__ #1', `${'_'.repeat(40)} #1`, `${'_'.repeat(30)} #1`, 'Bracket__ #2',
+  ]);
+});
+
+test('the height rule is judged to a hundredth: exactly the printable height passes, a hundredth over is too tall', () => {
+  const at = (height) => checkPlate(
+    {
+      parts: { post: { name: 'Post' } },
+      instances: [{ ref: 'post', orientation: '+z', angle: 0, x: 170, y: 160 }],
+    },
+    { post: convexHull(box(10, 10, height).positions).points }, plateOf(H2S, false),
+  );
+  assert.deepEqual(at(340), []);
+  const problems = at(340.01);
+  assert.deepEqual(problems.map((p) => [p.rule, p.instances]), [['too_tall', [0]]]);
+  assert.ok(Math.abs(problems[0].height - 340.01) < 1e-9);
+});
+
 test('the problems come in the slice service\'s order: every edge, then every height, then every pair', () => {
   const points = { post: convexHull(box(10, 10, 341).positions).points };
   const pc = {

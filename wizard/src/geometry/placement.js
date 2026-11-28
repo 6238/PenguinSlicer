@@ -26,11 +26,13 @@ export function plateOf({ min, max, height }, supports) {
   return { min, max, height, margin: MARGIN_MM, spacing: supports ? SPACING_SUPPORTS_MM : SPACING_MM, supports };
 }
 
-// `<name> #<n>`, the part's name reduced as the slice service reduces it.
+// `<name> #<n>`, the part's name reduced as the slice service reduces it: each character (each
+// code point, so an emoji is one, not its two UTF-16 halves) outside A-Z, a-z, 0-9, _ and -
+// becomes _, then the first 40 are kept.
 export function instanceLabels(plateConfiguration) {
   const counts = new Map();
   return plateConfiguration.instances.map((instance) => {
-    const clean = plateConfiguration.parts[instance.ref].name.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 40) || 'part';
+    const clean = plateConfiguration.parts[instance.ref].name.replace(/[^A-Za-z0-9_-]/gu, '_').slice(0, 40) || 'part';
     const n = (counts.get(clean) || 0) + 1;
     counts.set(clean, n);
     return `${clean} #${n}`;

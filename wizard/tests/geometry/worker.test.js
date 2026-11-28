@@ -103,6 +103,44 @@ test('Arrange and the placement check run on parts the worker has read', () => {
   assert.equal(crowded.result.problems[0].rule, 'off_plate');
 });
 
+test('an instance the slice service would refuse as malformed is the page\'s fault, never a plate that passes', () => {
+  // The forms the contract refuses (slice.bad_plate_configuration): the wizard would otherwise
+  // show such a plate green.
+  const g = createGeometry();
+  ask(g, { id: 1, op: 'read', key: 'spacer-key', buffer: fileBuffer(join(MADE_PARTS, 'hex-spacer.stl')), units: 'mm' });
+  const good = { ref: 'spacer', orientation: '+z', angle: 0, x: 170, y: 160 };
+  const { orientation, ...bare } = good;
+  const bad = {
+    'x not a number': { ...good, x: NaN },
+    'y infinite': { ...good, y: Infinity },
+    'x a string': { ...good, x: '170' },
+    'angle a fraction': { ...good, angle: 10.5 },
+    'angle 360': { ...good, angle: 360 },
+    'an unknown orientation': { ...good, orientation: 'up' },
+    'neither orientation nor rotation': bare,
+    'both orientation and rotation': { ...good, rotation: [1, 0, 0, 0] },
+    'a rotation of zero length': { ...bare, rotation: [0, 0, 0, 0] },
+    'a rotation of three elements': { ...bare, rotation: [1, 0, 0] },
+    'a rotation not of unit length': { ...bare, rotation: [1.00001, 0, 0, 0] },
+    'a rotation with NaN': { ...bare, rotation: [NaN, 0, 0, 0] },
+  };
+  const geometry = { spacer: 'spacer-key' };
+  let id = 2;
+  for (const [what, instance] of Object.entries(bad)) {
+    const plateConfiguration = { parts: { spacer: { name: 'Spacer' } }, instances: [good, instance] };
+    for (const op of ['check', 'arrange']) {
+      const { reply } = ask(g, { id: id++, op, plateConfiguration, geometry, printer: H2S, supports: false });
+      assert.equal(reply.ok, false, `${op}: ${what}`);
+      assert.equal(reply.error.code, 'wizard.layout_failed', `${op}: ${what}`);
+      assert.match(reply.error.detail, /instance 1/, `${op}: ${what}`);
+    }
+  }
+  // A rotation within a millionth of unit length, as the page sends it, is fine.
+  const sent = { ...bare, rotation: [0.628064719, -0.324861061, -0.628064719, -0.324861061] };
+  const { reply } = ask(g, { id: id++, op: 'check', plateConfiguration: { parts: { spacer: { name: 'Spacer' } }, instances: [sent] }, geometry, printer: H2S, supports: false });
+  assert.deepEqual(reply.result.problems, []);
+});
+
 test('the placement check follows the part each part key points at, never a footprint of the part it pointed at before', () => {
   // The same part key first points at the spacer read in millimetres, then at it read in
   // inches (25.4 times larger), then the key it was read under is read again in inches.

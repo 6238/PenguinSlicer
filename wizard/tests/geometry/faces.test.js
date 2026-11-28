@@ -86,6 +86,20 @@ test('a flat face beside a shallow chamfer keeps its patch; the chamfer loses it
   assert.ok(dropped[0].area < 50, 'the chamfer, not the large face, was dropped');
 });
 
+test('a facet beside a like face at least half its size is a facet; beside one under half, the larger is a face of its own', () => {
+  // A block 40 deep whose +x side is two faces of its own surface bending 10 degrees: one 10 mm
+  // high, and on it one `upper` mm long. At 6 mm (six tenths of the lower face) each is a facet
+  // of the other and both go; at 4 mm (four tenths) only the smaller goes.
+  const side = (upper) => {
+    const t = (10 * Math.PI) / 180;
+    const top = [40 - upper * Math.sin(t), 10 + upper * Math.cos(t)];
+    return facesOf(prism([[0, 0], [40, 0], [40, 10], top, [0, top[1]]], 0, 40));
+  };
+  const dropped = (result) => result.faces.filter((f) => f.dropped === 'round_side').map((f) => +f.area.toFixed(6)).sort((a, b) => a - b);
+  assert.deepEqual(dropped(side(6)), [240, 400]);
+  assert.deepEqual(dropped(side(4)), [160]);
+});
+
 test('a chamfer at 45 degrees bends too far to be caught and keeps its patch', () => {
   const outline = [[0, 0], [40, 0], [40, 8], [38, 10], [0, 10]];
   const result = facesOf(prism(outline, 0, 40));

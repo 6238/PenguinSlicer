@@ -123,6 +123,10 @@ answer on all thirteen.
     heartbeat. After review the details' "Keeping the page answering" says so: the heartbeat
     is the page's measure, and an Open line asks why Chromium reports those tasks. To
     overrule: count the long tasks, in the details and in `run.py`.
+18. **When the trial fails.** The details give its passing conditions. `run.py` exits 1 when a
+    time is missed or a real part's flat face has no hull patch, naming each, after writing the
+    results. A flat face is a hull face of at least 25 mm² of which at least half is the part's
+    own surface.
 19. **After review: the placement check's footprints are kept by the part's hull corners.**
     The reviewer found that the worker kept footprints across `check` messages by the plate
     configuration's part key, so a key that came to point at another read part (the spacer
@@ -149,11 +153,56 @@ answer on all thirteen.
     checked on random spheres and every real part without meeting it). A test would have to
     reach into the hull's internals. The two other refusals the reviewer named ("no size",
     "one line") now have a test each that tells them from the flat refusal. To overrule: find
-    an input that reaches it and add it as a test.
-18. **When the trial fails.** The details give its passing conditions. `run.py` exits 1 when a
-    time is missed or a real part's flat face has no hull patch, naming each, after writing the
-    results. A flat face is a hull face of at least 25 mm² of which at least half is the part's
-    own surface.
+    an input that reaches it and add it as a test. The second reviewer accepted this.
+22. **After the second review: three checks pinned that a mutation survived.** The reviewer
+    loosened three checks by hand and every test still passed: the too-tall rule's tolerance
+    (`EPS_MM` to 0.5 mm), `instanceTurn`'s whole-degree test (1e-6 to 0.5 degrees) and the
+    round-side rule's "at least half its size" (`/ 2` to `/ 1.5`); and dropping `instanceTurn`'s
+    "w not negative". Each now has a test that fails under that mutation, checked by making it
+    again: a 10 x 10 post exactly 340 mm tall passes and one 340.01 mm tall is `too_tall`; the
+    reviewer's two clicks (laid on the face of normal (0.48, 0.6, -0.64), then on the -x face) are
+    sent as the rotation [0.628064719, -0.324861061, -0.628064719, -0.324861061], and the +x lay
+    turned 10.5, 30.00001 and 0.4 degrees is sent as a rotation; a lay given with w negative is
+    sent with w positive, the same as its opposite; a block whose +x side is two faces of its own
+    surface bending 10 degrees loses both when the smaller is six tenths of the larger and only
+    the smaller at four tenths. The code was right in each case and is unchanged. To overrule:
+    none needed; a test changes only with the rule it pins.
+23. **After the second review: instance names are reduced one code point at a time.** The
+    reviewer found that `instanceLabels` replaced each UTF-16 half of a character outside the
+    Basic Multilingual Plane, giving 'Bracket___ #1' where the slice service's
+    `sanitize_part_name` (Python, which works in code points) gives 'Bracket__ #1'. Confirmed
+    with a test that failed for that reason; the pattern now has the `u` flag. After the
+    replacement every character is ASCII, so taking the first 40 is the same in both. The test
+    has an emoji name, one of 50 emoji (40 underscores) and one of 30 (30 underscores, a
+    different name from the 50, so its count starts at 1). To overrule: the contract's
+    "Instance naming" would have to count UTF-16 units, and the slice service with it.
+24. **After the second review: a malformed instance is the page's fault, not a green plate.**
+    The reviewer found that `check` answered no problems for an instance with `x` NaN or the
+    rotation [0, 0, 0, 0], which the slice service refuses as `slice.bad_plate_configuration`.
+    The documents are silent on whether the worker checks an instance's form. I chose to: before
+    `arrange` and `check`, the worker checks every instance against the contract's form ("An
+    instance in phase 2": `x` and `y` finite numbers, `angle` a whole number from 0 to 359,
+    exactly one of `orientation` (one of the six) and `rotation` (four finite numbers of length 1
+    within 1e-6)) and answers `wizard.layout_failed` naming the instance, since only the page
+    builds instances. A test sends twelve malformed instances to both messages, and one rotation
+    as the page sends it, which passes. The details' table of the worker's error reports says
+    so. Not checked: fields the contract does not list, and `ref`, which an unread part already
+    refuses. To overrule: drop `checkInstances` in `geometry/messages.js` and the row's words.
+25. **After the second review: `layout_failed` and `page_failed` are told apart when the reports
+    are built.** The reviewer pointed out that the contract's report `what` list has `page_failed`
+    for the page's own faults, while the worker answers `wizard.layout_failed` for those too. The
+    notification is the same either way, so I kept one code for the worker's answers and added a
+    sentence to the details' "Failures in the browser": a fault the page asked for (a message
+    unknown, a part never read, a malformed instance) is reported as `page_failed`, the geometry's
+    own failure as `layout_failed`, and the worker tells the two apart in its answer when the
+    reports are built. Nothing sends reports yet. To overrule: give the page's faults an error
+    code of their own now, in `geometry/errors.js`, the details and the guide.
+26. **After the second review: the heartbeat under shared load.** The reviewer's rerun, with
+    other builders on the machine, met every time but saw the heartbeat's longest gap reach 52 ms
+    on the hub (the details record about 15 ms from this trial) and a 1,886 ms long task. 52 ms is
+    within `MAIN_THREAD_HOLD_MS` (250 ms), and the long task is the Open line of decision 17, so
+    nothing changes; the trial's figures stay as recorded. To overrule: rerun the trial on an
+    idle machine and replace the details' "about 15 ms" with a range.
 
 ## Targets missed
 
@@ -176,6 +225,9 @@ None.
   makes a fresh footprint where a stale one was used) and the trial page's constants (the same
   values by name), not what the trial measures. `summary.json`'s note was brought into line by
   hand with the note `run.py` now writes, its figures left as recorded.
+- After the second review, the trial was not run again either: the fixes add tests, a check of
+  each instance's form before `arrange` and `check` (a loop over at most 150 instances), and the
+  `u` flag on the naming pattern; none changes the geometry the trial times.
 
 ## For the owner to look at
 

@@ -43,6 +43,32 @@ test('an axis lay followed by a whole-degree turn is still sent as an orientatio
   assert.deepEqual(instanceTurn(turned, 300), { orientation: '+x', angle: 30 });
 });
 
+test('an axis lay followed by a turn of a fraction of a degree is sent as a rotation, never rounded to an orientation', () => {
+  // Two clicks: laid on a slanting face, then on the part's -x face. The instance lies as +x,
+  // turned -54.7356 degrees about the vertical, which no whole angle can carry.
+  const twoClicks = layOnFace(layFor([0.48, 0.6, -0.64]), [-1, 0, 0]);
+  assert.deepEqual(instanceTurn(twoClicks, 0), {
+    rotation: [0.628064719, -0.324861061, -0.628064719, -0.324861061], angle: 0,
+  });
+  // The +x lay turned by 10.5 degrees, and by a millionth of a degree over a whole one.
+  const lay = shortestRotation([-1, 0, 0], [0, 0, -1]);
+  for (const degrees of [10.5, 30.00001, 0.4]) {
+    const half = (degrees * Math.PI) / 360;
+    const sent = instanceTurn(multiply([Math.cos(half), 0, 0, Math.sin(half)], lay), 20);
+    assert.deepEqual(Object.keys(sent).sort(), ['angle', 'rotation'], `${degrees} degrees`);
+    assert.equal(sent.angle, 20);
+  }
+});
+
+test('a rotation is sent with w not negative: q and -q are the same turn, and one of them is sent', () => {
+  const lay = shortestRotation([0.6, 0, -0.8], [0, 0, -1]);
+  const negated = lay.map((v) => -v);
+  assert.ok(negated[0] < 0);
+  const sent = instanceTurn(negated, 0);
+  assert.ok(sent.rotation[0] >= 0);
+  assert.deepEqual(sent, instanceTurn(lay, 0));
+});
+
 test('a lay on any other face is sent as a rotation, the unit quaternion of nine decimals', () => {
   const lay = shortestRotation([0.6, 0, -0.8], [0, 0, -1]);
   const sent = instanceTurn(lay, 15);

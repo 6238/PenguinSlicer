@@ -17,9 +17,37 @@ import { autoOrient } from './orient.js';
 import { analysePart } from './part.js';
 import { checkPlate, plateOf } from './placement.js';
 import { readBinaryStl } from './stl.js';
-import { instanceTurn } from './turn.js';
+import { ORIENTATION_MATRICES, instanceTurn } from './turn.js';
 
 class PageFault extends Error {}
+
+const finite = (v) => typeof v === 'number' && Number.isFinite(v);
+
+// What is wrong with an instance's form, as the slice service judges it
+// (contracts/plate-configuration.md, "An instance in phase 2": slice.bad_plate_configuration),
+// or null. The page builds every instance, so such an instance is the page's own fault; checking
+// it here keeps the placement check from showing green a plate the slice service refuses.
+function instanceFault(instance) {
+  if (!finite(instance.x) || !finite(instance.y)) return 'x and y must be finite numbers';
+  if (!Number.isInteger(instance.angle) || instance.angle < 0 || instance.angle > 359) return 'angle must be a whole number of degrees, 0 to 359';
+  const hasOrientation = 'orientation' in instance;
+  const hasRotation = 'rotation' in instance;
+  if (hasOrientation === hasRotation) return 'it must have exactly one of orientation and rotation';
+  if (hasOrientation) {
+    return Object.hasOwn(ORIENTATION_MATRICES, instance.orientation) ? null : `orientation ${JSON.stringify(instance.orientation)} is not one of the six`;
+  }
+  const q = instance.rotation;
+  if (!Array.isArray(q) || q.length !== 4 || !q.every(finite)) return 'rotation must be four finite numbers';
+  if (Math.abs(Math.hypot(...q) - 1) > 1e-6) return 'rotation must be a unit quaternion';
+  return null;
+}
+
+function checkInstances(plateConfiguration) {
+  plateConfiguration.instances.forEach((instance, i) => {
+    const fault = instanceFault(instance);
+    if (fault) throw new PageFault(`instance ${i}: ${fault}`);
+  });
+}
 
 const patchSummary = (p) => ({
   kind: p.kind, normal: p.normal, area: p.area, outline: p.outline,
@@ -71,10 +99,12 @@ export function createGeometry() {
       return [{ computed, ...choice, turn: instanceTurn(choice.lay, 0) }, []];
     },
     arrange(m) {
+      checkInstances(m.plateConfiguration);
       const result = arrangePlate(m.plateConfiguration, pointsFor(m.geometry), plateFor(m));
       return [result, []];
     },
     check(m) {
+      checkInstances(m.plateConfiguration);
       return [{ problems: checkPlate(m.plateConfiguration, pointsFor(m.geometry), plateFor(m), footprints) }, []];
     },
     forget(m) {
