@@ -44,5 +44,15 @@ export const CHANGES_PILL_TIP = (profile) => `The settings changed from ${profil
 export const CONFIG = 'Config: ';
 export const RELOAD_CONFIGURATION = 'Reload the configuration';
 
+// The notification after the configuration is read again (the reload glyph, or a page opening on
+// a stored plate) when the chosen filament or profile is gone from it: which name went, and what
+// the plate uses in its place, in the plate summary's words.
+export const CONFIG_FILAMENT_GONE = (filament) => `${filament} is no longer in the configuration.`;
+export const CONFIG_PROFILE_GONE = (profile, filament) => `${profile} is no longer offered for ${filament}.`;
+export const CONFIG_NOW_USES = (filament, profile) => `The plate now uses ${filament} · ${profile}.`;
+
+// A part's row when the browser refused to store the part (What the browser keeps).
+export const PART_NOT_SAVED = 'This part could not be saved in this browser, so a refresh will lose it.';
+
 // A notification's close button.
 export const CLOSE_NOTIFICATION = 'Close this notification';
