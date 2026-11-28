@@ -192,6 +192,36 @@ def test_a_rotation_and_a_part_in_inches_slice_where_the_checks_place_them(tmp_p
     assert {name: e for name, e in errors.items() if e > PLACEMENT_TOLERANCE_MM} == {}
 
 
+@pytest.mark.parametrize("overrides, sliced", [
+    ({"enable_support": "0"}, False),
+    ({"enable_support": "1", "support_type": "tree(auto)"}, False),
+    ({"enable_support": "1", "support_type": "tree(auto)", "raft_layers": "2"}, True)])
+def test_a_part_resting_on_an_edge_has_no_first_layer_unless_supported_on_a_raft(tmp_path, overrides, sliced):
+    """Protects: slice.rests_on_an_edge. The contract's phase 2 example lays its fourth
+    instance on the face of the bracket's convex hull across the L's open corner, so the
+    bracket touches the plate along two edges only, and its first layer is two strips about
+    0.2 mm wide, narrower than any line Orca lays down. The pinned Orca then refuses the plate
+    with -100 ("One object has an empty first layer and can't be printed. Please Cut the
+    bottom or enable supports.", which it writes to no file: its stderr says only "Errors"),
+    with supports off and with tree supports on, and slices it with supports and a raft. The
+    slice service names the instance and says why; the placement check accepts the plate, as
+    it must for any face of a part's hull."""
+    example = json.loads((CONTRACTS / "examples" / "plate-configuration-phase-2.json").read_text())
+    example["instances"] = [dict(example["instances"][3], x=170.0, y=160.0)]
+    example["overrides"] = overrides
+    example["submission_id"] = f"edge-{len(overrides)}"
+    bracket = (EXAMPLE_PARTS / "bracket.stl").read_bytes()
+    _stages, report, data, _summary = through_the_http_interface(tmp_path / "work", example, [bracket])
+    print(f"\n[orca] the bracket on its hull face, {overrides}: {report['state']} {report.get('error')}")
+    if sliced:
+        assert report["state"] == "done" and data, report.get("error")
+    else:
+        assert report["state"] == "failed"
+        assert report["error"]["code"] == "slice.rests_on_an_edge", report["error"]
+        assert report["error"]["where"]["instance"] == "Bracket #1"
+        assert "orca code -100" in report["error"]["detail"]
+
+
 def test_catalog_profiles_and_overrides_reach_the_gcode(example_slice):
     """Protects: the profile fields the catalog and the overrides depend on reach Orca."""
     out, summary, _stages = example_slice

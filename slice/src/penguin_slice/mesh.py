@@ -306,6 +306,24 @@ def turned_footprint(mesh, matrix):
     return _footprint(_hull(rotated[:, :2]), low, high)
 
 
+ON_THE_PLATE_MM = 1e-3        # a vertex this close to the turned part's lowest z lies on the plate
+
+
+def contact_area_mm2(mesh, matrix):
+    """The area, in mm², of the part's own faces that lie on the plate once it is turned by
+    `matrix`: the triangles whose three vertices are within ON_THE_PLATE_MM of its lowest
+    point. Zero for a part that touches the plate only along an edge or at a point (a part
+    laid on a face of its convex hull that bridges a hollow of it, for one)."""
+    rotated = mesh.vertices @ np.asarray(matrix, dtype=np.float64).T
+    on_plate = np.abs(rotated[:, 2] - rotated[:, 2].min()) <= ON_THE_PLATE_MM
+    flat = mesh.faces[on_plate[mesh.faces].all(axis=1)]
+    if len(flat) == 0:
+        return 0.0
+    a, b, c = (rotated[flat[:, i], :2] for i in range(3))
+    cross = (b[:, 0] - a[:, 0]) * (c[:, 1] - a[:, 1]) - (b[:, 1] - a[:, 1]) * (c[:, 0] - a[:, 0])
+    return float(np.abs(cross).sum() / 2)
+
+
 def orientation_footprints(mesh):
     """{orientation: {'hull', 'height', 'offset'}} for each of plate.ORIENTATIONS.
 

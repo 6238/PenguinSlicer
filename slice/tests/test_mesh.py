@@ -244,6 +244,44 @@ class TestTurnedFootprint:
         assert footprint["offset"] == [-10.0, 5.0, 0.0]
 
 
+class TestContactArea:
+    """The area of the part's faces that lie on the plate once it is turned: zero for a part
+    that touches the plate only along an edge or at a point, which the pinned Orca cannot
+    give a first layer (slice.rests_on_an_edge)."""
+
+    BRACKET = (__import__("helpers").CONTRACTS / "examples" / "parts" / "bracket.stl").read_bytes()
+    HULL_FACE = (0.707106781, -0.588348405, 0.39223227, 0.0)     # the contract example's fourth instance
+
+    def test_a_box_on_a_face_rests_on_that_face(self):
+        from penguin_slice.mesh import contact_area_mm2
+        mesh = read_binary_stl(box_stl(10, 20, 30), "Box")
+        assert contact_area_mm2(mesh, ORIENTATION_MATRICES["+z"]) == pytest.approx(200)
+        assert contact_area_mm2(mesh, ORIENTATION_MATRICES["+x"]) == pytest.approx(600)
+
+    def test_a_box_on_an_edge_or_a_corner_has_none(self):
+        import math
+        from penguin_slice.mesh import contact_area_mm2
+        from penguin_slice.plate import quaternion_matrix
+        mesh = read_binary_stl(box_stl(10, 20, 30), "Box")
+        on_edge = quaternion_matrix([math.cos(math.pi / 8), math.sin(math.pi / 8), 0, 0])
+        assert contact_area_mm2(mesh, on_edge) == 0
+        corner_up = quaternion_matrix([0.88807383, 0.32505758, -0.32505758, 0.0])
+        assert contact_area_mm2(mesh, corner_up) == 0
+
+    def test_the_bracket_on_its_hull_face_across_the_open_corner_has_none(self):
+        from penguin_slice.mesh import contact_area_mm2
+        from penguin_slice.plate import quaternion_matrix
+        mesh = read_binary_stl(self.BRACKET, "Bracket")
+        assert contact_area_mm2(mesh, quaternion_matrix(self.HULL_FACE)) == 0
+        half = 0.5 ** 0.5
+        assert contact_area_mm2(mesh, quaternion_matrix([half, 0, -half, 0])) == pytest.approx(360)   # its -x face
+
+    def test_a_part_in_inches_is_measured_in_millimetres(self):
+        from penguin_slice.mesh import contact_area_mm2
+        mesh = read_binary_stl(box_stl(1, 1, 0.5), "Block", scale=25.4)
+        assert contact_area_mm2(mesh, ORIENTATION_MATRICES["+z"]) == pytest.approx(25.4 ** 2)
+
+
 @pytest.mark.parametrize("name", ORIENTATIONS)
 def test_matrices_put_the_named_axis_up(name):
     sign = 1 if name[0] == "+" else -1

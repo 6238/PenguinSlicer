@@ -105,6 +105,9 @@ CODES = {
                                "Move the instances onto the plate, or press Arrange, and slice again."),
     "slice.orca_failed": ("slicing", False, None,
                           "Try another orientation or other print settings, and slice again."),
+    "slice.rests_on_an_edge": ("slicing", False, "choose_orientation",
+                               "Lay the part on one of its own flat faces, or turn on supports with a raft, and "
+                               "slice again."),
     "slice.no_output": ("slicing", True, None, SERVER_REMEDY),
     "slice.unreadable_output": ("slicing", True, None, SERVER_REMEDY),
     "slice.no_gcode": ("slicing", True, None, SERVER_REMEDY),

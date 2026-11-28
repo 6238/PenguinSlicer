@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import limits
+from .mesh import contact_area_mm2, read_binary_stl
+from .plate import turn_matrix, turn_of
 from .plate_3mf import check_plate_names, write_plate_3mf
 from .print_config import write_process_with_overrides
 from .slicer import SCRATCH_UNWRITABLE_MESSAGE, SliceError, SliceProfiles, plate_object_names, slice_plate
@@ -84,6 +86,11 @@ class PlateConfiguration:
 ONE_INSTANCE_MEMORY_REMEDY = "Split the part in CAD into smaller pieces, or simplify it, and slice again."
 ONE_INSTANCE_TIMEOUT_REMEDY = "Try again; if it is too slow again, simplify the part or split it in CAD."
 PART_REASONS = ("slice.no_layers", "slice.print_empty")
+REST_AREA_MM2 = 0.01          # an instance whose faces on the plate add up to less rests on no face
+REST_MESSAGE = ("{label} touches the plate only along an edge or at a point, so the slicer can give it no first "
+                "layer.")
+REST_REMEDY = "Lay the part on one of its own flat faces, or turn on supports with a raft, and slice again."
+REST_REMEDY_SUPPORTS = "Lay the part on one of its own flat faces, or add a raft, and slice again."
 
 
 def _fit_to_plate(exc, configuration):
@@ -98,6 +105,43 @@ def _fit_to_plate(exc, configuration):
             exc.remedy, exc.no_action = ONE_INSTANCE_TIMEOUT_REMEDY, True
     if exc.error_code in PART_REASONS and len(configuration.parts) == 1:
         exc.where = dict(exc.where, part=next(iter(configuration.parts.values())).name)
+    if exc.error_code == "slice.orca_failed" and exc.code == -100:
+        _explain_an_edge(exc, configuration)
+
+
+def resting_on_no_face(configuration):
+    """The labels of the instances that touch the plate only along an edge or at a point
+    (mesh.contact_area_mm2 under REST_AREA_MM2), in the order of the instances."""
+    meshes, areas, labels = {}, {}, []
+    for label, instance in zip(configuration.labels, configuration.instances):
+        part = configuration.parts[instance['ref']]
+        if instance['ref'] not in meshes:
+            meshes[instance['ref']] = read_binary_stl(part.stl_path.read_bytes(), part.name, scale=part.scale)
+        turn = (instance['ref'], turn_of(instance))
+        if turn not in areas:
+            areas[turn] = contact_area_mm2(meshes[instance['ref']], turn_matrix(turn[1]))
+        if areas[turn] < REST_AREA_MM2:
+            labels.append(label)
+    return labels
+
+
+def _explain_an_edge(exc, configuration):
+    """Orca's general failure, when an instance rests on no face of its own: the pinned Orca
+    then finds its first layer empty ("One object has an empty first layer and can't be
+    printed", a reason it writes to no file) and refuses the plate, with supports off and on;
+    with supports and a raft it slices. A part that cannot be read again leaves Orca's
+    general failure as it is."""
+    try:
+        labels = resting_on_no_face(configuration)
+    except Exception:          # noqa: BLE001 - the explanation is a help, never a new failure
+        return
+    if not labels:
+        return
+    exc.error_code = "slice.rests_on_an_edge"
+    exc.message = REST_MESSAGE.format(label=labels[0])
+    exc.where = dict(exc.where, instance=labels[0])
+    exc.remedy = REST_REMEDY_SUPPORTS if configuration.supports_on else REST_REMEDY
+    exc.details = f"resting on no face of its own: {', '.join(labels)}\n{exc.details}"
 
 
 def run_plate_configuration(configuration, scratch, stop=None, on_progress=None):

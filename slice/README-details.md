@@ -487,7 +487,8 @@ curl -s -OJ -H "$K" http://127.0.0.1:8640/slices/<job>/file        # the sliced 
 without its fourth instance. That instance lays the
 bracket by a `rotation` on a face of its convex hull that is no face of the part, so the
 bracket touches the plate along two edges only: the checks accept it, and the pinned Orca
-fails the slice (`slice.orca_failed`, "floating regions" in its log). With the first three
+fails the slice for its empty first layer (`slice.rests_on_an_edge`, see
+[Error codes](#error-codes)) unless supports and a raft are on. With the first three
 instances the plate slices.
 
 `serve` writes one JSON log line per slice job transition, and one for each of its own
@@ -811,9 +812,23 @@ so the contract's phase 2 example is accepted as it is.
 
 **Found with the real Orca.** The contract example's `rotation` lays the bracket on the face
 of its convex hull across the L's open corner, which is no face of the part: the bracket then
-touches the plate along two edges, and the pinned Orca fails the slice (-100, "It seems
-object Bracket #3 has floating regions", with supports off; the general reason alone with
-supports on). The placement check accepts such a plate, since its footprint is sound. The
+touches the plate along two edges, its first layer (sliced at 0.1 mm) is two strips about
+0.2 mm wide, narrower than a line Orca lays down, and the pinned Orca fails the slice with
+-100. Its reason, read in its source (`GCode::collect_layers_to_print`), is "One object has an
+empty first layer and can't be printed. Please Cut the bottom or enable supports.", thrown
+inside a `SlicingErrors` whose own text, "Errors", is all it prints, and written to no file;
+its debug log adds "It seems object Bracket #1 has floating regions" with supports off. It
+fails so with supports off and with tree or normal supports on, and slices with supports and
+a raft of two layers (a raft alone gives `slice.empty_layers`). Lowering the part into the
+plate changes nothing, since Orca puts every object's lowest point on the plate. The placement
+check accepts such a plate, since its footprint is sound, and the wizard's agrees; the slice
+service explains Orca's failure instead (`slice.rests_on_an_edge`: on a -100 failure with no
+reason it recognises, `plate_configuration.resting_on_no_face` reads each part again and
+names the instances whose own faces on the plate, `mesh.contact_area_mm2` within
+`mesh.ON_THE_PLATE_MM` (0.001 mm) of the lowest point, add up to less than
+`plate_configuration.REST_AREA_MM2`, 0.01 mm²; a part that cannot be read again leaves
+`slice.orca_failed`). The upstream check pins it
+(`test_a_part_resting_on_an_edge_has_no_first_layer_unless_supported_on_a_raft`). The
 upstream check slices a bracket laid by a `rotation` on a face of the part itself
 (`test_a_rotation_and_a_part_in_inches_slice_where_the_checks_place_them`): Orca's first
 layer of it is within 0.6 mm of the slice service's footprint, and that of a 1 x 1 x 0.5 inch
@@ -2060,6 +2075,7 @@ sentence, remedy, action, retryable flag and evidence its report must carry.
 | `slice.print_empty` | slicing | Orca printed "The print is empty." (a part thinner than the nozzle prints): check size and thickness. Names the part when the plate has one. |
 | `slice.nothing_on_plate` | slicing | Orca's return code -50: no instance fully on the plate. |
 | `slice.orca_failed` | slicing | Any other non-zero exit, -100 without a reason the service recognises, or a code it does not know; Orca's words are in the detail. When Orca's debug log holds warnings it reported while slicing, the sentence adds them, labelled as possibly unrelated ("It also warned, though this may not be why it failed: ..."). |
+| `slice.rests_on_an_edge` | slicing | Orca's return code -100 with no reason the service recognises, on a plate where an instance touches the plate only along an edge or at a point (its part's own faces on the plate under 0.01 mm²): the pinned Orca's reason, an empty first layer, reaches no file. The report names the first such instance (`where.instance`), the detail every one ("resting on no face of its own: ...") before Orca's words; the remedy lays the part on one of its own flat faces or turns on supports with a raft (with supports on, adds a raft); `action` `choose_orientation`. |
 | `slice.no_output` | slicing | Orca exited 0 without writing the sliced file. |
 | `slice.unreadable_output` | slicing | The sliced file is not a zip (also a directory entry asking for a zip version the reader does not know), an entry fails its checksum, a plate's sliced file has no `Metadata/plate_1.json`, or that entry has no list of objects. Worth retrying. |
 | `slice.no_gcode` | slicing | The sliced file has no `Metadata/plate_1.gcode`. |

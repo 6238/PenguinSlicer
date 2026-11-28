@@ -274,11 +274,18 @@ in a fixed order and stop at the first failure:
    given to Orca, turn it the same way.
 
 A turn that lays a part on a face of its outline that is not a face of the part itself (the
-face across the open corner of an L-shaped bracket, for one) leaves the part touching the
-plate along two edges. The check accepts such a plate, since its outline is sound, and the
-pinned Orca then fails the slice with its general reason ("floating regions" in its log,
-with supports off). The slice service's own tests slice a part laid by a general rotation on
-a face of the part itself, and Orca prints it within 0.6 mm of where the check put it.
+face across the open corner of an L-shaped bracket, for one) can leave the part touching the
+plate only along edges or at points. Its first layer is then a few strips narrower than any
+line the printer lays down (about 0.2 mm wide for the bracket), and the pinned Orca refuses
+the plate, with supports off and with supports on, because the part has no first layer; it
+slices the plate with supports and a raft. The check accepts such a plate, since its outline
+is sound, and the wizard and the slice service agree on that. When Orca then refuses it, the
+slice service names the instance and says that it touches the plate only along an edge or at
+a point, and what to do: lay the part on one of its own flat faces, or turn on supports with
+a raft. Orca writes its own reason nowhere the slice service can read, so the slice service
+finds the instance itself, by the area of the part's own faces lying on the plate. A part
+laid by a general rotation on a face of the part itself slices, and Orca prints it within
+0.6 mm of where the check put it.
 
 The placement rules, with what each protects:
 
@@ -1096,6 +1103,7 @@ one exception described under
 | Nothing printable was found | That no layers were found (a surface with holes, a part too thin), or that the print is empty (a part thinner than the nozzle prints), naming the part when the plate has one | Repair the part in CAD, or check its size |
 | An instance lies partly or wholly off the plate in Orca's eyes | That it is not on the plate | Move it |
 | Orca failed and gave only a general reason | "The slicer could not slice this plate.", with Orca's warnings added and labelled as possibly unrelated | Act on a warning if one fits |
+| Orca failed so, and an instance touches the plate only along an edge or at a point | Which instance, and that the slicer can give it no first layer | Lay the part on one of its own flat faces, or turn on supports with a raft (with supports already on, add a raft) |
 | Orca crashed, or something on the server killed it | That the slicer crashed, or was stopped before it finished | Slice again |
 | Orca finished but its file is missing, damaged or incomplete | That the sliced file is damaged or missing | Slice again |
 | The sliced file is larger than 50 MB | That the sliced file is too large, and how large it may be | Fewer instances or a new plate; for a single instance, split or simplify the part |
