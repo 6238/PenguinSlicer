@@ -20,6 +20,23 @@ body { background: #f6f8fa; }
 /* Phase 2: the Send step's one button, Download the sliced file, without the printer's menu. */
 .split-btn #btn-do:only-child { border-radius: 6px; }
 
+/* The Parts step. The switch beside the upload area (designed in the guide): "Read STL files
+   in:" and two radio buttons, in the mockup's line under the upload area. */
+#wizard .upload-units label { white-space: nowrap; cursor: pointer; }
+#wizard .upload-units input[type="radio"] { margin: 0 3px 0 0; vertical-align: -2px; accent-color: var(--accent); }
+/* A row's picture holder adds no box of its own: the picture is the mockup's .thumb. */
+.part-item .thumb-holder { display: contents; }
+/* the mockup fades an arriving part's picture, an img there and a canvas here */
+.part-item.arriving .thumb { opacity: 0.55; }
+/* A part arriving: the thin bar promises no duration, so it moves to and fro. */
+.part-item .arrive-bar div { width: 35%; transition: none; animation: arrive 1.6s ease-in-out infinite alternate; }
+@keyframes arrive { from { margin-left: 0; } to { margin-left: 65%; } }
+/* The amber line of a part the browser could not save. */
+.part-item .sub .not-saved { margin: 0; color: var(--warn); }
+.part-item .sub .not-saved + .msg, .part-item .sub .msg + .not-saved { margin-top: 6px; }
+/* New plate, under the line that counts the plate (designed in the guide). */
+.new-plate { margin-top: 4px; }
+
 /* A confirmation (designed in the guide): a small box joined to the pressed control, in the
    look of the panel's other joined boxes. */
 .confirm-pop { position: absolute; z-index: 45; background: var(--panel); color: var(--ink);

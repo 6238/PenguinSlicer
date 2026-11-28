@@ -12,7 +12,8 @@
 </head>
 <body>
 <!-- The panel: the mockup's markup (docs/mockups/print-wizard/index.html, version 8) from
-     #wizard down, as far as the panel as a whole; each step's body comes with its step. The
+     #wizard down, as far as the panel as a whole and the Parts step's body; each other step's
+     body comes with its step. The
      printer-status icon comes in phase 5, advanced mode with the Settings step. -->
 <div id="wizard">
   <header id="wiz-header">
@@ -43,6 +44,21 @@
 
     <section class="step" data-step="parts">
       <h2>Parts</h2>
+      <!-- outside Onshape: the upload area, binary STL only, and beside it the switch that says
+           how the next files are read (designed in the guide); inside Onshape's panel, from
+           phase 4, the mockup's #parts-onshape prompt in its place -->
+      <div id="parts-upload">
+        <div id="dropzone" tabindex="0" role="button">
+          <p></p>
+          <input type="file" id="f-upload" accept=".stl" multiple hidden>
+        </div>
+        <p class="hint upload-units" id="upload-units"></p>
+      </div>
+      <div id="parts-messages" aria-live="polite"></div>
+      <ul id="parts-list" aria-live="polite"></ul>
+      <p class="hint" id="parts-total"></p>
+      <!-- New plate (designed in the guide) -->
+      <div class="new-plate"><button type="button" class="btn small"></button></div>
     </section>
     <section class="step" data-step="settings" hidden>
       <h2>Settings</h2>

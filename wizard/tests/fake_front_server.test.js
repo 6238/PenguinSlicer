@@ -2,6 +2,7 @@
 // contract's examples, whole, and every error report it makes has the error report's fields.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -15,7 +16,6 @@ async function ask(server, method, path) {
 test('the default answers are the contract examples, whole, with their statuses', async () => {
   const server = new FakeFrontServer();
   assert.deepEqual(await ask(server, 'GET', '/api/me'), { status: 200, version: server.version, body: example('wizard-front/me.json') });
-  assert.deepEqual((await ask(server, 'POST', '/api/parts?units=in')).body, example('wizard-front/part-record.json'));
   assert.equal((await ask(server, 'POST', '/api/parts?units=in')).status, 201);
   assert.deepEqual(await ask(server, 'POST', '/api/slices'), { status: 202, version: server.version, body: example('wizard-front/slice-accepted.json') });
   assert.deepEqual((await ask(server, 'GET', '/api/slices/3f9a1c2b')).body, example('wizard-front/slice-done.json'));
@@ -25,6 +25,18 @@ test('the default answers are the contract examples, whole, with their statuses'
   const configuration = (await ask(server, 'GET', '/api/configuration')).body;
   assert.deepEqual(configuration, { configuration: example('configuration-default.json'), source: 'default', name: 'PenguinSlicer default', revision: null });
   assert.deepEqual(await ask(server, 'POST', '/api/reports/failure'), { status: 204, version: server.version, body: null });
+});
+
+test('an upload is answered with the record of the bytes sent: their hash, the query\'s units, no warning, the example\'s measurements', async () => {
+  const server = new FakeFrontServer();
+  const bytes = new Uint8Array([1, 2, 3, 4]);
+  const answer = await server.transport.send({ method: 'POST', path: '/api/parts?units=mm', headers: {}, body: bytes.buffer });
+  const record = await answer.json();
+  assert.equal(answer.status, 201);
+  assert.equal(record.sha256, createHash('sha256').update(bytes).digest('hex'));
+  assert.equal(record.units, 'mm');
+  assert.deepEqual(record.warnings, []);
+  assert.deepEqual(record.measurements, example('wizard-front/part-record.json').measurements);
 });
 
 test('a request the contract does not have is answered as the front server answers it', async () => {

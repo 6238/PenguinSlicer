@@ -1,5 +1,6 @@
 """The browser tests' fake front server answers in the contract's shapes: its default answers are
 the contract's examples, whole, with the contract's statuses and headers."""
+import hashlib
 import json
 import urllib.error
 import urllib.request
@@ -34,7 +35,6 @@ def ask(server, method, path):
     ("GET", "/api/me", 200, example("wizard-front/me.json")),
     ("PUT", "/api/configuration", 200, example("wizard-front/configuration-written.json")),
     ("GET", "/api/settings-table", 200, example("settings-table.json")),
-    ("POST", "/api/parts?units=in", 201, example("wizard-front/part-record.json")),
     ("POST", "/api/slices", 202, example("wizard-front/slice-accepted.json")),
     ("GET", "/api/slices/3f9a1c2b", 200, example("wizard-front/slice-done.json")),
     ("GET", "/api/slices/3f9a1c2b/summary", 200, example("wizard-front/slice-summary.json")),
@@ -44,6 +44,15 @@ def test_the_default_answers_are_the_contract_examples(server, method, path, sta
     assert (got_status, got) == (status, body)
     assert headers["X-PenguinSlicer-Version"] == server.version
     assert headers["Cache-Control"] == "no-store"
+
+
+def test_an_upload_is_answered_with_the_record_of_the_bytes_sent(server):
+    request = urllib.request.Request(server.url.rstrip("/") + "/api/parts?units=mm", method="POST", data=b"\x01\x02\x03")
+    with urllib.request.urlopen(request, timeout=10) as answer:
+        status, body = answer.status, json.loads(answer.read())
+    assert status == 201
+    assert body == {**example("wizard-front/part-record.json"), "sha256": hashlib.sha256(b"\x01\x02\x03").hexdigest(),
+                    "units": "mm", "warnings": []}
 
 
 def test_the_configuration_is_the_default_one_named_as_the_contract_says(server):
