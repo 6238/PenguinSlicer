@@ -248,6 +248,11 @@ export function createLayout({ geometry, storage, store, parts, panel }) {
   }
   // Wholly to the right of the plate, where the wizard puts an instance it finds no spot for.
   const rightOfPlate = (n) => Boolean(checked.bounds[n] && printer() && checked.bounds[n][0] > printer().max[0]);
+  // Wholly off the plate, past any of its edges: no part of the footprint's box over it.
+  const whollyOffPlate = (n) => {
+    const b = checked.bounds[n], p = printer();
+    return Boolean(b && p && (b[0] > p.max[0] || b[2] < p.min[0] || b[1] > p.max[1] || b[3] < p.min[1]));
+  };
   // Beside the plate: put there by the wizard (Arrange, a lay-down, a part joining the plate, or
   // a page opened again) and not moved by the user since. One the user drags there is across
   // the plate's right edge, like one dragged off any other edge.
@@ -370,8 +375,11 @@ export function createLayout({ geometry, storage, store, parts, panel }) {
     const list = labels();
     const sel = selected.map(byId).filter(Boolean);
     if (sel.length === 0) {
+      // Beside the plate is where the wizard put an instance; one the user dragged wholly off
+      // the plate is on it no longer and is counted in neither (its own message names it).
       const beside = besideCount();
-      return { text: W.ON_PLATE(instances.length - beside, beside) };
+      const off = instances.filter((_, n) => !besideIndex(n) && whollyOffPlate(n)).length;
+      return { text: W.ON_PLATE(instances.length - beside - off, beside) };
     }
     if (sel.length === 1) {
       const n = instances.indexOf(sel[0]);
