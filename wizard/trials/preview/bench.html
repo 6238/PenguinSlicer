@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Layer preview trial: what software drawing costs</title>
+</head>
+<body>
+<p id="status">Measuring…</p>
+<script type="module">
+// What the browser's software drawing costs, apart from any method: `n` random short
+// segments over the plate, drawn `frames` times as one-pixel lines, as instanced quads
+// (4 corners), as instanced boxes (12 corners), as plain triangles, or as points, in a view of
+// w by h. window.bench holds the milliseconds of each frame, timed by finishing the drawing.
+const q = new URLSearchParams(location.search);
+const mode = q.get('mode') || 'lines', n = +(q.get('n') || 200000), frames = +(q.get('frames') || 5);
+const w = +(q.get('w') || 640), h = +(q.get('h') || 480), px = +(q.get('px') || 2);
+const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h; document.body.append(canvas);
+const gl = canvas.getContext('webgl2', { antialias: false });
+const compile = (t, s) => { const x = gl.createShader(t); gl.shaderSource(x, s); gl.compileShader(x); if (!gl.getShaderParameter(x, gl.COMPILE_STATUS)) throw gl.getShaderInfoLog(x); return x; };
+function prog(vs, fs) { const p = gl.createProgram(); gl.attachShader(p, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p); return p; }
+const FS = `#version 300 es
+precision mediump float; flat in vec3 c; out vec4 o; void main() { o = vec4(c, 1.0); }`;
+let seed = 1; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+const seg = new Float32Array(n * 4);
+for (let i = 0; i < n; i++) { const x = rnd() * 2 - 1, y = rnd() * 2 - 1, a = rnd() * 6.28, l = 0.004 + rnd() * 0.01; seg.set([x, y, x + Math.cos(a) * l, y + Math.sin(a) * l], i * 4); }
+let draw;
+if (mode === 'lines' || mode === 'points' || mode === 'tris') {
+  const verts = mode === 'tris' ? 3 : (mode === 'points' ? 1 : 2);
+  const v = new Float32Array(n * verts * 2);
+  for (let i = 0; i < n; i++) {
+    v[i * verts * 2] = seg[i * 4]; v[i * verts * 2 + 1] = seg[i * 4 + 1];
+    if (verts > 1) { v[i * verts * 2 + 2] = seg[i * 4 + 2]; v[i * verts * 2 + 3] = seg[i * 4 + 3]; }
+    if (verts > 2) { v[i * verts * 2 + 4] = seg[i * 4] + 0.004; v[i * verts * 2 + 5] = seg[i * 4 + 1] + 0.004; }
+  }
+  const p = prog(`#version 300 es
+in vec2 pos; flat out vec3 c; void main() { c = vec3(0.2, 0.4, 0.7); gl_PointSize = ${px}.0; gl_Position = vec4(pos, 0.5, 1.0); }`, FS);
+  const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, v, gl.STATIC_DRAW);
+  gl.useProgram(p); const a = gl.getAttribLocation(p, 'pos'); gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a, 2, gl.FLOAT, false, 0, 0);
+  draw = () => gl.drawArrays(mode === 'tris' ? gl.TRIANGLES : (mode === 'points' ? gl.POINTS : gl.LINES), 0, n * verts);
+} else {
+  const corners = mode === 'quads' ? 4 : 12;
+  const tpl = new Float32Array(corners * 2), idx = [];
+  for (let k = 0; k < corners; k++) { tpl[k * 2] = k & 1; tpl[k * 2 + 1] = (k >> 1) & 1; }
+  for (let f = 0; f < corners / 4; f++) idx.push(f * 4, f * 4 + 1, f * 4 + 3, f * 4, f * 4 + 3, f * 4 + 2);
+  const p = prog(`#version 300 es
+in vec2 tpl; in vec4 s; flat out vec3 c;
+void main() { c = vec3(0.2, 0.4, 0.7); vec2 d = s.zw - s.xy; vec2 nr = normalize(vec2(-d.y, d.x)) * ${px}.0 / ${w}.0;
+  gl_Position = vec4(mix(s.xy, s.zw, tpl.x) + nr * (tpl.y - 0.5), 0.5, 1.0); }`, FS);
+  gl.useProgram(p);
+  const tb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, tb); gl.bufferData(gl.ARRAY_BUFFER, tpl, gl.STATIC_DRAW);
+  const a = gl.getAttribLocation(p, 'tpl'); gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a, 2, gl.FLOAT, false, 0, 0);
+  const ib = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idx), gl.STATIC_DRAW);
+  const sb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, sb); gl.bufferData(gl.ARRAY_BUFFER, seg, gl.STATIC_DRAW);
+  const s = gl.getAttribLocation(p, 's'); gl.enableVertexAttribArray(s); gl.vertexAttribPointer(s, 4, gl.FLOAT, false, 0, 0); gl.vertexAttribDivisor(s, 1);
+  draw = () => gl.drawElementsInstanced(gl.TRIANGLES, idx.length, gl.UNSIGNED_SHORT, 0, n);
+}
+gl.enable(gl.DEPTH_TEST);
+const times = [];
+const one = new Uint8Array(4);
+for (let f = 0; f < frames; f++) {
+  const t = performance.now();
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); draw();
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, one);     // waits for the drawing to finish
+  times.push(performance.now() - t);
+}
+window.bench = { mode, n, w, h, times };
+document.getElementById('status').textContent = JSON.stringify(window.bench);
+</script>
+</body>
+</html>
