@@ -14,7 +14,7 @@ who the user is and the configuration, as phase 2 has them ([The current group](
 [What the browser keeps](#what-the-browser-keeps), but for what the later items put in it; the
 worker's reading of a part and its picture ([The geometry, in a worker](#the-geometry-in-a-worker));
 the failure reports of [What the wizard reports about itself](#what-the-wizard-reports-about-itself);
-and [The Parts step](#the-parts-step), but for a part's instances joining the Layout step.
+[The Parts step](#the-parts-step); and [The Layout step](#the-layout-step).
 Everything else here is the design to build: every screen, state and message of the guide, in
 the builder's terms, with the names the guide leaves out (requests, fields, error codes,
 constants, stored records, tests), the figures, the tests each part needs, and an order in
@@ -940,8 +940,7 @@ Onshape integration hands one over. For each part of a part set, in order:
    bytes and its row are removed and the notification shows. When both refuse, the slice
    service's notification is the one shown.
 7. **Laid down:** its instances are laid their best way by auto-orient and join the plate on
-   the Layout step ([Parts arrive lying their best way](#parts-arrive-lying-their-best-way)),
-   which is to be built (item 10 of [By phase](#by-phase)).
+   the Layout step ([Parts arrive lying their best way](#parts-arrive-lying-their-best-way)).
 
 The parts of a part set are taken in order, one after another, so that a file dropped twice
 in one drop is one row. A part removed, or a plate emptied by New plate, while its upload is
@@ -1057,8 +1056,8 @@ read who the user is, before it marks the page opened. The running wizard export
 (`wizard.parts`, `wizard.partsStep`). The stored plate's part entries carry `quantity` beside
 the fields of [What the browser keeps](#what-the-browser-keeps).
 
-Every test above is built but a late part joining the Layout step, which comes with that step
-(its notification is built): `tests/parts.test.js` without a browser window, on the fake clock,
+Every test above is built, a late part joining the Layout step in `tests/layout.test.js`
+([The Layout step](#the-layout-step)): `tests/parts.test.js` without a browser window, on the fake clock,
 the fake front server (which answers an upload with the record of the bytes sent, `sha256` and
 `units` included), the fakes of the storage and the real worker's code in the test's thread,
 each refusal and each way a record can be unusable on purpose, its files handed over as the
@@ -1303,6 +1302,77 @@ stays on its circle through a drag and Shift snaps the orientation; F, Ctrl+1, C
 do what the table says; a lay-down answered before the worker returns the faces shows no
 patches and then the patches.
 
+**As built.** The step's behaviour is `createLayout` in `wizard/src/layout.js` (`model`,
+`subscribe`, `resume`, `select` with `'only'`, `'toggle'`, `'set'`, `'all'` and `'none'`, `place`
+and `endDrag` for a drag, `layOnNormal`, `autoOrient`, `arrange`, `turnToFit`, `layAllBestWay`,
+`patches`, `plateAngle`, `settingsChanged`, `idle`); its sentences are in
+`wizard/src/layout-sentences.js`; its drawing is `createLayoutStep` in
+`wizard/src/panel/layout-step.js`, into the mockup's markup from `#layout-toolbar` to
+`#layout-info` (without the mockup's `#btn-tilt` and `#rest-strip`, which belong to its other
+mouse schemes and ways of laying down), and the 3D view `createLayoutView` in
+`wizard/src/panel/layout-view.js`, three.js on the frame seam (`realFrames` in
+`wizard/src/seams/frames.js`, the one place that asks for an animation frame), made the first
+time the step is shown. An instance is `{id, part, lay, angle, x, y}`: `part` its part's row key
+(`<sha256>.<units>`), `lay` the unit quaternion of how it lies, `angle` its degrees about the
+vertical after that (a fraction only during a turn, whole when the drag ends) and `x`, `y` its
+footprint's centre; the stored plate's `instances` keep `{part, lay, angle, x, y}`, and one the
+page cannot use is dropped and made up from the part's quantity. The plate configuration the
+worker is asked about names each part `p1`, `p2`, … in the order of the plate's instances, and
+each instance by `instanceTurn(lay, angle)`; the worker's answers carry the contract's `angle`,
+of which only the change from the one sent is taken, since an orientation may hold a quarter turn
+of the lay. Instances follow the arrived parts' quantities when the step is shown and, while it is
+shown, whenever the parts change; the first instances of a plate are arranged without a message,
+and those that join a plate already laid out are put at the middle of the instances on the plate
+and settled (the worker's `settle`), every other instance where it stands. Supports are on as
+`supportsFor` says (the user's change of `enable_support`, else the profile's override, else the
+table's `process_values` for its process). The figures line names the printer by the
+configuration's `printer`, the printer profile's name, until phase 5. An instance's name in the
+messages is its part's own name and the slice service's count ("L Bracket #2", counted as the
+slice service counts "L_Bracket #2"). The status line counts the problems' messages; instances
+beside the plate that Arrange's or a lay-down's message accounts for hold Next as "2 instances do
+not fit on the plate.", and one beside the plate that nothing accounts for (a part joining a full
+plate, a page opened again) has the wizard's own message "Gusset Plate #3 waits beside the plate:
+no spot on the plate is free for it." with Arrange. Two or more pairs too close are one message;
+a crossing of several edges names them ("the right and back edges"). Auto-orient arranges the
+plate again whenever, once laid, it breaks a rule other than the height, for a selection as for
+the whole plate. "Turned Rib #1 and arranged 1 instance." follows Turn it to fit, and "Laid 30
+instances the best way and arranged again: every instance now fits." the offer of Arrange's
+message, whose second button is Back to Parts, as the mockup has it. The view draws only when
+something changed; a press on the handle, a patch, an instance (or the box of its footprint,
+through a hole), or empty plate is taken in that order; a double-click on a triangle within 1
+degree of a hull patch's direction lays the instance on that patch. While the view moves (a
+drag, a turn, the camera turned) on a plate of more than 250,000 triangles, and at rest on one of
+more than 500,000, each instance is drawn as its part's coarse copy (the worker's `coarse`,
+`geometry/coarse.js`: the corners gathered into a grid over the part's box, at most the
+instance's share of the figure, in powers of two), the selected instances whole at rest; an
+instance whose coarse copy has not come at rest waits for it rather than hold the page. Without a
+graphics card the view is drawn without antialiasing (`softwareDrawing`). A part's bytes are sent
+as a `Blob` by the transport seam: sent as an `ArrayBuffer`, a 7.5 MB upload held the main thread
+350 to 560 ms in the browser tests.
+
+Tests: `tests/layout.test.js` without a browser window, on the fake front server, the fakes of
+the storage and the real worker's code in the test's thread, on the contract's parts, a made rod,
+slab, rib and beam: every problem row with its sentence and button, Turn it to fit, Arrange at 37
+degrees, Arrange's partial message and its offer, a lay-down that fits, one moved and one beside,
+Auto-orient arranging again, the turning moments of arrival and of Auto-orient, supports turned
+on, the messages going on leaving the step, instances following quantities and a part arriving on
+the step, the stored layout taken up and an unusable stored instance, the selection line and its
+link, the patches found once, and a worker that has failed. `tests/geometry/settle.test.js` and
+`tests/geometry/coarse.test.js` for the geometry it added. `tests_browser/test_layout_step.py` in
+Chromium on the real clock (the view draws on animation frames, which a paused fake clock never
+runs): the view draws and fills roughly the expected part of the view, a drag moves an instance
+and its problem shows its message and Arrange fixes it, a click selects and a click on empty plate
+clears, the rotation handle stays on its circle and Shift snaps mid-drag, a patch lays an
+instance down with the pointer line, the four keys and Delete, Ctrl+D, Ctrl+Z, Ctrl+Y and
+Backspace doing nothing, the help, the seven widths with no sideways scroll and the view square
+then 4:3, and a malformed file of the largest size ending in its notification with the main thread
+held under 250 ms. Not built: the details' test of a lay-down answered before the worker returns
+the faces in Chromium (without a browser window, `patches` answers only once the worker has).
+`make -C wizard look-layout-step` writes the mockup's Layout step beside the built one at 320, 480,
+520 and 680 px in each state the mockup shows into `docs/orchestration/phase-2/look/wizard-5b/`,
+and `make -C wizard measure-layout` the view's frame rate at 150 instances into
+`docs/orchestration/phase-2/look/wizard-5b/frame-rate.json`.
+
 ## The geometry, in a worker
 
 **Keeping the page answering.** Nothing holds the browser's main thread for more than
@@ -1471,7 +1541,14 @@ contract's fields for the turn), `arrange` and `check` (`plateConfiguration`, `g
 each of its part keys to the key a part was read under, `printer` with `min`, `max` and `height`,
 and `supports`), `picture` (`key`, `px` a whole number from `MIN_PICTURE_PX` 16 to `MAX_PICTURE_PX`
 512, `colour` a whole number `0xrrggbb`; answers `width`, `height` and `pixels`, RGBA not
-premultiplied, as a transferred `Uint8ClampedArray`), and `forget`. Each answer is `{id, ok: true, result}` or `{id, ok: false, error}`,
+premultiplied, as a transferred `Uint8ClampedArray`), `forget`, and for the Layout step `settle`
+and `fit` (the `check` fields with `index`, one instance of the plate configuration: where it
+goes after a lay-down, `{how: 'fits' | 'moved' | 'turned' | 'beside', instance}`, every other
+instance where it stands, and the first of a quarter, an eighth and three eighths of a turn that
+makes it fit the plate, `{fits, angle}`; `settleInstance`, `placeNear` and `turnToFit` in
+`geometry/arrange.js`) and `coarse` (`key`, `maxTriangles`; a coarse copy for drawing, its corners
+a transferred `Float32Array`). `check` also answers each instance's footprint `bounds` and
+`heights`. Each answer is `{id, ok: true, result}` or `{id, ok: false, error}`,
 the error an error report of the wizard's own:
 
 | Code | When | `message`; `remedy` |
@@ -1500,9 +1577,9 @@ the picture's size at each density and the heartbeat, in `tests/geometry-client.
 worker run in the test's own thread (`InThreadWorker` in `tests/fakes/worker.js`). In Chromium
 (`tests_browser/test_worker.py`), the page's own worker reads `pulley-v3.stl` and `hub-150k.stl` and
 draws each picture, and a malformed file of the largest size ends in `wizard.part_not_drawable`,
-each with the main thread held under 250 ms by the heartbeat on the real clock. To be built with the
-Parts step (item 8 of [By phase](#by-phase)): that report shown as the notification of a part the
-page cannot draw.
+each with the main thread held under 250 ms by the heartbeat on the real clock; and
+`tests_browser/test_layout_step.py` hands the page such a file as a drop does, which ends in the
+notification of a part the page cannot draw with the main thread held under 250 ms.
 
 ## The Preview step
 
@@ -2361,7 +2438,7 @@ or is not yet in a contract:
 | Tooltip delay; printer details close | 150 ms; 300 ms | The mockup | Fake clock |
 | Quiet retrying; retrying in all | 20 s; 300 s, waits doubling 1 to 30 s | The guide | Fake clock |
 | A progress stream counted as failed | 20 s failing to reopen, 45 s open and silent | The guide | Fake clock, fake front server |
-| The main thread held | Never over 250 ms, any step, any plate up to the limits, on the machine without a graphics card | Set; measured so far only for reading a part and drawing its picture: at most 12 ms in Chromium on that machine, `hub-150k.stl` included | Measured by the page in tests and real use |
+| The main thread held | Never over 250 ms, any step, any plate up to the limits, on the machine without a graphics card | Set; measured for reading a part and drawing its picture: at most 12 ms in Chromium on that machine, `hub-150k.stl` included; for a malformed file of the largest size, under 250 ms; while dragging at 150 instances, 0.42 to 0.49 s for the real mix and 0.22 to 0.26 s for 150 spacers (missed), 0.10 to 0.13 s for 150 of `hub-150k.stl` drawn coarse (`make -C wizard measure-layout`) | Measured by the page in tests and real use |
 | A part's row says it is slow | 4 s | The mockup | Fake clock |
 | One part; different parts; instances | 7.5 MB (150,000 triangles); 25; 150 | The slice service's | One over each |
 | Storage in the browser | 25 parts of 7.5 MB for each tab's plate | Met for one tab in headless Chromium on the machine without a graphics card: stored and read back after a refresh, none refused; several tabs' full plates, and Chrome on the Mac, unmeasured | A full plate stored and reloaded |
@@ -2370,7 +2447,7 @@ or is not yet in a contract:
 | Auto-orient | Best way within 1 s of arriving | Met: at most 272 ms for `hub-150k.stl` from the file to its best way, faces included; at most 177 ms for a real part | The same |
 | Arrange | Under 2 s for 150 instances | Met: at most 30 ms for 150 of `hex-spacer.stl` (all placed) and 56 ms for a mix of 150 real parts (104 placed, the rest beside the plate) | The same |
 | The placement check | Keeps up with a drag at 150 instances | Met: at most 4.4 ms for each check of a drag at 150 instances, against one frame of 100 ms at 10 frames a second | The same |
-| The Layout view | 30 frames a second with a graphics card, 10 without, while dragging or turning, at 150 instances of parts up to 150,000 triangles | Set, no measurement | Timed in Chrome on both machines; reported in real use |
+| The Layout view | 30 frames a second with a graphics card, 10 without, while dragging or turning, at 150 instances of parts up to 150,000 triangles | Met without a graphics card, with the coarse copies while moving: 150 instances of the real mix dragged at 16 to 19 and turned at 18 to 20, 150 of `hub-150k.stl` dragged at 14 to 41, 150 of `hex-spacer.stl` at 36 to 45, over four runs on a shared machine; the main thread held 0.42 to 0.49 s during a drag on the real mix and 0.22 to 0.26 s on the spacers (missed). With a graphics card, unmeasured | `make -C wizard measure-layout`, in Chromium; on the Mac, Chrome; reported in real use |
 | The layer preview | 30 with a graphics card, 10 without, while turning or dragging the layer bar, on a 14.1 MB sliced file and at 150 instances; a simpler look while moving | Without a graphics card, method C of the first trial: 10 to 20 typical on the three plates (10.0 turning at `blocks-12-supports`); with one, unmeasured | Timed in Chrome on both machines; reported in real use; test renders |
 | The first layer drawn | Within 5 s, print time and filament at once | The first trial, method C: 1.5 to 2.7 s from fetching the sliced file to the first frame with toolpaths (the look while moving; the full look 2.4 to 8.5 s) | The same |
 | The page's memory | Under 1 GB at the largest plate with the preview of a 14.1 MB sliced file | The first trial, method C: 839 MB at that plate (the page's and the graphics process's peaks) | Measured in Chrome at that plate |
@@ -2392,8 +2469,8 @@ the other components are: `wizard/` is a `uv` project of its own, with its own
 
 | Folder | What it holds |
 |---|---|
-| `wizard/src/` | The page: `index.html`, its modules, the workers' modules, the style sheets taken over from the mockup's `css/panel.css`, fonts and pictures. As built, `index.html` (the panel's markup), `favicon.svg`, `css/panel.css` and `css/wizard.css`, `main.js` (reads the version from the page's `<meta>`, joins the seams to `api.js`, the storage module, the worker and the panel, exports the running wizard, marks the document started, opens the wizard and marks it opened), `api.js`, `retry.js`, `sentences.js`, `state.js`, `page-constants.js`, `opening.js` and `configuration.js` ([The current group](#the-current-group)), `storage.js` ([What the browser keeps](#what-the-browser-keeps)), `reports.js` and `environment.js` ([What the wizard reports about itself](#what-the-wizard-reports-about-itself)), `geometry-client.js`, `part-picture.js` and `hold-meter.js`, the panel in `panel/` ([The panel as a whole](#the-panel-as-a-whole)), and the worker `geometry.worker.js` with the geometry in `geometry/` ([The geometry, in a worker](#the-geometry-in-a-worker)). The build puts every file flat in `assets/`, so no two files may share a name and an extension |
-| `wizard/src/seams/` | The seams: the only modules that may read the time or reach the network, or touch what a test replaces with a fake. `clock.js` (`now`, `after`, `cancel`), `transport.js` (`send`), `browser-storage.js` (IndexedDB's records and the tab's `sessionStorage`), `locks.js` (the Web Locks) and `worker.js` (the worker's port) |
+| `wizard/src/` | The page: `index.html`, its modules, the workers' modules, the style sheets taken over from the mockup's `css/panel.css`, fonts and pictures. As built, `index.html` (the panel's markup), `favicon.svg`, `css/panel.css` and `css/wizard.css`, `main.js` (reads the version from the page's `<meta>`, joins the seams to `api.js`, the storage module, the worker and the panel, exports the running wizard, marks the document started, opens the wizard and marks it opened), `api.js`, `retry.js`, `sentences.js`, `state.js`, `page-constants.js`, `opening.js` and `configuration.js` ([The current group](#the-current-group)), `storage.js` ([What the browser keeps](#what-the-browser-keeps)), `reports.js` and `environment.js` ([What the wizard reports about itself](#what-the-wizard-reports-about-itself)), `geometry-client.js`, `part-picture.js` and `hold-meter.js`, `parts.js` ([The Parts step](#the-parts-step)), `layout.js` and `layout-sentences.js` ([The Layout step](#the-layout-step)), the panel in `panel/` ([The panel as a whole](#the-panel-as-a-whole), with each step's drawing), and the worker `geometry.worker.js` with the geometry in `geometry/` ([The geometry, in a worker](#the-geometry-in-a-worker)). The build puts every file flat in `assets/`, so no two files may share a name and an extension |
+| `wizard/src/seams/` | The seams: the only modules that may read the time or reach the network, or touch what a test replaces with a fake. `clock.js` (`now`, `after`, `cancel`), `transport.js` (`send`), `browser-storage.js` (IndexedDB's records and the tab's `sessionStorage`), `locks.js` (the Web Locks), `worker.js` (the worker's port) and `frames.js` (animation frames, for the 3D views) |
 | `wizard/vendor/` | Third-party code kept as files, each with its release, licence and SHA-256 in [wizard/vendor/README.md](vendor/README.md) |
 | `wizard/tests/` | The tests without a browser window on Node's runner (`*.test.js`), with their fakes in `wizard/tests/fakes/`: `clock.js`, the fake clock (`advance(ms)` fires each timer at its moment and lets the page's promises settle between); `front_server.js`, the fake front server (each request answered, held, dropped or answered without the version, in the order the test sets; its default answers the contract's examples, whole, which `tests/fake_front_server.test.js` checks); `storage.js`, the fakes of the browser's storage, a tab's `sessionStorage` and the browser's locks; and `worker.js`, the worker run in the test's own thread |
 | `wizard/tests/python/` | The tools' tests, on pytest: the build, Node's version check, the trials' server and made parts, the first trial's plates, slicing client and verdicts, the vendored files' hashes and the real parts' hashes. Not `tests/tools/`: the repository's `.gitignore` ignores every folder named `tools/` |
@@ -2513,6 +2590,8 @@ rewritten nor refused, and the content security policy is what stops it loading.
 | `look` | After `build`: pictures of the panel as a whole beside the mockup's, at 320, 480, 520 and 680 px, into `docs/orchestration/phase-2/look/wizard-2/` with an `index.html` showing the pairs |
 | `look-parts` | After `build`: the picture of each kept part as its row will show it, at 88 pixels, drawn by the page's own worker in Chromium, into `docs/orchestration/phase-2/look/wizard-3/` (`wizard/tests_browser/look_parts.py`), printing the main thread's longest hold for each part |
 | `look-parts-step` | After `build`: the mockup's Parts step beside the built one, the whole panel, at 320, 480, 520 and 680 px, in each state the mockup shows and in the screens it never drew, into `docs/orchestration/phase-2/look/wizard-4/` with an `index.html` of the pairs (`wizard/tests_browser/look_parts_step.py`) |
+| `look-layout-step` | After `build`: the mockup's Layout step beside the built one at 320, 480, 520 and 680 px, in each state the mockup shows, into `docs/orchestration/phase-2/look/wizard-5b/` with an `index.html` of the pairs (`wizard/tests_browser/look_layout_step.py`) |
+| `measure-layout` | After `build`: the Layout view's frame rate while dragging and turning at 150 instances, in Chromium on this machine, into `docs/orchestration/phase-2/look/wizard-5b/frame-rate.json` (`wizard/tests_browser/measure_layout.py`) |
 | `trials` | Both opening trials' measurements, as [How the trials and measurements are run](#how-the-trials-and-measurements-are-run) says: runs `trials-preview` and `trials-geometry`, the second even when the first fails, and fails when either does |
 | `trials-preview` | The first trial: `wizard/trials/preview/run.py` (needs the three sliced files in `wizard/trials/sliced/`, made by `wizard/trials/make_sliced_files.py`) |
 | `trials-geometry` | The second trial: `wizard/trials/geometry/run.py` |
@@ -2710,9 +2789,9 @@ The page opened directly in a browser, with the development identity and no sign
    changes' values of [The Settings step](#the-settings-step)
    ([The Settings step](README.md#the-settings-step); [the table of settings](../contracts/settings-table.md)).
 10. **The Layout step:** the view and its gestures, the rotation handle, laying on a face, auto-orient,
-    Arrange, the placement check and its messages, against the shared plates (the geometry
-    behind the last four is built, in the worker: [The geometry, in a worker](#the-geometry-in-a-worker);
-    the step that shows them is to be built)
+    Arrange, the placement check and its messages, against the shared plates. Built
+    ([The Layout step](#the-layout-step), on the geometry of
+    [The geometry, in a worker](#the-geometry-in-a-worker))
     ([The Layout step](README.md#the-layout-step);
     [Coordinates](../contracts/plate-configuration.md#coordinates),
     [An instance in phase 2](../contracts/plate-configuration.md#an-instance-in-phase-2),

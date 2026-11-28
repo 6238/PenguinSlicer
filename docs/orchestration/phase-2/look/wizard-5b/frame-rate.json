@@ -11,19 +11,19 @@
       "triangles_drawn": 802920,
       "dragging": {
         "frames": 85,
-        "ms": 4580.899999976158,
-        "fps": 18.55530572604562,
+        "ms": 5236.100000023842,
+        "fps": 16.233456198241623,
         "median_frame_ms": 50,
-        "worst_frame_ms": 233.4000000000001,
-        "held_ms": 424
+        "worst_frame_ms": 250,
+        "held_ms": 486
       },
       "turning_all": {
         "frames": 90,
-        "ms": 4626.699999988079,
-        "fps": 19.452309421451982,
+        "ms": 4882,
+        "fps": 18.43506759524785,
         "median_frame_ms": 50,
-        "worst_frame_ms": 83.29999999999927,
-        "held_ms": 128
+        "worst_frame_ms": 100,
+        "held_ms": 149
       }
     },
     "hub-150k-150": {
@@ -32,19 +32,19 @@
       "triangles_drawn": 22500000,
       "dragging": {
         "frames": 65,
-        "ms": 1578,
-        "fps": 41.191381495564,
+        "ms": 1839.5,
+        "fps": 35.3356890459364,
         "median_frame_ms": 16.699999999999818,
-        "worst_frame_ms": 83.29999999999995,
-        "held_ms": 100
+        "worst_frame_ms": 116.70000000000005,
+        "held_ms": 127
       },
       "turning_all": {
         "frames": 90,
-        "ms": 1593.2999999523163,
-        "fps": 56.48653737694941,
+        "ms": 1640.199999988079,
+        "fps": 54.87135715196569,
         "median_frame_ms": 16.699999999999818,
         "worst_frame_ms": 116.69999999999982,
-        "held_ms": 139
+        "held_ms": 143
       }
     },
     "spacers-150": {
@@ -53,19 +53,19 @@
       "triangles_drawn": 32400,
       "dragging": {
         "frames": 90,
-        "ms": 2041.5,
-        "fps": 44.0852314474651,
+        "ms": 2495.400000035763,
+        "fps": 36.066362105758664,
         "median_frame_ms": 16.700000000000045,
-        "worst_frame_ms": 116.80000000000007,
-        "held_ms": 223
+        "worst_frame_ms": 150,
+        "held_ms": 263
       },
       "turning_all": {
         "frames": 89,
-        "ms": 1834.5,
-        "fps": 48.5145816298719,
-        "median_frame_ms": 16.699999999999818,
-        "worst_frame_ms": 33.5,
-        "held_ms": 47
+        "ms": 2303.800000011921,
+        "fps": 38.63182567911254,
+        "median_frame_ms": 16.800000000000182,
+        "worst_frame_ms": 83.30000000000018,
+        "held_ms": 110
       }
     }
   }
