@@ -1,0 +1,5 @@
+# Every file here is committed, byte for byte, as README.md lists. A machine's global excludes
+# file often ignores folders named build/, which would keep three.js's core
+# (three/build/three.module.min.js) out of every commit; this file's rules win over it.
+!build/
+!build/**

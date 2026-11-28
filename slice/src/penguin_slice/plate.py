@@ -4,9 +4,10 @@ Each orientation is named by the part axis that ends up pointing up. The matrice
 row-major rotations applied to the part's vertices (v' = M v).
 
 This is the authority on placement: the slice service checks every plate configuration here before
-slicing. A user interface that checks placement while the student drags keeps its own
-twin of this geometry and tests it against tests/fixtures/plate_cases.json, the same
-cases tests/test_plate.py reads.
+slicing. The wizard, which checks placement while the user drags, keeps its own twin of
+this geometry; the two are held in agreement by the shared set of plates in
+contracts/examples/placement/ (scripts/make_placement_parts.py writes it), which
+tests/test_placement_plates.py and the wizard's tests both run.
 """
 import math
 import re

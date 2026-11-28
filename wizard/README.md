@@ -1,6 +1,8 @@
 # The wizard
 
-Nothing of the wizard is built. This guide is its design: what a user sees and does at
+Nothing of the wizard that a user sees is built yet: only its project and its tools, and
+the inputs of the two trials that open phase 2
+([What is to be built, by phase](#what-is-to-be-built-by-phase)). This guide is its design: what a user sees and does at
 every step, what the code in the browser must do and how well, and what is still undecided.
 It is written for the person who decides whether the wizard is being built correctly.
 [README-details.md](README-details.md) holds what a builder needs beside it: the names in
@@ -2144,10 +2146,25 @@ The screens designed here follow the decisions recorded in the body.
 
 ## What is to be built, by phase
 
-Nothing is built. The mockup is kept in the repository as the reference for the look,
+Nothing a user sees is built. The mockup is kept in the repository as the reference for the look,
 and its style sheets are taken over where that is the cheap way to match it; its scripts
 were faked, and the wizard's behaviour is built from this guide
 ([The mockup, this guide and Orca](#the-mockup-this-guide-and-orca)).
+
+What is built is the ground the rest stands on. The wizard is a project of its own with
+its commands: install its tools, run its fast tests, run its tests in a real browser,
+build the page, and run and serve the two trials. The fast tests already hold the page to
+the rule that makes every later test fast and repeatable: no part of the page may read
+the clock, start a timer or reach the network except through the few places a test
+replaces, and a test fails naming the file and line that does. The page as built is
+still empty: it loads under the strict rules of what the browser may run and reads its
+version, and the build gives each of its files a name that changes with its contents.
+The 3D library is kept with the wizard's code, a newer release than the mockup's,
+published in the form the page loads as it is. For the two trials, the eight real parts
+of the Popcorn Penguins' robot are kept beside the contracts, and two made parts beside
+the trials: a round hub at the largest size a part may have (150,000 triangles) and the
+slice service's reference spacer. Each trial has its own place and its own command, so
+that both can be built at once; neither is run yet.
 
 | Phase | What of the wizard is built |
 |---|---|

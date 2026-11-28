@@ -1,0 +1,30 @@
+{
+  "description": "A bracket whose footprint is 2.99 mm inside the printable area's edge, supports off",
+  "plate_configuration": {
+    "plate_id": "ecb7db8e-8d30-5c11-9de8-351ebaba9a93",
+    "submission_id": "dd52f860-6489-5367-ae16-1c9c33563ddf",
+    "parts": {
+      "bracket": {
+        "name": "Bracket",
+        "sha256": "f41155dd67adfc26a035de3b56c4997cae15252645388c8f583a1c74ec85f893",
+        "units": "mm"
+      }
+    },
+    "instances": [
+      {
+        "ref": "bracket",
+        "orientation": "+z",
+        "angle": 0,
+        "x": 22.99,
+        "y": 160.0
+      }
+    ],
+    "overrides": {
+      "enable_support": "0"
+    }
+  },
+  "expected": {
+    "code": "slice.placement_off_plate",
+    "instance": "Bracket #1"
+  }
+}

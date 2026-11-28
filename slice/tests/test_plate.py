@@ -1,5 +1,6 @@
-"""Plate geometry in plate.py, checked against tests/fixtures/plate_cases.json, the cases a
-user interface's twin of this geometry is also tested against."""
+"""Plate geometry in plate.py, checked against tests/fixtures/plate_cases.json, this file's own
+cases. The wizard's twin of this geometry is held to the shared set of plates in
+contracts/examples/placement/ instead (tests/test_placement_plates.py)."""
 import json
 
 import pytest

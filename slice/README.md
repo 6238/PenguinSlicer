@@ -286,7 +286,7 @@ its list of objects that can be skipped during a print.
 
 #### Shared plates for the two placement checks
 
-*To be built in phase 2.*
+*Built today, as the first piece of phase 2.*
 
 The wizard's Layout step applies the same placement rules as the slice service, each in
 its own code, so that a plate the wizard passes is a plate the slice service accepts. A
@@ -296,6 +296,26 @@ checks are kept in agreement by one shared set of plates, some just passing a ru
 some just failing it, kept with the contracts and run by both components' tests. A change
 to a rule or a figure in either component then fails the other's tests until both agree
 ([the wizard's guide](../wizard/README.md#the-placement-rules-and-what-each-problem-says)).
+
+The set has thirteen plates. For the margin and the two spacings, and for an instance turned
+at an angle and one laid on a slanted face, one plate is a hundredth of a millimetre inside
+the rule and one a hundredth outside it. For the height, a post exactly as tall as the
+printer prints passes, a post one millimetre taller fails, and the same taller post laid on
+its side passes. The positions on these plates are worked out by a small program with
+geometry of its own, not with the slice service's, so the slice service's check is held to
+an independent answer as well as to the wizard's. The slanted-face plates lay the part with a
+turn whose reverse would lay it differently, and turn it about the vertical afterwards, so
+that a check which turns the part the wrong way round, or turns it about the vertical before
+laying it down, gets a different answer on one of them: those are the usual mistakes in such
+geometry, and a plate that cannot tell them apart would let them through. Until the new way of naming parts arrives
+later in phase 2, the slice service's tests put each plate into the form it reads today, and
+an instance laid on a slanted face is tested by turning a copy of its part beforehand; from
+then on each plate goes through the slice service's front door like any other plate.
+
+The slice service keeps the points of a footprint to a thousandth of a millimetre, so its
+distances can differ from the exact ones by under a thousandth; the hundredth between each
+plate and its rule's figure leaves room for that and for a wizard that computes with less
+precision.
 
 ### Offer profiles: the profile catalog
 
@@ -1232,8 +1252,8 @@ that leaves a branch unreached fails. Its rules:
   raises it, and its sentence, remedy, action and evidence are asserted.
 - **Hostile files.** A kept collection of bad part files, and randomly generated and
   damaged files, are thrown at the part reader, with the same examples on every run.
-- **The placement check is held to the wizard's.** From phase 2 the shared set of plates,
-  some just passing and some just failing, is run by this suite and by the wizard's
+- **The placement check is held to the wizard's.** The shared set of plates, some just
+  passing and some just failing, is run by this suite and by the wizard's
   ([Shared plates for the two placement checks](#shared-plates-for-the-two-placement-checks)).
 - **No test can hang.** Behind every wait is a backstop that fails the test and names what
   never happened.
@@ -1287,7 +1307,9 @@ hostile inputs are tried.
 - the time limit of 240 seconds, fixed in the code;
 - Orca's reasons read from its result file, its debug log and its output;
 - one log line for every change of a slice job's state;
-- the upgrade command and the upstream check.
+- the upgrade command and the upstream check;
+- the shared set of plates for the two placement checks, the first piece of phase 2, run
+  against the checks as they are today.
 
 **Built today and replaced in phase 2:** the request that carries a whole plate's files;
 the ending early of a slice job nobody has followed for 120 seconds; the keeping of a
@@ -1328,7 +1350,8 @@ front server never sends it.
   time and the user key;
 - an instance that lies on any face of its part's convex hull, not only on a side of its
   bounding box, by a general turn in the plate configuration;
-- the shared set of plates for the two placement checks;
+- the shared set of plates run through the slice service's own interface, once parts are
+  named by their hash;
 - a test for each row of the architecture's table of what a restart of the slice container
   does.
 
