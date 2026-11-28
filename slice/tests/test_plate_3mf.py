@@ -189,7 +189,7 @@ class CountingStop(Stop):
 
 
 class TestStopDuringTheWrite:
-    """A cancel, an abandonment or a shutdown sets the slice job's stop; the write looks at it
+    """A replacement, a shutdown or a requested cancel sets the slice job's stop; the write looks at it
     before every part's mesh and every object, so it ends within one object's write."""
 
     def test_a_stop_set_after_the_first_parts_mesh_ends_the_write(self, tmp_path, stls, monkeypatch):
