@@ -30,8 +30,10 @@ def test_the_page_reads_its_version_from_its_meta(page, front_server):
     assert page.evaluate("() => document.documentElement.dataset.version") == front_server.version
 
 
-def test_the_page_asks_only_for_itself_and_its_assets(page, front_server):
+def test_the_page_asks_only_for_itself_its_assets_and_what_it_opens_with(page, front_server):
     open_page(page, front_server)
+    page.wait_for_selector('html[data-opened="true"]', state="attached")
     assert front_server.requests[0] == "/"
     assert len(front_server.requests) > 1
-    assert all(path.startswith("/assets/") for path in front_server.requests[1:] if path != "/favicon.ico")
+    others = [path for path in front_server.requests[1:] if not path.startswith("/assets/") and path != "/favicon.ico"]
+    assert sorted(others) == ["/api/configuration", "/api/me", "/api/settings-table"]

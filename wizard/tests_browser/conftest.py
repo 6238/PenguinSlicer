@@ -57,19 +57,34 @@ def main_module():
 class Wizard:
     """The page with the wizard loaded at a width, its clock faked."""
 
-    def __init__(self, page, server, width=320, height=720):
+    def __init__(self, page, server, width=320, height=720, fake_clock=True):
+        """`fake_clock` False leaves the page on the real clock, for a test that measures how long
+        the main thread is held while it waits for an event."""
         self.page = page
         self.server = server
         self.problems = []
         page.on("console", lambda m: self.problems.append(m.text) if m.type == "error" else None)
         page.on("pageerror", lambda e: self.problems.append(str(e)))
         page.add_init_script("Math.random = () => 0.5;")
-        page.clock.install(time=START)
+        if fake_clock:
+            page.clock.install(time=START)
         page.set_viewport_size({"width": width, "height": height})
         page.goto(server.url)
-        page.wait_for_selector('html[data-started="true"]', state="attached")
-        page.clock.pause_at(START + datetime.timedelta(minutes=10))     # from here time moves only when a test moves it
+        self.wait_opened()
+        if fake_clock:
+            page.clock.pause_at(START + datetime.timedelta(minutes=10))     # from here time moves only when a test moves it
         self.main = main_module()
+        self.opening_requests = len(server.request_headers)            # the requests the opening made
+
+    def wait_opened(self):
+        self.page.wait_for_selector('html[data-started="true"]', state="attached")
+        # Opened: who the user is, the tab's plate, the configuration and the table of settings.
+        self.page.wait_for_selector('html[data-opened="true"]', state="attached")
+
+    def reload(self):
+        """A refresh of the tab: its sessionStorage kept, its locks released by the browser."""
+        self.page.reload()
+        self.wait_opened()
 
     def until(self, condition, arg=None, tries=500):
         """Asks the page until `condition`, the body of a function of (wizard, arg), is true: each

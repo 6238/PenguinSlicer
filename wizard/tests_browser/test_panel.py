@@ -72,6 +72,7 @@ def test_a_panel_widened_across_480_px_changes_its_tabs_with_no_reload(wizard):
 def test_the_header_names_the_product_and_the_configuration_with_its_reload_glyph(wizard):
     w = wizard(320)
     assert w.page.locator("#wiz-header .brand").inner_text() == "PenguinSlicer"
+    w.set({"configName": None})
     assert not visible(w.page, "#config-status")
     w.set({"configName": "6238 (Popcorn Penguins)"})
     assert w.page.locator("#config-status").inner_text() == "Config: 6238 (Popcorn Penguins)↻"
@@ -463,7 +464,7 @@ def test_while_the_retry_message_shows_a_held_click_shows_no_passing_line(wizard
 def test_every_request_carries_the_page_version_and_every_change_the_mark(wizard):
     w = wizard(320)
     w.run("await wizard.api.get('/api/me'); await wizard.store.set({group: 'g-1'}); await wizard.api.post('/api/slices', {json: {}});")
-    sent = [(m, p, h) for (m, p, h) in w.server.request_headers if p.startswith("/api/")]
+    sent = [(m, p, h) for (m, p, h) in w.server.request_headers[w.opening_requests:] if p.startswith("/api/")]
     assert [(m, p) for m, p, _ in sent] == [("GET", "/api/me"), ("POST", "/api/slices")]
     for _, _, headers in sent:
         assert headers["x-penguinslicer-page"] == w.server.version
