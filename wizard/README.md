@@ -2285,8 +2285,8 @@ The screens designed here follow the decisions recorded in the body.
 ## What is to be built, by phase
 
 Of what a user sees, the panel as a whole, the Parts step, the Settings step, the Layout step,
-the Preview step's slicing and its failures, and the layer preview's view are built, and neither
-the result around the view nor the Send step. The
+the Preview step's slicing and its failures, its result with the layer preview, a sliced plate
+that expires, and the Send step with Download as its one button are built. The
 mockup is kept in the repository as the reference for the look, and its style sheet for the
 panel is taken over whole, unchanged, as the cheap way to match it; its scripts were faked,
 and the wizard's behaviour is built from this guide
@@ -2375,8 +2375,7 @@ instances, in exactly the form the slice service reads; a plate already sliced, 
 as it stands is not sent again, a plate that failed or found no room to wait is sent again,
 since it is not sliced, and a slice goes on, still followed, when the user leaves the
 step. A slice the server no longer knows two hours or more after it was sent is not sent
-again by the page itself: until the expired message is built, the server's own sentence shows
-with Slice again, and entering the step again slices. A repeat after a lost answer, the plate sent again while the slicer stops, and the
+again by the page itself: the expired message shows, and entering the step again slices. A repeat after a lost answer, the plate sent again while the slicer stops, and the
 plate sent again after the parts the slicer no longer holds have been uploaded again from the
 browser's storage (twice at most; a third time is shown as a failure) all carry the same
 value, so that they start one slice; the page sends a new value only when it decides to slice
@@ -2395,8 +2394,7 @@ seconds when the front server refuses a fifth stream. The description the page s
 checked against the real slice service's reading of the thirteen shared plates and of the
 contract's example, all fourteen read as expected, and the whole path was walked once from the
 built page through the real front server to the real slice service, with the slice service's
-stand-in for Orca. Until the result and the layer preview join it, a sliced plate shows one
-plain line in their place. Pictures of the slicing card and of each failure beside the
+stand-in for Orca. Pictures of the slicing card and of each failure beside the
 mockup's, at four widths, are kept with the build records.
 
 The Settings step and advanced mode are built: the Filament and
@@ -2417,15 +2415,14 @@ the placement check) is built in the worker as the wizard's own code, and the La
 uses it.
 
 The layer preview's view is built on the way the first trial chose, as a piece the Preview
-step's result will hold: given a sliced file, a second thread of its own reads it and prepares
+step's result holds: given a sliced file, a second thread of its own reads it and prepares
 what is drawn while the page keeps answering, saying how far it has got; the view then draws the
 toolpaths in the four colours with the ghost of what is still to print, the layer bar at its
 right moved by dragging or by the keys and telling a screen reader its layer, the simpler look
 while the view turns or the bar is dragged and the full look when it comes to rest, and draws
 again by itself after the browser loses its 3D drawing. A file it cannot read, a browser without
 3D drawing and a failure of its own each end in the wizard's own sentences, never a blank view,
-and reach the server's log. The result around it (the print time and filament, the readout under
-the view and its buttons, Reset view, the "?" and the colour key) is still to be built. Measured
+and reach the server's log. Measured
 in the page on the three plates of the first trial, on the machine without a graphics card, it
 meets the frame rates and the first layer the trial met, with a faster first layer and a smaller
 margin of memory, but not the trial's hold of the main thread: on the heaviest plate the page was
@@ -2433,6 +2430,36 @@ held for longer than a quarter of a second in two runs of five, for 0.25 seconds
 loaded and 0.34 seconds while the view turned, where the trial's longest was 0.20 (under
 [How well it must do it](#how-well-it-must-do-it)); its test renders at the fixed angles, looked
 at one by one, are kept with the build records.
+
+The result is built as [The result](#the-result) describes it. Once the plate is sliced, the
+Preview step shows the print time and the grams of filament large, at once, and under them one
+quiet line of the instances, the layers and how long the slice took, leaving out any figure the
+slicer did not report; the slicer's warnings follow in amber. The layer preview takes its place
+below, its sliced file fetched for it and never kept, with "Reading the sliced file" and how far
+through while it is read; it stays drawn while the plate stays sliced, so coming back to the step
+does not fetch the file again. Under it, the readout of the layer and its height stays on one line
+even at 320 px with the longest figures a plate can have (the mockup's wraps there), beside the two
+small buttons, Reset view and the "?"; the colour key opens from the view's corner with its four
+rows. A sliced file the preview cannot read, or a browser that cannot draw it, is an amber message
+in place of the view only: the plate stays sliced and Next stays on, since the file can still be
+downloaded.
+
+A sliced plate that expires is built as [A sliced plate that expires](#a-sliced-plate-that-expires)
+describes it: the page counts the time the front server gives on its own clock, and at that moment
+the grey message with Slice again takes the place of the result on the Preview step and of the
+button on the Send step, and nothing shows on the other steps. A request the front server refuses
+as expired first shows the front server's own sentence in the same place.
+
+The Send step is built as its phase 2 form: the card of what will be printed (the instances, by
+part, the print time and the grams of filament, and no printer), and one button, Download the
+sliced file. Download first asks the front server about the sliced file, so that a file that has
+expired is told to the user on the step rather than in the browser's downloads, and then lets the
+browser save the file straight from the front server, so that the page never holds it; a
+notification then names the plate by its instances and gives the file's true size. The whole path
+of phase 2, from adding parts through laying out, slicing and inspecting the preview to
+downloading, has been walked in Chromium against the fake front server, and is a test. Pictures
+of the result and of the Send step beside the mockup's, at four widths, are kept with the build
+records.
 
 | Phase | What of the wizard is built |
 |---|---|

@@ -56,6 +56,16 @@ body { background: #f6f8fa; }
 #wizard .result-warnings { margin: -4px 0 10px; padding-left: 16px; font-size: 12px; color: var(--warn); }
 #wizard .result-warnings[hidden], #wizard .preview-view-box[hidden] { display: none; }
 #wizard .preview-view-message .msg { margin-top: 0; }
+/* The readout under the view is one line even at 320 px (the guide; the mockup's wraps there): below
+   480 px the row's gaps narrow, the spacer gives way to Reset view's own margin, and the two small
+   buttons lose 4 px each, so that "4250 / 4250 · 339.9 mm" fits beside Reset view and the "?". */
+#wizard #layer-readout { white-space: nowrap; }
+@container wiz (max-width: 479.98px) {
+  #wizard .layer-row { gap: 4px; }
+  #wizard .layer-row .spacer { display: none; }
+  #wizard .layer-row #btn-preview-view { margin-left: auto; }
+  #wizard .layer-row .btn.icon { min-width: 24px; padding-left: 6px; padding-right: 6px; }
+}
 /* Reset all's confirmation sits over advanced mode. */
 .advanced .confirm-pop { z-index: 60; }
 

@@ -1,8 +1,9 @@
 // The Preview step's behaviour while a plate is submitted and sliced (wizard/README-details.md,
 // "The Preview step": "Submitting a plate", "The slicing card", "While the slice service is
 // stopping", "No room to wait", "When a slice fails", "Orca's own sentence under Details"), apart
-// from its drawing (panel/preview-step.js) and from the result and the layer preview, which take
-// the place this module leaves for them once the plate is sliced.
+// from its drawing (panel/preview-step.js) and from the result's figures, the sliced file and
+// Download (result.js), which read the sliced file's details this module keeps once the plate is
+// sliced.
 //
 // Entering the step submits the plate, unless it is already sliced, or slicing, as it stands; a
 // slice goes on when the user leaves the step, and the page goes on following it. A changed plate

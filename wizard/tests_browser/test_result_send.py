@@ -89,6 +89,25 @@ def test_the_result_shows_the_figures_and_the_layer_preview_with_its_readout_and
     assert w.problems == []
 
 
+def test_the_readout_stays_one_line_at_320_px_with_the_longest_figures(page, front_server):
+    w = open_preview(page, front_server)
+    w.until("return wizard.slicing.model().kind === 'done';")
+    until_drawn(w)
+    for text in ("132 / 132 · 31.7 mm", "4250 / 4250 · 339.9 mm"):
+        lines = w.page.evaluate("""t => {
+            const r = document.getElementById('layer-readout');
+            r.textContent = t;
+            const row = document.querySelector('.layer-row');
+            const range = document.createRange();
+            range.selectNodeContents(r);
+            const lines = new Set([...range.getClientRects()].map((b) => Math.round(b.top)));
+            const right = Math.max(...[...row.children].filter((c) => c.offsetParent !== null).map((c) => c.getBoundingClientRect().right));
+            return {lines: lines.size, beyond: right > row.getBoundingClientRect().right + 0.5};
+        }""", text)
+        assert lines == {"lines": 1, "beyond": False}, text
+    assert no_sideways_scroll(page) == []
+
+
 def test_coming_back_to_the_step_finds_the_preview_drawn_without_fetching_the_file_again(page, front_server):
     w = open_preview(page, front_server)
     w.until("return wizard.slicing.model().kind === 'done';")
