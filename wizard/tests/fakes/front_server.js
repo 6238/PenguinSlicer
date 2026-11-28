@@ -88,6 +88,11 @@ export const steps = {
   noVersion: (status = 502, text = '<html>Bad gateway</html>') => ({ kind: 'answer', status, body: text, headers: { 'Content-Type': 'text/html' }, noVersion: true }),
   // An answer of the front server whose body is not JSON.
   notJson: (status = 200) => ({ kind: 'answer', status, body: 'not json', headers: { 'Content-Type': 'text/plain' } }),
+  // The front server's headers arrive and its body stalls: nothing more until the page aborts.
+  stallBody: (status = 200) => ({ kind: 'answer', status, body: '', headers: { 'Content-Type': 'application/json' }, bodyFails: 'stall' }),
+  // The front server's headers arrive and its body is cut off partway (a restart): reading it
+  // fails as the browser's fetch fails, with a TypeError.
+  cutBody: (status = 200) => ({ kind: 'answer', status, body: '{"user": {"id"', headers: { 'Content-Type': 'application/json' }, bodyFails: 'cut' }),
 };
 
 // The default answer to each request of the contract that phase 2 makes, from its examples.
@@ -162,12 +167,23 @@ export class FakeFrontServer {
     if (!step.noVersion) headers['X-PenguinSlicer-Version'] = this.version;
     headers['Cache-Control'] = 'no-store';
     const lower = Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]));
+    const read = (parse) => {
+      if (step.bodyFails === 'cut') return Promise.reject(new TypeError('network error'));
+      if (step.bodyFails === 'stall') {
+        return new Promise((resolve, reject) => {
+          if (!signal) return;
+          if (signal.aborted) { reject(abortError()); return; }
+          signal.addEventListener('abort', () => reject(abortError()), { once: true });
+        });
+      }
+      return Promise.resolve().then(() => parse(step.body));
+    };
     return Promise.resolve({
       status: step.status,
       header: (name) => lower[name.toLowerCase()] ?? null,
-      json: async () => JSON.parse(step.body),
-      text: async () => step.body,
-      bytes: async () => new TextEncoder().encode(step.body).buffer,
+      json: () => read((body) => JSON.parse(body)),
+      text: () => read((body) => body),
+      bytes: () => read((body) => new TextEncoder().encode(body).buffer),
     });
   }
 }

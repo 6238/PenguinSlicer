@@ -364,7 +364,8 @@ wires the reload glyph through `panel.onReloadConfiguration`). The reasons a ste
 held click are, until each step brings its own rules, the mockup's: the Parts step "add a
 part." with no part and "a plate holds up to 150 instances." over the limit; the Layout step
 "there are no instances." and its first problem; the Preview step "the plate is not sliced
-yet."; Next follows the same rules. The user's next move is the next pointer press or key in
+yet."; Next follows the same rules. Tests reach each reason, a plate of exactly 150
+instances going on and one of 151 held. The user's next move is the next pointer press or key in
 the panel, or a move to another step. Each tab is worked by Enter or Space as well as a click.
 Every `title` in the panel, a title set later included, becomes the panel's own tooltip and,
 unless the element's name already says it, its accessible description, as the mockup does.
@@ -414,7 +415,8 @@ nothing a user needs is in a tooltip alone.
 
 Tests: a tooltip at 150 ms of rest and not at 149 on the fake clock; at once on keyboard
 focus; at a panel edge it stays 6 px inside a 320 px panel; an element whose text shows in
-full has none; each confirmation keeps things on Escape and on a click elsewhere. Built,
+full has none; each confirmation keeps things on Escape and on a click elsewhere, and opens
+with its keep button first and focused, so that Enter keeps things. Built,
 with each of the six ways drawn and a hostile sentence shown as text.
 
 ### The words it uses
@@ -518,7 +520,7 @@ any field it does not know. An answer of the front server that the page cannot r
 that is not JSON where JSON is due, or a failure whose body is not an error report) is the
 wizard's own report `wizard.bad_answer` ("The server gave an answer this page cannot read.",
 "Reload the page to try again.", `retryable` false, its `detail` the path, the status and the
-start of the body), shown and not retried. A time is RFC 3339 in UTC; a length of time is whole seconds in a
+first `BAD_ANSWER_BODY_CHARS` (200) characters of the body), shown and not retried. A time is RFC 3339 in UTC; a length of time is whole seconds in a
 field ending `_s`; where the page must act at a moment the front server reckons, it counts the
 answer's seconds on its own clock from the moment the answer arrived.
 
@@ -549,11 +551,23 @@ reports about itself are never retried, and a progress stream is reopened, not r
 - **Waits** between attempts: 1, 2, 4, 8, 16, then 30 seconds, capped at `RETRY_MAX_WAIT_S`,
   each with a random spread of up to `RETRY_SPREAD`. So attempts fall at about 1, 3, 7, 15,
   31, 61, 91 … 271 seconds after the first failure; the message appears at 20 seconds,
-  counting down to the attempt at 31; no attempt is made after 300.
+  counting down to the attempt at 31. A wait that would pass the 300 seconds is shortened
+  to end at them, so the last attempt is at 300 seconds and the line always counts down to
+  an attempt that will be made; no attempt is made after 300.
+- **A `Retry-After`** is whole seconds or an HTTP date, reckoned on the page's clock from the
+  moment the answer arrived; one the page cannot read is ignored. When it holds the next
+  attempt past the 300 seconds, no attempt is left to count down to: the request waits for
+  Try again at once, and from `RETRY_QUIET_S` the line is the red one.
+- **The attempt time covers the body:** `ATTEMPT_TIMEOUT_S` (`UPLOAD_ATTEMPT_TIMEOUT_S`) runs
+  from sending until the whole body is read. A body that stalls after the headers is aborted
+  then, and one cut off partway (a restart) fails at once; both are quiet retries, never
+  `wizard.bad_answer`, which is for a whole body the page cannot read.
 - **Retry now** makes the next attempt of every waiting request at once and does not restart
-  the 300 seconds; the countdown then runs to the following wait. **Try again** makes an
+  the 300 seconds; the countdown then runs to the following wait. It never wakes a request
+  that waits for Try again. **Try again** makes an
   attempt at once of every request past its 300 seconds, each starting its count afresh at
-  its next failure.
+  its next failure; a request whose last attempt is still being made when Try again is
+  pressed is sent again the moment that attempt fails.
 - **The 300 seconds are counted for each request;** the panel line shows the countdown of
   the request that failed earliest, and goes the moment any request of the page's is
   answered. Since the server has then answered, every request still waiting makes its next
@@ -595,11 +609,19 @@ row and one slice job):
 - A request that fails once and succeeds on the attempt at 1 s shows nothing.
 - At 19.9 s of failures the panel line is empty; at 20 s the amber line shows, counting down
   to the attempt at 31 s, the figure falling by one each second the clock moves.
-- The waits are 1, 2, 4, 8, 16, 30, 30 … seconds within the spread; no attempt after 300 s.
+- The waits are 1, 2, 4, 8, 16, 30, 30 … seconds within the spread, the last one shortened
+  to end at 300 s; no attempt after 300 s.
+- From the attempt at 271 s the line counts down to the attempt at 300 s (20 s at 280 s, 1 s
+  at 299 s), and Retry now at 280 s or 299 s makes an attempt at once.
 - At 300 s the red line and Try again; Try again attempts at once and restarts the count (a
   further 20 s of failures shows the amber line again). Retry now attempts at once and does
-  not restart the count.
-- `Retry-After: 7` holds the next attempt for 7 s.
+  not restart the count, and never wakes a request past its 300 s. Try again pressed while
+  the attempt at 300 s is still being made sends the request again when that attempt fails.
+- `Retry-After: 7` holds the next attempt for 7 s; a `Retry-After` given as an HTTP date
+  holds it until that moment; one that cannot be read is ignored; `Retry-After: 400` gives
+  no line before 20 s and the red line with Try again from 20 s.
+- A body that stalls after the headers counts as failed at 15 s (an upload's at 60 s); a
+  body cut off partway is retried quietly, a JSON body and a sliced file's bytes alike.
 - An answer without `X-PenguinSlicer-Version` is retried; each quiet-retry code is retried;
   `slice.busy`, a `delivery.*` refusal and an unknown code are shown at once.
 - A part's row says "Taking longer than usual; still trying…" at 4 s and not at 3.9 s; after
@@ -2222,14 +2244,15 @@ strings; the bare name `three` is the vendored core, `vendor/three/build/three.m
 and a page module names a vendored file by its path from itself
 (`'../vendor/three/examples/jsm/controls/OrbitControls.js'`), which also works where
 `wizard/src/` and `wizard/vendor/` are served side by side, as `make -C wizard trials-serve`
-does. Inside a style sheet it rewrites each `@import` and `url(...)`, leaving `data:`
-addresses. A file's hash is taken of its bytes after its names are rewritten, so a change to a
+does. Inside a style sheet it rewrites each `@import` and `url(...)` outside comments, leaving
+`data:` addresses. A file's hash is taken of its bytes after its names are rewritten, so a change to a
 module changes the name of every module that imports it and a browser that keeps an asset
 for a year never mixes an old importer with a new import; a file with nothing to rewrite keeps
 its bytes. It refuses, with a sentence that says why: no `index.html`; no version
 placeholder, or more than one; a reference to another site; a reference to a file not in
 `wizard/src/` (or, from a module, `wizard/vendor/`); an absolute address; a bare module name
-other than `three`; modules that import each other in a circle (no name could carry the hash
+other than `three`; a dynamic import whose name is not one quoted string (a template literal
+or an expression, which the build cannot rewrite); modules that import each other in a circle (no name could carry the hash
 of what it imports); two files that would get the same built name. Only `src` and `href` are
 read in `index.html`: an address in another attribute (`srcset`, `poster`, `data`) is neither
 rewritten nor refused, and the content security policy is what stops it loading.

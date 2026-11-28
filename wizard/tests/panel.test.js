@@ -7,6 +7,8 @@ import assert from 'node:assert/strict';
 
 import { createPanelLine, lineContent } from '../src/panel/panel-line.js';
 import { STEPS, heldBy, stepIndex } from '../src/panel/steps.js';
+import { whyNotLeave } from '../src/panel/panel.js';
+import { MAX_INSTANCES } from '../src/geometry/constants.js';
 import { summaryModel, changeLine } from '../src/panel/summary.js';
 import { createTooltips, placeTooltip } from '../src/panel/tooltips.js';
 import * as constants from '../src/page-constants.js';
@@ -38,6 +40,37 @@ test('a click on a later tab is held by the first step before it that does not a
   const why = rules({ settings: null, layout: '23 instances are closer than 12 mm with supports on.', parts: null });
   assert.deepEqual(heldBy('send', 'settings', why), { step: 'layout', text: 'Layout first: 23 instances are closer than 12 mm with supports on.' });
   assert.deepEqual(heldBy('layout', 'parts', rules({ parts: 'add a part.' })), { step: 'parts', text: 'Parts first: add a part.' });
+});
+
+// --- each reason a step holds a click (whyNotLeave), each reached, and the limit at its edge
+
+const at = (fields, rest = {}) => ({ plate: { parts: 1, instances: 1, ...fields }, layoutProblem: null, sliced: false, ...rest });
+
+test('the Parts step holds a click with no part', () => {
+  assert.equal(whyNotLeave('parts', at({ parts: 0, instances: 0 })), 'add a part.');
+});
+
+test('the Parts step lets a plate of exactly 150 instances go on, and holds one of 151', () => {
+  assert.equal(MAX_INSTANCES, 150);
+  assert.equal(whyNotLeave('parts', at({ parts: 2, instances: 150 })), null);
+  assert.equal(whyNotLeave('parts', at({ parts: 2, instances: 151 })), 'a plate holds up to 150 instances.');
+});
+
+test('the Layout step holds a click with no instances', () => {
+  assert.equal(whyNotLeave('layout', at({ parts: 1, instances: 0 })), 'there are no instances.');
+});
+
+test('the Layout step holds a click with its first problem, and lets one go with none', () => {
+  const problem = '23 instances are closer than 12 mm with supports on.';
+  assert.equal(whyNotLeave('layout', at({ instances: 23 }, { layoutProblem: problem })), problem);
+  assert.equal(whyNotLeave('layout', at({ instances: 23 })), null);
+});
+
+test('the Preview step holds a click until the plate is sliced; Settings and Send never do', () => {
+  assert.equal(whyNotLeave('preview', at({})), 'the plate is not sliced yet.');
+  assert.equal(whyNotLeave('preview', at({}, { sliced: true })), null);
+  assert.equal(whyNotLeave('settings', at({ parts: 0, instances: 0 })), null);
+  assert.equal(whyNotLeave('send', at({ parts: 0, instances: 0 })), null);
 });
 
 test('a click on an earlier tab, or on the current one, is never held', () => {

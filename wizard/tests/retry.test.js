@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { createApi } from '../src/api.js';
 import { retryWaitS, isQuietRetry } from '../src/retry.js';
 import { FakeClock } from './fakes/clock.js';
-import { FakeFrontServer, errorReport, steps } from './fakes/front_server.js';
+import { FakeFrontServer, errorReport, example, steps } from './fakes/front_server.js';
 
 const S = 1000;
 
@@ -55,13 +55,83 @@ test('a request that fails once and succeeds on the attempt at 1 s shows nothing
   assert.deepEqual(lines.filter((l) => l.kind !== 'none'), []);
 });
 
-test('attempts fall at 1, 3, 7, 15, 31, 61 … 271 s, and none after 300 s', async () => {
+test('attempts fall at 1, 3, 7, 15, 31, 61 … 271 s and a last one at 300 s, and none after', async () => {
   const { clock, server, api } = setUp();
   recordMoments(server, clock);
   dropAll(server, 'GET', '/api/me', 100);
   api.get('/api/me');
   await clock.advance(600 * S);
-  assert.deepEqual(moments(server, clock, 'GET', '/api/me'), [0, 1, 3, 7, 15, 31, 61, 91, 121, 151, 181, 211, 241, 271]);
+  assert.deepEqual(moments(server, clock, 'GET', '/api/me'), [0, 1, 3, 7, 15, 31, 61, 91, 121, 151, 181, 211, 241, 271, 300]);
+});
+
+test('from the attempt at 271 s the line counts down to the last attempt at 300 s, and Retry now makes it', async () => {
+  const { clock, server, api } = setUp();
+  recordMoments(server, clock);
+  dropAll(server, 'GET', '/api/me', 100);
+  api.get('/api/me');
+  await clock.advanceTo(280 * S);
+  assert.deepEqual(api.board.state(), { kind: 'slow', seconds: 20 });
+  await clock.advanceTo(299 * S);
+  assert.deepEqual(api.board.state(), { kind: 'slow', seconds: 1 });
+  api.board.retryNow();
+  await clock.advance(0);
+  assert.deepEqual(moments(server, clock, 'GET', '/api/me').slice(-2), [271, 299]);
+});
+
+test('Retry now at 280 s makes an attempt at once, and the line then counts down to 300 s', async () => {
+  const { clock, server, api } = setUp();
+  recordMoments(server, clock);
+  dropAll(server, 'GET', '/api/me', 100);
+  api.get('/api/me');
+  await clock.advanceTo(280 * S);
+  api.board.retryNow();
+  await clock.advance(0);
+  assert.deepEqual(moments(server, clock, 'GET', '/api/me').slice(-2), [271, 280]);
+  assert.deepEqual(api.board.state(), { kind: 'slow', seconds: 20 });
+  await clock.advanceTo(300 * S);
+  assert.deepEqual(moments(server, clock, 'GET', '/api/me').slice(-1), [300]);
+  assert.deepEqual(api.board.state(), { kind: 'unreachable' });
+});
+
+test('a Retry-After that reaches past 300 s leaves no attempt to count down to: the red line and Try again', async () => {
+  const { clock, server, api } = setUp();
+  recordMoments(server, clock);
+  server.script('GET', '/api/me', steps.report(errorReport('front.too_many_requests'), { retryAfter: 400 }));
+  const result = api.get('/api/me');
+  await clock.advanceTo(19.9 * S);
+  assert.deepEqual(api.board.state(), { kind: 'none' });
+  await clock.advanceTo(30 * S);
+  assert.deepEqual(api.board.state(), { kind: 'unreachable' });
+  assert.equal(server.made('GET', '/api/me').length, 1);
+  api.board.tryAgain();
+  assert.equal((await result).ok, true);
+  assert.deepEqual(moments(server, clock, 'GET', '/api/me'), [0, 30]);
+});
+
+test('Retry now never wakes a request past its 300 s: only Try again does', async () => {
+  const { clock, server, api } = setUp();
+  dropAll(server, 'GET', '/api/me', 100);
+  api.get('/api/me');
+  await clock.advanceTo(400 * S);
+  const before = server.made('GET', '/api/me').length;
+  api.board.retryNow();
+  await clock.advance(0);
+  assert.equal(server.made('GET', '/api/me').length, before);
+  assert.deepEqual(api.board.state(), { kind: 'unreachable' });
+});
+
+test('Try again while the attempt at 300 s is still being made sends the request again when that attempt fails', async () => {
+  const { clock, server, api } = setUp();
+  recordMoments(server, clock);
+  server.script('GET', '/api/me', ...Array.from({ length: 14 }, () => steps.drop()), steps.hold());
+  const result = api.get('/api/me');
+  await clock.advanceTo(305 * S);
+  assert.equal(server.made('GET', '/api/me').length, 15);
+  assert.deepEqual(api.board.state(), { kind: 'unreachable' });
+  api.board.tryAgain();
+  await clock.advanceTo(315 * S);              // the attempt at 300 s times out at 315 s
+  assert.equal((await result).ok, true);
+  assert.deepEqual(moments(server, clock, 'GET', '/api/me').slice(-2), [300, 315]);
 });
 
 test('with the spread, the waits stay within a tenth of 1, 2, 4 … 30 s', async () => {
@@ -72,7 +142,9 @@ test('with the spread, the waits stay within a tenth of 1, 2, 4 … 30 s', async
   api.get('/api/me');
   await clock.advance(600 * S);
   const at = moments(server, clock, 'GET', '/api/me');
-  const waits = at.slice(1).map((t, i) => t - at[i]);
+  // the last attempt is at 300 s itself, its wait shortened to reach it
+  assert.equal(at[at.length - 1], 300);
+  const waits = at.slice(1, -1).map((t, i) => t - at[i]);
   const plain = (i) => Math.min(2 ** i, 30);
   assert.ok(waits.length >= 13);
   waits.forEach((w, i) => assert.ok(Math.abs(w - plain(i)) <= plain(i) * 0.1 + 1e-9, `wait ${i}: ${w}`));
@@ -114,11 +186,11 @@ test('at 300 s the line is red; Try again attempts at once and starts the 300 s 
   await clock.advanceTo(300 * S);
   assert.deepEqual(api.board.state(), { kind: 'unreachable' });
   await clock.advanceTo(400 * S);
-  assert.equal(server.made('GET', '/api/me').length, 14);
+  assert.equal(server.made('GET', '/api/me').length, 15);
 
   api.board.tryAgain();
   await clock.advance(0);
-  assert.deepEqual(moments(server, clock, 'GET', '/api/me').slice(14), [400]);
+  assert.deepEqual(moments(server, clock, 'GET', '/api/me').slice(15), [400]);
   assert.deepEqual(api.board.state(), { kind: 'none' });
   await clock.advanceTo(419.9 * S);
   assert.deepEqual(api.board.state(), { kind: 'none' });
@@ -216,6 +288,73 @@ test('an attempt with no answer in 15 s counts as failed, and an upload\'s in 60
   assert.deepEqual(moments(server, clock, 'POST', '/api/parts'), [0, 61]);
 });
 
+test('the 15 s of an attempt cover its body: a body that stalls after the headers counts as failed', async () => {
+  const { clock, server, api } = setUp();
+  recordMoments(server, clock);
+  server.script('GET', '/api/me', steps.stallBody());
+  const result = api.get('/api/me');
+  await clock.advanceTo(15.9 * S);
+  assert.deepEqual(moments(server, clock, 'GET', '/api/me'), [0]);
+  await clock.advanceTo(16 * S);
+  assert.deepEqual(moments(server, clock, 'GET', '/api/me'), [0, 16]);
+  assert.equal((await result).ok, true);
+});
+
+test('an upload\'s 60 s cover its body too', async () => {
+  const { clock, server, api } = setUp();
+  recordMoments(server, clock);
+  server.script('POST', '/api/parts', steps.stallBody(201));
+  const result = api.post('/api/parts', { bytes: new Uint8Array(4), upload: true });
+  await clock.advanceTo(60.9 * S);
+  assert.equal(server.made('POST', '/api/parts').length, 1);
+  await clock.advanceTo(61 * S);
+  assert.equal((await result).ok, true);
+  assert.deepEqual(moments(server, clock, 'POST', '/api/parts'), [0, 61]);
+});
+
+test('a body cut off partway, as by a restart, is a quiet retry and not the wizard\'s bad answer', async () => {
+  const { clock, server, api } = setUp();
+  recordMoments(server, clock);
+  server.script('GET', '/api/me', steps.cutBody(), steps.cutBody(500));
+  const result = api.get('/api/me');
+  await clock.advanceTo(3 * S);
+  assert.deepEqual(await result, { ok: true, status: 200, body: example('wizard-front/me.json') });
+  assert.deepEqual(moments(server, clock, 'GET', '/api/me'), [0, 1, 3]);
+});
+
+test('a sliced file whose bytes are cut off partway is retried quietly', async () => {
+  const { clock, server, api } = setUp();
+  server.script('GET', '/api/slices/3f9a1c2b/file', steps.cutBody(),
+    { kind: 'answer', status: 200, body: 'G1 X0', headers: { 'Content-Type': 'application/octet-stream' } });
+  const result = api.get('/api/slices/3f9a1c2b/file', { expect: 'bytes' });
+  await clock.advance(1 * S);
+  assert.equal(new TextDecoder().decode((await result).body), 'G1 X0');
+  assert.equal(server.requests.length, 2);
+});
+
+test('a Retry-After given as an HTTP date holds the next attempt until that moment', async () => {
+  const { clock, server, api } = setUp();
+  recordMoments(server, clock);
+  const at = new Date(clock.now() + 9 * S).toUTCString();
+  server.script('GET', '/api/me', steps.report(errorReport('front.too_many_requests'), { retryAfter: at }));
+  const result = api.get('/api/me');
+  await clock.advanceTo(8.9 * S);
+  assert.equal(server.made('GET', '/api/me').length, 1);
+  await clock.advanceTo(9 * S);
+  assert.equal((await result).ok, true);
+  assert.deepEqual(moments(server, clock, 'GET', '/api/me'), [0, 9]);
+});
+
+test('a Retry-After that cannot be read is ignored, and the plain wait holds', async () => {
+  const { clock, server, api } = setUp();
+  recordMoments(server, clock);
+  server.script('GET', '/api/me', steps.report(errorReport('front.too_many_requests'), { retryAfter: 'soon' }));
+  const result = api.get('/api/me');
+  await clock.advance(1 * S);
+  assert.equal((await result).ok, true);
+  assert.deepEqual(moments(server, clock, 'GET', '/api/me'), [0, 1]);
+});
+
 test('while the attempt is being made the line says the browser is retrying now', async () => {
   const { clock, server, api } = setUp();
   server.script('GET', '/api/me', steps.drop(), steps.drop(), steps.drop(), steps.drop(), steps.drop(), steps.hold());
@@ -249,7 +388,7 @@ test('a request answered before 4 s never tells its row it is slow', async () =>
 
 test('after 300 s the request is kept, not dropped, and Try again sends it again', async () => {
   const { clock, server, api } = setUp();
-  dropAll(server, 'POST', '/api/parts', 14);
+  dropAll(server, 'POST', '/api/parts', 15);
   let settled = false;
   const result = api.post('/api/parts', { bytes: new Uint8Array(4), upload: true });
   result.then(() => { settled = true; });

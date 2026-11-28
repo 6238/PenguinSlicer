@@ -375,6 +375,20 @@ def test_a_confirmation_goes_ahead_only_on_its_button(wizard, answer, expected):
     assert w.page.locator(".confirm-pop").count() == 0
 
 
+def test_a_confirmation_puts_its_keep_button_first_and_focused_so_enter_keeps_things(wizard):
+    w = wizard(320)
+    w.run("""const b = document.createElement('button'); b.id = 'new-plate'; b.className = 'btn small'; b.textContent = 'New plate';
+             document.querySelector('section.step[data-step=parts]').append(b);
+             window.answer = wizard.panel.tell.confirm(b, {question: 'Start a new plate? The parts and layout of this one are cleared.',
+                                                            go: 'New plate', keep: 'Keep this plate'});""")
+    assert w.page.locator(".confirm-pop .acts button").all_inner_texts() == ["Keep this plate", "New plate"]
+    assert w.page.evaluate("document.activeElement.textContent") == "Keep this plate"
+    assert w.page.evaluate("document.activeElement.closest('.confirm-pop') !== null") is True
+    w.page.keyboard.press("Enter")
+    assert w.page.evaluate("window.answer") is False
+    assert w.page.locator(".confirm-pop").count() == 0
+
+
 def test_hostile_sentences_are_shown_as_text(wizard):
     w = wizard(320)
     w.set({"plate": PLATE, "step": "settings"})
@@ -417,7 +431,12 @@ def test_the_retry_messages_on_the_panel_line(wizard):
     for _ in range(9):                                       # attempts at 51, 81 … 291 s
         attempt(w, "/api/me", 30000)
     w.until("return wizard.api.waiting() === 1;")
-    w.page.clock.run_for(9000)                               # 300 s
+    assert "retrying in 9 s." in line.inner_text()           # 291 s: counting down to the last attempt, at 300 s
+    w.page.clock.run_for(8000)                               # 299 s
+    assert "retrying in 1 s." in line.inner_text()
+    with w.page.expect_event("requestfailed"):
+        w.page.clock.run_for(1000)                           # 300 s: the last attempt
+    w.until("return wizard.api.waiting() === 1;")
     assert line.evaluate("e => e.firstChild.textContent") == "The server could not be reached. "
     assert line.locator("button").inner_text() == "Try again"
     assert line.evaluate("e => getComputedStyle(e).color") == "rgb(209, 36, 47)"       # red

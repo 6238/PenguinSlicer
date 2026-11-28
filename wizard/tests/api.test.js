@@ -113,6 +113,16 @@ test('an answer of the front server that is not JSON is the wizard\'s own report
   assert.equal(server.requests.length, 1);
 });
 
+test('the bad answer\'s detail is the path, the status and the start of the body', async () => {
+  const { server, api } = setUp();
+  server.script('GET', '/api/me', { kind: 'answer', status: 200, body: `<html>${'x'.repeat(400)}`, headers: { 'Content-Type': 'text/html' } });
+  server.script('GET', '/api/configuration', steps.answer(404, { not: 'a report' }));
+  const html = await api.get('/api/me');
+  assert.equal(html.report.detail, `/api/me answered 200: <html>${'x'.repeat(194)}`);
+  const notReport = await api.get('/api/configuration');
+  assert.equal(notReport.report.detail, '/api/configuration answered 404: {"not":"a report"}');
+});
+
 test('an error status whose body is not an error report is the same report of the wizard\'s', async () => {
   const { server, api } = setUp();
   server.script('GET', '/api/me', steps.answer(404, { not: 'a report' }));

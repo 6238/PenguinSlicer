@@ -21,6 +21,16 @@ function isErrorReport(body) {
     && typeof body.message === 'string' && typeof body.remedy === 'string';
 }
 
+// The seconds a Retry-After asks for: whole seconds, or an HTTP date reckoned on the page's own
+// clock from the moment the answer arrived; 0 when it is missing, past or cannot be read.
+export function retryAfterS(value, nowMs) {
+  if (value === null || value === undefined) return 0;
+  const trimmed = String(value).trim();
+  if (/^\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
+  const at = Date.parse(trimmed);
+  return Number.isFinite(at) ? Math.max(0, (at - nowMs) / 1000) : 0;
+}
+
 // What one attempt gave: {answer: result} when the front server answered for good, or
 // {retry: true, retryAfterS} when the attempt counts as failed and is made again.
 async function attemptOnce({ transport, clock, method, path, headers, body, timeoutS, expect, tellVersion }) {
@@ -37,24 +47,31 @@ async function attemptOnce({ transport, clock, method, path, headers, body, time
     if (!version) return { retry: true };           // not the front server's answer
     tellVersion(version);
     const success = answer.status >= 200 && answer.status < 300;
+    // The body is read within the attempt's time too: a body that stalls is aborted by the
+    // timer above and, like one cut off partway by a restart, makes the attempt fail quietly.
     let content = null;
+    let text = '';
     if (answer.status !== 204) {
       try {
-        content = success && expect === 'bytes' ? await answer.bytes() : await answer.json();
-      } catch (error) {
-        if (error && error.name === 'SyntaxError') {
-          return { answer: { ok: false, status: answer.status, report: badAnswer(path, answer.status, error.message) } };
+        if (success && expect === 'bytes') content = await answer.bytes();
+        else text = await answer.text();
+      } catch {
+        return { retry: true };                     // the body stalled or was cut off
+      }
+      if (!(success && expect === 'bytes')) {
+        try {
+          content = JSON.parse(text);
+        } catch {
+          return { answer: { ok: false, status: answer.status, report: badAnswer(path, answer.status, text) } };
         }
-        return { retry: true };                     // the body was cut off
       }
     }
     if (success) return { answer: { ok: true, status: answer.status, body: content } };
     if (!isErrorReport(content)) {
-      return { answer: { ok: false, status: answer.status, report: badAnswer(path, answer.status, JSON.stringify(content)) } };
+      return { answer: { ok: false, status: answer.status, report: badAnswer(path, answer.status, text) } };
     }
     if (isQuietRetry(content, path)) {
-      const after = Number.parseFloat(answer.header('Retry-After') ?? '');
-      return { retry: true, retryAfterS: Number.isFinite(after) && after > 0 ? after : 0 };
+      return { retry: true, retryAfterS: retryAfterS(answer.header('Retry-After'), clock.now()) };
     }
     return { answer: { ok: false, status: answer.status, report: content } };
   } finally {
@@ -125,16 +142,20 @@ export function createApi({ transport, clock, version, currentGroup = () => null
           const now = clock.now();
           if (!entry && onSlow && slowTimer === null) slowTimer = clock.after(ROW_SLOW_S * 1000, onSlow);
           entry = board.failed(entry);
-          const wait = Math.max(retryWaitS(index, random), outcome.retryAfterS ?? 0) * 1000;
+          // The next attempt: after the wait, but never later than the end of the 300 s, so
+          // that the line always counts down to an attempt that will be made; and never before
+          // a Retry-After. One that a Retry-After pushes past the 300 s is not made by itself.
+          const deadline = entry.firstFailedAt + RETRY_TOTAL_S * 1000;
+          const at = Math.max(Math.min(now + retryWaitS(index, random) * 1000, deadline), now + (outcome.retryAfterS ?? 0) * 1000);
           index += 1;
           waiting += 1;
           try {
-            if (now + wait > entry.firstFailedAt + RETRY_TOTAL_S * 1000) {
+            if (now >= deadline || at > deadline) {
               await board.park(entry);
               entry = null;
               index = 0;
             } else {
-              await board.waitUntil(entry, now + wait);
+              await board.waitUntil(entry, at);
             }
           } finally {
             waiting -= 1;

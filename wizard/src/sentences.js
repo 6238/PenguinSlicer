@@ -17,14 +17,16 @@ export const ROW_SLOW = 'Taking longer than usual; still trying…';
 
 // An answer of the front server that the page cannot read: a body that is not JSON where the
 // contract says JSON, or a failure whose body is not an error report. A fault of the front
-// server, shown as a failure and not retried.
-export function badAnswer(path, status, detail) {
+// server, shown as a failure and not retried. Its detail is the path, the status and the first
+// BAD_ANSWER_BODY_CHARS characters of the body.
+export const BAD_ANSWER_BODY_CHARS = 200;
+export function badAnswer(path, status, body) {
   return {
     code: 'wizard.bad_answer',
     message: 'The server gave an answer this page cannot read.',
     remedy: 'Reload the page to try again.',
     retryable: false,
-    detail: `${path} answered ${status}: ${String(detail).slice(0, 300)}`,
+    detail: `${path} answered ${status}: ${String(body).slice(0, BAD_ANSWER_BODY_CHARS)}`,
   };
 }
 

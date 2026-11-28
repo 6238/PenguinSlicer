@@ -3,7 +3,8 @@
 (docs/mockups/print-wizard, version 8, standalone) and of the built page (wizard/dist/, served
 by the fake front server) at 320, 480, 520 and 680 px, for the header and step tabs with the
 panel line, a tooltip, the plate summary, the change details (a joined box), a notification, a
-message, a card and the page's confirmation (which the mockup never drew), written in pairs to
+message, a card, a line, the page's confirmation and the panel line's amber and red retry
+messages (the last three the mockup never drew), written in pairs to
 docs/orchestration/phase-2/look/wizard-2/ with index.html, which shows each pair side by side.
 
 Not a test: a person looks at the pairs. The built page is put in the mockup's state by its
@@ -14,6 +15,7 @@ Usage: make -C wizard look (builds first).
 """
 import datetime
 import html
+import json
 import re
 import sys
 from pathlib import Path
@@ -23,8 +25,8 @@ from playwright.sync_api import sync_playwright
 WIZARD = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(WIZARD))
 
-from tests_browser.conftest import DIST, main_module  # noqa: E402
-from tests_browser.fake_front_server import FakeFrontServer  # noqa: E402
+from tests_browser.conftest import DIST, START, main_module  # noqa: E402
+from tests_browser.fake_front_server import FakeFrontServer, error_report  # noqa: E402
 
 MOCKUP = (WIZARD.parent / "docs" / "mockups" / "print-wizard" / "index.html").as_uri()
 OUT = WIZARD.parent / "docs" / "orchestration" / "phase-2" / "look" / "wizard-2"
@@ -38,7 +40,10 @@ THINGS = [
     ("notification", "A notification"),
     ("message", "A message (amber)"),
     ("card", "A card"),
+    ("line", "A line: the Parts step's count under the list"),
     ("confirmation", "A confirmation (designed in the guide; the mockup has none)"),
+    ("retry-amber", "The panel line in amber at 20 s of failures, counting down (the guide's; the mockup has none)"),
+    ("retry-red", "The panel line in red with Try again (the guide's; the mockup has none)"),
 ]
 PAD = 6
 
@@ -105,6 +110,11 @@ def mockup_pictures(browser, width):
     shoot(page, f"{width}-message-mockup.png", "#parts-list .msg.warn")
     words["message"] = {"what": page.inner_text("#parts-list .msg.warn .what"), "todo": page.inner_text("#parts-list .msg.warn .todo")}
 
+    # a line: the count under the parts list
+    page.wait_for_function("() => document.getElementById('parts-total').textContent.trim() !== ''")
+    shoot(page, f"{width}-line-mockup.png", "#parts-total")
+    words["line"] = page.inner_text("#parts-total")
+
     # the plate summary and the change details
     page.wait_for_selector("#btn-next:not([disabled])")
     page.click("#btn-next")
@@ -162,7 +172,10 @@ def wizard_pictures(browser, server, width, words):
     page.click("#stepbar li[data-step=layout]")
     page.wait_for_selector("#step-why:not([hidden])")
     shoot(page, f"{width}-tabs-wizard.png", "#wiz-header")
-    page.mouse.click(5, HEIGHT - 5)
+    # the mockup's passing line stays through its tooltip (its move away falls outside its
+    # panel), so the wizard's stays too: both pages in one state. A move away (no press) and
+    # back starts the tooltip's rest afresh.
+    page.mouse.move(5, HEIGHT - 5)
     target = "#stepbar li[data-step=layout]" if width < 480 else "#config-refresh"
     page.hover(target)
     page.clock.run_for(150)
@@ -177,6 +190,10 @@ def wizard_pictures(browser, server, width, words):
     run(page, """const m = wizard.panel.tell.message({kind: 'warn', what: arg.what, todo: arg.todo});
                  m.id = 'look-message'; document.querySelector('section.step[data-step=parts]').append(m);""", words["message"])
     shoot(page, f"{width}-message-wizard.png", "#look-message")
+
+    run(page, """const l = wizard.panel.tell.line(arg); l.id = 'look-line';
+                 document.querySelector('section.step[data-step=parts]').append(l);""", words["line"])
+    shoot(page, f"{width}-line-wizard.png", "#look-line")
 
     first = re.match(r"(\d+) parts? · (\d+) instances?", words["summary"]["lines"][0])
     filament, profile = words["summary"]["lines"][1].split(" · ", 1)
@@ -204,6 +221,57 @@ def wizard_pictures(browser, server, width, words):
                  wizard.panel.tell.confirm(b, {question: 'Start a new plate? The parts on this plate are dropped.', go: 'New plate', keep: 'Keep this plate'});""")
     page.wait_for_selector(".confirm-pop")
     shoot(page, f"{width}-confirmation-wizard.png", "#look-new-plate", ".confirm-pop")
+    page.close()
+
+
+def paused_page(browser, server, width):
+    """The built page with its clock paused and its retry spread at its middle, so that the
+    retry waits are exact and time moves only when this script moves it."""
+    page = browser.new_page(viewport={"width": width, "height": HEIGHT})
+    page.add_init_script("Math.random = () => 0.5;")
+    page.clock.install(time=START)
+    page.goto(server.url)
+    page.wait_for_selector('html[data-started="true"]', state="attached")
+    page.clock.pause_at(START + datetime.timedelta(minutes=10))
+    return page
+
+
+def until_waiting(page):
+    """Asks the page until its one failed request waits for its next attempt: events, no time."""
+    for _ in range(500):
+        if run(page, "return wizard.api.waiting() === 1;"):
+            return
+    raise RuntimeError("the page never waited to retry")
+
+
+def retry_pictures(browser, server, width):
+    # amber: every attempt fails at once; attempts at 1, 3, 7 and 15 s, then 20 s
+    page = paused_page(browser, server, width)
+    run(page, "wizard.store.set({configName: '6238 (Popcorn Penguins)'});")
+    page.route("**/api/me", lambda route: route.abort())
+    with page.expect_event("requestfailed"):
+        run(page, "wizard.api.get('/api/me'); return null;")
+    for wait in [1000, 2000, 4000, 8000]:
+        until_waiting(page)
+        with page.expect_event("requestfailed"):
+            page.clock.run_for(wait)
+    until_waiting(page)
+    page.clock.run_for(5000)
+    page.wait_for_selector("#step-why.slow:not([hidden])")
+    shoot(page, f"{width}-retry-amber-wizard.png", "#wiz-header")
+    page.close()
+
+    # red: the front server asks for a wait past the 300 s, so no attempt is left to count down to
+    page = paused_page(browser, server, width)
+    run(page, "wizard.store.set({configName: '6238 (Popcorn Penguins)'});")
+    page.route("**/api/me", lambda route: route.fulfill(
+        status=429, headers={"X-PenguinSlicer-Version": server.version, "Retry-After": "400"},
+        content_type="application/json", body=json.dumps(error_report("front.too_many_requests", retryable=True))))
+    run(page, "wizard.api.get('/api/me'); return null;")
+    until_waiting(page)
+    page.clock.run_for(20000)
+    page.wait_for_function("() => document.getElementById('step-why').textContent.includes('could not be reached')")
+    shoot(page, f"{width}-retry-red-wizard.png", "#wiz-header")
     page.close()
 
 
@@ -236,6 +304,7 @@ def main():
             for width in WIDTHS:
                 words = mockup_pictures(browser, width)
                 wizard_pictures(browser, server, width, words)
+                retry_pictures(browser, server, width)
                 print(f"look: {width} px done")
         finally:
             browser.close()

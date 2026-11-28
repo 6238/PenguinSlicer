@@ -74,7 +74,10 @@ of the built panel beside the mockup's are in
     server answer that is not JSON where JSON is due, or a failure whose body is not an error
     report. I made it the wizard's own error report `wizard.bad_answer` ("The server gave an
     answer this page cannot read." / "Reload the page to try again."), shown and not retried,
-    with a test that produces it. To overrule: change `badAnswer` in `sentences.js`.
+    with a test that produces it. Its `detail` is the path, the status and the first 200
+    characters of the body as it came (`BAD_ANSWER_BODY_CHARS`, settled in the review: the
+    details file says "the start of the body" with no figure). To overrule: change
+    `badAnswer` in `sentences.js`.
 13. **How the browser tests move time and reach the running wizard.** The documents require
     a fake clock in every test. In Chromium I used Playwright's own fake clock (`page.clock`,
     installed before the page loads and paused once it has), held the one random figure
@@ -117,6 +120,59 @@ of the built panel beside the mockup's are in
     without one Chromium asks for `/favicon.ico`, which the contract does not serve. I added a
     small `favicon.svg`, served from `/assets/` like every file. To overrule: delete it and the
     `<link>`.
+
+Decided while fixing the review's findings:
+
+23. **The last attempt is at 300 s.** The guide says the amber line counts down to the next
+    attempt and that no attempt is made after 300 s; with the waits as they fall, the last
+    attempt is at about 271 s and the next would be at 301 s, so from 271 s to 300 s there was
+    no attempt to count down to (the line said "retrying now" and Retry now did nothing). The
+    documents are silent on that gap. I shortened the wait that would pass the 300 s so that
+    it ends at them: the line counts down to an attempt at 300 s, and Retry now makes it at
+    once. The waits' list in the details file and the guide's table now say so. To overrule:
+    the `deadline` in `request` in `wizard/src/api.js`, and show something else in the gap.
+24. **A `Retry-After` past the 300 s.** The details file says an answer with `Retry-After` is
+    not tried again before that many seconds; it is silent when that reaches past the 300 s.
+    No attempt is then left to count down to, so the request waits for Try again at once and
+    the board shows it as the red line from 20 s (`front.too_many_requests` with
+    `Retry-After: 400`: nothing until 20 s, then "The server could not be reached." with Try
+    again). Try again then goes against the server's request, but only when the user asks.
+    To overrule: `state()` in `wizard/src/retry.js` (the `parked` case).
+25. **Try again during the last attempt.** From 300 s the line is red while the attempt made at
+    300 s may still be under way (up to 15 s). Try again pressed then marks the request, and
+    the moment that attempt fails it is sent again with its count started afresh, instead of
+    the press doing nothing. To overrule: `tryAgain()` and `park()` in `retry.js`.
+26. **A `Retry-After` as an HTTP date.** HTTP allows a date as well as seconds; the details
+    file does not say which the front server sends. The page reads both, a date reckoned on its
+    own clock from the moment the answer arrived, and ignores a value it cannot read (the plain
+    wait then holds). Before the review a date was read as 0. To overrule: `retryAfterS` in
+    `wizard/src/api.js`.
+27. **The body is read as text and parsed by the page.** So that `wizard.bad_answer` can carry
+    the start of the body, and so that a body that fails while it is being read (stalled past
+    the attempt time, or cut off by a restart) is told apart from a whole body that is not
+    JSON: the first is a quiet retry, the second the wizard's report. The fake front server
+    has two steps for it, `stallBody` and `cutBody`. To overrule: `attemptOnce` in `api.js`.
+28. **The build and two kinds of name it could not handle.** A name inside a style sheet's
+    comment (`/* url(gone.png) */`) is now left alone, as in a module; a dynamic import whose
+    name is not one quoted string (a template literal, an expression) is refused with a
+    sentence naming the line, since the build cannot rewrite it and the page would fail only
+    when it runs. To overrule: `css_code_only` and `DYNAMIC_IMPORT` in `wizard/build.py`.
+
+Findings of the review declined, with the reason:
+
+- **A report about the page itself answered with a quiet-retry code does not clear the panel
+  line** (minor finding 5). Declined: for every request, an answer whose error report is a
+  quiet-retry code (`front.slice_unreachable`, `front.unexpected`, …) counts as a failed
+  attempt, not as an answer, and does not clear the line; the page's reports about itself
+  follow the same rule. Such an answer says the front server is up but something behind it
+  is not, so sending every waiting request again at once, which an answer does, would only
+  hammer it. An answer of any other kind to such a report does clear the line, as for every
+  request.
+- **Running `make -C wizard look` again changes some committed pictures by bytes** (minor
+  finding 8). Declined: the pictures are for a person to look at and no test compares them;
+  the changes are anti-aliasing and the hover state, invisible in the pairs. Making Chromium's
+  rendering byte-stable (fonts, hinting, the cursor) costs more than it is worth. The
+  pictures in this pull request are the ones made after the fixes.
 
 ## Targets missed
 
@@ -161,12 +217,15 @@ of the built panel beside the mockup's are in
 - [docs/orchestration/phase-2/look/wizard-2/index.html](../look/wizard-2/index.html): each
   pair, the mockup on the left and the built panel on the right, at 320, 480, 520 and 680 px,
   for the header and step tabs with the panel line, a tooltip, the plate summary, the change
-  details, a notification, a message, a card, and the confirmation (the wizard's alone).
-  `make -C wizard look` makes them again.
+  details, a notification, a message, a card, a line, and the wizard's alone: the
+  confirmation and the panel line's amber and red retry messages
+  ([320 px amber](../look/wizard-2/320-retry-amber-wizard.png),
+  [320 px red](../look/wizard-2/320-retry-red-wizard.png)). In the tooltip pair both pages
+  keep the passing line of the held click. `make -C wizard look` makes them again.
 - The panel itself: `make -C wizard build`, then start the front server as
   [Running phase 2 on one machine](../../../../front/README-details.md#running-phase-2-on-one-machine)
   says and open its address; the panel shows the Parts step with Next off, and a click on a
   later tab says "Parts first: add a part." under the tabs.
 - The retry line: `make -C wizard test-browser` runs `test_the_retry_messages_on_the_panel_line`,
-  which drives the line from 20 s (amber, counting down, Retry now) to 300 s (red, Try again)
-  on the page's fake clock.
+  which drives the line from 20 s (amber, counting down, Retry now) through the countdown to
+  the last attempt at 300 s, to the red line with Try again, on the page's fake clock.

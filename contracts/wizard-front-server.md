@@ -293,7 +293,9 @@ receives the wizard's code. `404` `front.no_such_request` for a name this releas
 ### The wizard's built files
 
 What the wizard's builder hands the front server's builder, on one machine and in a release
-alike. *To be built in phase 2.*
+alike. *The wizard's half (the command, the layout, the names and the placeholder) is built;
+the front server's half (where it finds the files, the version it fills in, the content
+security policy) comes with the front server in phase 2.*
 
 - **The command.** `make -C wizard build` builds the page files from `wizard/src/` into
   `wizard/dist/`, which is not committed. The front server's own build, and its tests that

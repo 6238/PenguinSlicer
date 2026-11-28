@@ -376,12 +376,14 @@ every request it makes, and a user sees a pause, not an error.
 |---|---|
 | Up to 20 seconds | Nothing, except on the thing that is waiting: a part's row says "Taking longer than usual; still trying…" after 4 seconds |
 | 20 to 300 seconds | The panel line, in amber: "The server is being slow. Your browser is retrying in 28 s.", counting down to the next attempt, with a link, "Retry now"; while an attempt is being made, "The server is being slow. Your browser is retrying now." |
-| After 300 seconds | The panel line, in red: "The server could not be reached.", with one button, **Try again**, which starts the 300 seconds afresh |
+| After 300 seconds | The panel line, in red: "The server could not be reached.", with one button, **Try again**, which starts the 300 seconds afresh. The last attempt is made at 300 seconds, so the countdown always runs to a real attempt. When the server itself asks the browser to wait past the 300 seconds, no attempt is left to count down to, and the red line shows from 20 seconds |
 
 These sentences are the wizard's own, since no component answered to write one, and "the
 server" in them is the front server, the only server a user's browser knows. The waits
 between attempts grow, doubling from one second to thirty, so there is something to count
-down and a struggling front server is not hammered. "Retry now" lets a user who has just
+down and a struggling front server is not hammered. Each attempt has a time limit that
+covers the whole answer, not only its start, so an answer that stops halfway, as one does
+when the server restarts mid-answer, is simply tried again. "Retry now" lets a user who has just
 mended their own network skip the countdown. The message is on the panel line and not a
 notification because it concerns the whole panel and must stay as the user moves between
 steps; it goes the moment a request is answered, and since the server has then answered,

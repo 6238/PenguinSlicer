@@ -30,7 +30,10 @@ const same = (a, b) => a.kind === b.kind && a.seconds === b.seconds;
 // until it is answered; the panel line follows the entry that failed earliest:
 //   {kind: 'none'}               nothing, up to RETRY_QUIET_S after its first failure
 //   {kind: 'slow', seconds}      amber, counting down to its next attempt (0 while one is made)
-//   {kind: 'unreachable'}        red, from RETRY_TOTAL_S, with Try again
+//   {kind: 'unreachable'}        red, from RETRY_TOTAL_S, with Try again; and from RETRY_QUIET_S
+//                                when a Retry-After leaves no attempt within RETRY_TOTAL_S
+// The last attempt is at RETRY_TOTAL_S itself (api.js shortens the last wait), so the amber
+// line always counts down to an attempt that will be made.
 // The line goes the moment any request of the page's is answered; since the server has then
 // answered, every request still waiting is sent again at once.
 export function createRetryBoard(clock) {
@@ -52,6 +55,8 @@ export function createRetryBoard(clock) {
     const elapsed = clock.now() - entry.firstFailedAt;
     if (elapsed >= RETRY_TOTAL_S * 1000) return { kind: 'unreachable' };
     if (elapsed < RETRY_QUIET_S * 1000) return { kind: 'none' };
+    // parked before its 300 s (a Retry-After past them): no attempt is left to count down to
+    if (entry.parked) return { kind: 'unreachable' };
     const seconds = entry.nextAttemptAt === null ? 0 : Math.max(0, Math.ceil((entry.nextAttemptAt - clock.now()) / 1000));
     return { kind: 'slow', seconds };
   }
@@ -95,7 +100,7 @@ export function createRetryBoard(clock) {
     // A request's attempt failed: its entry, made at its first failure.
     failed(entry) {
       hidden = false;
-      const made = entry ?? { firstFailedAt: clock.now(), nextAttemptAt: null, timer: null, resume: null, parked: false };
+      const made = entry ?? { firstFailedAt: clock.now(), nextAttemptAt: null, timer: null, resume: null, parked: false, again: false };
       entries.add(made);
       changed();
       return made;
@@ -122,6 +127,12 @@ export function createRetryBoard(clock) {
     // answer, and the request starts its count afresh.
     park(entry) {
       entry.nextAttemptAt = null;
+      if (entry.again) {                         // Try again was pressed during the last attempt
+        entry.again = false;
+        entries.delete(entry);
+        changed();
+        return Promise.resolve('again');
+      }
       entry.parked = true;
       return new Promise((resolve) => {
         entry.resume = () => { entries.delete(entry); resolve('again'); };
@@ -148,9 +159,14 @@ export function createRetryBoard(clock) {
     },
 
     // Try again: an attempt at once of every request past its RETRY_TOTAL_S, each starting
-    // its count afresh.
+    // its count afresh. One whose last attempt is still being made is sent again as soon as
+    // that attempt fails.
     tryAgain() {
-      for (const entry of [...entries]) if (entry.parked) wake(entry);
+      const now = clock.now();
+      for (const entry of [...entries]) {
+        if (entry.parked) wake(entry);
+        else if (now - entry.firstFailedAt >= RETRY_TOTAL_S * 1000) entry.again = true;
+      }
       changed();
     },
   };

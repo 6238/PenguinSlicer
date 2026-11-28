@@ -12,7 +12,7 @@ Names are rewritten to built addresses, `/assets/<built name>`:
 - in a module, each static `import`/`export ... from`, each `import('...')` and each
   `new URL('...', import.meta.url)` (how a page starts a worker), outside comments and strings;
   the bare name `three` is the vendored core, `vendor/three/build/three.module.min.js`;
-- in a style sheet, each `@import` and `url(...)`, except `data:` addresses.
+- in a style sheet, each `@import` and `url(...)` outside comments, except `data:` addresses.
 A file's hash is taken of its bytes after its names are rewritten, so a change to a module
 changes the name of every module that imports it. A file with nothing to rewrite keeps its
 bytes unchanged.
@@ -20,7 +20,8 @@ bytes unchanged.
 The build refuses, saying why: no index.html; a page with no version placeholder or with more
 than one; a reference to another site; a reference to a file that is not in `wizard/src/` or,
 for a module, `wizard/vendor/`; an absolute address; a bare module name other than `three`;
-modules that import each other in a circle; two files that would get the same built name.
+a dynamic import whose name is not one quoted string (a template literal or an expression,
+which the build cannot rewrite); modules that import each other in a circle; two files that would get the same built name.
 
 Usage: build.py [--src FOLDER] [--dist FOLDER] [--vendor FOLDER]
 """
@@ -136,7 +137,18 @@ def code_only(text):
     return "".join(out)
 
 
-def specifiers(path, text):
+def css_code_only(text):
+    """A style sheet with every comment blanked to spaces, newlines kept, so that each position
+    is the same as in the text."""
+    return re.sub(r"/\*.*?(?:\*/|\Z)", lambda m: re.sub(r"[^\n]", " ", m.group(0)), text, flags=re.DOTALL)
+
+
+# A dynamic import, and one whose name is one quoted string (on the blanked text).
+DYNAMIC_IMPORT = re.compile(r"(?<![.\w$])import\s*\(")
+QUOTED_DYNAMIC_IMPORT = re.compile(r"""(?<![.\w$])import\s*\(\s*(['"])[^'"\n]*?\1\s*\)""")
+
+
+def specifiers(path, text, shown=None):
     """Each name a module or style sheet carries, as (start, end, specifier) of the specifier
     in the text."""
     found = []
@@ -145,6 +157,12 @@ def specifiers(path, text):
         # not. Match on a copy whose strings are blank, then read the specifier at the same
         # place in the text.
         blank = code_only(text)
+        quoted = {m.start() for m in QUOTED_DYNAMIC_IMPORT.finditer(blank)}
+        for match in DYNAMIC_IMPORT.finditer(blank):
+            if match.start() not in quoted:
+                line = text.count("\n", 0, match.start()) + 1
+                raise BuildError(f"{shown or path.name} has a dynamic import whose name is not one quoted string "
+                                 f"(line {line}), which the build cannot rewrite; write import('./name.js')")
         for pattern in MODULE_NAMES:
             loose = re.compile(pattern.pattern.replace("[^'\"\\n]+", "[^'\"\\n]*?"))
             for match in loose.finditer(blank):
@@ -154,8 +172,9 @@ def specifiers(path, text):
                 close = text.find(quote, start)
                 found.append((start, close, text[start:close]))
     elif path.suffix == ".css":
+        blank = css_code_only(text)
         for pattern in STYLE_NAMES:
-            for match in pattern.finditer(text):
+            for match in pattern.finditer(blank):
                 found.append((match.start("s"), match.end("s"), match.group("s")))
     return sorted(set(found))
 
@@ -211,7 +230,7 @@ def build(src, dist, vendor=None):
             continue
         text = path.read_text(encoding="utf-8")
         names = []
-        for start, end, spec in specifiers(path, text):
+        for start, end, spec in specifiers(path, text, shown):
             if spec.startswith("data:") or spec.startswith("#"):
                 continue
             names.append((start, end, target(path, shown, spec)))

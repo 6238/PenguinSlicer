@@ -238,6 +238,27 @@ def test_a_module_naming_what_the_build_cannot_serve_is_refused(tmp_path, text, 
     assert says in str(raised.value)
 
 
+def test_a_name_in_a_style_sheets_comment_is_not_rewritten(tmp_path):
+    text = "/* was url(gone.png), and @import 'old.css'; */\n.a { background: url(dot.svg) }\n"
+    src = page(tmp_path, {"css/panel.css": text, "css/dot.svg": "<svg/>\n", "main.js": "export {};\n"})
+    build.build(src, tmp_path / "dist")
+    css = built(tmp_path, "panel.css").read_text()
+    assert css.startswith("/* was url(gone.png), and @import 'old.css'; */\n")
+    assert f"url(/assets/{hashed('dot.svg', '<svg/>\n')})" in css
+
+
+@pytest.mark.parametrize("text", [
+    "const m = await import(`./late.js`);\n",
+    "const m = await import(name);\n",
+    "const m = await import('./' + name);\n",
+])
+def test_a_dynamic_import_the_build_cannot_rewrite_is_refused(tmp_path, text):
+    src = page(tmp_path, {"main.js": text, "late.js": "export {};\n"})
+    with pytest.raises(build.BuildError) as raised:
+        build.build(src, tmp_path / "dist")
+    assert "main.js has a dynamic import whose name is not one quoted string" in str(raised.value)
+
+
 def test_a_style_sheet_loading_from_another_site_is_refused(tmp_path):
     src = page(tmp_path, {"main.js": "export {};\n", "css/panel.css": "@import url(https://fonts.example/x.css);\n"})
     with pytest.raises(build.BuildError) as raised:
