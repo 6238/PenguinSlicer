@@ -1205,10 +1205,17 @@ surrogate; a choice one of its values. The refusal is the wizard's own error rep
 `wizard.setting_refused` (`settingRefused` in `wizard/src/sentences.js`), shown in red under the
 setting (`.bad`) with the field marked `invalid`, and nothing changes: "Wall loops must be between
 0 and 1000. Kept 4.", "Layer height must be at least 0 mm.", "Wall loops must be a whole number.",
-"Name can be at most 4 characters long." An accepted number is written the shortest way ("0.20"
-is "0.2"). A change stored in an earlier load that the table no longer holds, whose value no
-longer fits, or that is the profile's value, is dropped from the stored plate once both the
-table and the configuration have arrived; until then the stored changes are kept as they are.
+"Name can be at most 4 characters long." The refusal remembers the value its sentence names as
+kept, and `refreshRow` drops it (the class `invalid` and the `.bad` line) and shows the setting's
+value once that value changes, as Reset all does to a changed setting; a refusal whose value
+stays is kept with the text refused. An accepted number is written the
+shortest way by its own digits, with only the zeros that change nothing dropped ("0.20" is "0.2",
+"05" is "5", "-0" is "0"), so a figure of more digits than a double holds keeps every digit. A
+change stored in an earlier load that the table no longer holds, whose value no longer fits, or
+that is the profile's value, is dropped from the stored plate once both the table and the
+configuration have arrived; until then the stored changes are kept as they are. One that fits but
+is not written as `readInput` writes it (" 35 ", or "35" for a percentage, which the slice service
+refuses without its sign) is replaced by `readInput`'s value.
 
 **Advanced mode as built.** It fills the panel as `#advanced` in `index.html`, after `#wiz-nav`
 as in the mockup, with "PenguinSlicer" alone in its name line until phase 5 brings the
@@ -1239,10 +1246,13 @@ control is drawn for each `kind` and `number_form` of the contract's example tab
 where the table says; Reset all asks and puts every setting back. Built:
 `tests/settings.test.js` without a browser window (the menus, the quick changes and their values,
 a value off a list, Supports, the profile's value, every refusal of `readInput` on purpose, the
-change details' lines, the changes and `advanced` kept through a reload, a stored change dropped
-and one kept while the table has not arrived, New plate keeping the changes) and
+change details' lines, the changes and `advanced` kept through a reload, a stored change dropped,
+one written again as Orca writes it and one kept while the table has not arrived, a long figure
+written with every digit, New plate keeping the changes) and
 `tests_browser/test_settings_step.py` in Chromium (every test above, the real table's 338 settings
-in six sections drawn, a Reset press, the rail's counts and Expand all, no sideways scroll at the
+in six sections drawn, a Reset press, Reset all dropping a refusal whose value it changed and
+keeping one whose value stays, a text field taking four characters outside the basic plane at a
+`max_length` of 4 and refusing five plain ones, the rail's counts and Expand all, no sideways scroll at the
 seven widths with changes and in advanced mode, hostile words of the table and the configuration
 shown as text and a colour of another form drawing no square). `make -C wizard
 look-settings-step` writes pictures of the mockup's Settings step and advanced mode beside the

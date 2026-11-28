@@ -265,6 +265,29 @@ def test_reset_all_asks_first_and_then_puts_every_setting_back(settings_page):
     assert page.evaluate("() => document.activeElement.id") == "adv-sec-Quality"
 
 
+def test_reset_all_drops_a_refusal_whose_kept_value_it_changed_and_keeps_one_whose_value_stays(settings_page):
+    w = settings_page()
+    open_advanced(w)
+    page = w.page
+    page.fill("#adv-wall_loops", "5")
+    page.locator("#adv-wall_loops").dispatch_event("change")
+    page.fill("#adv-wall_loops", "1001")
+    page.locator("#adv-wall_loops").dispatch_event("change")
+    assert page.locator("#adv-row-wall_loops .bad").inner_text() == "Wall loops must be between 0 and 1000. Kept 5."
+    # a refusal on a setting the reset leaves as it is: its sentence stays true, so it stays
+    page.fill("#adv-layer_height", "-1")
+    page.locator("#adv-layer_height").dispatch_event("change")
+    assert page.locator("#adv-row-layer_height .bad").count() == 1
+    page.click("#adv-reset-all")
+    page.click(".confirm-pop .btn.primary")
+    assert changes(w) == []
+    assert page.locator("#adv-wall_loops").input_value() == "4"
+    assert "invalid" not in (page.locator("#adv-wall_loops").get_attribute("class") or "")
+    assert page.locator("#adv-row-wall_loops .bad").count() == 0
+    assert page.locator("#adv-layer_height").input_value() == "-1"
+    assert page.locator("#adv-row-layer_height .bad").inner_text().endswith("Kept 0.24 mm.")
+
+
 def test_closed_sections_survive_leaving_and_a_resize_across_480_px_and_are_open_after_a_reload(settings_page):
     w = settings_page(320)
     open_advanced(w)
@@ -343,6 +366,27 @@ def test_hostile_words_of_the_table_and_configuration_are_shown_as_text(settings
     w.page.click("#adv-done")
     assert w.page.locator(".filament-swatch").is_hidden()
     assert w.problems == []
+
+
+def test_a_text_field_takes_its_greatest_length_in_characters_outside_the_basic_plane_and_refuses_one_more(settings_page):
+    table = example("settings-table.json")
+    table["settings"].append({"name": "filename_format", "kind": "text", "label": "Name", "section": "Others",
+                              "group": "Output", "explanation": "", "per_variant": False, "max_length": 4})
+    w = settings_page(table=table)
+    open_advanced(w)
+    page = w.page
+    # four penguins are eight UTF-16 units: the field lets all four in, and they are accepted
+    page.click("#adv-filename_format")
+    page.keyboard.insert_text("\U0001f427" * 4)
+    assert page.locator("#adv-filename_format").input_value() == "\U0001f427" * 4
+    page.locator("#adv-filename_format").dispatch_event("change")
+    assert changes(w) == [{"name": "filename_format", "value": "\U0001f427" * 4}]
+    # five plain characters get into the field, and the wizard refuses them in its own words
+    page.fill("#adv-filename_format", "")
+    page.keyboard.type("abcde")
+    assert page.locator("#adv-filename_format").input_value() == "abcde"
+    page.locator("#adv-filename_format").dispatch_event("change")
+    assert page.locator("#adv-row-filename_format .bad").inner_text().startswith("Name can be at most 4 characters long.")
 
 
 def test_sections_and_setting_groups_whose_words_fold_to_the_same_id_stay_apart(settings_page):

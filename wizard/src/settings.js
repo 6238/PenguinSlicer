@@ -76,11 +76,14 @@ export function formatValue(entry, value) {
   return v;
 }
 
-// A number written the shortest way Orca writes it: "0.20" is "0.2", "05" is "5".
+// A number written the shortest way by its own digits: "0.20" is "0.2", "05" is "5", "-0" is "0".
+// Only zeros that change nothing go, so a figure of more digits than a double holds keeps them all.
 function shortest(figure) {
-  const n = Number(figure);
-  const text = Object.is(n, -0) ? '0' : String(n);
-  return /e/i.test(text) ? figure : text;
+  const [, sign, whole, fraction = ''] = /^(-?)([0-9]+)(?:\.([0-9]+))?$/.exec(figure);
+  const w = whole.replace(/^0+(?=[0-9])/, '');
+  const f = fraction.replace(/0+$/, '');
+  const text = `${w}${f ? `.${f}` : ''}`;
+  return text === '0' ? '0' : `${sign}${text}`;
 }
 
 const bound = (entry, n) => (entry.number_form === 'percent' ? `${n} %` : (plainUnit(entry) ? `${n} ${plainUnit(entry)}` : String(n)));
@@ -260,20 +263,26 @@ export function createSettings({ store, storage }) {
   }
 
   // Drops each change the table no longer holds, whose value no longer fits, or that is the
-  // profile's value: what the slice service would refuse, or no change at all. Waits for the
-  // table and the configuration's profile.
+  // profile's value: what the slice service would refuse, or no change at all. A value that fits
+  // but is not written as the wizard writes it (" 40 " or "40" for a percentage, which the slice
+  // service refuses without its sign) is written so, in its place. Waits for the table and the
+  // configuration's profile.
   function settle() {
     if (!resumed || !table() || !configProfile()) return false;
-    let dropped = false;
+    let altered = false;
     for (const [name, v] of Object.entries(changes)) {
       const entry = entryOf(name);
-      if (!entry || !readInput(entry, v).ok || sameValue(entry, v, profileValue(name))) {
+      const read = entry ? readInput(entry, v) : { ok: false };
+      if (!read.ok || sameValue(entry, read.value, profileValue(name))) {
         delete changes[name];
-        dropped = true;
+        altered = true;
+      } else if (read.value !== v) {
+        changes[name] = read.value;
+        altered = true;
       }
     }
-    if (dropped) write();
-    return dropped;
+    if (altered) write();
+    return altered;
   }
 
   const storedChanges = () => {

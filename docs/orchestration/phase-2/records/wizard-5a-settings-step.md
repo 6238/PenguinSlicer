@@ -36,7 +36,8 @@ guide's [The Settings step](../../../../wizard/README.md#the-settings-step) and
    documents say a change put back to the profile's value is no change, and are silent on
    "0.30" against "0.3". Chosen: two values of a number setting are the same when their figures
    are equal and both or neither are percentages; "0.20" typed is written "0.2" (never in
-   exponent form). To overrule: `sameValue` and `readInput` in `wizard/src/settings.js`.
+   exponent form, and never rounded: see decision 24). To overrule: `sameValue` and `readInput`
+   in `wizard/src/settings.js`.
 5. **A value that does not fit is the wizard's own error report `wizard.setting_refused`, with
    the slice service's rules.** The guide says only that a value outside the allowed range is
    refused where it is typed. Chosen: the page checks everything the slice service checks
@@ -126,7 +127,46 @@ Decided while fixing the review's findings (pull request #42):
     to date in place, at most the real table's 338, which costs nothing a user sees, and a Reset
     all changes every row at once. The details file now says so.
 
-Findings of the review declined: none. The finding on the pictures' heights (747 px against
+Decided while fixing the second review's findings (pull request #42):
+
+23. **A refusal lasts only while the value it names as kept is the setting's value.** The guide
+    says a refusal shows "the value it keeps" and that Reset all puts every setting back; it is
+    silent on a refusal standing when the value changes under it. Before this fix, Reset all left
+    a refused field showing the refused text over a "Kept 5." that was no longer true. Chosen:
+    each drawn row remembers the value its refusal names; `refreshRow` drops the refusal and
+    shows the new value when the setting's value differs from it, whatever changed it (today
+    only Reset all can, since advanced mode covers the rest of the panel and is drawn afresh
+    each time it opens). A refusal whose value is left as it was keeps the text refused, so the
+    user still sees what they typed and why it was not taken. Reason: this keeps every sentence
+    on the page true without clearing refusals that Reset all did not touch. To overrule:
+    `refreshRow` and `dropRefusal` in `wizard/src/panel/settings-step.js` (for example, clear
+    every refusal on Reset all whatever its value).
+24. **An accepted number keeps all its digits.** `shortest` dropped digits a double cannot hold
+    ("12345678901234567890" became "12345678901234567000"). Chosen: the figure is shortened by
+    its own text, dropping only leading zeros of the whole part, trailing zeros of the fraction
+    and the sign of a zero, so the value sent is the number typed. Its bounds are still checked
+    as a double, as the slice service checks them with Python's `float`. To overrule: `shortest`
+    in `wizard/src/settings.js`.
+25. **A stored change that fits but is written another way is written again, not dropped.** A
+    stored `sparse_infill_density` of "35" or " 35 " passed `settle` and would have gone to the
+    slice service, which refuses a percentage without its sign. Chosen: `settle` replaces the
+    stored value by `readInput`'s ("35%") and then drops it if that is the profile's value.
+    Reason: the user's change is kept, and only storage the wizard did not write can hold such a
+    value. To overrule: drop such a change in `settle` instead.
+
+Findings of the second review declined:
+
+- **Two mutations that change nothing a user sees** (dropping `!configProfile()` from `settle`'s
+  guard; dropping `changes = {}` from `chooseProfile`). Both are equivalent mutants and the code
+  stays: with no configuration profile, every profile value is undefined and `sameValue` never
+  calls a stored value equal to undefined, so nothing is dropped either way, but the guard is what
+  the details file says (stored changes kept "until both the table and the configuration have
+  arrived") and keeps `settle` from resting on that accident; `chooseProfile` clears its own
+  changes before it writes the stored plate, so the written plate never holds the old profile's
+  changes under the new profile's name, whatever order the store's listeners run in, the same as
+  `chooseFilament`. No test can tell either apart through the page, so none was added.
+
+Findings of the first review declined: none. The finding on the pictures' heights (747 px against
 760 px) is recorded under "Targets missed" rather than removed: making them equal would mean
 taking the 24 built pictures again for 13 px of panel at the bottom.
 
@@ -153,12 +193,14 @@ taking the 24 built pictures again for 13 px of panel at the bottom.
    - A `decimal_or_percent` setting's unit, "mm or %", is wider than the others', so its field
      sits further left than its neighbours'. The mockup's sample has no such setting; the real
      table has 36.
-   - The `*-reset-all` pairs: the built picture still shows the Layer height row refused in the
-     state before (0.9 in red, with its sentence), and the mockup's shows 0.3 with no refusal.
-     The mockup's faked script draws its list again when Reset all is pressed and so drops the
-     refusal; the wizard keeps a refusal under its setting until the user types again in that
-     field or resets it, and opening the confirmation changes nothing. Not removed, since the
-     difference is behaviour, not look.
+   - The `*-reset-all` pairs: the built picture still shows the Layer height row refused (0.9
+     in red, "Kept 0.3 mm."), and the mockup's shows 0.3 with no refusal. The mockup arms its
+     button and draws its list again at the first press, so its refusal goes; the wizard's
+     picture is taken with its confirmation open, before anything is reset. Even once the user
+     resets all, this refusal stays and stays true: Layer height was never changed, so its value
+     is still the 0.3 its sentence names (decision 23). A refusal whose value Reset all does
+     change goes with the reset. The pictures were not taken again: the built state they show
+     is unchanged by the fix.
    - The pictures are 747 px tall for the mockup and 760 px for the wizard at every width, as
      in wizard-4: the mockup's frame gives its panel 747 px, the wizard's picture is taken in a
      760 px window. The wizard's picture shows 13 px more of the panel's scrolling content

@@ -816,9 +816,13 @@ mm · Reset". A value that does not fit its setting, outside its allowed range o
 form (a fraction for a whole number, letters for a number, a text too long), is refused
 where it is typed, in red under it, with what the setting must be and the value it keeps
 ("Layer height must be between 0.08 and 0.42 mm. Kept 0.3 mm."): the page's own check of
-what the slice service would refuse, so nothing is sent. A change stored in an earlier load
-that the table of settings no longer holds, or whose value no longer fits it, is dropped
-when the page opens, since the slice service would refuse the plate.
+what the slice service would refuse, so nothing is sent. The refusal stays only while the
+value it names is still the setting's value: once Reset all puts the setting at another
+value, the refusal goes and the field shows the new value. A change stored
+in an earlier load that the table of settings no longer holds, or whose value no longer fits
+it, is dropped when the page opens, since the slice service would refuse the plate; one that
+fits but is written another way (a percentage without its sign) is written the way the page
+writes it.
 
 **By keyboard,** opening advanced mode puts focus on the first section's heading, or on
 the setting when a line of the changes box opened it; what advanced mode covers cannot be

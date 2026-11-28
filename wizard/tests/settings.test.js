@@ -259,6 +259,22 @@ test('a value exactly at the least or the greatest value is accepted', () => {
   assert.deepEqual(readInput(entry('layer_height'), '0'), { ok: true, value: '0' });
 });
 
+test('an accepted number is written the shortest way by its digits, never rounded to another number', () => {
+  const read = (name, text) => readInput(entry(name), text).value;
+  assert.equal(read('layer_height', '0.20'), '0.2');
+  assert.equal(read('layer_height', '05'), '5');
+  assert.equal(read('layer_height', '00.50'), '0.5');
+  assert.equal(read('layer_height', '100.0'), '100');
+  assert.equal(read('layer_height', '0'), '0');
+  assert.equal(read('layer_height', '0.000'), '0');
+  assert.equal(read('wall_loops', '-0'), '0');
+  assert.equal(read('initial_layer_line_width', '-0.0%'), '0%');
+  assert.equal(readInput({ name: 'x', label: 'X', kind: 'number', number_form: 'decimal' }, '-07.10').value, '-7.1');
+  assert.equal(read('sparse_infill_density', '040.0'), '40%');
+  assert.equal(read('layer_height', '12345678901234567890'), '12345678901234567890');
+  assert.equal(read('layer_height', '0.10000000000000000001'), '0.10000000000000000001');
+});
+
 test('a number of exactly 40 characters is read; one of 41 is refused', () => {
   const forty = `0.${'1'.repeat(38)}`;
   assert.equal(forty.length, 40);
@@ -460,6 +476,27 @@ test('a stored change the table no longer holds, or whose value no longer fits, 
   assert.deepEqual(again.settings.changes(), [{ name: 'wall_loops', value: '5' }]);
   await again.storage.written();
   assert.deepEqual(again.storage.plate().settings.changes, { wall_loops: '5' });
+});
+
+test('a stored change that fits but is not written as Orca writes it is written so, or dropped when that is the profile\'s value', async () => {
+  const b = browser();
+  const first = await openPage(b);
+  const profileInfill = first.settings.profileValue('sparse_infill_density');
+  assert.match(profileInfill, /^[0-9]+%$/);
+  assert.notEqual(profileInfill, '35%');
+  await first.storage.update({ settings: { ...first.storage.plate().settings, changes: { sparse_infill_density: ' 35 ', layer_height: '0.20', wall_loops: '05', brim_type: 'no_brim' } } });
+  b.locks.closeTab('A');
+  const again = await openPage(b);
+  assert.deepEqual(again.settings.changes(), [
+    { name: 'sparse_infill_density', value: '35%' }, { name: 'layer_height', value: '0.2' },
+    { name: 'wall_loops', value: '5' }, { name: 'brim_type', value: 'no_brim' }]);
+  await again.storage.written();
+  assert.deepEqual(again.storage.plate().settings.changes, { sparse_infill_density: '35%', layer_height: '0.2', wall_loops: '5', brim_type: 'no_brim' });
+  // a percentage stored without its sign whose figure is the profile's: the profile's value, no change
+  await again.storage.update({ settings: { ...again.storage.plate().settings, changes: { sparse_infill_density: profileInfill.slice(0, -1) } } });
+  b.locks.closeTab('A');
+  const third = await openPage(b);
+  assert.deepEqual(third.settings.changes(), []);
 });
 
 test('stored changes wait for the table: none is dropped while the table has not arrived', async () => {

@@ -293,22 +293,35 @@ export function createSettingsStep({ root, settings, store, window: win = global
     const { input, unit } = control(setting);
     ctl.append(input, el('span', 'unit', unit));
     row.append(label, ctl);
+    const drawn = { row, input, setting, kept: undefined };
     input.addEventListener('change', () => {
       const read = settings.set(setting.name, input.value);
       const bad = row.querySelector('.bad');
       if (bad) bad.remove();
       input.classList.toggle('invalid', !read.ok);
+      // the value the refusal's sentence names, so that the refusal goes when that value changes
+      drawn.kept = read.ok ? undefined : settings.value(setting.name);
       if (!read.ok) row.append(el('div', 'bad', `${read.report.message} ${read.report.remedy}`));
     });
-    rows.set(setting.name, { row, input, setting });
+    rows.set(setting.name, drawn);
     refreshRow(setting.name);
     return row;
   }
 
   // A row drawn again in place after its value changed: its value, its look as changed, and the
-  // line under it with the profile's value and Reset.
+  // line under it with the profile's value and Reset. A refusal stays, with the text refused, only
+  // while the value it names as kept is still the setting's value: Reset all, or anything else
+  // that changes that value, drops it and shows the new value.
+  function dropRefusal(drawn) {
+    drawn.input.classList.remove('invalid');
+    drawn.kept = undefined;
+    const bad = drawn.row.querySelector('.bad');
+    if (bad) bad.remove();
+  }
   function refreshRow(name) {
-    const { row, input, setting } = rows.get(name);
+    const drawn = rows.get(name);
+    const { row, input, setting } = drawn;
+    if (input.classList.contains('invalid') && settings.value(name) !== drawn.kept) dropRefusal(drawn);
     if (!input.classList.contains('invalid')) showValue(setting, input);
     const changed = settings.isChanged(name);
     row.classList.toggle('changed', changed);
@@ -328,9 +341,7 @@ export function createSettingsStep({ root, settings, store, window: win = global
     reset.id = `adv-reset-${name}`;
     reset.setAttribute('aria-label', RESET_TO(setting.label, shownValue));
     reset.addEventListener('click', () => {
-      input.classList.remove('invalid');
-      const bad = row.querySelector('.bad');
-      if (bad) bad.remove();
+      dropRefusal(drawn);
       settings.reset(name);
       input.focus({ preventScroll: true });       // the Reset link is gone; its setting keeps the focus
     });
