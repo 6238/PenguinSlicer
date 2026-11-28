@@ -141,13 +141,16 @@ class Follower:
 
     # What the rest of the front server asks of it.
 
-    def follow(self, user_key, job, group):
+    def follow(self, user_key, job, group, *, ended_at=None):
         """Follow `job` of `user_key`, noting `group` beside it, unless it is followed
-        already. Gives whether a following started now."""
+        already. `ended_at`, for a slice job that has already ended (collecting at start),
+        is when the slice service says it ended, from which the two hours count; otherwise
+        they count from when the following hears that it is done. Gives whether a following
+        started now."""
         with self._lock:
             if job in self._jobs or self._stopping.is_set():
                 return False
-            followed = _Followed(user_key, job, group)
+            followed = _Followed(user_key, job, group, ended_at=ended_at)
             self._jobs[job] = followed
             thread = threading.Thread(target=self._run, args=(followed,),
                                       name=f"follow-{job}", daemon=True)

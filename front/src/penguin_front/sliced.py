@@ -19,7 +19,7 @@ the record that names it, so a `stored` record always names a whole file.
 
 from datetime import datetime, timezone
 
-from .buckets import BucketUnavailable, ConditionFailed, NotFound
+from .buckets import BadName, BucketUnavailable, ConditionFailed, NotFound, check_name
 from .errors import error_report
 from .records import UnreadableRecord, read_record, write_record
 
@@ -40,6 +40,15 @@ FAILED_RECORD_KEPT_S = SLICED_FILE_KEPT_S + EXPIRED_RECORD_KEPT_S
 MAX_SLICED_FILE_BYTES = 50_000_000
 KIND = "sliced_file"
 PREFIX = "sliced/"
+
+
+def check_user_key(user_key):
+    """Refuse (`BadName`) a user key that cannot name a folder of its own under `sliced/`:
+    the empty one, and one holding a slash or that the bucket's names refuse. A user key
+    from the cookie is always one; this is for user keys another component gives."""
+    if not isinstance(user_key, str) or not user_key or "/" in user_key:
+        raise BadName(f"no folder may be named for the user key {user_key!r}")
+    check_name(record_name(user_key, "x"))
 
 
 def file_name(user_key, slice_id):

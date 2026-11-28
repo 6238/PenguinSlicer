@@ -30,6 +30,7 @@ from .streams import Streams
 from .sweep import Sweeper
 from .answers import json_body, page_file, target_path as _path  # noqa: F401 - used by tests
 from .buckets import FolderBucket
+from .collecting import Collector
 from .context import EXTENSION
 from .cookie import CookieKey
 from .errors import FrontError, PassedReport, error_report
@@ -80,6 +81,9 @@ def create_app(settings, *, clock, log, version=None, state_bucket=None, slice_c
     # test sweeps only when the test asks.
     ctx["sweeper"] = Sweeper(clock=clock, bucket=ctx["state_bucket"],
                              follower=ctx["follower"], log=log)
+    # Started by the running server too: what the slice service holds, found again at start.
+    ctx["collector"] = Collector(clock=clock, slice_client=ctx["slice"],
+                                 bucket=ctx["state_bucket"], follower=ctx["follower"], log=log)
     for part in (pages, identity, configuration, settings_table, parts, slices, asking,
                  streams):
         part.register(app)
