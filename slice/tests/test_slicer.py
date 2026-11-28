@@ -543,6 +543,32 @@ class TestPlateSlice:
                                         "above would start in mid-air.")
         assert caught.value.where == {"instance": "Gap #1", "height_mm": 9.9}
 
+    def test_empty_layers_keep_orcas_own_sentence(self, out, model, executable_orca):
+        """Item 13: the line of Orca's warning that names the gap, exactly as Orca wrote it."""
+        with patched(fake_result_run(156, -100, warning=EMPTY)), pytest.raises(SliceError) as caught:
+            slicer.slice_plate(model, slicer.DEFAULT_PROFILES, out)
+        assert caught.value.orca_sentence == "Object can't be printed for empty layer between 9.9 and 11.34."
+
+    def test_orcas_sentence_is_the_line_that_names_the_gap_wherever_it_is(self, out, model, executable_orca):
+        warning = "Object: Gap #1\n  Object can't be printed for empty layer between 1.5 and 2.0.  \nMaybe thin"
+        with patched(fake_result_run(156, -100, warning=warning)), pytest.raises(SliceError) as caught:
+            slicer.slice_plate(model, slicer.DEFAULT_PROFILES, out)
+        assert caught.value.orca_sentence == "Object can't be printed for empty layer between 1.5 and 2.0."
+
+    @pytest.mark.parametrize("length, kept", [(300, True), (301, False)])
+    def test_orcas_sentence_is_at_most_300_characters_or_left_out(self, out, model, executable_orca, length, kept):
+        sentence = "Object can't be printed for empty layer between 1.5 and 2.0."
+        sentence += "x" * (length - len(sentence))
+        with patched(fake_result_run(156, -100, warning=sentence)), pytest.raises(SliceError) as caught:
+            slicer.slice_plate(model, slicer.DEFAULT_PROFILES, out)
+        assert caught.value.error_code == "slice.empty_layers"
+        assert caught.value.orca_sentence == (sentence if kept else None)
+
+    def test_no_other_failure_keeps_a_sentence_of_orcas(self, out, model, executable_orca):
+        with patched(fake_result_run(156, -100, warning="Too thin here")), pytest.raises(SliceError) as caught:
+            slicer.slice_plate(model, slicer.DEFAULT_PROFILES, out)
+        assert caught.value.orca_sentence is None
+
     def test_empty_layers_without_an_object_name(self, out, model, executable_orca):
         warning = "Object can't be printed for empty layer between 1.5 and 2.0."
         with patched(fake_result_run(156, -100, warning=warning)), pytest.raises(SliceError) as caught:

@@ -8,33 +8,9 @@ file alone at `GET /slices/<job>/file`, and the summary, a JSON object, on its o
 in the slice service's details file). The Orca release is the one the slice service pins
 ([Orca Slicer](../slice/README-details.md#orca-slicer) in the same file).
 
-This file holds two things, kept apart. [To be built](#to-be-built) is what phase 2 changes.
-Every section after it is true of the code as built; where phase 2 changes one, the section
-says so in its first line, and the design under To be built wins.
-
-## To be built
-
-*To be built in phase 2.* The routes that carry the sliced file and its summary are those of
-[the slice service's HTTP interface](slice-http-interface.md#the-sliced-file), which from
-phase 2 need the user key. Four things change:
-
-- **At most 50 MB.** A sliced file larger than 52,428,800 bytes (50 MB) is never returned:
-  the slice job fails with `slice.output_too_large` (stage `saving`, `retryable` false), whose
-  sentence is the slice service's own and whose remedy is fewer instances or a new plate. The
-  front server refuses a larger file too, as `front.sliced_file_too_large`, as a second
-  defence. The largest measured is 14.1 MB.
-- **The part warnings are found on upload.** `part_warnings` are those the slice service
-  found on each part when it was uploaded, by itself, to the part store, each now with `where`
-  naming the part as the plate configuration names it.
-- **The copy is deleted once stored.** The slice service keeps a done slice job's sliced file
-  only until the front server says it has stored it (`DELETE /slices/<job>/file`); then it
-  deletes its copy at once, and the file and the summary answer `slice.file_gone` (HTTP 410)
-  while the slice job's record lasts, two hours after it ended. A sliced file nobody collects
-  goes with its record.
-- **No uploads are kept with a slice job.** A slice job holds its parts by a hold on the part
-  store's files for as long as it runs, and keeps none of them once it ends; the part store
-  keeps each part by its own rule
-  ([Keep each part once](../slice/README.md#keep-each-part-once-the-part-store)).
+The routes that carry the sliced file and its summary are those of
+[the slice service's HTTP interface](slice-http-interface.md#the-sliced-file), and need the
+user key. Everything in this file is true of the code as built.
 
 ## Name
 
@@ -78,7 +54,7 @@ never needs to know the printer, filament, plate or nozzle.
 | `filament_g` | number or null | The filament used, in grams. |
 | `layer_count` | integer or null | The number of layers. |
 | `warnings` | array of strings | Orca's warnings for the plate, each as Orca wrote it, each once, sorted with the numbers in them read as numbers (`Block #2` before `Block #10`) so the same plate gives the same list every time; at most 300. Read from Orca's `result.json` and its debug log (the `result.json` of the pinned Orca holds only one of them). Empty when there are none. When a timeout or the memory watchdog stopped Orca after it wrote the sliced file but before it wrote `result.json`, the list holds only the warnings its debug log had by then (the slice service's log says so in `stop_note`). |
-| `part_warnings` | array of objects | The slice service's own warnings about the parts, found when the plate configuration arrived (built today; phase 2 finds them when each part is uploaded, see To be built); empty when there are none. Each has `code` (for example `slice.part_not_watertight`; the guide lists them), `message` (a sentence for the user), `where` (`part`) and `detail` (the evidence for the log). |
+| `part_warnings` | array of objects | The slice service's own warnings about the parts, found on each part when it was uploaded, by itself, to the part store, each with `where` naming the part as the plate configuration names it; empty when there are none. Each has `code` (for example `slice.part_not_watertight`; the guide lists them), `message` (a sentence for the user), `where` (`part`) and `detail` (the evidence for the log). |
 
 A number Orca did not report is `null` rather than a failure: the sliced file is still
 good.
@@ -94,11 +70,23 @@ good.
   Orca in the moment after it wrote the file: complete means it is under its final name,
   opens as a zip with its directory intact, has `Metadata/plate_1.gcode` and
   `Metadata/plate_1.json`, and every entry passes its checksum. A cancel discards it.
-- Built today; phase 2 changes this (see To be built): a done slice job keeps only its
-  sliced file and its uploaded parts on the slice service's machine, until its record
-  expires ([The HTTP interface](../slice/README-details.md#the-http-interface) in the slice
-  service's details file): the slice service slices in a scratch folder and removes that
-  folder whether the slice succeeds or fails.
+- **At most 50 MB.** A sliced file larger than 52,428,800 bytes (50 MB) is never returned:
+  the slice job fails with `slice.output_too_large` (stage `saving`, `retryable` false), whose
+  sentence is the slice service's own and whose remedy is fewer instances or a new plate. The
+  front server refuses a larger file too, as `front.sliced_file_too_large`, as a second
+  defence. The largest measured is 14.1 MB.
+- **The copy is deleted once stored.** The slice service keeps a done slice job's sliced file
+  only until the front server says it has stored it (`DELETE /slices/<job>/file`); then it
+  deletes its copy at once, and the file and the summary answer `slice.file_gone` (HTTP 410)
+  while the slice job's record lasts, two hours after it ended. A sliced file nobody collects
+  goes with its record.
+- **No uploads are kept with a slice job.** A slice job holds its parts by a hold on the part
+  store's files while it runs, and keeps none of them once its plate is sliced; the part
+  store keeps each part by its own rule
+  ([Keep each part once](../slice/README.md#keep-each-part-once-the-part-store)). The slice
+  service slices in a scratch folder and removes that folder whether the slice succeeds or
+  fails ([The HTTP interface](../slice/README-details.md#the-http-interface) in the slice
+  service's details file).
 
 ## Example
 

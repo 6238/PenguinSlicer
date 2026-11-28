@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from helpers import CONTRACTS
+from helpers import CONTRACTS, ManualTicks
 from penguin_slice import jobs
 from penguin_slice.errors import error_report
 from penguin_slice.jobs import FINAL, STAGES, JobFailure, JobPool, QueueFull
@@ -898,28 +898,195 @@ class TestExpiry:
         assert pool.wait(job_id, 99, timeout=None) is None
 
 
-class TestSweeperAndShutdown:
-    def test_sweeper_runs_until_shutdown(self):
-        swept = threading.Event()
+class TestRememberedForTwoHours:
+    """Item 10: a slice job's record is kept for two hours after it ends, and its sliced file
+    is given up as soon as the front server says it has stored it."""
+
+    def test_a_record_is_there_at_7199_s_and_gone_at_7200_s(self):
+        clock = FakeClock()
+        pool, logs = make_pool(clock=clock)
+        job_id = pool.submit()
+        clock.now += 7199
+        assert pool.sweep() == 0 and pool.get(job_id)["state"] == "done"
+        assert pool.remembered(None, None) is None
+        clock.now += 1
+        assert pool.sweep() == 1 and pool.get(job_id) is None
+        assert logs[-1]["state"] == "expired"
+
+    def test_a_repeat_is_recognised_for_the_two_hours(self):
+        clock = FakeClock()
+        pool, _ = make_pool(clock=clock)
+        job_id = pool.submit(user_key="u", submission_id="s")
+        clock.now += 7199
+        pool.sweep()
+        assert pool.remembered("u", "s") == job_id
+        clock.now += 1
+        pool.sweep()
+        assert pool.remembered("u", "s") is None
+
+    def test_deleting_a_done_jobs_file_hands_over_its_result_once(self):
+        pool, logs = make_pool()
+        job_id = pool.submit()
+        assert pool.file_deleted(job_id) is False
+        answer, result = pool.delete_file(job_id)
+        assert answer == "deleted" and result["file"] == "Box-20261009-1432.gcode.3mf"
+        assert pool.file_deleted(job_id) is True
+        assert logs[-1]["state"] == "file_deleted" and logs[-1]["job"] == job_id
+        assert pool.delete_file(job_id) == ("deleted", None)            # a repeat answers as the first
+        assert len([e for e in logs if e["state"] == "file_deleted"]) == 1
+        assert pool.get(job_id)["state"] == "done"                      # the record stays
+
+    def test_a_deleted_file_is_not_discarded_again_when_the_record_expires(self):
+        clock, discarded, cleaned = FakeClock(), [], []
+        pool, _ = make_pool(clock=clock, on_discard=discarded.append, cleanup=cleaned.append)
+        job_id = pool.submit("files")
+        pool.delete_file(job_id)
+        clock.now += jobs.RECORD_TTL_S
+        assert pool.sweep() == 1
+        assert discarded == [] and cleaned == ["files"]
+
+    def test_a_job_that_ended_without_a_file_answers_deleted(self):
+        def worker(job_id, payload, context):
+            raise ValueError("x")
+        pool, _ = make_pool(worker)
+        failed = pool.submit()
+        held, _ = make_pool(executor=HeldExecutor())
+        cancelled = held.submit()
+        held.cancel(cancelled)
+        assert pool.delete_file(failed) == ("deleted", None)
+        assert held.delete_file(cancelled) == ("deleted", None)
+
+    def test_a_job_not_ended_is_not_ready_and_an_unknown_one_is_unknown(self):
+        worker = Blocking(cancellable=False)
+        pool, _logs, executor = threaded_pool(worker)
+        running, queued = pool.submit(), pool.submit()
+        assert worker.started.wait(FAILSAFE_S)
+        assert pool.delete_file(running) == ("not_ready", None)
+        assert pool.delete_file(queued) == ("not_ready", None)
+        assert pool.delete_file("jnope") == ("unknown", None)
+        assert pool.file_deleted("jnope") is False
+        worker.release.set()
+        executor.shutdown(wait=True)
+
+
+END = 1795817638.0            # 2026-11-27T22:13:58Z, on the wall clock
+
+
+class TestTheList:
+    """Item 11: every slice job the pool knows, in the order accepted, with when it ended."""
+
+    def test_the_list_holds_every_state_with_when_each_ended(self):
+        clock, wall = FakeClock(), FakeClock(END)
+        release = threading.Event()
+
+        def worker(job_id, payload, context):
+            if payload == "fail":
+                raise ValueError("x")
+            if payload == "block":
+                context.progress("slicing_mesh", 0.5)
+                assert release.wait(FAILSAFE_S)
+            return {"file": f"{payload}.gcode.3mf"}
+        executor = HeldExecutor()
+        pool, _ = make_pool(worker, executor=executor, clock=clock, wall_clock=wall)
+        done = pool.submit("ok", user_key="u", plate_id="p1", submission_id="s1")
+        executor.run_next()
+        wall.now += 1
+        failed = pool.submit("fail", user_key="u", plate_id="p2", submission_id="s2")
+        executor.run_next()
+        wall.now += 1
+        cancelled = pool.submit("x", user_key="v", plate_id="p3", submission_id="s3")
+        pool.cancel(cancelled)
+        executor.pending.pop(0)
+        wall.now += 1
+        running = pool.submit("block", user_key="v", plate_id="p4", submission_id="s4")
+        queued = pool.submit("ok", user_key="v", plate_id="p5", submission_id="s5")
+        thread = threading.Thread(target=executor.run_next)
+        thread.start()
+        while pool.get(running)["state"] != "running":
+            pool.wait(running, pool.get(running)["sequence"], timeout=FAILSAFE_S)
+        listed = pool.listing()
+        assert [e["job"] for e in listed] == [done, failed, cancelled, running, queued]
+        assert [e["progress"]["state"] for e in listed] == ["done", "failed", "cancelled", "running", "queued"]
+        assert [e["ended_at"] for e in listed] == ["2026-11-27T22:13:58Z", "2026-11-27T22:13:59Z",
+                                                   "2026-11-27T22:14:00Z", None, None]
+        assert [e["file_on_disk"] for e in listed] == [True, False, False, False, False]
+        assert [(e["user_key"], e["plate_id"], e["submission_id"]) for e in listed][0] == ("u", "p1", "s1")
+        assert listed[3]["progress"] == pool.get(running)
+        assert set(listed[0]) == {"job", "user_key", "plate_id", "submission_id", "progress", "file_on_disk",
+                                  "ended_at"}
+        release.set()
+        thread.join(FAILSAFE_S)
+
+    def test_a_new_pool_lists_nothing(self):
         pool, _ = make_pool()
-        pool.sweep = lambda: swept.set()
-        thread = pool.start_sweeper(interval_s=0)
-        assert swept.wait(FAILSAFE_S)
+        assert pool.listing() == []
+
+    def test_a_done_job_whose_file_was_deleted_is_not_on_disk(self):
+        pool, _ = make_pool()
+        job_id = pool.submit()
+        assert pool.listing()[0]["file_on_disk"] is True
+        pool.delete_file(job_id)
+        assert pool.listing()[0]["file_on_disk"] is False
+
+    def test_an_expired_job_leaves_the_list(self):
+        clock = FakeClock()
+        pool, _ = make_pool(clock=clock)
+        pool.submit()
+        clock.now += jobs.RECORD_TTL_S
+        pool.sweep()
+        assert pool.listing() == []
+
+    def test_the_wall_clock_is_the_systems_by_default(self, monkeypatch):
+        monkeypatch.setattr(jobs.time, "time", lambda: END)
+        pool = JobPool(good_worker, executor=ImmediateExecutor())
+        pool.submit()
+        assert pool.listing()[0]["ended_at"] == "2026-11-27T22:13:58Z"
+
+
+class TestSweeperAndShutdown:
+    """The sweeper on its own thread, its intervals passed by the test (ManualTicks): it
+    waits on events, never on a duration."""
+
+    def test_the_sweeper_expires_records_on_the_fake_clock_once_per_interval_until_shutdown(self):
+        clock, ticks = FakeClock(), ManualTicks()
+        pool, logs = make_pool(clock=clock)
+        job_id = pool.submit()
+        expired = threading.Event()
+        pool._log = lambda entry: entry.get("state") == "expired" and expired.set()
+        thread = pool.start_sweeper(wait=ticks)
+        clock.now += jobs.RECORD_TTL_S
+        ticks.tick()
+        assert expired.wait(FAILSAFE_S)
+        assert pool.get(job_id) is None
+        assert ticks.intervals[0] == jobs.SWEEP_INTERVAL_S == 10
         pool.shutdown()
+        ticks.tick()                     # an interval passes after the shutdown: the sweeper ends
+        thread.join(FAILSAFE_S)
+        assert not thread.is_alive()
+
+    def test_without_a_test_clock_the_sweeper_waits_on_the_pools_closing(self):
+        pool, _ = make_pool()
+        pool.sweep = lambda: pytest.fail("swept after the shutdown")
+        pool.shutdown()
+        thread = pool.start_sweeper()              # the closing is set: its wait returns at once
         thread.join(FAILSAFE_S)
         assert not thread.is_alive()
 
     def test_sweeper_survives_a_failing_sweep(self):
-        calls = []
+        calls, ticks, second = [], ManualTicks(), threading.Event()
         pool, logs = make_pool()
 
         def sweep():
             calls.append(1)
             if len(calls) == 1:
                 raise RuntimeError("disk")
-            pool._closing.set()
+            second.set()
         pool.sweep = sweep
-        thread = pool.start_sweeper(interval_s=0)
+        thread = pool.start_sweeper(wait=ticks)
+        ticks.tick()
+        ticks.tick()
+        assert second.wait(FAILSAFE_S)
+        ticks.stop()
         thread.join(FAILSAFE_S)
         assert len(calls) == 2 and logs[-1]["event"] == "slice_sweeper_error"
 
@@ -1005,16 +1172,21 @@ class TestALogThatFails:
         assert pool.get(unfollowed)["state"] == "queued" and pool.get(queued) is None
 
     def test_the_sweeper_survives_a_log_that_fails_while_it_reports_a_failing_sweep(self):
-        calls = []
+        calls, ticks, second = [], ManualTicks(), threading.Event()
         pool = JobPool(good_worker, executor=ImmediateExecutor(), log=BrokenLog())
 
         def sweep():
             calls.append(1)
             if len(calls) == 1:
                 raise RuntimeError("disk")
-            pool._closing.set()
+            second.set()
         pool.sweep = sweep
-        pool.start_sweeper(interval_s=0).join(FAILSAFE_S)
+        thread = pool.start_sweeper(wait=ticks)
+        ticks.tick()
+        ticks.tick()
+        assert second.wait(FAILSAFE_S)
+        ticks.stop()
+        thread.join(FAILSAFE_S)
         assert len(calls) == 2 and pool.log_failures() == 1
 
     def test_a_healthy_log_counts_nothing(self):
@@ -1072,5 +1244,5 @@ class TestEdges:
 
 
 def test_constants_are_the_documented_defaults():
-    assert (jobs.MAX_RUNNING, jobs.MAX_QUEUED, jobs.RECORD_TTL_S) == (1, 2, 3600)
+    assert (jobs.MAX_RUNNING, jobs.MAX_QUEUED, jobs.RECORD_TTL_S) == (1, 2, 7200)
     assert jobs.CANCEL_REASONS == ("replaced", "shutdown", "requested")

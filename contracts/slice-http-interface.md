@@ -12,9 +12,9 @@ shapes that travel in these requests are the data contracts:
 service: the user key on every request marked "yes", `POST /parts`, `POST /slices` with the
 plate configuration in its phase 2 form, with the repeat and the replacement of
 [Repeat and replacement](#post-slices--submit-a-plate-configuration), `ahead` in a waiting
-slice job's report, `GET`, `events`, `file`, `summary` and `DELETE` of one slice job, and
-`GET /settings-table`. To be built: `GET /slices`, `DELETE /slices/<job>/file`, `GET /log`
-and `slice.stopping`
+slice job's report, `GET`, `events`, `file`, `summary` and `DELETE` of one slice job,
+`GET /settings-table`, `GET /slices`, `DELETE /slices/<job>/file` and
+`slice.output_too_large`. To be built: `GET /log` and `slice.stopping`
 ([The HTTP interface](../slice/README-details.md#the-http-interface) in the slice
 service's details file says what is built). The slice service's builder and the front
 server's builder both build to this file; neither settles a name or a shape of it alone. A
