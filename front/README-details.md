@@ -2,8 +2,13 @@
 
 This is the builder's document for the front server. The guide beside it,
 [README.md](README.md), is what the owner reads and decides from. Where the two differ, the
-guide is right and this file is to be corrected. Nothing of the front server is built, so
-every sentence here is design: it restates each requirement of the guide in the builder's
+guide is right and this file is to be corrected. Of the front server, items 1 to 4 of
+[Phase 2](#phase-2-one-machine-no-onshape-no-printer) are built: the project and its fakes,
+[the bucket interface](#the-bucket-interface) in its folder form,
+[the rules for every request](#rules-for-every-request) with
+[the version on every answer](#the-version-and-old-and-new-versions-together), and
+[the log's writer](#the-log). What this file says of those is true of the code in `front/`;
+every other sentence is design: it restates each requirement of the guide in the builder's
 terms, with the code-level names (requests, settings, constants, error codes, records) and
 the tests each requirement needs.
 
@@ -178,10 +183,36 @@ below: [The cookie](#the-cookie), [Groups and the current group](#groups-and-the
 [Requests from other sites](#requests-from-other-sites) and
 [The version](#the-version-and-old-and-new-versions-together).
 
+**As built** (`penguin_front.app`, `penguin_front.errors`):
+
+- A handler refuses by raising `FrontError(code, detail)`; the application answers its
+  report with the code's status. Each code the front server produces is in
+  `errors.FRONT_REPORTS` with its status, `retryable` and its two sentences, added in the
+  commit that first produces it. So far: `front.bad_request`, `front.no_such_request` and
+  `front.unexpected`.
+- **Not offered** includes an `OPTIONS` request to any path and a path that differs from an
+  offered one only by a doubled or a trailing slash, all `404` `front.no_such_request`, with
+  no `Allow` header. A `HEAD` is answered wherever a `GET` is, as HTTP requires.
+- **Not JSON** (`json_body()`): the body is read as JSON whatever its `Content-Type` says;
+  an empty body, one cut short, one not in UTF-8, or one using `NaN` or `Infinity` is `400`
+  `front.bad_request`. A refusal of the web framework's own below 500 (a body too large, a
+  header too long) is `front.bad_request` too, and one of 500 or more `front.unexpected`.
+- **Unexpected:** the report's `detail` names an incident id and nothing of the failure;
+  the log line carries the same `incident` and the whole `trace`.
+- **One line for each error report answered**, event `error`: `code`, `status`, `method`,
+  `path` (never the query string, which carries Onshape's code from phase 3), `detail`
+  except on a `500`, and `page_version` when `X-PenguinSlicer-Page` has the version's form
+  (a header of any other form is not written).
+- **The page files** are marked by `page_file(response, cache_control)`; every other answer,
+  an error report from a page file's request included, gets `Cache-Control: no-store`.
+
 ### Tests
 
 - The application's requests, enumerated from the application, are exactly the contract's
-  for the phase built (*proposed*: a test holds the contract's table as data).
+  for the phase built: the test reads the contract's table "The requests at a glance" from
+  [the contract](../contracts/wizard-front-server.md#the-requests-at-a-glance) and holds the
+  application to `BUILT` in `tests/test_rules.py`, the requests built so far, every one of
+  them a phase 2 row. Each item that builds a request adds it to `BUILT`.
 - A path and a method the front server does not offer each answer `404`
   `front.no_such_request`.
 - A request whose JSON body is not JSON answers `400` `front.bad_request`.
@@ -677,7 +708,8 @@ is a fault of the front server's and is answered `500` `front.unexpected`.
 
 - The stand-in for the slice service answers as [its contract](../contracts/slice-http-interface.md)
   says, its answers checked against the contract's examples, and lets a test put its events
-  in an exact order; it records every request it receives.
+  in an exact order; it records every request it receives (built:
+  `tests/test_slice_standin.py`).
 - No request of the whole fast suite reaches the stand-in's cancel.
 - The stand-in not answering gives `503` `front.slice_unreachable` on each request that
   calls it.
@@ -1231,35 +1263,63 @@ printer its table lacks).
 
 Guide: [What it holds, and what it never holds](README.md#what-it-holds-and-what-it-never-holds).
 
-The front server reaches each bucket through one interface with two forms: R2, hosted, and a
-folder, on one machine (*proposed* settings: `PENGUIN_STATE_DIR`, `PENGUIN_LOG_DIR` for the
-folder form; the R2 form's under [Secrets and settings](#secrets-and-settings)). Both give the
-same operations (*proposed*): read a file with its version marker; write a file; write a file
-only if its marker is still a given one, or only if it does not exist; delete a file; copy a
-file onto itself; and list the files under a prefix. Reads and writes take and give streams,
-so a sliced file is never held whole in memory. *Proposed:* the R2 form uses R2's
-S3-compatible interface, with `If-Match` and `If-None-Match` for the conditional writes and
-the ETag as the marker; the folder form writes to a temporary name and renames, and keeps its
-marker as a hash of the contents.
+The front server reaches each bucket through one interface with two forms: R2, hosted
+(phase 3), and a folder, on one machine (`penguin_front.buckets.FolderBucket`, built; its
+settings `PENGUIN_STATE_DIR` and `PENGUIN_LOG_DIR`; the R2 form's under
+[Secrets and settings](#secrets-and-settings)). Both give the same operations:
+
+| Operation | What it does |
+|---|---|
+| `open(name)` | A `Stored` file to read in pieces (`chunks()`), with its `marker`, `size` and `stored_at`; a context manager |
+| `get(name)` | The whole of a small file and its marker |
+| `put(name, data, if_marker=None, if_absent=False)` | Write from bytes, an iterable of byte pieces or a binary file object, and give the new marker; with `if_marker`, only if the file's marker is still that one; with `if_absent`, only if no such file exists |
+| `delete(name)` | Remove a file; one already gone is not an error |
+| `copy_onto_itself(name)` | Give the file a new store time, its contents unchanged |
+| `list(prefix)` | Every file whose name starts with `prefix`, sorted by name, each an `Entry` of `name`, `size` and `stored_at` |
+
+A file not there is `NotFound`; a conditional write whose condition does not hold is
+`ConditionFailed` and writes nothing; a store that cannot be read or written is
+`BucketUnavailable`, which a request answers `front.state_bucket_unreachable`; a name no file
+may have is `BadName`, a fault of the code. A name is 1 to 1,024 bytes of parts separated by
+`/`, none empty, `.` or `..`, none starting with `.`, with no `\` and no NUL, so no name
+leaves its bucket and both forms take the same names. Reads and writes pass in pieces of at
+most `CHUNK_BYTES` (1 MiB), so a sliced file is never held whole in memory. *Proposed:* the
+R2 form uses R2's S3-compatible interface, with `If-Match` and `If-None-Match` for the
+conditional writes and the ETag as the marker. The folder form writes to a temporary file
+beside its place (named `.tmp-<random>`, which no listing shows) and renames it over the
+place, so a reader sees the old file or the new and a write that fails partway leaves the old
+file as it was; its marker is the SHA-256 of the contents; its store time is the file's
+modification time, set from the front server's clock; a lock makes each conditional write's
+check and rename one step, which holds because the front server is one process.
 
 Every record the front server writes to the state bucket carries its format number
 (`format`, counting from 1; [the contracts](../contracts/README.md#rules)), and the front
 server reads every format up to its own and refuses one it does not know, saying so in the
-log. From phase 5 the same interface, on the state bucket, is the store the front server
-gives the relay.
+log. As built (`penguin_front.records`): `write_record(bucket, name, kind, record)` is the
+one way a record is written, and always writes the front server's format for its kind
+(`FORMATS`: `configuration` 1, `sliced_file` 1), whatever `format` the record held;
+`read_record(bucket, name, kind, log)` gives the record and its marker when its `format` is a
+whole number from 1 to the front server's, and otherwise raises `UnreadableRecord` and writes
+one line, `record_unreadable`, with the record's name, its kind, the format found and the
+newest read. A file that is not a JSON object is refused the same way. From phase 5 the same
+interface, on the state bucket, is the store the front server gives the relay.
 
 The configurations and the paired-printer records have no second copy; if the bucket is
 damaged, or a hand-written document is overwritten, nothing restores them (accepted).
 
 ### Tests
 
-- One set of tests runs against the folder form in the fast suite, in a fresh temporary
-  folder for each test, and against the R2 form outside it: read with its marker; write; a
-  conditional write that succeeds, one that fails because the file changed, a conditional
-  create that fails because the file exists; delete; copy onto itself, which gives a new
-  store time; a listing under a prefix; a stream larger than the tests' memory chunk.
+- One set of tests (`tests/test_buckets.py`, every form in its `FORMS`) runs against the
+  folder form in the fast suite, in a fresh temporary folder for each test, and against the
+  R2 form outside it (phase 3): read with its marker; write; a conditional write that
+  succeeds, one that fails because the file changed, a conditional create that fails
+  because the file exists; eight writers racing on one marker leave one winner; delete;
+  copy onto itself, which gives a new store time; a listing under a prefix; a stream larger
+  than the tests' memory chunk; a stream that fails halfway leaves the old file; every name
+  of the wrong form refused; a store that cannot be written or read is unavailable.
 - Every record the front server writes carries a format number; a record of the previous
-  format is read; a record of a format newer than the front server's is refused and logged.
+  format is read; a record of a format newer than the front server's is refused and logged
+  (built: `tests/test_records.py`).
 
 ## The log
 
@@ -1306,17 +1366,37 @@ noted beside the slice job ([Submitting](#submitting-a-plate-configuration)); a 
 slice job it cannot place keeps no group.
 
 **One file each minute holds the lines of all components.** About once a minute
-(`LOG_FLUSH_S`, 60; *proposed* name) the front server writes everything gathered since the
+(`LOG_FLUSH_S`, 60) the front server writes everything gathered since the
 last file as one new file of newline-separated JSON, written once and never rewritten, since
 an object store cannot add to a file. **The files sit in folders by year, then month, then
-day,** so no folder holds more than about 1,440 files; names use UTC (*proposed*:
-`<YYYY>/<MM>/<DD>/<HHMMSS>-<random>.jsonl`). Picking out one component's lines is the
-reader's job. Every line also goes to standard output at once, which Railway's log view shows
-and keeps seven days; the log bucket keeps the files ninety days (an R2 lifecycle rule, set
-in phase 3). In phase 2 the files go into the folder that stands for the log bucket. A crash
-loses up to the last minute of lines from the log bucket; they remain in Railway's log view.
-A deploy loses none, since a stopping front server writes what it has gathered
-([Stopping](#stopping)). A failure to write the log never changes an answer.
+day,** so no folder holds more than about 1,440 files; names use UTC:
+`<YYYY>/<MM>/<DD>/<HHMMSS>-<8 hexadecimal digits>.jsonl`, the moment of writing, each created
+only if its name is free (`if_absent`), with a new random part tried up to `NAME_ATTEMPTS`
+(5) times. A minute with no lines writes no file. Picking out one component's lines is the
+reader's job. Every line of the front server's own also goes to standard output at once,
+which Railway's log view shows and keeps seven days; the log bucket keeps the files ninety
+days (an R2 lifecycle rule, set in phase 3). In phase 2 the files go into the folder that
+stands for the log bucket. A crash loses up to the last minute of lines from the log bucket;
+they remain in Railway's log view. A deploy loses none, since a stopping front server writes
+what it has gathered ([Stopping](#stopping)).
+
+**A failure to write the log never changes an answer.** A file that cannot be written leaves
+its lines kept for the next minute, and the failure is said on standard output only
+(`log_bucket_unwritable`, with the lines kept and the store's words). At most
+`MAX_PENDING_LINES` (100,000) lines are kept; past that the oldest are dropped, and the next
+file written starts with a line `log_lines_dropped` giving how many. A standard output that
+fails is ignored.
+
+**The writer as built** (`penguin_front.log.Log`): `write(event, **fields)` writes a line of
+the front server's own (component `front`); `write_as(component, event, **fields)` a line it
+writes for another component, as for the page's reports (component `wizard`); both print
+the line and keep it. `gather(lines)` keeps lines another component wrote, which already
+carry their component and are in that component's own output, so they are not printed again.
+A line's `time` is UTC, RFC 3339, to the millisecond, as the slice service's are; `time`,
+`component` and `event` come first and no field can replace them; a value JSON cannot hold
+is written as its text. `start()` runs the minute's loop on the front server's clock;
+`stop()` ends it and writes what is gathered. The running front server writes `start`
+(with `version`, `host`, `port`, `threads`, `dev_identity`) and, when stopped, `stop`.
 
 **Reading** (phase 3). The owner and the owner's coding agents read the log bucket with a
 credential that can read it and nothing else, through one command kept in the repository
@@ -1332,7 +1412,10 @@ request is not designed.
 - Each kind of line above is written by a test that causes it, and holds the fields listed.
 - On a fake clock, a minute's gathered lines of every component (the front server's, the
   stand-in slice service's, the page's reports) are written as one new file under its year,
-  month and day folders, named in UTC; nothing is written to a file already written.
+  month and day folders, named in UTC; nothing is written to a file already written
+  (`tests/test_log.py`, built).
+- The log folder unwritable keeps the lines for the next minute; lines past the bound are
+  dropped oldest first and counted; a failing standard output changes nothing (built).
 - The stand-in slice service's lines gain the group of their slice job, are fetched in order
   with the last number passed back, and none is fetched twice; a `more` answer is followed at
   once; a changed `process` starts again from `0`; a `dropped` count is written as a line.
@@ -1340,7 +1423,7 @@ request is not designed.
 - No line written during the whole fast suite contains the cookie, an Onshape token, a cookie
   key, the relay's secret key, a daemon's token or a pairing code; the test searches every
   line for the values the suite used.
-- The log folder failing to be written leaves every answer unchanged.
+- The log folder failing to be written leaves every answer unchanged (built).
 
 ## The page's reports about itself
 
@@ -1397,7 +1480,9 @@ lines. A page that sees a newer version reloads at a quiet moment; that is the w
 A release build sets the version in the setting `PENGUIN_VERSION`; unset, as when run from a
 checkout, it is the moment the front server started, in UTC, then `-0000000`
 ([The wizard's built files](../contracts/wizard-front-server.md#the-wizards-built-files)).
-Built in phase 2.
+A `PENGUIN_VERSION` not of that form stops the start. Built (`penguin_front.version`, the
+header added to every answer by `penguin_front.app`); the progress stream's first event is
+built with the streams.
 
 Three rules hold across a deploy:
 
@@ -1415,7 +1500,7 @@ Three rules hold across a deploy:
 ### Tests
 
 - Every answer of every request carries `X-PenguinSlicer-Version` in the contract's form,
-  including a `404`, an error report and a `500`; a progress stream's first event is
+  including a `404`, an error report and a `500` (built); a progress stream's first event is
   `version`.
 - The previous release's page (its built files) is run against the new front server.
 - The new front server reads a record of each kind and a cookie written by the previous one.
@@ -1498,9 +1583,8 @@ check after each deploy, which tells the owner when it fails, is in
 Guide: [The limits that matter](README.md#the-limits-that-matter),
 [How many users at once](README.md#how-many-users-at-once-and-what-happens-when-the-threads-run-out).
 
-The front server serves requests with 100 threads (*proposed*: a WSGI server in one process
-with a fixed pool, such as waitress with `threads=100` or gunicorn with one `gthread`
-worker; `PENGUIN_FRONT_THREADS`, default 100). Each of these holds a thread for as long as
+The front server serves requests with 100 threads (built: waitress in one process with a
+fixed pool of `PENGUIN_FRONT_THREADS` threads, default 100). Each of these holds a thread for as long as
 it lasts:
 
 - from phase 5, an idle daemon's **held sync**, which the relay holds for up to 55 seconds
@@ -1633,6 +1717,19 @@ The other settings: `PENGUIN_DEV_IDENTITY`, `PENGUIN_SLICE_URL`, `PENGUIN_STATE_
 used for the callback's address and the origin check). Each one's default is in
 [Running phase 2 on one machine](#running-phase-2-on-one-machine).
 
+**As built** (`penguin_front.settings.Settings.from_environ`), each is read once at start
+and checked for its form; one of the wrong form stops the start with `SettingError`, whose
+message begins with the setting's name and never quotes a secret, and the command exits with
+status 2. `PENGUIN_DEV_IDENTITY` is `1` (on), or unset, empty or `0` (off).
+`PENGUIN_SLICE_URL` and `PENGUIN_BASE_URL` are `http` or `https` addresses with no path (a
+trailing `/` is dropped). The three folders are absolute paths. `PENGUIN_VERSION` has the
+version's form. `PENGUIN_GROUPS_REREAD` is `never` (the default) or a whole number of
+seconds of at least 1. `PENGUIN_FRONT_THREADS` is a whole number from 1 to 1,000.
+`PENGUIN_FRONT_STOP_S` is unset or a whole number of at least 1. `PENGUIN_COOKIE_KEY`, when
+the development identity is off, must be set and not empty; its value never appears in the
+settings' printed form. In phase 2 an unset `PENGUIN_STATE_DIR` or `PENGUIN_LOG_DIR` means
+the folder of the table below, since the R2 form is not built; phase 3 changes this to R2.
+
 Every secret can be replaced, and a planned replacement interrupts nobody who uses
 PenguinSlicer within a week of it; the procedures are in
 [the architecture](../docs/architecture.md#security) and are written in the repository in
@@ -1668,8 +1765,9 @@ PENGUIN_DEV_IDENTITY=1 uv run --project front python -m penguin_front serve
 
 then a browser opens `http://127.0.0.1:8600/`. The slice service listens on
 `127.0.0.1:8640`, its default as built. The front server listens on `127.0.0.1:8600` by
-default (`serve --host` and `--port`, as the slice service's take, *proposed* module name
-`penguin_front`); it may start before the slice service, since it asks for the slice jobs
+default (`python -m penguin_front serve --host` and `--port`, as the slice service's take,
+built; it serves with waitress, `PENGUIN_FRONT_THREADS` threads, and stops on Ctrl-C or
+`SIGTERM`, writing its `stop` line and what its log has gathered); it may start before the slice service, since it asks for the slice jobs
 until the slice service answers ([Starting](#starting-and-what-a-restart-does)), and answers
 `front.slice_unreachable` meanwhile. `make -C wizard build` is run again after each change to
 the wizard; the front server reads the built folder at start, so it is restarted to serve
@@ -1729,7 +1827,8 @@ through their interfaces and their start commands, never by importing their code
 ### Tests
 
 - With no setting given, the front server listens on `127.0.0.1:8600`, calls the slice
-  service at `http://127.0.0.1:8640`, and uses the two folders of the table.
+  service at `http://127.0.0.1:8640`, and uses the two folders of the table (built:
+  `tests/test_settings.py`, `tests/test_server.py`).
 - With the development identity on and no cookie key, a key is made, the line is written,
   and after a restart the development identity is signed in again by the trip; with it off
   and no key, the start stops.
@@ -1867,9 +1966,13 @@ collects the result.
 Guide: [How it is tested](README.md#how-it-is-tested).
 
 The front server is its own `uv` project in `front/`, whose commands run with
-`make -C front ...` (*proposed* targets, as the other components have: `install`, `test`,
-`test-parallel`, `coverage`, and outside the fast suite `test-r2` and `test-hosted`, the
-short scripted check run against the hosted service after each deploy).
+`make -C front ...`: `install`, `test` (random order on each run), `test-parallel`
+(`WORKERS`, default 2) and `coverage` (branch coverage, failing under 100%), built; and
+outside the fast suite, from phase 3, `test-r2` and `test-hosted`, the short scripted check
+run against the hosted service after each deploy. Each target runs pytest from the project's
+environment, bounded on pytest's own process by `timeout` (`RUN_LIMIT_S`, 600) and by
+`prlimit` on its address space (`RUN_MEMORY`, 4G); each test is bounded to 30 seconds by
+pytest-timeout.
 
 The fast suite uses no real network, no real waiting and no fixed ports, and passes in any
 order, any number of times. A test that fails once is fixed at its cause, never retried.
@@ -1884,8 +1987,33 @@ order, any number of times. A test that fails once is fixed at its cause, never 
 - **The buckets** are the folder form, in a fresh temporary folder for each test.
 - **Time** is a fake clock the test moves: thirty days, two hours, a minute and fifteen
   seconds pass in an instant. A test waits on an event, never on a duration; a test that
-  calls `time.sleep`, or reads the real clock, fails (*proposed* check).
+  calls `time.sleep` fails, and a check fails if any module of `penguin_front` other than
+  `clock.py` reads the real clock or sleeps.
 - **Servers** a test needs listen on a port the system chooses.
+- **No network beyond loopback:** a name lookup of, or a connection to, any address but the
+  loopback address fails the test where it is made, naming the address, so no test can reach
+  Onshape or R2.
+
+**The fakes as built** (in `front/tests/`):
+
+- `front_fakes.py`: `FakeClock` (`now()`, `sleep(seconds, stop)`, `wake()`, `advance()`,
+  `wait_for_sleepers(n)`, and a step limit that fails a test whose loop moves time without
+  end); `Announcer`, on which fakes announce each change so a test waits by being told;
+  `LoopbackServer`, which serves a fake on the loopback address and can stop listening and
+  listen again on the same port; and `BACKSTOP_S`, the bound after which a wait fails the
+  test, never a time a test relies on.
+- `slice_standin.py`: `SliceStandIn`, every request of
+  [the slice service's HTTP interface](../contracts/slice-http-interface.md), checked against
+  each of its examples. A slice job moves only when the test calls `report`; `repeat` sends
+  the fifteen-second repeat; `close_streams` closes a stream before its final report;
+  `cut_file` cuts the sliced file partway; a job's `send_length` false sends it without a
+  `Content-Length`; `answer_next` gives one request a chosen answer; `stopping`, `restart`,
+  `unreachable` and `reachable` put the service in each state; `requests` records every
+  request, `refusals` counts the requests about another user key's slice job, and `cancels()`
+  lists every cancel received.
+- `onshape_standin.py`: `OnshapeStandIn`, Onshape's approval page and token exchange and the
+  two calls of a sign-in, counting each call (`calls`); `refuse_approval`, `refuse_codes`,
+  `unreachable`.
 
 Rules the suite is held to:
 
@@ -1950,22 +2078,22 @@ From [the guide](README.md#what-is-built-in-which-phase).
 
 The front server runs beside one slice service process on one machine, with the development
 identity and a folder for each bucket. Build in this order; each item rests on those before
-it, and each is done with its tests:
+it, and each is done with its tests. Items 1 to 4 are built.
 
-1. **The project and its fakes.** `front/` as a `uv` project with its make targets; the
+1. **The project and its fakes** (built). `front/` as a `uv` project with its make targets; the
    fake clock; the stand-in for the slice service on the requests of
    [its contract](../contracts/slice-http-interface.md), checked against its examples; the
    stand-in for Onshape (no test calls Onshape from the first test on); the settings and
    their defaults ([Secrets and settings](#secrets-and-settings),
    [Running phase 2 on one machine](#running-phase-2-on-one-machine)).
-2. **The bucket interface, folder form,** with the format number on every record it writes
+2. **The bucket interface, folder form** (built), with the format number on every record it writes
    ([The bucket interface](#the-bucket-interface);
    guide: [What it holds](README.md#what-it-holds-and-what-it-never-holds)).
-3. **The rules for every request:** error reports, `front.no_such_request`,
+3. **The rules for every request** (built): error reports, `front.no_such_request`,
    `front.bad_request`, `front.unexpected`, `Cache-Control: no-store`, and the version on
    every answer ([Rules](#rules-for-every-request), [The version](#the-version-and-old-and-new-versions-together);
    contract: [Rules for every request](../contracts/wizard-front-server.md#rules-for-every-request)).
-4. **The log's writer:** lines on standard output and gathered into one file a minute in the
+4. **The log's writer** (built): lines on standard output and gathered into one file a minute in the
    log folder, by year, month and day ([The log](#the-log); guide: [The log](README.md#the-log)).
 5. **The development identity and the cookie, with one cookie key:** `GET /signin` for the
    development identity, the cookie's thirty days extended by use

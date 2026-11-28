@@ -207,7 +207,12 @@ def test_every_report_of_the_front_server_has_its_fields_and_its_contract_status
 
 def test_an_error_report_can_say_where():
     report = error_report("front.bad_request", "d", where={"stage": "checking"})
-    assert report["where"] == {"stage": "checking"}
+    assert report["where"] == {"stage": "checking"} and "action" not in report
+
+
+def test_an_error_report_can_name_its_action():
+    assert error_report("front.bad_request", "d", action="slice_again")["action"] == \
+        "slice_again"
 
 
 # Not kept by any proxy or browser, and the version on every answer.

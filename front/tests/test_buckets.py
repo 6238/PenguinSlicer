@@ -138,6 +138,19 @@ def test_a_listing_of_an_empty_bucket_is_empty(bucket):
     assert bucket.list("") == []
 
 
+def test_an_empty_file_is_written_and_read(bucket):
+    marker = bucket.put("empty", b"")
+    assert bucket.get("empty") == (b"", marker)
+
+
+def test_a_listing_never_shows_a_temporary_file_or_folder(bucket, tmp_path):
+    bucket.put("d/a", b"x")
+    (tmp_path / "bucket" / "d" / ".tmp-left-by-a-crash").write_bytes(b"half")
+    (tmp_path / "bucket" / ".hidden").mkdir()
+    (tmp_path / "bucket" / ".hidden" / "b").write_bytes(b"y")
+    assert [e.name for e in bucket.list("")] == ["d/a"]
+
+
 def test_a_stream_larger_than_the_memory_chunk_passes_in_pieces(bucket):
     pieces = [bytes([n]) * CHUNK for n in range(5)] + [b"tail"]
     bucket.put("sliced/u/j1.gcode.3mf", iter(pieces))
@@ -199,5 +212,7 @@ def test_a_folder_that_cannot_be_read_is_unavailable(tmp_path, clock):
             bucket.get("d/a")
         with pytest.raises(BucketUnavailable):
             bucket.list("d/")
+        with pytest.raises(BucketUnavailable):
+            bucket.delete("d/a")
     finally:
         (tmp_path / "b" / "d").chmod(0o755)
