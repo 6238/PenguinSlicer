@@ -245,8 +245,11 @@ the front server has, the **cookie key**, so the browser can neither read it nor
 it.
 
 The cookie is the whole of the sign-in. Nothing about it is kept on the server, and the
-cookie key is a setting the front server is given when it starts, not something it
-makes up in memory. That is why a restart or a deploy signs nobody out, why there is no
+hosted service's cookie key is a setting the front server is given when it starts, not
+something it makes up in memory. (On one machine, with the development identity on and no
+key given, the front server makes one up at start; a restart there signs the development
+user out, and the next page signs them in again at once.) That is why a restart or a
+deploy of the hosted service signs nobody out, why there is no
 table of sessions to store, clean or lose, and why two front servers of different
 versions agree at once about who a user is.
 
@@ -1368,16 +1371,32 @@ The phases are the plan's.
   in the slice service's own output and are not printed twice) and, about once a minute,
   one new file for all the lines kept, in folders by year, month and day; a log that cannot
   be written keeps its lines for the next minute and never changes an answer, and no value
-  in a line can make writing it fail.
+  in a line can make writing it fail;
+- the development identity and the cookie, with one cookie key: a browser arriving with no
+  sign-in is signed in as the made-up user at once and sent back where it was going; the
+  cookie is encrypted and authenticated, lasts thirty days from its last use and is moved on
+  at most once a day; on one machine with no cookie key given, a key is made at start and
+  kept in memory, so a restart costs the page one quick trip;
+- serving the wizard's pages: the page with its version in it, its code only to a signed-in
+  browser, both read once at start, and the content security policy on the page;
+- telling the page the user's name and the names of their groups, and the check of the
+  current group against the cookie on every request that acts for a group;
+- the configuration: the built-in default, reading a group's own document, the default
+  served in place of an invalid one with a line in the log saying which rule it breaks and
+  where, and the conditional write, which recognises its own repeat;
+- passing the list of settings and the profile catalog's names from the slice service to
+  the wizard, compressed when the browser accepts it.
+
+Measured while building: the cookie of a user in sixty groups with long names is about ten
+kilobytes, more than a browser keeps, so such a user could not sign in; whether real
+accounts come near that is still the open question
+[Whether the cookie fits](#whether-the-cookie-fits).
 
 **Phase 2: one machine, no Onshape, no printer.** The front server runs beside one
 slice service on one machine, with the development identity and a folder for each
-bucket. Built here:
+bucket. Built here, beyond what is listed above as built so far:
 
-- serving the wizard's pages, with every other answer marked as not to be kept;
-- the development identity and the cookie, with one cookie key;
-- the user key, and the check of the current group against the cookie;
-- telling the page the user's name and the names of their groups;
+- the user key;
 - limits on how fast one user may upload parts and submit plate configurations, whose
   figures the builder settles;
 - passing parts and plate configurations to the slice service, with each plate's id and
@@ -1387,9 +1406,6 @@ bucket. Built here:
   50 MB, collecting at start;
 - the two-hour rule: refusing, deleting, the sweep, and telling the page the moment a
   sliced file expires;
-- the configuration: the built-in default, reading, the default served in place of an
-  invalid document, and the conditional write;
-- passing the list of settings and the profile catalog's names to the wizard;
 - the log, with the page's reports about itself and the slice service's lines, gathered
   once a minute into the folder that stands for the log bucket, one file for all
   components, in folders by day;
