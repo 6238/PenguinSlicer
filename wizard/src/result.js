@@ -140,7 +140,8 @@ export function createResult({ api, slicing, store, panel, geometry, save }) {
       if (!isDetails(details)) return { ok: false, report: badAnswer(summary, answer.status, JSON.stringify(answer.body)) };
       slicing.takeDetails(details);
       save(api.link(path(m.slice, 'file')), details.file);
-      const instances = Number.isInteger(details.summary.instances) ? details.summary.instances : m.body.instances.length;
+      // the plate in words by what it holds, as the Send step's card counts it
+      const instances = m.body.instances.length;
       const what = isNumber(details.size_bytes) ? R.DOWNLOADED(instances, sizeText(details.size_bytes)) : R.DOWNLOADED_NO_SIZE(instances);
       panel.notify({ kind: 'info', what, key: 'downloaded' });
       return { ok: true };

@@ -6,7 +6,8 @@ upload, answered with the record of the bytes sent), on a port the system choose
 files carries `Cache-Control: no-store`.
 
 A test sets what the next requests to a path meet with `script(method, path, *answers)`: each
-answer is `(status, body)` or `(status, body, headers)`, the body a dict sent as JSON, or a
+answer is `(status, body)` or `(status, body, headers)`, the body a dict sent as JSON, bytes sent
+as they are (a sliced file; the default answer of `GET /api/slices/<slice>/file` is a real one), or a
 progress stream, `stream(text, ...)`: server-sent events written at once, then the stream closed,
 or with `hold=True` left open until the test calls `release()` or the server stops (the default
 answer of `GET /api/slices/<slice>/events` is the contract's example of a stream, closed). The
@@ -28,6 +29,9 @@ CONTENT_SECURITY_POLICY = (
 TYPES = {".js": "text/javascript", ".css": "text/css", ".html": "text/html; charset=utf-8",
          ".woff2": "font/woff2", ".png": "image/png", ".svg": "image/svg+xml", ".json": "application/json"}
 EXAMPLES = Path(__file__).resolve().parents[2] / "contracts" / "examples"
+# The sliced file answered by default for `GET /api/slices/<slice>/file`: a real one, made by Orca
+# through the slice service (wizard/tests/sliced/README.md), under the example details' name.
+SLICED = Path(__file__).resolve().parents[1] / "tests" / "sliced" / "spacer-1.gcode.3mf"
 
 
 def example(name):
@@ -91,6 +95,9 @@ def default_answer(method, path, body=b""):
         return 202, example("wizard-front/slice-accepted.json")
     if method == "GET" and route.startswith("/api/slices/") and route.endswith("/summary"):
         return 200, example("wizard-front/slice-summary.json")
+    if method == "GET" and route.startswith("/api/slices/") and route.endswith("/file"):
+        name = example("wizard-front/slice-summary.json")["sliced_file"]["file"]
+        return 200, SLICED.read_bytes(), {"Content-Disposition": f'attachment; filename="{name}"'}
     if method == "GET" and route.startswith("/api/slices/") and route.count("/") == 3:
         return 200, example("wizard-front/slice-done.json")
     if method == "POST" and route in ("/api/reports/failure", "/api/reports/drawing"):
@@ -145,11 +152,12 @@ class FakeFrontServer:
                 if isinstance(scripted, stream):
                     self.stream(scripted)
                     return
-                if scripted is not None:
-                    status, body, *rest = scripted
-                    self.json(status, body, rest[0] if rest else {})
-                    return
-                self.json(*default_answer(method, self.path, body))
+                answer = scripted if scripted is not None else default_answer(method, self.path, body)
+                status, content, *rest = answer
+                if isinstance(content, bytes):
+                    self.answer(status, "application/octet-stream", content, headers=rest[0] if rest else {})
+                else:
+                    self.json(status, content, rest[0] if rest else {})
 
             def stream(self, answer):
                 self.send_response(200)

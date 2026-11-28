@@ -19,6 +19,12 @@ export const RESET_VIEW = 'Reset view';
 export const HELP_LABEL = 'How to move the view';
 export const HELP = 'Drag to turn, right-drag to pan, scroll to zoom; drag the bar on the right to go through the layers.';
 
+// In the readout's place while the sliced file is fetched and read for the layer preview, with how
+// far through when that is known.
+export const READING = (fraction) => (typeof fraction === 'number' && Number.isFinite(fraction)
+  ? `Reading the sliced file: ${Math.floor(fraction * 100)}%`
+  : 'Reading the sliced file');
+
 // The colour key at the view's top left: always all four rows, in the four fixed colours.
 export const KEY_LABEL = 'Colour key';
 export const KEY = [

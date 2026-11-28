@@ -136,11 +136,46 @@
         <div class="slice-actions"><span class="hint"></span></div>
       </div>
       <div id="preview-errors" aria-live="polite"></div>
-      <!-- the result and the layer preview take this place once the plate is sliced -->
-      <div id="preview-result" hidden></div>
+      <!-- the result, filled by panel/preview-step.js: the print time and filament, the quiet line
+           and the warnings, the layer preview (panel/layer-preview.js puts its canvas first in
+           #viewer-container and its layer bar after the colour key), the readout with its two
+           buttons, Reset view and the "?" -->
+      <div id="preview-result" hidden>
+        <div id="preview-stats" class="stats"></div>
+        <ul class="result-warnings" hidden></ul>
+        <div class="preview-view-message"></div>
+        <div class="preview-cols">
+          <div class="preview-view-box">
+            <div id="viewer-container" class="gl-view">
+              <button type="button" class="icon-btn key-btn" id="btn-key" aria-expanded="false" aria-controls="pv-key">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="2" width="5" height="2.4" rx="1" fill="#2b5c9e"/><rect x="1" y="5.6" width="5" height="2.4" rx="1" fill="#e0912f"/><rect x="1" y="9.2" width="5" height="2.4" rx="1" fill="#2f9e7a"/><rect x="1" y="12.8" width="5" height="2.4" rx="1" fill="#9a8fb8"/><rect x="8" y="2.6" width="7" height="1.2" rx="0.6" fill="currentColor"/><rect x="8" y="6.2" width="7" height="1.2" rx="0.6" fill="currentColor"/><rect x="8" y="9.8" width="7" height="1.2" rx="0.6" fill="currentColor"/><rect x="8" y="13.4" width="7" height="1.2" rx="0.6" fill="currentColor"/></svg>
+              </button>
+              <ul id="pv-key" class="pv-key" hidden></ul>
+            </div>
+            <div class="layer-row">
+              <button type="button" class="btn small icon" id="btn-layer-down" disabled>&minus;</button>
+              <span id="layer-readout" class="hint" aria-live="polite"></span>
+              <button type="button" class="btn small icon" id="btn-layer-up" disabled>+</button>
+              <span class="spacer"></span>
+              <button type="button" class="btn small" id="btn-preview-view" disabled></button>
+              <button type="button" class="icon-btn help-btn" id="btn-preview-help" aria-expanded="false" aria-controls="preview-help">?</button>
+              <div id="preview-help" class="help-pop up" role="dialog" hidden><p></p></div>
+            </div>
+          </div>
+        </div>
+      </div>
     </section>
     <section class="step" data-step="send" hidden>
       <h2>Send</h2>
+      <!-- phase 2: the card of what will be printed, with no printer, filled by panel/send-step.js;
+           the expired message in place of Send; a refused Download's message. The print card
+           (#send-live) and the printer's messages come in phase 5. -->
+      <div id="send-live"></div>
+      <div class="send-cols">
+        <div id="send-printer"></div>
+        <div id="send-summary"></div>
+      </div>
+      <div id="send-errors" aria-live="polite"></div>
     </section>
   </main>
 

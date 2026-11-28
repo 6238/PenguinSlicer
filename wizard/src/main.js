@@ -10,8 +10,13 @@ import { createApi } from './api.js';
 import { browserEnvironment, randomId, softwareDrawing } from './environment.js';
 import { createGeometryClient } from './geometry-client.js';
 import { createHoldMeter } from './hold-meter.js';
-import { createLayout } from './layout.js';
+import { createLayout, printerOf } from './layout.js';
+import { createLayerPreview } from './panel/layer-preview.js';
 import { createLayoutStep } from './panel/layout-step.js';
+import { createSendStep } from './panel/send-step.js';
+import { createResult } from './result.js';
+import { saveLink } from './seams/download.js';
+import { startPreviewWorker } from './seams/preview-worker.js';
 import { createLayoutView } from './panel/layout-view.js';
 import { realFrames } from './seams/frames.js';
 import { endOpening, openWizard } from './opening.js';
@@ -78,7 +83,17 @@ const slicing = createSlicing({
   report: (what, fields) => reports.failure(what, fields),
   ready: () => opened.then(() => layout.idle()),
 });
-const previewStep = createPreviewStep(document.querySelector('section.step[data-step="preview"]'), { slicing, store, clock: realClock });
+// The result around the layer preview, and the Send step with Download as its one button.
+const result = createResult({ api, slicing, store, panel, geometry, save: saveLink });
+const previewStep = createPreviewStep(document.querySelector('section.step[data-step="preview"]'), {
+  slicing, store, clock: realClock, result, frames: realFrames,
+  createView: (container, options) => createLayerPreview(container, {
+    ...options, frames: realFrames, clock: realClock, startWorker: startPreviewWorker, software: softwareDrawing(),
+    printer: printerOf(store.get()) ?? undefined,
+    report: (what, fields) => reports.failure(what, fields),
+  }),
+});
+const sendStep = createSendStep(document.querySelector('section.step[data-step="send"]'), { slicing, result, store, root: document.getElementById('wizard') });
 // a change to the plate makes a sliced plate unsliced, until it is the sliced plate again
 for (const source of [layout, settings, parts, store]) source.subscribe(() => slicing.plateChanged());
 
@@ -87,7 +102,7 @@ const opening = endOpening(opened, {
   mark: (how) => { document.documentElement.dataset.opened = how; },
 });
 
-export const wizard = { version, store, api, panel, storage, reports, geometry, holdMeter, parts, partsStep, layout, layoutStep, settings, settingsStep, slicing, previewStep, opening };
+export const wizard = { version, store, api, panel, storage, reports, geometry, holdMeter, parts, partsStep, layout, layoutStep, settings, settingsStep, slicing, result, previewStep, sendStep, opening };
 
 document.documentElement.dataset.version = version;
 document.documentElement.dataset.started = 'true';

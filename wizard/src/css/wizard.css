@@ -51,6 +51,11 @@ body { background: #f6f8fa; }
 /* The slicing card's line that the slicer restarted (designed in the guide), boxed as the mockup's
    connection lines are, in the panel's grey. */
 #wizard .conn.restart { background: var(--panel-2); border: 1px solid var(--line); color: var(--ink); }
+/* The result: the slice service's warnings in amber under the quiet line (the mockup drew none), and
+   the place of the layer preview when it cannot be drawn. */
+#wizard .result-warnings { margin: -4px 0 10px; padding-left: 16px; font-size: 12px; color: var(--warn); }
+#wizard .result-warnings[hidden], #wizard .preview-view-box[hidden] { display: none; }
+#wizard .preview-view-message .msg { margin-top: 0; }
 /* Reset all's confirmation sits over advanced mode. */
 .advanced .confirm-pop { z-index: 60; }
 

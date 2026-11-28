@@ -7,7 +7,7 @@ import urllib.request
 
 import pytest
 
-from tests_browser.fake_front_server import EXAMPLES, FakeFrontServer, error_report, example, progress_event, stream
+from tests_browser.fake_front_server import SLICED, EXAMPLES, FakeFrontServer, error_report, example, progress_event, stream
 
 VERSION_META = '<meta name="penguinslicer-version" content="__PENGUINSLICER_VERSION__">'
 
@@ -99,6 +99,21 @@ def test_an_unknown_request_is_the_front_servers_report(server):
     status, _, body = ask(server, "GET", "/api/nothing")
     assert (status, body["code"]) == (404, "front.no_such_request")
     assert set(body) == {"code", "message", "remedy", "retryable", "detail"}
+
+
+def test_the_sliced_file_is_by_default_a_real_one_offered_under_the_details_name(server):
+    status, headers, body = ask(server, "GET", "/api/slices/3f9a1c2b/file")
+    assert status == 200
+    assert headers["Content-Type"] == "application/octet-stream"
+    assert headers["Content-Disposition"] == 'attachment; filename="Bracket_plus1-20261009-1432.gcode.3mf"'
+    assert body == SLICED.read_bytes()
+    assert body[:2] == b"PK"
+
+
+def test_a_scripted_answer_of_bytes_is_sent_as_it_is(server):
+    server.script("GET", "/api/slices/j/file", (200, b"\x00\x01"))
+    status, headers, body = ask(server, "GET", "/api/slices/j/file")
+    assert (status, headers["Content-Type"], body) == (200, "application/octet-stream", b"\x00\x01")
 
 
 def test_a_scripted_answer_comes_first_then_the_default(server):
