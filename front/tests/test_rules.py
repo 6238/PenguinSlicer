@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from flask import abort
 
+from front_helpers import environ
 from penguin_front.app import create_app, json_body, page_file
 from penguin_front.errors import FRONT_REPORTS, FrontError, error_report
 from penguin_front.settings import Settings
@@ -21,7 +22,9 @@ REQUIRED = {"code": str, "message": str, "remedy": str, "retryable": bool, "deta
 #: The contract's requests the front server offers so far, as (method, path). Each item of
 #: README-details.md's phase 2 list that builds a request adds it here; at the end of
 #: phase 2 this is every phase 2 row of the contract's table.
-BUILT = set()
+BUILT = {("GET", "/signin"), ("GET", "/api/me"), ("GET", "/"), ("GET", "/assets/<file>"),
+         ("GET", "/api/configuration"), ("PUT", "/api/configuration"),
+         ("GET", "/api/settings-table")}
 #: The requests whose answers are page files, marked to be kept, not `no-store`.
 PAGE_FILES = {("GET", "/"), ("GET", "/assets/<file>")}
 
@@ -54,8 +57,8 @@ def log():
 
 
 @pytest.fixture
-def app(clock, log):
-    settings = Settings.from_environ({"PENGUIN_DEV_IDENTITY": "1"})
+def app(tmp_path, clock, log):
+    settings = Settings.from_environ(environ(tmp_path))
     application = create_app(settings, clock=clock, log=log, version=VERSION)
 
     @application.post("/test/json")
@@ -108,8 +111,8 @@ def test_the_contracts_table_is_read_whole():
     assert table[("GET", "/signin")] == "2 (development identity), 3"
 
 
-def test_the_requests_offered_are_the_contracts_built_so_far(clock, log):
-    application = create_app(Settings.from_environ({"PENGUIN_DEV_IDENTITY": "1"}),
+def test_the_requests_offered_are_the_contracts_built_so_far(tmp_path, clock, log):
+    application = create_app(Settings.from_environ(environ(tmp_path)),
                              clock=clock, log=log, version=VERSION)
     assert offered(application) == BUILT
     phase_2 = {request for request, phase in contract_requests().items()
@@ -273,8 +276,10 @@ def test_a_page_file_keeps_its_own_cache_control_and_still_carries_the_version(c
 
 def test_every_request_the_application_offers_carries_the_version_and_its_marking(app):
     client = app.test_client()
+    client.get("/signin")  # the page files are answered as such only to a signed-in user
     for method, rule in offered(app):
-        path = re.sub(r"<[^>]+>", "x", rule)
+        path = re.sub(r"<[^>]+>", "x", rule).replace("/assets/x",
+                                                    "/assets/panel.3f9a1c2b7e04.js")
         answer = client.open(path, method=method, data=b"{}")
         assert answer.headers["X-PenguinSlicer-Version"] == VERSION, (method, rule)
         if (method, rule) in PAGE_FILES or rule == "/test/page":
@@ -289,16 +294,16 @@ def test_no_answer_lets_another_site_read_it(client):
         assert not [h for h in answer.headers.keys() if h.lower().startswith("access-control")]
 
 
-def test_a_version_made_at_start_has_the_versions_form(clock, log):
-    application = create_app(Settings.from_environ({"PENGUIN_DEV_IDENTITY": "1"}),
+def test_a_version_made_at_start_has_the_versions_form(tmp_path, clock, log):
+    application = create_app(Settings.from_environ(environ(tmp_path)),
                              clock=clock, log=log)
     version = application.test_client().get("/x").headers["X-PenguinSlicer-Version"]
     assert VERSION_FORM.fullmatch(version) and version == "20261127T221405Z-0000000"
 
 
-def test_the_versions_setting_is_used_when_set(clock, log):
-    settings = Settings.from_environ({"PENGUIN_DEV_IDENTITY": "1",
-                                      "PENGUIN_VERSION": "20270101T000000Z-abcdef0"})
+def test_the_versions_setting_is_used_when_set(tmp_path, clock, log):
+    settings = Settings.from_environ(environ(tmp_path,
+                                             PENGUIN_VERSION="20270101T000000Z-abcdef0"))
     application = create_app(settings, clock=clock, log=log)
     assert application.test_client().get("/x").headers["X-PenguinSlicer-Version"] == \
         "20270101T000000Z-abcdef0"

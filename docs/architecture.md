@@ -509,7 +509,7 @@ to be typed again.
 
 | What was happening | What the user sees |
 |---|---|
-| Any page was open | Its requests pause and its progress stream reconnects. Nobody is signed out, because the cookie key is a setting of the front server and not something in its memory |
+| Any page was open | Its requests pause and its progress stream reconnects. Nobody is signed out, because the hosted service's cookie key is a setting of the front server and not something in its memory (on one machine, with the development identity on and no key given, the key is made at start, and the development user is signed in again at once) |
 | A slice was running | It keeps running in the slice container. The page shows its progress again once reconnected, and the front server, having asked the slice service for its slice jobs at start, stores the sliced file when the slice ends |
 | A delivery job was waiting for its daemon | The daemon's next sync is accepted, since its token still verifies, and receives the delivery job from its record in the state bucket. It fetches the sliced file through the front server, which reads it from the state bucket |
 | A print was running | It goes on. Until the daemon's next sync brings the printer's status and progress back, which is within ten seconds, plus the daemon's short random wait, of the front server answering again, the printer's status is not known: the printer-status icon shows a grey dot and "…", the Send step says it is waiting to hear from the printer, and a print card keeps its last figures ([the wizard's guide](../wizard/README.md#the-printer-status-icon)) |

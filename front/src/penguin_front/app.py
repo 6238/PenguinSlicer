@@ -6,39 +6,66 @@ together").
   other path or method `404` `front.no_such_request`: an `OPTIONS` request too, and a path
   differing only by a doubled or trailing slash. A `HEAD` is answered wherever a `GET` is.
 - Every failure is an error report as the whole JSON body. A handler refuses by raising
-  `FrontError`. A request body that should be JSON and is not is `400` `front.bad_request`
-  (`json_body`). An exception inside is `500` `front.unexpected`; its trace goes to the log
-  under an incident id that the report's `detail` names.
+  `FrontError`, or passes another component's report unchanged by raising `PassedReport`. A
+  request body that should be JSON and is not is `400` `front.bad_request` (`json_body`). An
+  exception inside is `500` `front.unexpected`; its trace goes to the log under an incident
+  id that the report's `detail` names.
 - Every error report answered writes one log line (`error`): its code, status, method and
-  path, and the page's version when the request carries one of the version's form.
+  path, the user key and the current group when known, and the page's version when the
+  request carries one of the version's form.
 - Every answer, whatever its status, carries `X-PenguinSlicer-Version`, and every answer
-  except a page file (marked by `page_file`) carries `Cache-Control: no-store`.
+  except a page file (marked by `page_file`) carries `Cache-Control: no-store`. An answer to
+  a signed-in request whose cookie is due carries the cookie moving its thirty days on.
 """
 
 import json
-import math
 import secrets
 import traceback
 
-from flask import Flask, Response, request
+from flask import Flask, Response, g, request
 from werkzeug.exceptions import HTTPException, MethodNotAllowed, NotFound
 
-from .errors import FrontError, error_report
+from . import configuration, identity, pages, settings_table
+from .answers import json_body, page_file, target_path as _path  # noqa: F401 - used by tests
+from .buckets import FolderBucket
+from .context import EXTENSION
+from .cookie import CookieKey
+from .errors import FrontError, PassedReport, error_report
+from .slice_client import SliceClient
 from .version import is_version, version_at
 
 VERSION_HEADER = "X-PenguinSlicer-Version"
 PAGE_HEADER = "X-PenguinSlicer-Page"
-EXTENSION = "penguin_front"
+#: The bytes of a cookie key made at start, when none is given (the development identity on).
+MADE_KEY_BYTES = 32
 
 
-def create_app(settings, *, clock, log, version=None):
+def create_app(settings, *, clock, log, version=None, state_bucket=None, slice_client=None):
     """The front server's application. `log` takes `write(event, **fields)`; `version` is
-    the release's, or else the settings', or else the one made from this moment."""
+    the release's, or else the settings', or else the one made from this moment;
+    `state_bucket` is the state bucket, or else the folder of the settings; `slice_client`
+    the client for the slice service, or else one for the settings' address.
+
+    The wizard's page files are read here, once; a folder that cannot be served raises
+    `pages.PagesUnusable`, which stops the start. With no cookie key given (allowed only with
+    the development identity on), a key is made here and kept in memory only (the start says
+    so in its `cookie_key_made` line): a restart then makes every cookie unreadable, and the
+    page's trip signs the development identity in again at once."""
     app = Flask("penguin_front", static_folder=None)
+    version = version or settings.version or version_at(clock.now())
+    if settings.cookie_key is not None:
+        cookie_key = CookieKey(settings.cookie_key)
+    else:
+        cookie_key = CookieKey(secrets.token_bytes(MADE_KEY_BYTES))
     app.extensions[EXTENSION] = {
-        "settings": settings, "clock": clock, "log": log,
-        "version": version or settings.version or version_at(clock.now()),
+        "settings": settings, "clock": clock, "log": log, "version": version,
+        "cookie_key": cookie_key,
+        "pages": pages.load_pages(settings.wizard_dist, version),
+        "state_bucket": state_bucket or FolderBucket(settings.state_dir, clock),
+        "slice": slice_client or SliceClient(settings.slice_url),
     }
+    for part in (pages, identity, configuration, settings_table):
+        part.register(app)
 
     @app.before_request
     def not_offered():
@@ -59,6 +86,10 @@ def create_app(settings, *, clock, log, version=None):
     def refused(error):
         return _answer_report(log, error.status, error.report)
 
+    @app.errorhandler(PassedReport)
+    def passed(error):
+        return _answer_report(log, error.status, error.report, body=error.body)
+
     @app.errorhandler(Exception)
     def failed(exc):
         if isinstance(exc, (NotFound, MethodNotAllowed)):
@@ -75,6 +106,7 @@ def create_app(settings, *, clock, log, version=None):
 
     @app.after_request
     def every_answer(response):
+        identity.extend_cookie(response)
         response.headers[VERSION_HEADER] = app.extensions[EXTENSION]["version"]
         if not getattr(response, "penguin_page_file", False):
             response.headers["Cache-Control"] = "no-store"
@@ -83,65 +115,21 @@ def create_app(settings, *, clock, log, version=None):
     return app
 
 
-def page_file(response, cache_control):
-    """Mark `response` as a page file, kept as `cache_control` says instead of `no-store`."""
-    response.headers["Cache-Control"] = cache_control
-    response.penguin_page_file = True
-    return response
-
-
-def json_body():
-    """The request's body read as JSON, whatever its Content-Type says; a body that is not
-    JSON (empty, cut short, not UTF-8, or using NaN or Infinity) is `front.bad_request`, as is
-    one nested too deeply for the reader, whether or not it is whole, and one holding a number
-    too large for a float (`1e999`), which would be read as an infinity no answer could
-    hold."""
-    raw = request.get_data(cache=True)
-
-    def no_constants(name):
-        raise ValueError(f"{name} is not JSON")
-
-    def finite(text):
-        number = float(text)
-        if not math.isfinite(number):
-            raise ValueError(f"the number {text[:40]} is too large for the server to read")
-        return number
-
-    try:
-        return json.loads(raw.decode("utf-8"), parse_constant=no_constants,
-                          parse_float=finite)
-    except (UnicodeDecodeError, ValueError) as exc:
-        raise FrontError("front.bad_request", f"the body is not JSON: {exc}") from None
-    except RecursionError:
-        raise FrontError("front.bad_request",
-                         "the body is not JSON the server can read: it is nested too "
-                         "deeply") from None
-
-
-def _path():
-    """The path of the request's target as sent, still percent-encoded: the target
-    (`REQUEST_URI`, which waitress and the test client both give, else `RAW_URI`) without
-    its query or fragment, and in the absolute form (`http://host/path`) without its scheme
-    and host. With neither key, the server's decoded `PATH_INFO`."""
-    environ = request.environ
-    target = environ.get("REQUEST_URI") or environ.get("RAW_URI")
-    if target is None:
-        return environ.get("PATH_INFO", "")
-    target = target.split("#", 1)[0].split("?", 1)[0]
-    scheme, sep, rest = target.partition("://")
-    if sep and scheme.isalpha():
-        slash = rest.find("/")
-        target = rest[slash:] if slash >= 0 else ""
-    return target
-
-
-def _answer_report(log, status, report, **extra):
+def _answer_report(log, status, report, body=None, **extra):
+    """Answer `report` (as `body` when another component's bytes are passed unchanged),
+    writing its `error` line, with the user key and the current group when known."""
     line = {"code": report["code"], "status": status, "method": request.method,
             "path": _path()}
+    who = g.get("penguin_identity")
+    if who is not None:
+        line["user_key"] = who.user_id
+    if g.get("penguin_group") is not None:
+        line["group"] = g.penguin_group
     page = request.headers.get(PAGE_HEADER, "")
     if is_version(page):
         line["page_version"] = page
     if status != 500:
-        line["detail"] = report["detail"]
+        line["detail"] = report.get("detail")
     log.write("error", **line, **extra)
-    return Response(json.dumps(report), status, mimetype="application/json")
+    return Response(body if body is not None else json.dumps(report), status,
+                    mimetype="application/json")
