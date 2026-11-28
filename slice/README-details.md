@@ -55,7 +55,17 @@ are built: a slice job remembered for two hours and its sliced file deleted once
 server has stored it, and the route that lists the slice jobs (both under
 [Progress, cancellation and cleanup](#progress-cancellation-and-cleanup)); a sliced file of
 at most 50 MB (see [Plate limits](#plate-limits)); and Orca's own sentence on the two
-failures about a gap (see [Orca Slicer](#orca-slicer)).
+failures about a gap (see [Orca Slicer](#orca-slicer)). Items 14 to 18 finish phase 2: a
+stop that finishes the running slice (see [Asked to stop](#asked-to-stop)), "a new plate" in
+the sentences (see [Error codes](#error-codes)), the log the front server collects (under
+[Progress, cancellation and cleanup](#progress-cancellation-and-cleanup)), the shared plates
+through the HTTP interface (item 17), and the slice service's half of each row of the restart
+table (see
+[The slice service's half of each row of the restart table](#the-slice-services-half-of-each-row-of-the-restart-table)).
+Everything phase 2 asks of the slice service is built; a part laid on a face of its convex
+hull that bridges a hollow, so that it touches the plate only along edges, is refused by the
+pinned Orca unless supports and a raft are on, and the slice service says so
+(`slice.rests_on_an_edge`).
 
 **Not built or not known:**
 
@@ -212,7 +222,7 @@ the shared plates, which was written first of all, before item 1, since the wiza
 runs it from the start and it needs only the placement check as built; it is built. Items 1
 to 4, which replace the way parts arrive, are built too, and so are 5 and 6, which replace
 the settings; 7 to 13 replace the life of a slice job, and are built; 14 to 18 finish the
-phase.
+phase, and are built.
 
 **1 to 4. The user key, the part store, units and the plate configuration.** Built: see
 [The user key, the part store, units and the plate configuration](#the-user-key-the-part-store-units-and-the-plate-configuration).
@@ -538,7 +548,9 @@ the stopping answer of [Submitting a plate configuration](../contracts/wizard-fr
    then answered before any check (a plate that the checks would refuse is answered
    `slice.stopping` too, since the page will submit it again to the new slice service, which
    checks it). A stop that arrives while a plate configuration is being checked is caught
-   under the pool's lock (`jobs.Stopping`), and its folder is removed. An upload of a part,
+   under the pool's lock (`jobs.Stopping`), and its folder is removed; one whose slice job
+   meets the executor already shut down by a second stop (the executor is called outside the
+   lock) is ended early with `shutdown` and answered `slice.stopping` too, never a 500. An upload of a part,
    and every request about a slice job, the list, the table of settings and the log, are
    answered as usual.
 3. **A second stop** shuts the pool down (`JobPool.shutdown`): the running slice job is ended

@@ -339,9 +339,10 @@ that a check which turns the part the wrong way round, or turns it about the ver
 laying it down, gets a different answer on one of them: those are the usual mistakes in such
 geometry, and a plate that cannot tell them apart would let them through. Each plate goes
 through the slice service's front door like any other plate: its parts are uploaded, the
-plate is submitted, and the answer is compared with the one the plate expects. One thing is
-still turned on the way in: until the settings take Orca's own names later in phase 2, the
-plate's setting for supports is given in the form the slice service reads today.
+plate is submitted exactly as it is, its setting for supports under Orca's own name, and the
+answer is compared with the one the plate expects. The slanted-face plates are checked, never
+sliced: their face bridges the open corner of the bracket, which Orca cannot give a first
+layer without supports and a raft (see [Check a plate before it is sliced](#check-a-plate-before-it-is-sliced)).
 
 The slice service keeps the points of a footprint to a thousandth of a millimetre, so its
 distances can differ from the exact ones by under a thousandth; the hundredth between each

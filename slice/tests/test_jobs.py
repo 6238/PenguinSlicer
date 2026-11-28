@@ -1382,6 +1382,20 @@ class TestAskedToStop:
         pool.shutdown()                                           # nothing to wait for: it returns
         assert pool.get(job_id)["state"] == "done" and pool.listing()[0]["file_on_disk"]
 
+    def test_a_submission_that_meets_an_executor_shut_down_meanwhile_is_answered_stopping(self):
+        # A second stop between the pool's look and the executor's submit (the executor is
+        # called outside the lock) once made POST /slices answer 500.
+        class ShutDown:
+            def submit(self, fn, *args):
+                raise RuntimeError("cannot schedule new futures after shutdown")
+        cleaned = []
+        pool, logs = make_pool(executor=ShutDown(), cleanup=cleaned.append)
+        with pytest.raises(jobs.Stopping):
+            pool.submit("files")
+        (entry,) = pool.listing()
+        assert (entry["progress"]["state"], entry["progress"]["cancel_reason"]) == ("cancelled", "shutdown")
+        assert cleaned == ["files"]
+
     def test_stopping_twice_ends_nothing_more(self):
         pool, _logs = make_pool(executor=HeldExecutor())
         pool.submit()

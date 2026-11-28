@@ -241,7 +241,13 @@ class JobPool:
             self._jobs[job_id]["report"]["ahead"] = ahead
             self._log_transition(job_id, "queued")
         self._after_ending_early(earlier, "replaced")
-        self._executor.submit(self._run_next)
+        try:
+            self._executor.submit(self._run_next)
+        except RuntimeError:
+            # The executor was shut down between the look above and here (a second stop):
+            # the job ends with it, and the submission is answered as one while stopping.
+            self.cancel(job_id, reason="shutdown")
+            raise Stopping() from None
         return job_id
 
     def remembered(self, user_key, submission_id):
