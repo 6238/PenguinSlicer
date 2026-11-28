@@ -11,8 +11,9 @@ browser tests were run in Chromium 159 with `wizard/tests_browser`, after `make 
 At the end of the first round the fast suite passed twice in random order (921 and 184 tests,
 seeds 706388085 and 229716422 for Node) and the whole browser suite once (191 passed in 102 s).
 After the fixes for the review of #48 it passed three times in random order (924 Node tests and
-184 tool tests each; Node seeds 2111700516, 766168280 and the third given at the end of this
-record).
+184 tool tests each; Node seeds 2111700516, 766168280 and 620349901, the third after merging `origin/main`, which had
+nothing new). The browser suites were not run again: the changes are to the fast suite's tests, one
+comment in `slicing.js` and the documents.
 
 ## The findings
 
