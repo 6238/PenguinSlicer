@@ -40,10 +40,16 @@ export async function readBody(response, onProgress) {
   return whole.buffer;
 }
 
+// A body of bytes (a part's file, up to 7.5 MB) is sent as a Blob of those bytes, unchanged.
+// Sent as an ArrayBuffer, Chromium held the main thread 350 to 560 ms for a 7.5 MB part in the
+// browser tests (where the DevTools protocol watches every request), against about 11 ms as a
+// Blob: over the 250 ms the page may hold it.
+const bodyOf = (body) => (body instanceof ArrayBuffer || ArrayBuffer.isView(body) ? new Blob([body]) : body);
+
 export const fetchTransport = {
   async send({ method, path, headers, body, signal }) {
     const response = await fetch(path, {
-      method, headers, body, signal, credentials: 'same-origin', cache: 'no-store',
+      method, headers, body: bodyOf(body), signal, credentials: 'same-origin', cache: 'no-store',
     });
     return {
       status: response.status,

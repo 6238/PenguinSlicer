@@ -31,6 +31,18 @@ test('a part is read and its picture drawn, each by one question to the worker',
   assert.deepEqual(worker.posted.map((p) => p.message.op), ['read', 'picture']);
 });
 
+test('a part read is kept for the Layout view\'s drawing until it is forgotten; one the worker could not read is not', async () => {
+  const worker = new InThreadWorker();
+  const geometry = createGeometryClient(worker.port);
+  assert.equal(geometry.mesh('p-1'), null);
+  await geometry.read('p-1', pulley(), 'mm');
+  assert.equal(geometry.mesh('p-1').positions.length, 4608 * 9);
+  await geometry.read('bad', new ArrayBuffer(10), 'mm');
+  assert.equal(geometry.mesh('bad'), null);
+  await geometry.forget('p-1');
+  assert.equal(geometry.mesh('p-1'), null);
+});
+
 test('the part\'s bytes are copied to the worker, never taken from the page', async () => {
   const worker = new InThreadWorker();
   const geometry = createGeometryClient(worker.port);

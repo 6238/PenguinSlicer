@@ -38,13 +38,32 @@ export function createGeometryClient(port, { report = () => {} } = {}) {
     });
   }
 
+  // Each part's corners for drawing, as the worker read them, kept for the Layout step's view.
+  const meshes = new Map();
+
   return {
     ask,
     // Reads a binary STL under `key`: its triangles, its box and its corners for drawing.
-    read: (key, buffer, units) => ask('read', { key, buffer, units }),
+    read: (key, buffer, units) => ask('read', { key, buffer, units }).then((answer) => {
+      if (answer.ok) meshes.set(key, { positions: answer.result.positions, min: answer.result.min, max: answer.result.max });
+      else meshes.delete(key);
+      return answer;
+    }),
+    // The corners for drawing of the part read under `key` ({positions, min, max}), or null.
+    mesh: (key) => meshes.get(key) ?? null,
     // The part's picture for its row: px by px RGBA pixels in `colour` (0xrrggbb).
     picture: (key, px, colour) => ask('picture', { key, px, colour }),
-    forget: (key) => ask('forget', { key }),
+    forget: (key) => { meshes.delete(key); return ask('forget', { key }); },
+    // The Layout step's questions (geometry/messages.js): a part's patches and its best way, and,
+    // for a plate (`plate` is {plateConfiguration, geometry, printer, supports}), the placement
+    // check, Arrange, where one instance goes after a lay-down and the turn that makes it fit.
+    faces: (key) => ask('faces', { key }),
+    orient: (key) => ask('orient', { key }),
+    check: (plate) => ask('check', plate),
+    arrange: (plate) => ask('arrange', plate),
+    settle: (plate, index) => ask('settle', { ...plate, index }),
+    coarse: (key, maxTriangles) => ask('coarse', { key, maxTriangles }),
+    fit: (plate, index) => ask('fit', { ...plate, index }),
     // How many questions are waiting for their reply.
     waiting: () => waiting.size,
   };

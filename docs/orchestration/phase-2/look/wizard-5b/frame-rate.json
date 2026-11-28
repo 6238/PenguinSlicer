@@ -1,0 +1,72 @@
+{
+  "target_fps_without_graphics_card": 10,
+  "machine": "aarch64",
+  "processors": 8.0,
+  "memory_gb": 12.0,
+  "chromium": "159.0.8154.6",
+  "plates": {
+    "real-mix-150": {
+      "instances": 150,
+      "on_plate": 104,
+      "triangles_drawn": 802920,
+      "dragging": {
+        "frames": 85,
+        "ms": 4557.599999964237,
+        "fps": 18.650166754578503,
+        "median_frame_ms": 50,
+        "worst_frame_ms": 216.70000000000027,
+        "held_ms": 411
+      },
+      "turning_all": {
+        "frames": 90,
+        "ms": 5079.800000011921,
+        "fps": 17.717232961886058,
+        "median_frame_ms": 50,
+        "worst_frame_ms": 100.10000000000036,
+        "held_ms": 163
+      }
+    },
+    "hub-150k-150": {
+      "instances": 150,
+      "on_plate": 45,
+      "triangles_drawn": 22500000,
+      "dragging": {
+        "frames": 65,
+        "ms": 1801.699999988079,
+        "fps": 36.077038352905625,
+        "median_frame_ms": 16.699999999999818,
+        "worst_frame_ms": 266.6999999999998,
+        "held_ms": 284
+      },
+      "turning_all": {
+        "frames": 90,
+        "ms": 1810.699999988079,
+        "fps": 49.70453415838765,
+        "median_frame_ms": 16.699999999999818,
+        "worst_frame_ms": 166.5,
+        "held_ms": 205
+      }
+    },
+    "spacers-150": {
+      "instances": 150,
+      "on_plate": 150,
+      "triangles_drawn": 32400,
+      "dragging": {
+        "frames": 90,
+        "ms": 2637,
+        "fps": 34.129692832764505,
+        "median_frame_ms": 33.19999999999982,
+        "worst_frame_ms": 150,
+        "held_ms": 300
+      },
+      "turning_all": {
+        "frames": 89,
+        "ms": 2222.199999988079,
+        "fps": 40.05040050421989,
+        "median_frame_ms": 16.700000000000273,
+        "worst_frame_ms": 50,
+        "held_ms": 64
+      }
+    }
+  }
+}

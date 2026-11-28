@@ -85,7 +85,8 @@ def test_building_twice_gives_the_same_files_and_drops_stale_ones(tmp_path):
 
 
 def test_the_real_page_builds(tmp_path):
-    build.build(WIZARD / "src", tmp_path / "dist")
+    # the page's Layout view imports three.js, so the real page builds with the vendor folder
+    build.build(WIZARD / "src", tmp_path / "dist", vendor=WIZARD / "vendor")
     html = (tmp_path / "dist" / "index.html").read_text()
     assert html.count(VERSION_META) == 1
     assert re.search(r'src="/assets/main\.[0-9a-f]{12}\.js"', html)

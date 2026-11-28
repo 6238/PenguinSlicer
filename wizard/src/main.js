@@ -1,14 +1,18 @@
 // The page's entry point: it reads the page's version from its <meta>, which the front server
 // fills in, joins the seams to the module that makes every request, the storage module, the
-// worker, the panel, the Parts step and the Settings step, marks the document as started, and
+// worker, the panel, the Parts step, the Layout step and the Settings step, marks the document as started, and
 // opens the wizard (opening.js): who the user is, the tab's plate, the configuration and the table
 // of settings, then the stored plate's changes (settings.js) and parts (parts.js), after which it marks the
 // document as opened, or as failed with a page_failed report when the opening throws (endOpening). The running wizard is this module's export, so the browser tests reach it
 // by importing this module, never through a global.
 import { createApi } from './api.js';
-import { browserEnvironment, randomId } from './environment.js';
+import { browserEnvironment, randomId, softwareDrawing } from './environment.js';
 import { createGeometryClient } from './geometry-client.js';
 import { createHoldMeter } from './hold-meter.js';
+import { createLayout } from './layout.js';
+import { createLayoutStep } from './panel/layout-step.js';
+import { createLayoutView } from './panel/layout-view.js';
+import { realFrames } from './seams/frames.js';
 import { endOpening, openWizard } from './opening.js';
 import { createPanel } from './panel/panel.js';
 import { createPartsStep } from './panel/parts-step.js';
@@ -43,15 +47,24 @@ const holdMeter = createHoldMeter(realClock);
 
 const parts = createParts({ api, storage, geometry, store, panel, report: (what, fields) => reports.failure(what, fields) });
 const partsStep = createPartsStep(document.querySelector('section.step[data-step="parts"]'), { parts, geometry, panel, window });
+const layout = createLayout({ geometry, storage, store, parts, panel });
+const layoutStep = createLayoutStep(document.querySelector('section.step[data-step="layout"]'), {
+  layout, parts, geometry, frames: realFrames, store,
+  createView: (container, options) => createLayoutView(container, { ...options, software: softwareDrawing() }),
+});
 const settings = createSettings({ store, storage });
 const settingsStep = createSettingsStep({ root: document.getElementById('wizard'), settings, store, window });
+// the changes may turn supports on or off: the Layout step's spacing follows, and nothing moves
+settings.subscribe(() => layout.settingsChanged());
 
 // The opening, then the stored plate's changes and parts taken up: advanced mode again when it
-// was open, the parts' rows, and an upload again for each part whose upload had not been answered.
+// was open, the parts' rows, and an upload again for each part whose upload had not been
+// answered; then the stored layout, which joins the parts on the Layout step.
 const opened = openWizard({ api, store, panel, storage }).then(async (outcome) => {
   if (outcome.opened) {
     await settings.resume();
     await parts.resume();
+    layout.resume();
   }
   return outcome;
 });
@@ -60,7 +73,7 @@ const opening = endOpening(opened, {
   mark: (how) => { document.documentElement.dataset.opened = how; },
 });
 
-export const wizard = { version, store, api, panel, storage, reports, geometry, holdMeter, parts, partsStep, settings, settingsStep, opening };
+export const wizard = { version, store, api, panel, storage, reports, geometry, holdMeter, parts, partsStep, layout, layoutStep, settings, settingsStep, opening };
 
 document.documentElement.dataset.version = version;
 document.documentElement.dataset.started = 'true';

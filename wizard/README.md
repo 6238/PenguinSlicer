@@ -976,9 +976,23 @@ the instances' outlines as they are turned. Next is off while any rule is broken
 | An instance too tall | "Shooter Hood Rib #1 stands 352.7 mm (13.885 in) tall; the printer prints up to 340 mm. Lay it down another way, or press Auto-orient." | Auto-orient |
 
 An instance that Arrange left beside the plate gets no message of its own; Arrange's
-message already counts it. The exception is an instance too long or too wide for the plate
+message already counts it. An instance the user drags off the plate is across the plate's
+edge, the third row above, even when it ends wholly beside the plate where the wizard puts
+those it finds no spot for: only an instance the wizard put there, and the user has not moved
+since, waits beside the plate. Turning an instance where it stands with the rotation handle
+does not move it. Arrange's message, and a lay-down's, count only the instances still
+waiting: when the user drags one of three away, the message counts two, and it goes once
+none waits. The exception is an instance too long or too wide for the plate
 as it is turned: it has its own message, the row above, and Arrange's message does not
-count it. A click on a message selects the instances it names.
+count it. An instance beside the plate that no message accounts for, such as one of a part
+that joins a plate with no free spot left, has its own message: "Gusset Plate #3 waits
+beside the plate: no spot on the plate is free for it.", with Arrange.
+
+**A page opened again cannot tell who put an instance beside the plate.** The stored plate
+keeps where each instance is, not who put it there, so on a page opened again every instance
+found wholly to the right of the plate is taken to be waiting beside it, the one the user
+dragged there included, and has the message above until the user moves it. A click on a
+message selects the instances it names.
 
 **Turning supports on after arranging moves nothing.** The spacing follows the Settings
 step, so instances that were 5 mm apart are now too close, and they get the usual message
@@ -1949,7 +1963,7 @@ card are confirmed.
 | One attempt of a request | 15 seconds for the answer to begin (60 for adding a part), and the same for any silence while the rest arrives; an answer that keeps arriving has no limit on its length | A stalled answer being tried again, while a sliced file of up to 50 MB still downloads on a slow connection | Set here. Met | A test with a clock the test moves, the answer arriving in parts |
 | Sending a part | The whole part within 60 seconds: about 1 Mbit/s of upload speed for a part of 7.5 MB | Adding a part not hanging on a lost connection | Set here. Not met below that speed: the largest parts cannot be added, since a browser does not tell the page how much of an upload has gone | Arithmetic from the two figures; unmeasured on a real connection |
 | A progress stream treated as failed | After 20 seconds of failing to reopen, or after 45 seconds open with nothing carried | A card never looking current when the server is lost | Set here; 45 seconds is three times the fifteen at which the front server keeps a stream alive | The same |
-| The main thread held | Never for more than 250 milliseconds, on any step, with any plate up to the limits, on the machine without a graphics card | A panel that never reads as frozen | Set here. Measured so far only for reading a part and drawing its picture: at most 12 milliseconds, the largest part allowed included, in Chrome's engine on the machine without a graphics card | Measured by the page itself in tests and in real use ([What the wizard reports about itself](#what-the-wizard-reports-about-itself)) |
+| The main thread held | Never for more than 250 milliseconds, on any step, with any plate up to the limits, on the machine without a graphics card | A panel that never reads as frozen | Set here. Measured in Chrome's engine on the machine without a graphics card: reading a part and drawing its picture, at most 12 milliseconds, the largest part allowed included; a malformed file of the largest size, under 250 milliseconds to its notification; dragging an instance on the Layout step at 150 instances, missed: 0.39 to 0.49 seconds on the robot's real parts, 0.22 to 0.46 on 150 small spacers and 0.10 to 0.28 on 150 of the largest part | Measured by the page itself in tests and in real use ([What the wizard reports about itself](#what-the-wizard-reports-about-itself)) |
 | A part's row says it is slow | After 4 seconds | Knowing the click registered | Accepted in the mockup. The moment is met by the code that makes every request; the row comes with the Parts step | The same |
 | One part | 7.5 MB, 150,000 triangles | The slice service | Someone else's | A file one byte over is refused with the sentence above |
 | Different parts on a plate | 25 | The slice service's disk | Someone else's | A twenty-sixth part |
@@ -1960,7 +1974,7 @@ card are confirmed.
 | Auto-orient | A part lies its best way within one second of arriving | Parts arriving laid down, not jumping later | Set here. Met: at most 0.24 s for the largest part allowed as tried (a round hub of 150,000 triangles), at most 0.17 s for a real part. A part as large on which step 5 drops faces costs more, since the test for a first layer reads the whole part once for each face it drops: a twelve-pointed star bar of 144,000 triangles, its sides cut into thousands of thin strips, took at most 0.39 s on Node, and an L-shaped bar as large at most 0.3 s; neither was measured in a browser | The same |
 | Arrange | Under 2 seconds for 150 instances | A button that feels like a button; anything longer would need progress and a way to cancel | Set here. Met: at most 0.06 s for 150 instances | The same |
 | The placement check | Keeps up with a drag, with 150 instances on the plate | The status line telling the truth while the user moves things | Set here. Met: at most 5 ms for each check, against a frame's 100 ms at 10 frames a second | The same |
-| The Layout view | At least 30 frames a second while an instance is dragged or the view turned, on the machine with a graphics card, and at least 10 on the one without, at the largest plate allowed: 150 instances of parts of up to 150,000 triangles | Dragging an instance feeling joined to the hand | Set here, with no measurement behind it: the same figures as the layer preview, since the same hand does the dragging | Timed in Chrome on both machines, and reported by the page in real use |
+| The Layout view | At least 30 frames a second while an instance is dragged or the view turned, on the machine with a graphics card, and at least 10 on the one without, at the largest plate allowed: 150 instances of parts of up to 150,000 triangles | Dragging an instance feeling joined to the hand | Set here, the same figures as the layer preview, since the same hand does the dragging; a coarser look is allowed while the view moves. Measured without a graphics card, in Chromium: 150 instances of the robot's real parts dragged at 16 to 19 frames a second and turned at 17 to 20, and 150 of the largest part allowed dragged at 14 to 42; with a graphics card, unmeasured | Timed in Chrome on both machines, and reported by the page in real use |
 | The layer preview | In Chrome, at least 30 frames a second on the machine with a graphics card and at least 10 on the one without, while the view is turned or the layer bar dragged, on a 14.1 MB sliced file and on a plate at the 150-instance limit; a simpler look allowed while moving | Inspecting a plate being possible at all on a machine that draws in software | Set here. Measured: the mockup's method took many seconds a frame without a graphics card; the method chosen in the first trial of phase 2 kept 10 to 20 there, with a thin margin on a busy machine ([The risks to try first](#the-risks-to-try-first-in-phase-2)); with a graphics card, unmeasured | Timed in Chrome on both machines, reported by the page in real use, and test renders |
 | The first layer drawn | Within 5 seconds of opening the Preview step on a sliced plate, with the print time and filament shown at once | The numbers a user plans around not waiting for the picture | Set here. Measured in the first trial without a graphics card: 1.5 to 2.7 seconds from fetching the sliced file to the first layers on the screen, the full look 2.4 to 8.5 seconds | The same |
 | The page's memory | Under 1 GB for the page at the largest plate, with the layer preview of a 14.1 MB sliced file open | A laptop with 8 GB of memory, of which the browser has a share, not closing the page | Set here. Measured in the first trial: 839 MB at the heaviest plate. Twenty-five parts of 7.5 MB are about 190 MB before anything is drawn | Measured in Chrome at that plate |
@@ -2269,8 +2283,8 @@ The screens designed here follow the decisions recorded in the body.
 
 ## What is to be built, by phase
 
-Of what a user sees, the panel as a whole and the Parts step are built, and none of the
-other steps' contents. The
+Of what a user sees, the panel as a whole, the Parts step and the Layout step are built, and
+none of the other steps' contents. The
 mockup is kept in the repository as the reference for the look, and its style sheet for the
 panel is taken over whole, unchanged, as the cheap way to match it; its scripts were faked,
 and the wizard's behaviour is built from this guide
@@ -2322,9 +2336,37 @@ counting the plate and the red message past 150 instances; the notification of a
 arrives after the user has moved on; and New plate with its confirmation. A part removed, or a
 plate emptied, while its upload is still being retried has that upload stopped. A page opened
 again takes up its stored parts and uploads again any part whose upload was never answered.
-Only the joining of a part's instances to the plate waits for the Layout step. Pictures of the
+A part's instances join the plate on the Layout step. Pictures of the
 built step beside the mockup's, at four widths and in each state the mockup shows, are kept
-with the build records. The Settings step and advanced mode are built: the Filament and
+with the build records.
+
+The Layout step is built as this guide describes it, on the geometry the second trial tried:
+the toolbar with Arrange, Auto-orient and the list of gestures behind "?"; the status line,
+green or red with the first problem and how many more; the 3D view of the plate, with its
+three view buttons and the pointer line; the selection line with its one link; the line of
+printer and plate figures; and the messages, each problem with its button. A part's
+instances join the plate when the step is shown, lying their best way with nothing said: the
+first instances of a plate are arranged, and those that join a plate already laid out each
+take the free spot nearest the others, so nothing the user placed moves. An instance is
+moved by dragging it, turned by its round handle (Shift for 45-degree steps), and laid down by
+a click on one of the patches that show on the one selected instance or by a double-click on a
+flat face; a lay-down that no longer fits is moved to the nearest free spot, turned if need
+be, or waits beside the plate, and says so. Arrange, Auto-orient, Turn it to fit and the offer
+to lay the instances the best way when Arrange cannot fit them all are built, with the four
+moments the wizard turns an instance itself. The placement check runs on every movement of a
+drag, and its messages name the instances as the slice service will. The layout is kept in
+the browser's storage with the plate, so a refresh finds every instance where it was. The
+supports' spacing follows the settings without moving anything. While the view moves, and at
+rest on a plate too heavy to draw whole in time, each part is drawn as a coarse copy of
+itself, the selected instances whole at rest; without a graphics card, 150 instances of the
+robot's real parts were dragged at 16 to 19 frames a second and turned at 17 to 20, and 150
+of the largest part allowed dragged at 14 to 42 (the target is 10). The page was still held
+longer than its quarter of a second during a drag: 0.39 to 0.49 s on the plate of real parts,
+0.22 to 0.46 s on a plate of 150 small spacers and up to 0.28 s on 150 of the largest part,
+which the record of the build lists as missed. Pictures of the built step beside the
+mockup's, at four widths and in each state the mockup shows, are kept with the build records.
+
+The Settings step and advanced mode are built: the Filament and
 Profile menus with the filament's colour, the four quick changes with a value off a menu's
 list as its top entry, the caution and the changes box, and advanced mode drawn from the
 table of settings with its accordion and its rail, what it remembers, its keyboard, a value
@@ -2338,8 +2380,8 @@ slice service's reference spacer. Each trial has its own place and its own comma
 that both can be built at once. Both trials have been run. The first, the layer preview's
 speed, keeps its pages, figures and test renders with the trials. After the second, the
 geometry of the Layout step (finding the faces a part can lie on, auto-orient, Arrange and
-the placement check) is built in the worker as the wizard's own code, with nothing on screen
-using it yet.
+the placement check) is built in the worker as the wizard's own code, and the Layout step
+uses it.
 
 | Phase | What of the wizard is built |
 |---|---|

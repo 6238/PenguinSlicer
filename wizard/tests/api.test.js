@@ -199,6 +199,22 @@ test('the browser\'s transport tells of each part of the body through text and b
   });
 });
 
+test('the browser\'s transport sends a body of bytes as a Blob of the same bytes, and any other body as it is', async () => {
+  await withFetch(['{}'], async (calls) => {
+    const bytes = new Uint8Array([0, 1, 2, 250, 255]);
+    await fetchTransport.send({ method: 'POST', path: '/api/parts', headers: {}, body: bytes.buffer });
+    await fetchTransport.send({ method: 'POST', path: '/api/parts', headers: {}, body: bytes.subarray(1, 4) });
+    await fetchTransport.send({ method: 'POST', path: '/api/plates', headers: {}, body: '{"a":1}' });
+    await fetchTransport.send({ method: 'GET', path: '/api/me', headers: {} });
+    const [whole, view, text, none] = calls.map((c) => c.init.body);
+    assert.ok(whole instanceof Blob && view instanceof Blob);
+    assert.deepEqual([...new Uint8Array(await whole.arrayBuffer())], [0, 1, 2, 250, 255]);
+    assert.deepEqual([...new Uint8Array(await view.arrayBuffer())], [1, 2, 250]);
+    assert.equal(text, '{"a":1}');
+    assert.equal(none, undefined);
+  });
+});
+
 test('the page\'s requests through the browser\'s transport read a slow body in one attempt', async () => {
   // fetch's body arrives a part every 14 s on the fake clock; each part must give the attempt
   // its 15 s afresh, through the transport the page itself runs.
