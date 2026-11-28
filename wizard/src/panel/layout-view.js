@@ -35,8 +35,11 @@ const FLAT_DEG = 1;          // a triangle this near a patch's direction lies on
 // is 10 frames a second. At rest every part is drawn whole.
 const MOVING_TRIANGLES = 250000;
 // At rest, a plate of more triangles than this draws coarse copies but for the selected
-// instances, so that no frame holds the main thread past its 250 ms.
-const REST_TRIANGLES = 500000;
+// instances, so that no frame holds the main thread past its 250 ms. A press on an instance draws
+// two frames at rest back to back (the selection, then its patches), with no turn of the main
+// thread between them: at 500,000 the real parts' mix of 150 instances drew about 300,000
+// triangles a frame and held the main thread 0.39 to 0.47 s at the start of each drag.
+const REST_TRIANGLES = 250000;
 const MIN_COARSE_TRIANGLES = 200;
 
 const quat = ([w, x, y, z]) => new THREE.Quaternion(x, y, z, w);
