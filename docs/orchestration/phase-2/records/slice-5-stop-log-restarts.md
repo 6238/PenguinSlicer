@@ -223,7 +223,8 @@ and in [the guide](../../../../slice/README.md).
    uncollected sliced file (6 fail).
 3. **The real-Orca suite needed a second run.** Its first run at the end failed one test,
    `test_orca_names_the_pair_whose_supports_meet`, which still expected "second plate"
-   (decision 6); after the fix it passed whole: 63 tests in 121 s.
+   (decision 6); after the fix it passed whole: 63 tests in 121 s. After the review's fixes
+   and the merge of `main` it passed whole at the first run: 64 tests in 157 s.
 
 ## Not done
 
