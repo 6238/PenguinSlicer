@@ -156,6 +156,9 @@ export function createPanel(root, { api, clock, store }) {
     for (const text of lines) list.append(el('li', null, text));
     pop.replaceChildren(list);
     if (changeDetails) changeDetails.close();
+    // open first, so that the box is placed under the pill as it looks when open
+    pill.setAttribute('aria-expanded', 'true');
+    pill.classList.add('open');
     changeDetails = joinedBox({
       anchor: pill, box: pop, within: $('.summary-wrap'),
       onClose: () => {
