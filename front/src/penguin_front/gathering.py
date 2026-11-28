@@ -102,10 +102,14 @@ class Gatherer:
             if dropped:
                 self._log.write("slice_log_lines_dropped", process=process,
                                 after=self._after, dropped=dropped)
+            # Lines are numbered from 1 with none skipped but the dropped, so no line of this
+            # answer can carry a number past `highest`.
             kept, unreadable = [], 0
+            highest = self._after + dropped + len(lines)
             for line in lines:
                 n = line.get("n") if isinstance(line, dict) else None
-                if not isinstance(n, int) or isinstance(n, bool) or n <= self._after:
+                if not isinstance(n, int) or isinstance(n, bool) or n <= self._after \
+                        or n > highest:
                     unreadable += 1
                     continue
                 kept.append(self._placed(line, lookups))
@@ -141,6 +145,8 @@ class Gatherer:
     def _placed(self, line, lookups):
         line = dict(line)
         line.pop("group", None)
+        # Every gathered line is the slice service's, whatever component it names.
+        line["component"] = "slice"
         group = self._group(line.get("user_key"), line.get("job"), lookups)
         if group is not None:
             line["group"] = group

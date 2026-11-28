@@ -349,6 +349,50 @@ def test_lines_of_another_form_are_dropped_and_counted(clock, client, state, log
     assert (line["count"], line["process"]) == (4, "p1")
 
 
+def test_a_number_past_what_the_answer_can_hold_is_dropped_and_the_cursor_kept(
+        clock, client, state, log, standin):
+    # After 0 with 1 dropped and three lines, the highest number the answer can carry is 4.
+    lines = [{"n": 10**30, "event": "absurd", "component": "slice"},
+             {"n": 3, "event": "c", "component": "slice"},
+             {"n": 5, "event": "past", "component": "slice"}]
+    standin.answer_next("GET", "/log", 200, {"process": "p1", "lines": lines, "dropped": 1,
+                                             "more": False})
+    found = gatherer(clock, client, state, log)
+    found.gather_once()
+    assert [line["event"] for line in log.gathered] == ["c"]
+    assert log.own("slice_log_lines_unreadable")[0]["count"] == 2
+    record, _ = read_record(state, gathering.CURSOR, gathering.CURSOR_KIND, Lines())
+    assert record["after"] == 3
+
+
+def test_a_gathered_line_is_the_slice_services_whatever_component_it_names(
+        clock, client, state, log, standin):
+    lines = [{"n": 1, "event": "a", "component": "front"}, {"n": 2, "event": "b"}]
+    standin.answer_next("GET", "/log", 200, {"process": "p1", "lines": lines, "dropped": 0,
+                                             "more": False})
+    gatherer(clock, client, state, log).gather_once()
+    assert [line["component"] for line in log.gathered] == ["slice", "slice"]
+
+
+def test_a_gathering_that_breaks_off_still_saves_where_it_stopped(clock, client, state,
+                                                                 tmp_path, standin):
+    class Breaking(Kept):
+        def gather(self, lines):
+            if self.gathered:
+                raise RuntimeError("the second page could not be kept")
+            super().gather(lines)
+
+    log = Breaking(clock, tmp_path / "broken-log")
+    standin.log_page = 2
+    for n in range(5):
+        standin.log_line("slice_job", job=f"j{n}", user_key=USER)
+    with pytest.raises(RuntimeError):
+        gatherer(clock, client, state, log).gather_once()
+    # A front server started later does not gather the first page again.
+    record, _ = read_record(state, gathering.CURSOR, gathering.CURSOR_KIND, Lines())
+    assert record["after"] == 4
+
+
 def test_an_answer_saying_more_with_no_lines_ends_the_gathering(clock, client, state, log,
                                                                 standin):
     standin.answer_next("GET", "/log", 200, {"process": "p1", "lines": [], "dropped": 0,

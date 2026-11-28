@@ -11,16 +11,10 @@ from front_helpers import DEV_GROUP, KEY, Lines, front, sign_in
 from penguin_front import reports
 from penguin_front.cookie import COOKIE_NAME, CookieKey, Identity
 
-EXAMPLE = json.loads((Path(__file__).resolve().parents[2] / "contracts" / "examples" /
-                      "wizard-front" / "report-failure-request.json").read_text())
+EXAMPLES = Path(__file__).resolve().parents[2] / "contracts" / "examples" / "wizard-front"
+EXAMPLE = json.loads((EXAMPLES / "report-failure-request.json").read_text())
 PAGE_VERSION = "20261127T221405Z-1a2b3c4"
-DRAWING = {"page": "c1e07b3a-5d2f-4e91-8a6c-0f3b9d27e4a1", "view": "preview",
-           "fps_typical": 58.5, "fps_worst": 31, "first_layer_ms": 412,
-           "longest_hold_ms": 96, "instances": 4, "sliced_file_bytes": 1843207,
-           "sliced_file_lines": 120345, "browser": "Chrome", "browser_version": "131.0",
-           "os": "macOS", "drawing": "graphics_card", "graphics_card": "Apple M2",
-           "processors": 8, "memory_gb": 8, "panel_width_px": 360, "pixel_ratio": 2,
-           "in_onshape": False}
+DRAWING = json.loads((EXAMPLES / "report-drawing-request.json").read_text())
 LAYOUT = {k: v for k, v in DRAWING.items()
           if k not in ("first_layer_ms", "sliced_file_bytes", "sliced_file_lines")} | \
     {"view": "layout"}
@@ -177,18 +171,48 @@ def test_a_report_over_its_size_is_refused_before_it_is_read(client, log):
     assert not written(log, "failure_report")
 
 
+class Counted(io.BytesIO):
+    """A request body that counts the bytes the front server takes from it."""
+
+    def __init__(self, body):
+        super().__init__(body)
+        self.taken = 0
+
+    def _count(self, data):
+        self.taken += len(data)
+        return data
+
+    def read(self, size=-1):
+        return self._count(super().read(size))
+
+    def read1(self, size=-1):
+        return self._count(super().read1(size))
+
+    def readline(self, size=-1):
+        return self._count(super().readline(size))
+
+    def readinto(self, buffer):
+        taken = super().readinto(buffer)
+        self.taken += taken
+        return taken
+
+
 def unmeasured(client, body):
     """A report sent without Content-Length, its body ended by the stream."""
+    stream = body if isinstance(body, Counted) else io.BytesIO(body)
     return client.post("/api/reports/failure", headers=DEV_GROUP, environ_overrides={
-        "wsgi.input": io.BytesIO(body), "CONTENT_LENGTH": None,
+        "wsgi.input": stream, "CONTENT_LENGTH": None,
         "wsgi.input_terminated": True})
 
 
 def test_a_report_without_a_length_is_read_no_further_than_its_size(client, log):
-    answer = unmeasured(client, json.dumps(
-        EXAMPLE | {"detail": "x" * reports.MAX_REPORT_BYTES}).encode())
+    # A body sixty-four times the limit: only one byte past the limit is taken from it.
+    stream = Counted(json.dumps(
+        EXAMPLE | {"detail": "x" * (64 * reports.MAX_REPORT_BYTES)}).encode())
+    answer = unmeasured(client, stream)
     assert answer.status_code == 400 and answer.get_json()["code"] == "front.bad_request"
     assert "without Content-Length" in answer.get_json()["detail"]
+    assert 0 < stream.taken <= reports.MAX_REPORT_BYTES + 1
     assert unmeasured(client, json.dumps(EXAMPLE).encode()).status_code == 204
     assert len(written(log, "failure_report")) == 1
 

@@ -1165,6 +1165,14 @@ pages following a slice job or a print at once. The sum is 50 threads for idle d
 for uploads, downloads and short requests: 100. The use intended at first, a few groups
 with a printer each, is far below it.
 
+The test of the forty is harder than this sum. Until prints exist, every page follows a
+slice job, and since one user holds at most four streams (below), forty pages are ten
+users each following a slice job of their own: ten followings, not three. The test holds
+those forty streams and ten followings on 57 threads (40 for the pages, 10 for the
+followings, 7 spare) and still answers twenty short requests while they are open. Three
+followings remain the most the slice service as configured gives the front server to follow
+at once, so the sum of 100 stands.
+
 **One user may hold at most four progress streams,** which is this guide's proposal as
 well. Without a limit, one user with fifty tabs open would hold fifty threads; with it,
 ten users with four streams each fill the forty. A fifth stream on a slice the user

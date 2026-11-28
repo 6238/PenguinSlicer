@@ -69,7 +69,11 @@ batch's. Written Fri 2026-11-27, Pacific time.
     `front.bad_request` and nothing is written; an optional field of the wrong kind is
     dropped. A `part_sha256` that is not 64 lowercase hexadecimal characters is dropped, so
     the field cannot carry a part's name. A Layout summary drops the Preview's fields; a
-    Preview summary without them is refused. Numbers are any finite JSON number.
+    Preview summary without them is refused. Numbers are any JSON number, which is always
+    finite, since `json_body` refuses `NaN`, `Infinity` and `1e999` (the details file's
+    wording). An empty `page` is refused like a missing one, since a report without a page
+    id cannot be held to its limit. `front.too_many_reports` is retryable false: the page
+    drops a refused report and never sends it again.
 13. **The report's lines** are `failure_report` and `drawing_report`, component `wizard`,
     with `user_key`, `group` (only when the cookie lists it) and `page_version` (only of the
     version's form) before the contract's fields. A group the cookie does not list writes
@@ -109,11 +113,61 @@ batch's. Written Fri 2026-11-27, Pacific time.
     the memory used unchanged. A run of pytest by hand outside the make targets lacks it.
     To overrule: the `BOUNDED` line of `front/Makefile`, and then the forty-streams test
     needs its own process.
+21. **A listed slice job in a state off the contract's list that is not final.** Silent.
+    Chosen: followed, as a waiting or running one is; its following reads the slice job's
+    own reports and ends on its final one. Reason: leaving it alone would leave a slice
+    job of a newer slice service unstored. To overrule: `Collector._kind`, returning `left`
+    for a state outside `queued`, `running` and the final ones.
+22. **A gathered line whose `n` is past what its answer can hold** (from the review). The
+    contract numbers a process's lines from 1, with none skipped but the dropped, so no line
+    of one answer can carry a number past the `after` asked plus `dropped` plus the lines in
+    the answer. Chosen: such a line is dropped and counted as unreadable, so that one line
+    with an `n` of 10^30 cannot move the cursor past every line still to come. To overrule:
+    `highest` in `Gatherer._gather`.
+23. **A gathered line naming a component other than `slice`** (from the review). The
+    contract says every slice line carries `component` `"slice"`. Chosen: the gathering
+    writes `slice` over whatever the line names, rather than dropping the line, so that a
+    slice service line never passes for the front server's or the wizard's and is still
+    kept. To overrule: `Gatherer._placed`.
+24. **The guide's thread budget beside decision 17** (from the review). The guide's sum of
+    100 counts three followings, the most the slice service as configured gives at once
+    (one running, two waiting); the forty-streams test needs ten, as decision 17 says.
+    Chosen: the sum stands, and the guide now says in a paragraph of its own that the test
+    holds forty streams and ten followings on 57 threads; the details file's test line
+    says "their followings (ten...)" instead of "three followings".
+25. **A drawing summary's example file** (from the review: front-0's record left
+    `POST /api/reports/drawing` without one). Chosen:
+    `contracts/examples/wizard-front/report-drawing-request.json`, a Preview summary with
+    every field, listed in the examples' README and named under the route in the contract;
+    `tests/test_reports.py` reads it rather than holding its own copy. It adds no field and
+    changes no shape, so no wizard test changes with it.
+
+### The review's findings declined
+
+- **Minor 6, a per-user ceiling on reports beside the per-page limit.** Declined. The
+  contract and the details file fix the limit as counted per user and `page`; a hostile
+  signed-in page that changes `page` each time writes at most one line a request, each
+  through the rules every request meets, and costs no more than any other short request.
+  A second ceiling is a change to the contract's rule, the owner's to make. To add it: a
+  second `RateLimit` keyed on the user alone in `penguin_front.reports._report`, with its
+  figure in the contract.
+
+### The review's findings fixed
+
+Each with a test seen to fail against the code mutated as the finding describes, then to
+pass against the code as built: a finished slice job whose record is `failed` is not
+fetched and its copy is deleted (`tests/test_collecting.py`); a report without
+`Content-Length` takes at most `MAX_REPORT_BYTES + 1` bytes from a body sixty-four times the
+limit, counted on the request's input (`tests/test_reports.py`); the running server's stop
+ends the gathering (`tests/test_server.py`); an unreadable entry's line is cut to 300
+characters (`tests/test_collecting.py`); a gathering broken off still saves its cursor
+(`tests/test_gathering.py`). Decisions 22 to 25 above fix minors 4, 5 and 9; minors 7 and 8
+are folded into decisions 12 and 21 and into the details file.
 
 ## Targets missed
 
-- The fast suite now takes 7 to 12 s on one worker and 5 to 6 s on two (1,028 tests, on a
-  machine shared with three other builds), against the 3.8 s and 2.7 s measured on 776
+- The fast suite now takes 7 to 12 s on one worker and 5 to 6 s on two (1,033 tests after
+  the review's fixes, on a machine shared with three other builds), against the 3.8 s and 2.7 s measured on 776
   tests before this batch. It still "finishes in seconds"; the search for secrets after
   each test and the running-server tests account for the rise. Not measured apart.
 

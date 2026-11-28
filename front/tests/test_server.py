@@ -294,6 +294,9 @@ def test_the_running_server_collects_at_start_and_gathers_the_slice_services_lin
         tmp_path, clock, environ(tmp_path, PENGUIN_FRONT_THREADS="3",
                                  PENGUIN_SLICE_URL=standin.url), use)
     assert result == [0]
+    # The gathering ended with the server: none runs after the log's last file.
+    gathering_loop = built[0][0].extensions["penguin_front"]["gatherer"].loop
+    assert gathering_loop._stop.is_set() and not gathering_loop._thread.is_alive()
     assert "slices_collected" in [line["event"] for line in lines]
     written = [json.loads(line) for path in sorted((tmp_path / "log").rglob("*.jsonl"))
                for line in path.read_text().splitlines()]

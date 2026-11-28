@@ -1802,7 +1802,12 @@ server; `gather_once()` for the tests):
   lines the slice service keeps), the rest waiting for the next minute;
 - a line whose `n` is not a whole number past the last one received, or that is not an
   object, is dropped and counted in one line `slice_log_lines_unreadable` (`process`,
-  `count`), so no line is gathered twice;
+  `count`), so no line is gathered twice; so is a line whose `n` is past the highest the
+  answer can hold (the `after` asked, plus `dropped`, plus the lines in the answer), since
+  the slice service numbers its lines from 1 with none skipped, so that one absurd `n` cannot
+  move the cursor past every line of the process still to come;
+- every gathered line's `component` is written as `slice`, whatever the line names, so that
+  a line from the slice service never passes for another component's;
 - a `process` other than the last one's writes `slice_log_process_changed` (`previous`,
   `process`, `after`) and asks again from `0`, unless it had asked from `0` already;
 - `dropped` not 0 writes `slice_log_lines_dropped` (`process`, `after`, `dropped`);
@@ -1887,8 +1892,10 @@ request is not designed.
   with the last number passed back, and none is fetched twice; a `more` answer is followed at
   once; a changed `process` starts again from `0`; a `dropped` count is written as a line
   (built: `tests/test_gathering.py`, with the cursor across a restart, a slice service that
-  does not answer and every answer of another form; and in `tests/test_server.py`, the
-  running server's gathered line in the log folder's file with its group).
+  does not answer, every answer of another form, an `n` past what the answer can hold, a
+  line naming another component, and a gathering broken off that still saves where it
+  stopped; and in `tests/test_server.py`, the running server's gathered line in the log
+  folder's file with its group, and its gathering ended by its stop).
 - A stop writes the gathered lines before the process ends (phase 3).
 - No line written during the whole fast suite contains the cookie, an Onshape token, a cookie
   key, the relay's secret key, a daemon's token or a pairing code; the test searches every
@@ -1938,8 +1945,11 @@ refused `400` `front.bad_request` naming the field, and nothing is written; an o
 field of the wrong kind is dropped (a `part_sha256` that is not 64 lowercase hexadecimal
 characters among them, so that the field can never carry a part's name); a drawing summary
 of `layout` drops the fields that go `with preview`, and one of `preview` without them is
-refused. Numbers are any JSON number; `page` is cut at `PAGE_CHARS` (64, *proposed*: the
-contract gives no length, and the page's id is a UUID of 36). A body over `MAX_REPORT_BYTES`
+refused. Numbers are any JSON number, which is always finite (`json_body` refuses `NaN`,
+`Infinity` and a number too large for a float such as `1e999`); `page` is cut at
+`PAGE_CHARS` (64, *proposed*: the contract gives no length, and the page's id is a UUID of
+36), and an empty `page` is refused. `front.too_many_reports` is not retryable, since the
+page drops a refused report. A body over `MAX_REPORT_BYTES`
 (16,384, *proposed*; a whole report is under 2 KB) is refused `400` `front.bad_request`
 before it is read, and one sent without `Content-Length` is read no further than one byte
 past it. The limit counts the signed-in user and the report's `page` together on a sliding
@@ -1959,7 +1969,9 @@ Built: `tests/test_reports.py`.
   another user.
 - A report without a sign-in is refused `401`; one naming a group not the user's is still
   written, without the group.
-- A report over its size is refused before it is read, with or without `Content-Length`.
+- A report over its size is refused before it is read, with or without `Content-Length`;
+  without it, no more than one byte past the limit is taken from a body sixty-four times
+  the limit.
 
 ## The version, and old and new versions together
 
@@ -2033,7 +2045,9 @@ by the running server after the `start` line; `collected` is set when it has end
   waited on and asked again like a slice service that does not answer, since following a
   slice job without its record's group would store it without one;
 - a waiting or running slice job is followed (`Follower.follow`) with its record's `group`,
-  or none when it has no record;
+  or none when it has no record; so is one in a state off the contract's list that is not
+  final, since its following then reads the slice job's own reports and ends on its final
+  one;
 - a `done` one with `file_on_disk` true is followed, and so stored as every followed slice
   job is, with its record's group and with the list's `ended_at` given to the following
   (`follow(..., ended_at=)`) as the moment the slice ended, when its record is missing or
@@ -2081,8 +2095,9 @@ repeated submission is answered with the first attempt's slice job. For a repeat
 - A front server started while the stand-in holds one unfinished slice job and one
   finished, unstored one follows the first and stores the second, with the group its record
   holds (built: `tests/test_collecting.py`, which holds the rest of this section's rules).
-- A finished slice job whose sliced file is already stored is not fetched again at start
-  (built).
+- A finished slice job whose sliced file is already stored is not fetched again at start,
+  nor one whose record is `failed`; for each the slice service is told to delete its copy,
+  and the record stays as it was (built).
 - A front server started while the stand-in does not answer keeps asking (fake clock),
   answers other requests meanwhile, and follows the slice jobs once the stand-in answers
   (built).
@@ -2165,7 +2180,8 @@ forty and four; build the four as a constant and the test below against fifty an
   one closes (event-ordered, no sleep) (built: `tests/test_users_at_once.py`, three threads,
   one the following's, two streams, the request seen waiting in waitress's queue and served
   when the slice job's final report ends the streams).
-- Forty progress streams and three followings held open against the stand-ins, with short
+- Forty progress streams and their followings (ten, where the guide's sum of 100 counts the
+  three the slice service gives at once) held open against the stand-ins, with short
   requests still answered; from phase 5, with fifty held syncs beside them (built:
   `tests/test_users_at_once.py`, on the running server over HTTP. Since one user holds at
   most four streams, the forty are ten users' four each, each user on a slice job of their

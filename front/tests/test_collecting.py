@@ -14,7 +14,7 @@ from penguin_front.collecting import Collector
 from test_following import Recording
 from sliced_helpers import (FILE, GROUP, SUMMARY, USER, app, bucket, client, context,  # noqa: F401
                             done, log, queued, read_state, requests_to, running,
-                            write_stored, write_submitted)
+                            write_failed, write_stored, write_submitted)
 
 #: When the slice service says the finished slice job ended: before the clock's start.
 LISTED_END = "2026-11-27T22:13:58Z"
@@ -90,6 +90,21 @@ def test_a_finished_slice_job_already_stored_is_not_fetched_again(app, standin, 
     assert (line["already_stored"], line["left"]) == (1, 1)
 
 
+def test_a_finished_slice_job_whose_record_is_failed_is_not_fetched_and_its_copy_deleted(
+        app, standin, bucket, log):
+    # The following wrote `failed` (the sliced file was over its limit) and stopped before
+    # it told the slice service to delete its copy.
+    write_failed(bucket, "jfail")
+    add_done(standin, "jfail")
+    collect(app)
+    wait_for_delete(standin, "jfail")
+    assert not requests_to(standin, "GET", "/slices/jfail/file")
+    assert not requests_to(standin, "GET", "/slices/jfail/summary")
+    assert read_state(bucket, "jfail") == "failed"
+    [line] = log.events("slices_collected")
+    assert line["already_stored"] == 1
+
+
 @pytest.mark.parametrize("state", ["failed", "cancelled"])
 def test_a_slice_job_that_did_not_end_done_is_left_alone(app, standin, state, log):
     add_done(standin, "jend", file=None, state=state)
@@ -145,6 +160,14 @@ def test_an_entry_the_front_server_cannot_read_is_skipped_with_a_line(app, stand
     assert "entry" in line
     assert log.events("slices_collected")[0]["unreadable"] == 1
     assert context(app)["follower"].followed() == set()
+
+
+def test_an_unreadable_entrys_line_holds_at_most_its_first_300_characters(app, standin, log):
+    entry = {"job": "jx", "user_key": "", "progress": {"state": "done"}, "pad": "z" * 5000}
+    standin.answer_next("GET", "/slices", 200, {"slices": [entry]})
+    collect(app)
+    [line] = log.events("slices_entry_unreadable")
+    assert line["entry"] == repr(entry)[:300]
 
 
 @pytest.fixture
