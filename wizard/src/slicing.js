@@ -218,6 +218,8 @@ export function createSlicing({
   async function askDetails(mine) {
     const path = `/api/slices/${encodeURIComponent(current.id)}/summary`;
     const answer = await api.get(path);
+    // a new slice raises run; the same slice expired meanwhile (another request refused as expired)
+    // leaves run as it was and is no longer 'done'
     if (mine !== run || view.kind !== 'done') return;
     if (answer.ok && answer.body && isDetails(answer.body.sliced_file)) takeDetails(answer.body.sliced_file);
     else if (answer.ok) fail(badAnswer(path, answer.status, JSON.stringify(answer.body)));

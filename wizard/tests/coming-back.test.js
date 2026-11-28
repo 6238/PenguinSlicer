@@ -8,11 +8,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { SLICED_FILE_KEEP_S } from '../src/page-constants.js';
+import { createResult } from '../src/result.js';
+import * as R from '../src/result-sentences.js';
 import { createSlicing } from '../src/slicing.js';
 import * as T from '../src/slicing-sentences.js';
 import { createStore } from '../src/state.js';
 import { settle } from './fakes/clock.js';
-import { errorReport, events, steps } from './fakes/front_server.js';
+import { errorReport, events, example, steps } from './fakes/front_server.js';
 import { EVENTS, JOB, S, accepted, doneReport, failedReport, feedStream, openPage, progress } from './fakes/preview-page.js';
 
 const ASK = `/api/slices/${JOB}`;
@@ -148,6 +150,39 @@ for (const step of ['preview', 'send']) {
     }
   });
 }
+
+// The Send step's card and a Download, on a page that came back: the slice coming back found is of
+// the plate as it stands, so its plate configuration is at hand as on a page that stayed open.
+async function sendsAndDownloads(page, back) {
+  const saved = [];
+  const told = [];
+  const panel = { goTo: (s) => back.store.set({ step: s }), notify: (n) => told.push(n), dropNotice() {} };
+  const result = createResult({ api: page.api, slicing: back.slicing, store: back.store, panel, geometry: { mesh: () => null }, save: (href, name) => saved.push({ href, name }) });
+  back.store.set({ step: 'send' });
+  assert.deepEqual(result.send(), { count: R.ON_ONE_PLATE(3), parts: ['2 × Bracket', 'Spacer'], printTime: '36 min', grams: '16 g', filament: R.OF_FILAMENT('PETG') });
+  page.server.script('GET', `${ASK}/summary`, steps.answer(200, { sliced_file: { ...example('wizard-front/slice-summary.json').sliced_file, size_bytes: 3_984_588 } }));
+  assert.deepEqual(await result.download(), { ok: true });
+  assert.equal(saved.length, 1);
+  assert.deepEqual(told.map((n) => n.what), [R.DOWNLOADED(3, '3.8 MB')]);
+}
+
+test('coming back to a finished slice: the Send step has its card, and Download saves and notifies once', async () => {
+  const page = await sliced({ step: 'parts' });
+  const back = await comeBack(page, { step: 'parts', answer: progressAnswer(doneReport()) });
+  assert.equal(back.view().kind, 'done');
+  await sendsAndDownloads(page, back);
+  assert.equal(submitted(page), 1);
+});
+
+test('coming back to a slice still running that then finishes: the Send step has its card, and Download saves and notifies once', async () => {
+  const page = await sliced();
+  feedStream(page, events.progress(doneReport(42)));
+  const back = await comeBack(page, { answer: progressAnswer(progress({ sequence: 25 })) });
+  await page.clock.advance(0);
+  assert.equal(back.view().kind, 'done');
+  await sendsAndDownloads(page, back);
+  assert.equal(submitted(page), 1);
+});
 
 test('a slice job unknown and submitted less than two hours ago: the Preview step, and the plate submitted again with a new value, the card from the start', async () => {
   const page = await sliced();
