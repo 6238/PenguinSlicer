@@ -831,7 +831,11 @@ connection
 - The stand-in for the slice service answers as [its contract](../contracts/slice-http-interface.md)
   says, its answers checked against the contract's examples, and lets a test put its events
   in an exact order; it records every request it receives (built:
-  `tests/test_slice_standin.py`).
+  `tests/test_slice_standin.py`). Its `GET /log` reads `after` as the slice service's own
+  route does: left out it is 0, any run of ASCII digits is taken with leading zeros dropped
+  and one of more than 18 digits is past every line, and anything else is `400`
+  `slice.bad_request` with the slice service's sentence; the joined suite runs the
+  gathering against the real route.
 - No request of the whole fast suite reaches the stand-in's cancel.
 - The stand-in not answering gives `503` `front.slice_unreachable` on each request that
   calls it.
