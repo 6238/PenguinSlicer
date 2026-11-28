@@ -5,6 +5,7 @@ description = "The front server: everything behind PenguinSlicer's one address."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "cryptography>=42",
     "flask>=3.0",
     "httpx>=0.27",
     "waitress>=3.0",
