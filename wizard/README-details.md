@@ -2070,7 +2070,8 @@ a right-drag slides it, since nothing can be moved.
 that was submitted, or made again from the plate as it stands for a followed stored slice); a
 `done` report whose `sliced_file` lacks `file` or `summary` makes it ask the summary, whose `410`
 `front.sliced_file_expired` is the expired message and whose other refusals are shown as a failure
-with the last row's buttons. `wizard/src/result.js` (`createResult`) works out what is drawn, with
+with the last row's buttons; a `200` whose `sliced_file` lacks `file` or `summary` is
+`wizard.bad_answer`, shown the same way, and the plate is not sliced. `wizard/src/result.js` (`createResult`) works out what is drawn, with
 the words of `wizard/src/result-sentences.js`; `wizard/src/panel/preview-step.js` draws it into the
 mockup's `#preview-result`:
 
@@ -2094,12 +2095,14 @@ mockup's `#preview-result`:
   (`geometry.mesh('<sha256>.<units>').positions`) under its key, or `null` when a part's corners
   are not at hand, so that the preview draws without the ghost rather than failing; the first layer
   is timed from the moment the step opened. While the file is fetched and read, the readout's place
-  says "Reading the sliced file", with the worker's percentage while it reads the G-code.
+  says "Reading the sliced file", with the worker's percentage while it reads the G-code; the
+  readout is a polite live region (`aria-live`) for the layer, and is `aria-busy` while the file is
+  read, so that a screen reader is not told each percent.
 - **The preview's own failure** (`wizard.preview_unreadable`, `wizard.preview_failed`,
   `wizard.preview_not_drawable`, and a refusal of the file other than as expired) is an amber
   message in place of the view and its row (`.preview-view-message`), since the plate is sliced and
   Next stays on, with **Slice again** for `wizard.preview_unreadable` only, the one a new slice can
-  mend; the print time, filament and quiet line stay.
+  mend (`offersSliceAgain`); the print time, filament and quiet line stay.
 - **The readout** is `readout()` of `preview/layer-bar.js` in `#layer-readout`, which never wraps;
   below 480 px of panel the row's gaps narrow to 4 px, the spacer gives way to Reset view's own
   margin and the two small buttons are 24 px wide, so that "4250 / 4250 · 339.9 mm" fits on one
@@ -2114,13 +2117,16 @@ mockup's `#preview-result`:
 
 Tests: `tests/result.test.js` gives the two figures, the quiet line, the warnings and each figure
 left out when `null`, the summary asked when the done report lacks the details and each of its
-answers, the file fetched with the page's headers and each of its refusals, and the ghost with and
-without a part's corners; `tests_browser/test_result_send.py` draws the result in Chromium at
-320 px on a real sliced file: the figures, the view drawn with its bar, the readout moved by the
-two buttons and by the keys, Reset view, the colour key's four rows and the "?" opening and
-closing, the readout on one line at 320 px with the longest figures, the view found drawn on
-coming back without a second fetch, the warnings in amber as text, and a file the preview cannot
-read in place of the view; `make -C wizard look-result-send` puts each state beside the mockup's at
+answers (a `200` without valid details among them), the file fetched with the page's headers and
+each of its refusals, Slice again offered for `wizard.preview_unreadable` alone of the preview's
+own failures, and the ghost with and without a part's corners; `tests_browser/test_result_send.py`
+draws the result in Chromium at 320 px on a real sliced file: the figures, the readout busy while
+the file is read, the view drawn with its bar, the readout moved by the two buttons and by the
+keys, Reset view, the colour key's four rows, closed by Escape, by its icon and by a click
+elsewhere, a press on it never reaching the view, the "?" opening and closing, the readout on one
+line at 320 px with the longest figures, the view found drawn on coming back without a second
+fetch, a slice that ends on the Layout step fetching nothing until the Preview step is in sight,
+the warnings in amber as text, and a file the preview cannot read in place of the view; `make -C wizard look-result-send` puts each state beside the mockup's at
 four widths ([the pictures](../docs/orchestration/phase-2/look/wizard-8/index.html)).
 
 ### A sliced plate that expires
@@ -2142,7 +2148,10 @@ and entering the Preview step afterwards slices, as for any plate not yet sliced
 
 **As built.** `slicing.js` counts `expires_in_s` with one timer on the clock seam, set afresh each
 time details arrive (the `done` report, the summary, and the summary Download asks first:
-`takeDetails`) and ended when the view leaves `done`; at its moment the view is `expired` (`model()`
+`takeDetails`) and ended when the view leaves `done`; the clock seam cuts a wait longer than a
+browser's timer holds (`LONGEST_TIMER_MS`, 2,147,483,647 ms, about 24.8 days, past which a
+browser fires a timer at once) into waits it can, each counted from the moment the wait began
+(`timerClock`), so that a figure that large expires at its moment and not at once; at its moment the view is `expired` (`model()`
 gives `{kind: 'expired', report, what, todo, actions}`), the plate is not sliced and the store's
 `expired` is true, whatever step the user is on. The message is drawn as a grey `message` (`info`)
 in `#preview-errors` on the Preview step and in `#send-printer` on the Send step, where the panel
@@ -2150,7 +2159,9 @@ hides `#final-action` while `expired` holds; on any other step nothing shows. Th
 is `EXPIRED_WHAT` and `EXPIRED_TODO` of `slicing-sentences.js`, the guide's sentence split into what
 happened and what to do. The front server's sentence is shown when the summary, the file or the
 details Download asks are refused with `410` `front.sliced_file_expired`, when the progress stream
-or asking answers `failed` with that error, and when the stream is refused with it; a slice job the
+or asking answers `failed` with that error, and when the stream or the asking is refused with it
+(which the contract's `/events` and `GET /api/slices/<slice>` never answer, but its table of codes
+makes `front.sliced_file_expired` the expired message wherever it comes from); a slice job the
 front server no longer knows two hours or more after it was submitted shows the wizard's sentence.
 **Slice again** submits on the Preview step and, on the Send step, goes to the Preview step, whose
 entering submits the plate (not sliced), so it is submitted once, with a new `submission_id`. At
@@ -2163,8 +2174,10 @@ front server's answer arrived, not a second before, whatever the page's wall clo
 on the Send step in place of Send; on the Layout step nothing shows and the next Preview submits; a
 refused Download shows the front server's sentence; "is still here" goes; `expires_in_s` `null`
 shows no expiry until a later report gives one. Built: `tests/result.test.js` for each, with a new
-slice ending the earlier count, a `failed` report and a slice job unknown at two hours each ending
-in the message, and Slice again from both steps; `tests_browser/test_result_send.py` for the message
+slice ending the earlier count, a `failed` report, a stream refused with `410`
+`front.sliced_file_expired` and a slice job unknown at two hours each ending in the message, and
+Slice again from both steps; `tests/clock.test.js` for a wait longer than a browser's timer holds,
+fired at its moment and cancelled between its parts; `tests_browser/test_result_send.py` for the message
 at its moment on the Preview and Send steps in Chromium, Slice again slicing, and a Download
 refused as expired.
 
@@ -2372,8 +2385,10 @@ and the footer's `#btn-do`, "Download the sliced file", alone in `#final-action`
   stays under the expired message.
 - **Download** (`result.download()`) asks `GET /api/slices/<slice>/summary` first (the
   *proposed* of the table above, settled so): `410` `front.sliced_file_expired` is the expired
-  message in place of Send, with the front server's sentence; any other refusal is a red message in
-  `#send-errors` with its own sentences, the button kept, until the plate changes. Details that
+  message in place of Send, with the front server's sentence; any other refusal, and a `200` whose
+  `sliced_file` lacks `file` or `summary` (`wizard.bad_answer`), is a red message in `#send-errors`
+  with its own sentences, the button kept, until the plate changes (the view leaves this sliced
+  plate's `done`: a changed plate reaches the Send step only through a new slice). Details that
   arrive count the expiry afresh. Then the browser saves `api.link('/api/slices/<slice>/file')`
   (`?group=<id>`) under the details' `file`, through the download seam `wizard/src/seams/download.js`
   (`saveLink`: a hidden link with `download`, clicked), so that the page never holds the file, and
@@ -2385,10 +2400,13 @@ and the footer's `#btn-do`, "Download the sliced file", alone in `#final-action`
 
 Tests: `tests/result.test.js` gives the card's figures, Download's order (the details, then the link
 with the group, then the notification with the true size), its refusal as expired and otherwise,
-and nothing done with no sliced plate; `tests_browser/test_result_send.py` draws the step at
-320 px with the card, the one button, no caret, no plate-clear line and no word naming a printer
-or pairing, saves the real sliced file by Chromium's download with its name and the group in its
-address, shows the notification, and the two refusals.
+a `200` without valid details, and nothing done with no sliced plate;
+`tests_browser/test_result_send.py` draws the step at 320 px with the card, the one button, no
+caret, no plate-clear line and no word naming a printer or pairing, saves the real sliced file by
+Chromium's download with its name and the group in its address, shows the notification, the two
+refusals and a `200` without valid details as red messages with nothing saved, a second press while
+the summary is held doing nothing (one summary, one save, one notification), and a refused
+Download's message gone once a changed plate is sliced.
 
 ### After Send
 

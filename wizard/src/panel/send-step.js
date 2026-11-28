@@ -53,6 +53,8 @@ export function createSendStep(section, { slicing, result, store, root }) {
         actions: m.actions.map((a) => ({ label: a.label, primary: a.primary, onClick: () => a.run() })),
       }));
     } else printer.replaceChildren();
+    // the message of a refused Download stays until the plate is no longer this sliced plate: a
+    // changed plate reaches this step only through a new slice, which leaves `done` first
     if (refused && (m.kind !== 'done' || refused.slice !== m.slice)) refused = null;
     errors.replaceChildren(...(refused ? [message({ kind: 'error', what: refused.report.message, todo: refused.report.remedy })] : []));
   }

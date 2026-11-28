@@ -7,6 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { STILL_HERE_NOTICE, hoursMinutes, sizeText } from '../src/result.js';
+import { offersSliceAgain } from '../src/panel/preview-step.js';
 import * as R from '../src/result-sentences.js';
 import * as T from '../src/slicing-sentences.js';
 import { SLICED_FILE_KEEP_S } from '../src/page-constants.js';
@@ -91,6 +92,23 @@ test('the summary refused otherwise is that refusal, shown with Slice again', as
   assert.equal(page.store.get().sliced, false);
 });
 
+test('the summary answered 200 without valid details: wizard.bad_answer, shown with its buttons, and the plate not sliced', async () => {
+  for (const body of [{}, { sliced_file: null }, { sliced_file: { summary: {} } }, { sliced_file: { file: 'x.gcode.3mf' } }]) {
+    const page = await openPage();
+    const { sliced_file: _gone, ...bare } = doneReport();
+    page.server.script('GET', SUMMARY, steps.answer(200, body));
+    feedStream(page, events.progress(bare));
+    await page.enter();
+    assert.equal(page.server.made('GET', SUMMARY).length, 1);
+    assert.equal(page.view().kind, 'failed');
+    assert.equal(page.view().report.code, 'wizard.bad_answer');
+    assert.ok(page.view().what);
+    assert.deepEqual(page.view().actions.map((a) => a.id), ['again', 'layout']);
+    assert.equal(page.store.get().sliced, false);
+    assert.equal(page.result.preview(), null);
+  }
+});
+
 test('the sliced file is fetched for the layer preview with the page\'s headers, its bytes as they came', async () => {
   const page = await sliced();
   page.server.script('GET', FILE, { kind: 'answer', status: 200, body: 'PK-sliced', headers: { 'Content-Type': 'application/octet-stream' } });
@@ -135,6 +153,13 @@ test('the ghost is the sliced plate configuration\'s instances with each part\'s
   assert.equal(ghost.meshes.p1, a);
   assert.equal(ghost.meshes.p2, b);
   assert.deepEqual(ghost.instances.map((i) => i.ref), ['p1', 'p1', 'p2']);
+});
+
+test('of the preview\'s own failures only a file it cannot read offers Slice again', () => {
+  assert.equal(offersSliceAgain('wizard.preview_unreadable'), true);
+  for (const code of ['wizard.preview_failed', 'wizard.preview_not_drawable', 'front.sliced_file_not_ready', 'wizard.bad_answer']) {
+    assert.equal(offersSliceAgain(code), false, code);
+  }
 });
 
 // ---- a sliced plate that expires
@@ -243,6 +268,24 @@ test('a slice job answered failed with front.sliced_file_expired: the expired me
   assert.equal(page.store.get().expired, true);
 });
 
+test('a progress stream refused with 410 front.sliced_file_expired: the expired message with the front server\'s sentence, and nothing sliced again', async () => {
+  const page = await openPage();
+  const feed = feedStream(page, events.progress(progress()));
+  await page.enter();
+  const gone = errorReport('front.sliced_file_expired');
+  page.server.script('GET', EVENTS, steps.report(gone));
+  feed.end();
+  await page.clock.advance(0);
+  assert.equal(page.server.made('GET', EVENTS).length, 2);
+  assert.equal(page.view().kind, 'expired');
+  assert.equal(page.view().what, gone.message);
+  assert.equal(page.view().todo, gone.remedy);
+  assert.equal(page.store.get().expired, true);
+  await page.clock.advance(3600 * S);
+  assert.equal(page.submissions().length, 1);
+  assert.equal(page.server.made('GET', EVENTS).length, 2);
+});
+
 test('a slice job unknown two hours or more after it was submitted: the expired message with the wizard\'s sentence; entering the step again slices', async () => {
   const page = await openPage();
   const feed = feedStream(page, events.progress(progress()));
@@ -304,6 +347,21 @@ test('Download refused otherwise is that refusal, for the Send step to show, and
   assert.equal(outcome.report.code, 'front.slice_unknown');
   assert.deepEqual(page.saved, []);
   assert.equal(page.view().kind, 'done');
+});
+
+test('Download answered 200 without valid details: wizard.bad_answer for the Send step to show, nothing saved and no notification', async () => {
+  for (const body of [{}, { sliced_file: null }, { sliced_file: { summary: {} } }]) {
+    const page = await sliced();
+    await page.leave('send');
+    page.server.script('GET', SUMMARY, steps.answer(200, body));
+    const outcome = await page.result.download();
+    assert.equal(outcome.ok, false);
+    assert.equal(outcome.report.code, 'wizard.bad_answer');
+    assert.ok(outcome.report.message && outcome.report.remedy);
+    assert.deepEqual(page.saved, []);
+    assert.equal(page.notices.length, 0);
+    assert.equal(page.view().kind, 'done');
+  }
 });
 
 test('Download with no sliced plate does nothing', async () => {

@@ -20,6 +20,8 @@ import { readout } from '../preview/layer-bar.js';
 const RING = 2 * Math.PI * 27;          // the gauge's circle, r = 27 in the mockup's 64 by 64
 // The preview's own failure that a new slice can mend.
 const UNREADABLE = 'wizard.preview_unreadable';
+// Whether the preview's own failure of this code offers Slice again: only the one a new slice can mend.
+export const offersSliceAgain = (code) => code === UNREADABLE;
 
 // createPreviewStep(section, {slicing, store, clock, result, createView, frames}):
 //   result      result.js: the result's figures, the sliced file and the ghost
@@ -91,11 +93,15 @@ export function createPreviewStep(section, { slicing, store, clock, result = nul
   let shown = null;          // {slice, view, ready}
   let openedAt = frames ? frames.now() : 0;
   const controls = (on) => { for (const b of [down, up, reset]) b.disabled = !on; };
+  // The readout is a polite live region for the layer; while the file is read it says so with a
+  // percentage that moves, which it holds back from a screen reader by being busy.
+  const reading = (on) => readoutBox.setAttribute('aria-busy', String(on));
   function dropView() {
     if (!shown) return;
     shown.view.destroy();
     shown = null;
     controls(false);
+    reading(false);
     readoutBox.textContent = '';
     viewMessage.replaceChildren();
     viewBox.hidden = false;
@@ -106,8 +112,9 @@ export function createPreviewStep(section, { slicing, store, clock, result = nul
   function viewFailed(error) {
     controls(false);
     viewBox.hidden = true;
+    reading(false);
     readoutBox.textContent = '';
-    const actions = error.code === UNREADABLE ? [{ label: T.SLICE_AGAIN, primary: true, onClick: () => slicing.sliceAgain() }] : [];
+    const actions = offersSliceAgain(error.code) ? [{ label: T.SLICE_AGAIN, primary: true, onClick: () => slicing.sliceAgain() }] : [];
     viewMessage.replaceChildren(message({ kind: 'warn', what: error.message, todo: error.remedy, actions }));
   }
   async function startView(slice) {
@@ -120,6 +127,7 @@ export function createPreviewStep(section, { slicing, store, clock, result = nul
       }),
     };
     shown = mine;
+    reading(true);
     readoutBox.textContent = R.READING(null);
     const got = await result.file();
     if (shown !== mine) return;
@@ -129,7 +137,7 @@ export function createPreviewStep(section, { slicing, store, clock, result = nul
     }
     const answer = await mine.view.show(got.bytes, result.ghost(), { since: openedAt });
     if (shown !== mine) return;
-    if (answer.ok) { mine.ready = true; controls(true); }
+    if (answer.ok) { mine.ready = true; controls(true); reading(false); }
     else if (answer.error) viewFailed(answer.error);
   }
   down.addEventListener('click', () => { if (shown) shown.view.stepLayer(-1); });

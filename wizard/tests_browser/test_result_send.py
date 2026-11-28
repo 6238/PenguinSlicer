@@ -47,6 +47,9 @@ def until_drawn(w):
 def test_the_result_shows_the_figures_and_the_layer_preview_with_its_readout_and_buttons(page, front_server):
     w = open_preview(page, front_server)
     w.until("return wizard.slicing.model().kind === 'done';")
+    # while the file is read the readout says so and is busy, so a screen reader is not told each percent
+    w.until("return document.getElementById('layer-readout').textContent.startsWith('Reading the sliced file');")
+    assert w.page.locator("#layer-readout").get_attribute("aria-busy") == "true"
     assert w.page.locator("#preview-stats .stat strong").all_inner_texts() == ["36 min", "16 g PETG"]
     assert [t.split("\n")[-1] for t in w.page.locator("#preview-stats .stat").all_inner_texts()] == ["Print time", "Filament"]
     assert w.page.locator("#preview-stats .stat-line").inner_text() == "3 instances · 200 layers · sliced in 0:52"
@@ -55,6 +58,7 @@ def test_the_result_shows_the_figures_and_the_layer_preview_with_its_readout_and
     assert [p for (m, p, _) in front_server.bodies if p.startswith(FILE)] == [FILE]
     assert w.page.locator("#layer-slider").is_visible()
     readout = w.page.locator("#layer-readout")
+    assert readout.get_attribute("aria-busy") == "false"
     assert readout.inner_text().startswith("13 / 13 · ")
     assert readout.inner_text().endswith(" mm")
     w.page.click("#btn-layer-down")
@@ -67,7 +71,8 @@ def test_the_result_shows_the_figures_and_the_layer_preview_with_its_readout_and
     assert readout.inner_text().startswith("12 / 13 · ")
     assert w.page.locator("#btn-preview-view").inner_text() == "Reset view"
     w.page.click("#btn-preview-view")
-    # the colour key: closed until asked for, four rows, closed by Escape
+    # the colour key: closed until asked for, four rows, closed by Escape, by its icon and by a click
+    # elsewhere; a press on it never reaches the view
     key = w.page.locator("#pv-key")
     assert not key.is_visible()
     w.page.click("#btn-key")
@@ -75,6 +80,25 @@ def test_the_result_shows_the_figures_and_the_layer_preview_with_its_readout_and
     assert key.locator("li").all_inner_texts() == ["Walls", "Infill", "Top and bottom surfaces", "Supports and brim"]
     assert w.page.locator("#btn-key").get_attribute("aria-expanded") == "true"
     w.page.keyboard.press("Escape")
+    assert not key.is_visible()
+    w.page.click("#btn-key")
+    assert key.is_visible()
+    w.page.click("#btn-key")
+    assert not key.is_visible()
+    assert w.page.locator("#btn-key").get_attribute("aria-expanded") == "false"
+    w.page.click("#btn-key")
+    w.page.evaluate("""() => {
+        window.viewPresses = 0;
+        document.querySelector('#viewer-container canvas').addEventListener('pointerdown', () => { window.viewPresses += 1; });
+    }""")
+    box = key.bounding_box()
+    w.page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    w.page.mouse.down()
+    w.page.mouse.move(box["x"] + box["width"] / 2 + 40, box["y"] + box["height"] / 2 + 30)
+    w.page.mouse.up()
+    assert key.is_visible()                                        # a press on the key keeps it open
+    assert w.page.evaluate("window.viewPresses") == 0
+    w.page.mouse.click(5, 5)
     assert not key.is_visible()
     # the "?": how to move the view
     w.page.click("#btn-preview-help")
@@ -251,6 +275,93 @@ def test_a_download_refused_otherwise_shows_its_sentences_and_keeps_the_button(p
     w.until("return Boolean(document.querySelector('#send-errors .msg.error'));")
     assert w.page.locator("#send-errors .what").inner_text() == error_report("front.slice_unknown")["message"]
     assert w.page.locator("#final-action").is_visible()
+
+
+def downloads_of(w):
+    """The downloads the browser starts, as they are told to the test."""
+    caught = []
+    w.page.on("download", lambda d: caught.append(d))
+    return caught
+
+
+def test_a_download_answered_without_the_details_is_a_red_message_and_nothing_is_saved(page, front_server):
+    w = open_send(page, front_server)
+    caught = downloads_of(w)
+    front_server.script("GET", SUMMARY, (200, {"sliced_file": {"summary": {}}}))
+    w.page.click("#btn-do")
+    w.until("return Boolean(document.querySelector('#send-errors .msg.error'));")
+    assert w.page.locator("#send-errors .what").inner_text() == "The server gave an answer this page cannot read."
+    assert w.page.locator("#send-errors .todo").inner_text() == "Reload the page to try again."
+    assert w.page.locator("#final-action").is_visible()
+    assert w.page.locator("#notices .notice").count() == 0
+    assert [p for (m, p, _) in front_server.bodies if p.startswith(FILE)] == [FILE]      # the preview's fetch only
+    assert caught == []
+    assert w.problems == []
+
+
+def test_a_second_press_while_a_download_is_under_way_does_nothing(page, front_server):
+    w = open_send(page, front_server)
+    caught = downloads_of(w)
+    held = []
+    w.page.route(f"**{SUMMARY}", lambda route: held.append(route))
+    w.page.click("#btn-do")
+    w.until("return true;")
+    w.page.click("#btn-do")
+    for _ in range(100):                     # each ask is a round trip, in which the routes are told
+        if held:
+            break
+        w.run("return true;")
+    assert len(held) == 1
+    with w.page.expect_download():
+        held[0].continue_()
+    w.page.wait_for_selector("#notices .notice")
+    for _ in range(20):                      # a second request would be told in these round trips
+        w.run("return true;")
+    assert len(held) == 1
+    assert [p for (m, p, _) in front_server.bodies if p.startswith(SUMMARY)] == [SUMMARY]
+    assert len(caught) == 1
+    assert w.page.locator("#notices .notice").count() == 1
+
+
+def test_a_refused_downloads_message_goes_once_a_changed_plate_is_sliced(page, front_server):
+    w = open_send(page, front_server)
+    front_server.script("GET", SUMMARY, (404, error_report("front.slice_unknown")))
+    w.page.click("#btn-do")
+    w.until("return Boolean(document.querySelector('#send-errors .msg.error'));")
+    w.page.click("#stepbar li[data-step=layout]")
+    w.until("return wizard.store.get().step === 'layout';")
+    w.run("const [a] = wizard.layout.model().instances; wizard.layout.place([{ id: a.id, x: a.x + 5, y: a.y }]); await wizard.layout.endDrag(); await wizard.layout.idle();")
+    w.until("return wizard.store.get().sliced === false;")
+    w.page.click("#btn-next")
+    w.until("return wizard.store.get().step === 'preview' && wizard.slicing.model().kind === 'done';")
+    assert len(submissions(front_server)) == 2
+    w.page.click("#btn-next")
+    w.until("return wizard.store.get().step === 'send';")
+    assert w.page.locator("#send-errors .msg").count() == 0
+    assert w.page.locator("#final-action").is_visible()
+
+
+def test_a_slice_that_ends_on_the_layout_step_draws_no_preview_until_the_step_is_in_sight(page, front_server):
+    first = stream(version_event(front_server.version), progress_event(running()), hold=True)
+    front_server.script("GET", EVENTS, first, stream(version_event(front_server.version), progress_event(done())))
+    w = open_preview(page, front_server)
+    w.until("return wizard.slicing.model().kind === 'card';")
+    w.page.click("#btn-back")
+    w.until("return wizard.store.get().step === 'layout';")
+    first.release()
+    for _ in range(200):                     # the page reopens the stream that closed, on its clock
+        if w.run("return wizard.slicing.model().kind === 'done';"):
+            break
+        w.page.clock.run_for(500)
+    assert w.run("return wizard.slicing.model().kind === 'done';")
+    assert w.run("return wizard.previewStep.view() === null;")
+    assert w.page.locator("#layer-readout").inner_text() == ""
+    assert [p for (m, p, _) in front_server.bodies if p.startswith(FILE)] == []
+    w.page.click("#btn-next")
+    w.until("return wizard.store.get().step === 'preview';")
+    until_drawn(w)
+    assert [p for (m, p, _) in front_server.bodies if p.startswith(FILE)] == [FILE]
+    assert len(submissions(front_server)) == 1
 
 
 def test_the_whole_path_on_the_real_clock_parts_layout_slice_preview_and_download(page, front_server):

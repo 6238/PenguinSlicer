@@ -134,6 +134,47 @@ steps. One of its checks found the readout wrapping at 320 px (decision 12).
     step is shown beside the mockup's twice: once with a printer paired and once with none, since
     phase 2's Send step lies between the two.
 
+### Decisions made in answer to the review
+
+25. **A summary answered `200` without valid details is `wizard.bad_answer`, on both paths.** A
+    `sliced_file` that lacks `file` or `summary` cannot be drawn or downloaded. The documents are
+    silent on this answer. Chosen: after a bare done report, the failure with the last row's
+    buttons (Slice again, Back to Layout), and the plate not sliced; through Download, a red
+    message in `#send-errors`, nothing saved and no notification, the button kept. The reason:
+    every failure a caller can see is an error report, and `wizard.bad_answer` is the page's report
+    for an answer it cannot read. Both are now tested. To overrule it, change `askDetails` in
+    `slicing.js` and `download()` in `result.js`.
+26. **A stream or asking refused with `410` `front.sliced_file_expired` is the expired message.**
+    The contract's `/events` and `GET /api/slices/<slice>` never answer `410`, but its table of
+    codes says `front.sliced_file_expired` means "the expired message, with Slice again" wherever
+    it comes from. Chosen: keep the branch in `onRefused` and test it, rather than remove it, so
+    that a front server that does answer it shows the right message and not a red failure. The
+    details file now says the contract's routes never answer it. To overrule it, delete the branch
+    in `onRefused` and the sentence in the details file.
+27. **A wait longer than a browser's timer holds.** `setTimeout` fires a wait above
+    2,147,483,647 ms (about 24.8 days) at once. The documents are silent. Chosen: the clock seam
+    itself (`timerClock` in `seams/clock.js`) cuts such a wait into waits it can hold, each counted
+    from the moment the wait began, so that every timer of the page is safe, not only the
+    expiry's. Its handle is now an object rather than the browser's number, which no caller reads.
+    To overrule it, clamp `expires_in_s` in `takeDetails` instead.
+28. **A refused Download's message stays until the view leaves this sliced plate's `done`.** The
+    review read "until the plate changes" as not met, since a changed plate leaves the view `done`
+    with the same slice. That is so, but the Send step is out of reach while the plate is not
+    sliced, so a changed plate reaches it again only through a new slice, which leaves `done` and
+    clears the message. Chosen: keep the code, add the test that walks this path (Layout, move an
+    instance, slice, back to Send: no message), and say so in the details file. A plate changed and
+    changed back to the very same plate configuration is the same sliced plate and keeps the
+    message. To overrule it, clear `refused` in `send-step.js` on the store's `sliced` turning false.
+29. **The readout is busy while the file is read.** `#layer-readout` is a polite live region, so a
+    screen reader heard "Reading the sliced file: N%" at each percent. Chosen: `aria-busy="true"`
+    on it from the moment the file is asked for until the first layer is drawn or the preview
+    fails, so that it announces the layer and not the percentages; the live region is kept for the
+    layer. Not tried with a real screen reader: the test checks the attribute only, and a screen
+    reader that ignores `aria-busy` would still hear the percentages. To overrule it, change
+    `reading` in `panel/preview-step.js`.
+30. **Which of the preview's failures offers Slice again** is now a named function,
+    `offersSliceAgain` in `panel/preview-step.js`, so that a Node test holds it without a browser.
+
 ## Targets missed
 
 1. **Download's notification is not where the mockup puts it.** The mockup draws a grey box

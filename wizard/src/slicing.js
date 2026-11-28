@@ -321,6 +321,8 @@ export function createSlicing({
       else expire(null);
       return;
     }
+    // the contract's stream and asking never answer 410, but its table of codes makes
+    // front.sliced_file_expired the expired message wherever it comes from
     if (r.code === EXPIRED_CODE) { expire(r); return; }
     fail(r);
   }
