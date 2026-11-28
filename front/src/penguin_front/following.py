@@ -178,6 +178,15 @@ class Follower:
             followed = self._jobs.get(job)
             return followed.user_key if followed is not None else None
 
+    def group_of(self, user_key, job):
+        """(True, the group noted beside `job`) while it is followed for `user_key`;
+        otherwise (False, None). For the log's gathering of the slice service's lines."""
+        with self._lock:
+            followed = self._jobs.get(job)
+            if followed is None or followed.user_key != user_key:
+                return False, None
+            return True, followed.group
+
     def states(self):
         """The `state` of the latest report pages see of each slice job followed (None for
         one with no report yet), for the once-a-minute line on how full the server is."""

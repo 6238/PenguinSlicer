@@ -35,6 +35,7 @@ from .context import EXTENSION
 from .cookie import CookieKey
 from .errors import FrontError, PassedReport, error_report
 from .following import Follower
+from .gathering import Gatherer
 from .ratelimit import RateLimit
 from .slice_client import SliceClient
 from .version import is_version, version_at
@@ -84,6 +85,9 @@ def create_app(settings, *, clock, log, version=None, state_bucket=None, slice_c
     # Started by the running server too: what the slice service holds, found again at start.
     ctx["collector"] = Collector(clock=clock, slice_client=ctx["slice"],
                                  bucket=ctx["state_bucket"], follower=ctx["follower"], log=log)
+    # And the gathering of the slice service's log lines, once a minute.
+    ctx["gatherer"] = Gatherer(clock=clock, slice_client=ctx["slice"],
+                               bucket=ctx["state_bucket"], follower=ctx["follower"], log=log)
     for part in (pages, identity, configuration, settings_table, parts, slices, asking,
                  streams):
         part.register(app)
