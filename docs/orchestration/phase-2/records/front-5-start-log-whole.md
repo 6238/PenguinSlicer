@@ -285,13 +285,16 @@ two run together.
 - **The previous release's page and the previous slice service's stand-in against the new
   front server** (item 19): they apply from the second release on. No release has been
   made, so there is no previous page or stand-in to keep.
-- **Item 20, the joined suite:** a later batch, once the wizard's steps exist.
+- **Item 20, the joined suite:** a later batch, once the wizard's steps exist. (Since
+  built in its first half by batch together-1, whose `together/tests/test_log.py` runs this
+  gathering against the slice service's real `GET /log`; see the record of batch
+  [check-last-fixes-servers](check-last-fixes-servers.md).)
 - **The restart table's three rows of phase 5** (a print, a silent daemon, a pairing code):
   with the relay.
 
 The gathering was checked by hand against the real slice service once batch slice-5 built
 its `GET /log` (merged into this branch from `main`; no Orca was needed, since no slice
-was asked for): see "Checked against the real slice service" below.
+was asked for): see "Checked against the real slice service" above.
 
 Read against the phase 2 list from item 1 to item 19 and the records of batches front-0 to
 front-4, nothing else of phase 2 fell between batches: what those records left to items 17
