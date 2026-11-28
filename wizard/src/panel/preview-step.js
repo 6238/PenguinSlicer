@@ -225,6 +225,7 @@ export function createPreviewStep(section, { slicing, store, clock, result = nul
     if (before.step === 'preview') {
       setKey(false); setHelp(false);
       if (shown && shown.ready && shown.view.summary) reportDrawing(shown.view.summary());
+      if (shown && shown.ready && shown.view.endUse) shown.view.endUse();
     }
     draw();
   });

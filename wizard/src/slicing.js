@@ -525,6 +525,14 @@ export function createSlicing({
     const path = `/api/slices/${encodeURIComponent(kept.id)}`;
     const answer = await api.get(path);
     if (mine !== run) return;          // the page decided something newer meanwhile
+    // The plate changed while the asking was answered (a retried asking takes seconds): the answer
+    // is about a plate that is no longer there, which counts as no slice job.
+    const standing = make('probe');
+    if (!standing.configuration || fingerprint(standing.configuration) !== current.fingerprint) {
+      current = null;
+      if (store.get().step === 'send') store.set({ step: 'preview' });
+      return;
+    }
     // The Preview step, unless the page reloaded itself, which reopens on the step it was on.
     const toPreview = () => { if (!quiet && store.get().step !== 'preview') store.set({ step: 'preview' }); };
     const say = (what) => { if (!quiet) panel.notify({ kind: 'info', what, todo: '', key: T.BACK_NOTICE }); };

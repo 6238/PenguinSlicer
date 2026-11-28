@@ -389,6 +389,12 @@ export function createLayerPreview(element, {
       watchers.add(first);
       invalidate();
     },
+    // The use ends (the Preview step left, its summary read): the hold meter stops, as the Layout
+    // view's does, so that no heartbeat beats while the view is out of sight and the summary keeps
+    // this use's longest hold.
+    endUse() {
+      if (holds) holds.stop();
+    },
     // Stops any preparation and drawing, and lets the canvas go.
     destroy() {
       destroyed = true;

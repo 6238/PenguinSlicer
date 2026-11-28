@@ -49,10 +49,12 @@ export function createReloader({ api, clock, store, version, onInput, beforeRelo
     // after every listener of the move between steps has run, so that the step it moved to is among
     // the writes the reload waits for. beforeReload resolving to false means a reload would lose
     // the tab's work (a part the browser refused to store, or a storage refused): the page stays,
-    // and the next moment asks again.
+    // and the next moment asks again. beforeReload failing leaves it unknown whether the work is
+    // stored, which is treated the same: staying on the older version costs the user nothing, a
+    // lost plate costs the work.
     Promise.resolve().then(() => beforeReload()).then(
       (go) => { if (go === false) reloading = false; else reload(); },
-      () => reload(),
+      () => { reloading = false; },
     );
   }
 

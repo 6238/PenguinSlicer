@@ -1465,7 +1465,9 @@ the first row that applies decides.
 The page tells the two "unknown" rows apart by the time it kept when it submitted, not by
 anything the front server says. A plate with a print is held by the first row for longer
 than two hours from its slice, because a print keeps its sliced file until two hours
-after the print ends.
+after the print ends. The front server's answer can take seconds when the connection is
+poor; a plate the user changes while it is awaited counts as one with no slice yet, so
+an answer that arrives late never shows the changed plate as sliced.
 
 A stored plate therefore outlives its sliced file: the sliced file lasts two hours and
 the plate 12 hours from its last use. The last row departs from the mockup, in which a
@@ -1492,7 +1494,8 @@ The page never reloads itself when the reload would lose work. A part whose byte
 browser refused to store lives only in the page's memory, as its amber line says; when
 the browser refuses its storage altogether the whole plate lives there; and when the
 browser refused the last change to the plate, that change lives only there. While any of
-these is so, the page stays on its version, however many moments come. It reloads at the
+these is so, the page stays on its version, however many moments come; so it does when it
+cannot tell whether the work is stored. It reloads at the
 first moment after the work is stored again, for example once the unsaved part is removed
 or a new plate is begun. A moment is still a move between steps or 120 seconds after the
 user next interacts with the page, so a page that is left untouched once its work is

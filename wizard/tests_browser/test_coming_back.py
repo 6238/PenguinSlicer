@@ -4,7 +4,8 @@ wizard reports about itself"): a refresh of a tab whose plate was sliced opens o
 with "Back where you were"; a page that sees a newer version reloads itself at a move between
 steps, on the step it moved to, and says nothing; an uncaught error and a rejected promise nobody
 handled are each sent as a page_failed report; leaving the Layout step after a drag, and the
-Preview step after the layer preview drew, each sends one drawing summary with no part name.
+Preview step after the layer preview drew, each sends one drawing summary with no part name; a
+second use of either view is measured afresh.
 
 The Layout view's test is on the real clock, since the view draws on the browser's animation
 frames; every wait is for an event, never a duration."""
@@ -31,10 +32,16 @@ def drawing_answered(response):
     return response.url.endswith("/api/reports/drawing")
 
 
-def drive_layers(w):
+def drive_layers(w, jump_ms=0):
     """Drives the layer preview's bar down and up on the fake clock, so that frames are drawn while
-    the view moves."""
-    w.run("window.__driven = false; wizard.previewStep.view().drive('layers', 6).then(() => { window.__driven = true; });")
+    the view moves. With `jump_ms`, the clock jumps that far once the drive has begun, firing each
+    timer due at most once, as a thread held that long would: one interval between frames drawn
+    while moving, and one gap between the hold meter's beats, of that length."""
+    w.run("window.__driven = false; wizard.previewStep.view().drive('layers', 12).then(() => { window.__driven = true; });")
+    if jump_ms:
+        w.page.clock.run_for(50)
+        assert not w.run("return window.__driven;"), "the drive ended before the jump"
+        w.page.clock.fast_forward(jump_ms)
     for _ in range(400):
         if w.run("return window.__driven;"):
             break
@@ -190,13 +197,15 @@ def test_leaving_the_preview_step_after_the_layer_preview_drew_sends_its_drawing
 
 
 AWAY_MS = 60_000
+JUMP_MS = 1_500
 
 
 def test_a_second_use_of_the_layer_preview_is_timed_from_its_own_opening_and_measured_afresh(page, front_server):
     w = open_preview(page, front_server)
     w.until("return wizard.slicing.model().kind === 'done';")
     until_drawn(w)
-    drive_layers(w)
+    # the first use moves through one long interval, which is its worst frame and its longest hold
+    drive_layers(w, jump_ms=JUMP_MS)
     with w.page.expect_response(drawing_answered):
         w.page.click("#stepbar li[data-step=layout]")
     w.until("return wizard.store.get().step === 'layout';")
@@ -216,10 +225,33 @@ def test_a_second_use_of_the_layer_preview_is_timed_from_its_own_opening_and_mea
     [(first, _), (second, _)] = drawing_reports(front_server)
     assert first["view"] == second["view"] == "preview"
     assert 0 <= second["first_layer_ms"] < AWAY_MS, ("timed from the second opening", second["first_layer_ms"])
+    # a figure carried over from the first use would put the first use's jump in the second's
+    assert first["fps_worst"] < 1 and first["longest_hold_ms"] >= JUMP_MS, first
+    assert second["fps_worst"] > first["fps_worst"], (first, second)
+    assert second["longest_hold_ms"] < JUMP_MS, (first, second)
+    assert w.problems == []
+
+
+def test_leaving_the_preview_step_stops_the_layer_preview_measuring_its_holds(page, front_server):
+    # as the Layout view's, the layer preview's heartbeat beats only while its step is shown
+    w = open_preview(page, front_server)
+    w.until("return wizard.slicing.model().kind === 'done';")
+    until_drawn(w)
+    drive_layers(w)
+    with w.page.expect_response(drawing_answered):
+        w.page.click("#stepbar li[data-step=layout]")
+    w.until("return wizard.store.get().step === 'layout';")
+    left = w.run("return wizard.previewStep.view().summary().longest_hold_ms;")
+    # a thread held while the view is not in use is no hold of the view's
+    w.page.clock.fast_forward(JUMP_MS)
+    w.page.clock.run_for(50)
+    assert w.run("return wizard.previewStep.view().summary().longest_hold_ms;") == left
+    assert left < JUMP_MS
     assert w.problems == []
 
 
 PAUSE_FRAMES = 120
+HOLD_MS = 1_000
 
 
 def drag_across(w, dx, pause=False):
@@ -244,6 +276,9 @@ def drag_across(w, dx, pause=False):
 def test_a_second_use_of_the_layout_view_measures_its_figures_afresh(page, front_server):
     w = open_layout(page, front_server, [spacer(), bracket()])
     drag_across(w, 30, pause=True)
+    # the first use holds the main thread once, for HOLD_MS of the page's clock (a long task made
+    # on purpose, the stimulus measured, not a wait for something to happen)
+    w.run("const t = performance.now(); while (performance.now() - t < arg) { /* held */ }", HOLD_MS)
     with w.page.expect_response(drawing_answered):
         w.page.click("#stepbar li[data-step=parts]")
     w.until("return wizard.store.get().step === 'parts';")
@@ -259,4 +294,7 @@ def test_a_second_use_of_the_layout_view_measures_its_figures_afresh(page, front
     assert first["view"] == second["view"] == "layout"
     # a figure carried over from the first use would put the first use's pause in the second's worst
     assert second["fps_worst"] > first["fps_worst"], (first, second)
+    # and the first use's hold carried over would be the second's longest
+    assert first["longest_hold_ms"] >= HOLD_MS, first
+    assert second["longest_hold_ms"] < first["longest_hold_ms"], (first, second)
     assert w.problems == []

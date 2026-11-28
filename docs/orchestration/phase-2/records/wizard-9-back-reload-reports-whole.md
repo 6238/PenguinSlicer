@@ -241,6 +241,78 @@ mutation and pass without it.
 
 Declined: none.
 
+### The third review's findings (pull request #47)
+
+Each was checked against the code first; each new test was seen to fail under the reviewer's
+mutation (or before its fix) and pass without it.
+
+- Blocking 1, the layer preview's second use not measured afresh: real. In
+  `test_a_second_use_of_the_layer_preview_is_timed_from_its_own_opening_and_measured_afresh` the
+  first use's drive now jumps Playwright's fake clock by 1,500 ms once it has begun
+  (`page.clock.fast_forward`, which fires each due timer at most once, as a thread held that long
+  would): one interval of 1.5 s between frames drawn while moving and one gap of 1.5 s between the
+  heartbeat's beats. The test asserts the first use's `fps_worst` under 1 and `longest_hold_ms` at
+  least 1,500, and the second's `fps_worst` above the first's and `longest_hold_ms` under 1,500.
+  With `stats = createFrameStats();` deleted the second's `fps_worst` was the first's 0.7; with
+  `holds.start()` deleted the second's `longest_hold_ms` was 1,500. The drive is now 12 steps, so
+  that it is still running after the first 50 ms; the test checks that it is.
+- Blocking 2, the Layout view's second use carrying the first's longest hold: real. The Layout test
+  now holds the main thread once in the first use, a busy loop of 1,000 ms on the page's real clock
+  (`HOLD_MS`), and asserts the first summary's `longest_hold_ms` at least 1,000 and the second's
+  below the first's. With `holds.start()` deleted from `beginUse` the first use measures nothing
+  (0 ms) and the test fails there; the second would have carried the first's figure. The loop is
+  the stimulus being measured, not a wait for something to happen (decision 28).
+- Blocking 3, coming back on the Send step to an expired slice, then the Preview step: real. The
+  Send case of the expired test in `tests/coming-back.test.js` now moves to the Preview step with a
+  submission scripted to succeed, and asserts one submission and the expired message. With
+  `|| stored === 'send'` removed it saw 2 submissions.
+- Minor 1, a rejected `beforeReload` reloading anyway: fixed, decision 26, with a test in
+  `tests/reloading.test.js`.
+- Minor 2, the asking's late answer: fixed, decision 27, with two tests in
+  `tests/coming-back.test.js`: a slice decided while the asking is held (deleting
+  `if (mine !== run) return;` fails it, the old slice shown as done) and a plate changed while it
+  is held (failed before the fix: the user moved to the Preview step, the changed plate shown as
+  sliced).
+- Minor 3, the Layout test's pause on the real clock: recorded, decision 28.
+- Minor 4: the space added to the test's name.
+- Minor 5, the layer preview's hold meter never stopped on leaving: fixed. The layer preview has
+  `endUse()`, which stops its heartbeat, and the Preview step calls it after reading the summary
+  when the user leaves, as the Layout step does. A Chromium test,
+  `test_leaving_the_preview_step_stops_the_layer_preview_measuring_its_holds`, leaves the step,
+  jumps the clock by 1,500 ms, and sees the longest hold unchanged (it was 1,500 before the fix).
+  The details' API paragraph and "What the wizard reports about itself" say so.
+
+Declined: none.
+
+### Decisions settled at the third review
+
+26. **A `beforeReload` that rejects.** The documents were silent. Chosen: treated as one resolving
+    to `false`: no reload, no mark, and the next moment asks again. The reason: a rejection leaves
+    it unknown whether the tab's work is stored, and staying on the older version costs the user
+    nothing, while a lost plate costs the work. Nothing reports the rejection: the reloader has no
+    report seam and `markSelfReload` has no known way to reject. To overrule: reload in the
+    rejection branch of `go()` in `wizard/src/reloading.js` and change the test.
+27. **An answer to coming back's asking that arrives after the plate changed.** The table is silent
+    on a plate changed while the asking is awaited (a retried asking takes seconds). Chosen: once
+    the answer arrives, the plate is built again and its fingerprint compared with the stored
+    slice's; when it differs the answer is dropped and the plate counts as one with no slice job
+    (the user stays where they are, the Send step going to the Preview step), so entering the
+    Preview step slices the plate as it stands. The reason: a late `done` would otherwise move the
+    user to the Preview step and show a plate that is no longer the one sliced as sliced, with Send
+    enabled. The guide and the details say so. To overrule: remove the check after the asking in
+    `comeBack` in `wizard/src/slicing.js`.
+28. **Durations on the real clock in the Layout view's second-use test.** The quality bar forbids
+    waiting a number of seconds to see whether something has happened. The Layout view draws on the
+    browser's animation frames, which a paused fake clock never runs, so its test is on the real
+    clock, and two things there take real time: the first drag's pause of 120 animation frames
+    (about 2 s at 60 Hz, an event counted, never a duration waited; the first use's low worst frame
+    rate depends on it lasting longer than any frame of the second use's drag), and the 1,000 ms
+    busy loop that holds the main thread on purpose (the stimulus, not a wait). Neither waits for an
+    outcome. The comparison could fail only if a frame of the second drag took longer than the
+    pause, or a hold of the second use reached the first's 1,000 ms; neither came near it in the runs
+    here. To overrule: give the Layout view's frame seam a fake that a test moves, as the layer
+    preview's has.
+
 ## Targets missed
 
 - **The main thread held over 250 ms at the start of a drag at 150 instances** of the real mix:
@@ -253,6 +325,9 @@ Declined: none.
   and 0.34 s in two runs of five (wizard-7's record); the page's memory 992 to 1,016 MiB against
   1,024 (wizard-7); the selection line counting an instance dragged off the plate as on it
   (wizard-5b, declined there).
+- **The third review's fixes were merged without a further review:** that review was the last
+  round, so the fixes above (decisions 26 to 28 and the tests of the third review's findings) were
+  checked only by the suites and the mutations named there.
 
 ## Not done
 

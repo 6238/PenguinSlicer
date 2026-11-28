@@ -214,6 +214,26 @@ test('a move between steps, once the work is safe, reloads after a reload was he
   assert.deepEqual(reloads, [1000]);
 });
 
+test('a reload whose check of the tab\'s work fails is not made, and a later moment whose check passes makes it', async () => {
+  const p = page();
+  let fails = true;
+  const reloads = [];
+  const store = createStore();
+  createReloader({
+    api: p.api, clock: p.clock, store, version: OWN, onInput: () => {},
+    beforeReload: async () => { if (fails) throw new Error('the storage could not be read'); return true; },
+    reload: () => reloads.push(p.clock.elapsed),
+  });
+  await p.api.get('/api/me');
+  store.set({ step: 'layout' });
+  await p.clock.advance(1000);
+  assert.deepEqual(reloads, [], 'unknown whether the work is stored: no reload, as for work that would be lost');
+  fails = false;
+  store.set({ step: 'settings' });
+  await p.clock.advance(0);
+  assert.deepEqual(reloads, [1000]);
+});
+
 test('the page reloads once, however many moments come while the reload is being made', async () => {
   const p = page();
   let finish;

@@ -137,6 +137,15 @@ for (const step of ['preview', 'send']) {
     assert.deepEqual(page.storage.plate().instances, plate.instances);
     assert.deepEqual(page.storage.plate().settings, plate.settings);
     assert.deepEqual(back.notices, []);
+    if (step === 'send') {
+      // the user then moves back to the Preview step: still nothing sliced by itself
+      page.server.script('POST', '/api/slices', steps.answer(202, accepted()));
+      feedStream(page);
+      back.store.set({ step: 'preview' });
+      await page.clock.advance(0);
+      assert.equal(submitted(page), 1, 'entering the Preview step after coming back on the Send step does not slice by itself');
+      assert.equal(back.view().kind, 'expired');
+    }
   });
 }
 
@@ -216,7 +225,7 @@ test('a progress report of this slice job in a state the contract does not name:
   assert.equal(submitted(page), 1, 'nothing submitted again');
 });
 
-test('a progress report of another slice job:the wizard\'s own failure, never that job\'s result shown as this plate\'s', async () => {
+test('a progress report of another slice job: the wizard\'s own failure, never that job\'s result shown as this plate\'s', async () => {
   const page = await sliced();
   const back = await comeBack(page, { answer: progressAnswer({ ...doneReport(), job: 'another-job-0000' }) });
   assert.equal(back.store.get().step, 'preview');
@@ -264,6 +273,40 @@ test('a plate changed since its stored slice counts as one with no slice job: no
   const back = await comeBack(page);
   assert.equal(back.store.get().step, 'layout');
   assert.equal(back.asked(), 0);
+});
+
+test('a plate changed while the asking is answered: the late answer shows nothing as sliced, and entering the Preview step slices the plate as it stands', async () => {
+  const page = await sliced();
+  const plate = page.storage.plate();
+  const back = await comeBack(page, { answer: steps.hold() });
+  assert.equal(back.asked(), 1);
+  await page.storage.update({ instances: plate.instances.map((i, n) => (n === 0 ? { ...i, x: 99 } : i)) });
+  page.server.made('GET', ASK).at(-1).held.release(progressAnswer(doneReport()));
+  await page.clock.advance(0);
+  assert.equal(back.store.get().step, 'layout', 'the late answer moves the user nowhere');
+  assert.notEqual(back.view().kind, 'done');
+  assert.equal(back.store.get().sliced, false);
+  assert.deepEqual(back.notices, []);
+  page.server.script('POST', '/api/slices', steps.answer(202, accepted()));
+  feedStream(page);
+  back.store.set({ step: 'preview' });
+  await page.clock.advance(0);
+  assert.equal(submitted(page), 2, 'the changed plate is sliced');
+});
+
+test('a slice decided while the asking is answered: the late answer is dropped, the newer slice kept', async () => {
+  const page = await sliced();
+  const back = await comeBack(page, { answer: steps.hold() });
+  page.server.script('POST', '/api/slices', steps.answer(202, accepted()));
+  feedStream(page);
+  back.slicing.sliceAgain();
+  await page.clock.advance(0);
+  assert.equal(submitted(page), 2);
+  page.server.made('GET', ASK).at(-1).held.release(progressAnswer(doneReport()));
+  await page.clock.advance(0);
+  assert.equal(back.view().kind, 'card', 'the newer slice, not the old one shown as done');
+  assert.equal(back.store.get().step, 'layout');
+  assert.deepEqual(back.notices, []);
 });
 
 test('a page stored on the Send step with no slice of the plate as it stands opens the Preview step, which slices', async () => {
