@@ -101,11 +101,17 @@ def serve_with(tmp_path, monkeypatch, drive):
             failure.append(exc)
             os.kill(os.getpid(), signal.SIGTERM)
             os.kill(os.getpid(), signal.SIGTERM)
-    thread = threading.Thread(target=driver, daemon=True)
-    thread.start()
-    code = cli.main(["serve", "--work", str(tmp_path / "work"), "--port", "0"], stderr=log)
-    returned.set()
-    thread.join(FAILSAFE_S)
+    # A stop that arrives after serve has returned (from a driver whose serve ended too soon)
+    # must not end the test's process: outside serve, SIGTERM does nothing.
+    previous = signal.signal(signal.SIGTERM, lambda _signum, _frame: None)
+    try:
+        thread = threading.Thread(target=driver, daemon=True)
+        thread.start()
+        code = cli.main(["serve", "--work", str(tmp_path / "work"), "--port", "0"], stderr=log)
+        returned.set()
+        thread.join(FAILSAFE_S)
+    finally:
+        signal.signal(signal.SIGTERM, previous)
     return code, log, failure[0] if failure else None
 
 

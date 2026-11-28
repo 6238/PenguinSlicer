@@ -284,21 +284,9 @@ What it leaves to later items: nothing.
 plate now through `POST /slices` after its parts are uploaded, exactly as it is, its
 `enable_support` under Orca's own name.
 
-**18. The slice service's half of each row of the restart table**
-([What a restart does](README.md#what-a-restart-does),
-[the architecture](../docs/architecture.md#keeping-it-true)). Each row of the table "The
-slice container restarts" has a test in this fast suite of what the slice service itself
-does in it, through its HTTP interface, with the fake Orca and a fake clock, putting the
-restart and the requests in an exact order and waiting on events: a new slice service
-process starts with an empty part store and no slice jobs, so a request about an earlier
-slice job answers `slice.unknown_job`, the list of slice jobs is empty and a plate
-configuration naming earlier parts answers `slice.part_missing` listing every one; a waiting
-slice job at a stop ends `cancelled` with `cancel_reason` `shutdown`; a submission during a
-stop answers `slice.stopping`; a slice that had finished is no concern of the slice service
-once its file was deleted. What the front server and the page do in each row is asserted in
-their own suites against their stand-ins, and the whole row, all three together, in the
-joined suite ([the architecture](../docs/architecture.md#keeping-it-true)). Replaces:
-nothing.
+**18. The slice service's half of each row of the restart table.** Built: see
+[The slice service's half of each row of the restart table](#the-slice-services-half-of-each-row-of-the-restart-table).
+What it leaves to later items: nothing.
 
 ### Phase 3: hosted on Railway
 
@@ -575,6 +563,28 @@ and exits only after its sliced file is deleted; a waiting slice job ends `cance
 `shutdown`; a submission after the stop gets `slice.stopping`; a repeat gets its slice job; a
 second stop ends the running slice job with `shutdown` once Orca is gone; a second stop while
 a done slice job's sliced file is uncollected makes `serve` exit at once.
+
+### The slice service's half of each row of the restart table
+
+Item 18 of [Phase 2](#phase-2-one-machine), built
+([What a restart does](README.md#what-a-restart-does),
+[the architecture](../docs/architecture.md#keeping-it-true)). `tests/test_restarts.py` holds a
+test for each row of the table "The slice container restarts" of
+[the architecture](../docs/architecture.md#what-a-restart-does), of what the slice service
+itself does in it, through its HTTP interface, with the fake Orca (mode `gate` for a slice
+that must still be running at the restart) and a clock of the test's. A restart there is the
+old slice service process ended (its pool shut down, which ends its slice jobs and its Orca)
+and a new one started on the same work folder, with its own pool, part store and log:
+
+| Row | What the slice service does, as the test asserts it |
+|---|---|
+| A slice was waiting or running | The new process answers the earlier slice job `404` `slice.unknown_job` at `GET /slices/<job>` and its progress stream, lists no slice job, holds no part, and answers the page's new submission of the same plate `422` `slice.part_missing` listing every part (`refresh_parts`); once the parts are uploaded again it accepts the plate and its progress starts again, to `done`. A slice still waiting when the old process is asked to stop ends `cancelled` with `cancel_reason` `shutdown`, with no error report, while the running one goes on to `done` |
+| A user submits a plate while the slice service is stopping | `503` `slice.stopping`, retryable, at every attempt; nothing is started or remembered, so the new process takes the same `submission_id`, lists the missing parts and accepts the plate once they are back |
+| A slice had finished | Once the front server has fetched the sliced file and deleted the slice service's copy, a stop finds nothing to wait for, and the new process knows nothing of the slice job; its log answers a new `process`, so the front server starts again from 0 |
+| A print was being sent or was printing | Nothing of the slice service's: printer delivery does not pass through it |
+
+What the front server and the page do in each row is asserted in their own suites against
+their stand-ins, and the whole row, all three together, in the joined suite.
 
 ## The HTTP interface
 

@@ -1414,15 +1414,14 @@ hostile inputs are tried.
   submissions meanwhile with an answer of its own, and stopping the running slice too on a
   second request to stop;
 - its log lines kept for the front server to collect, each carrying the component's name,
-  the time and the user key.
+  the time and the user key;
+- a test of its own part in each row of the architecture's table of what a restart of the
+  slice container does.
+
+With that, everything phase 2 asks of the slice service is built.
 
 **Built today and left as it is, unused:** the request that cancels a slice job. The
 front server never sends it.
-
-**Phase 2, on one machine, adds besides:**
-
-- a test for each row of the architecture's table of what a restart of the slice container
-  does.
 
 **Phase 3, hosted on Railway, adds:**
 
