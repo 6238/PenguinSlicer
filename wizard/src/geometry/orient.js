@@ -5,7 +5,7 @@
 // being better: the area hanging over air divided by the area touching, plus a small charge for
 // height, plus a large penalty when almost nothing touches. PenguinSlicer's own small score.
 import {
-  CONTACT_GAP_MM, HEIGHT_CHARGE_PER_MM, MIN_CONTACT_MM2, NO_CONTACT_PENALTY, OVERHANG_DEG,
+  AS_MODELLED_MARGIN, CONTACT_GAP_MM, HEIGHT_CHARGE_PER_MM, MIN_CONTACT_MM2, NO_CONTACT_PENALTY, OVERHANG_DEG,
 } from './constants.js';
 import { planeBasis } from './faces.js';
 import { containsPoint, convexHull2d } from './outline.js';
@@ -80,6 +80,9 @@ export function autoOrient(part) {
   }
   const least = Math.min(...counted.map((c) => c.cost));
   const best = counted.filter((c) => c.cost <= least + TIE);
-  const choice = best.find((c) => c.modelled) || best[0];
+  // The part as modelled is kept when it is nearly as good: a turn for a few per cent of the
+  // cost (two ends of a hub cut a little differently) only surprises the user.
+  const modelled = counted.find((c) => c.modelled && c.cost <= least * (1 + AS_MODELLED_MARGIN) + TIE);
+  const choice = modelled || best[0];
   return { ...choice, counted: counted.length, candidates };
 }

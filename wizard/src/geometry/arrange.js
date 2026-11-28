@@ -7,18 +7,18 @@
 //   - The pile packer takes them largest first and tries every free spot on a PILE_GRID_MM grid,
 //     scored by how small and square the pile stays and how near the plate's middle it is,
 //     refines the best at PILE_REFINE_MM, and centres the pile.
-// Whether a spot is free is read from a map of the plate in 1 mm squares, each marked when an
-// outline grown by half the spacing (and a little slack) touches it. Two outlines whose grown
-// shapes share no square are at least the spacing apart, so a plate Arrange makes always passes
-// the placement check; it may leave up to a millimetre or two more than the spacing.
-import { ARRANGE_SLACK_MM, PILE_GRID_MM, PILE_REFINE_MM } from './constants.js';
+// Whether a spot is free is read from a map of the plate in squares ARRANGE_CELL_MM across, each
+// marked when an outline grown by half the spacing (and a little slack) touches it. Two outlines
+// whose grown shapes share no square are at least the spacing apart, so a plate Arrange makes
+// always passes the placement check; it may leave up to about a millimetre more than the spacing.
+import { ARRANGE_CELL_MM, ARRANGE_SLACK_MM, PILE_GRID_MM, PILE_REFINE_MM } from './constants.js';
 import { area as outlineArea, bounds, grown } from './outline.js';
 import { turnedFootprint } from './placement.js';
 
 const BESIDE_GAP_MM = 20;
 
-// The rows of 1 mm squares that the convex `outline` (about its centre at a whole-millimetre
-// spot) touches: [row, first column, last column], relative to the spot.
+// The rows of the map's squares that the convex `outline` (in squares, about its centre at a
+// spot on a corner of the squares) touches: [row, first column, last column], relative to the spot.
 function spans(outline) {
   const [, y0, , y1] = bounds(outline);
   const out = [];
@@ -76,6 +76,11 @@ class PlateMap {
   }
 }
 
+// Below, every length is in squares of the map, ARRANGE_CELL_MM across.
+const K = 1 / ARRANGE_CELL_MM;
+const GRID = Math.round(PILE_GRID_MM * K);
+const REFINE = Math.round(PILE_REFINE_MM * K);
+
 function prepare(plateConfiguration, pointsByPart, plate) {
   const cache = new Map();
   const r = (plate.spacing + ARRANGE_SLACK_MM) / 2;
@@ -83,32 +88,30 @@ function prepare(plateConfiguration, pointsByPart, plate) {
   const items = plateConfiguration.instances.map((instance, index) => {
     const fp = turnedFootprint(instance, pointsByPart, cache);
     let mask = masks.get(fp);
-    if (!mask) { mask = spans(grown(fp.coarse, r)); masks.set(fp, mask); }
-    return { index, fp, mask, area: outlineArea(fp.hull) };
+    if (!mask) { mask = spans(grown(fp.coarse, r).map(([x, y]) => [x * K, y * K])); masks.set(fp, mask); }
+    return { index, fp, mask, bounds: fp.bounds.map((v) => v * K), area: outlineArea(fp.hull) };
   });
   // Largest first, the plate's order breaking a tie.
   return items.sort((a, b) => b.area - a.area || a.index - b.index);
 }
 
-// The area the outlines' bounds may use: the printable area less the margin. A spot (i, j) puts
-// an outline's centre at (x0 + i, y0 + j).
+// The area the outlines' bounds may use: the printable area less the margin, `w` by `h`
+// squares. A spot (i, j) puts an outline's centre at (x0 + i, y0 + j) squares.
 function frame(plate) {
   const x0 = plate.min[0] + plate.margin, y0 = plate.min[1] + plate.margin;
   const x1 = plate.max[0] - plate.margin, y1 = plate.max[1] - plate.margin;
-  return { x0, y0, x1, y1, w: Math.ceil(x1 - x0), h: Math.ceil(y1 - y0) };
+  const width = (x1 - x0) * K, depth = (y1 - y0) * K;
+  return { x0, y0, width, depth, w: Math.ceil(width), h: Math.ceil(depth) };
 }
 
-// The whole-millimetre spots at which the item's outline stays inside the frame.
+// The spots at which the item's outline stays inside the frame.
 function range(item, f) {
-  const [bx0, by0, bx1, by1] = item.fp.bounds;
-  return {
-    i0: Math.ceil(-bx0), i1: Math.floor(f.x1 - f.x0 - bx1),
-    j0: Math.ceil(-by0), j1: Math.floor(f.y1 - f.y0 - by1),
-  };
+  const [bx0, by0, bx1, by1] = item.bounds;
+  return { i0: Math.ceil(-bx0), i1: Math.floor(f.width - bx1), j0: Math.ceil(-by0), j1: Math.floor(f.depth - by1) };
 }
 
 function boxOf(item, i, j) {
-  const [bx0, by0, bx1, by1] = item.fp.bounds;
+  const [bx0, by0, bx1, by1] = item.bounds;
   return [bx0 + i, by0 + j, bx1 + i, by1 + j];
 }
 
@@ -121,18 +124,18 @@ function shelf(items, f) {
   for (const item of items) {
     const { i0, i1, j0, j1 } = range(item, f);
     let found = null;
-    for (let j = j0; j <= j1 && !found; j += PILE_GRID_MM) {
-      for (let i = i0; i <= i1; i += PILE_GRID_MM) {
+    for (let j = j0; j <= j1 && !found; j += GRID) {
+      for (let i = i0; i <= i1; i += GRID) {
         if (map.free(item.mask, i, j)) { found = [i, j]; break; }
       }
     }
     if (!found) continue;
-    // Slide it towards the front-left corner a millimetre at a time while the spot stays free.
+    // Slide it towards the front-left corner a square at a time while the spot stays free.
     let [i, j] = found;
     for (let moved = true; moved;) {
       moved = false;
-      while (j - PILE_REFINE_MM >= j0 && map.free(item.mask, i, j - PILE_REFINE_MM)) { j -= PILE_REFINE_MM; moved = true; }
-      while (i - PILE_REFINE_MM >= i0 && map.free(item.mask, i - PILE_REFINE_MM, j)) { i -= PILE_REFINE_MM; moved = true; }
+      while (j - 1 >= j0 && map.free(item.mask, i, j - 1)) { j -= 1; moved = true; }
+      while (i - 1 >= i0 && map.free(item.mask, i - 1, j)) { i -= 1; moved = true; }
     }
     map.take(item.mask, i, j);
     spots.set(item.index, [i, j]);
@@ -143,7 +146,7 @@ function shelf(items, f) {
 
 function pileScore(box, f) {
   const w = box[2] - box[0], h = box[3] - box[1];
-  const dx = (box[0] + box[2]) / 2 - (f.x1 - f.x0) / 2, dy = (box[1] + box[3]) / 2 - (f.y1 - f.y0) / 2;
+  const dx = (box[0] + box[2]) / 2 - f.width / 2, dy = (box[1] + box[3]) / 2 - f.depth / 2;
   return w * h + 0.5 * (w - h) * (w - h) + 0.25 * (dx * dx + dy * dy);
 }
 
@@ -151,7 +154,7 @@ function pileOf(items, f) {
   const map = new PlateMap(f.w, f.h);
   const spots = new Map();
   let pile = null;
-  const midI = Math.round((f.x1 - f.x0) / 2), midJ = Math.round((f.y1 - f.y0) / 2);
+  const midI = Math.round(f.width / 2), midJ = Math.round(f.depth / 2);
   for (const item of items) {
     const { i0, i1, j0, j1 } = range(item, f);
     if (i0 > i1 || j0 > j1) continue;
@@ -165,22 +168,20 @@ function pileOf(items, f) {
       consider(Math.min(i1, Math.max(i0, midI)), Math.min(j1, Math.max(j0, midJ)));
     } else {
       // Every grid spot near the pile first; the whole plate only when none of those is free.
-      const [bx0, by0, bx1, by1] = item.fp.bounds;
-      const reach = PILE_GRID_MM;
-      const window = [pile[0] - bx1 - reach, pile[1] - by1 - reach, pile[2] - bx0 + reach, pile[3] - by0 + reach];
+      const [bx0, by0, bx1, by1] = item.bounds;
+      const window = [pile[0] - bx1 - GRID, pile[1] - by1 - GRID, pile[2] - bx0 + GRID, pile[3] - by0 + GRID];
       const scan = (a0, a1, b0, b1) => {
-        const s0 = Math.ceil(a0 / PILE_GRID_MM) * PILE_GRID_MM;
-        const t0 = Math.ceil(b0 / PILE_GRID_MM) * PILE_GRID_MM;
-        for (let j = t0; j <= b1; j += PILE_GRID_MM) for (let i = s0; i <= a1; i += PILE_GRID_MM) consider(i, j);
+        const s0 = Math.ceil(a0 / GRID) * GRID;
+        const t0 = Math.ceil(b0 / GRID) * GRID;
+        for (let j = t0; j <= b1; j += GRID) for (let i = s0; i <= a1; i += GRID) consider(i, j);
       };
       scan(Math.max(i0, window[0]), Math.min(i1, window[2]), Math.max(j0, window[1]), Math.min(j1, window[3]));
       if (!best) scan(i0, i1, j0, j1);
     }
     if (!best) continue;
     const [bi, bj] = best;
-    const reachRefine = PILE_GRID_MM - PILE_REFINE_MM;
-    for (let dj = -reachRefine; dj <= reachRefine; dj += PILE_REFINE_MM) {
-      for (let di = -reachRefine; di <= reachRefine; di += PILE_REFINE_MM) consider(bi + di, bj + dj);
+    for (let dj = -(GRID - REFINE); dj <= GRID - REFINE; dj += REFINE) {
+      for (let di = -(GRID - REFINE); di <= GRID - REFINE; di += REFINE) consider(bi + di, bj + dj);
     }
     const [i, j] = best;
     map.take(item.mask, i, j);
@@ -190,7 +191,7 @@ function pileOf(items, f) {
   return { spots, pile };
 }
 
-const pileArea = (pile) => (pile ? (pile[2] - pile[0]) * (pile[3] - pile[1]) : 0);
+const pileArea = (pile) => (pile ? ((pile[2] - pile[0]) * (pile[3] - pile[1])) / (K * K) : 0);
 const round3 = (v) => Math.round(v * 1000) / 1000;
 
 // The plate configuration with every instance's `x` and `y` set by Arrange, nothing else of it
@@ -206,8 +207,8 @@ export function arrangePlate(plateConfiguration, pointsByPart, plate) {
   // The pile, centred on the plate's middle.
   let dx = 0, dy = 0;
   if (kept.pile) {
-    dx = (f.x0 + f.x1) / 2 - (f.x0 + (kept.pile[0] + kept.pile[2]) / 2);
-    dy = (f.y0 + f.y1) / 2 - (f.y0 + (kept.pile[1] + kept.pile[3]) / 2);
+    dx = (f.width - kept.pile[0] - kept.pile[2]) / (2 * K);
+    dy = (f.depth - kept.pile[1] - kept.pile[3]) / (2 * K);
   }
   const instances = plateConfiguration.instances.map((instance) => ({ ...instance }));
   const placed = instances.map(() => false);
@@ -216,8 +217,8 @@ export function arrangePlate(plateConfiguration, pointsByPart, plate) {
     const spot = kept.spots.get(item.index);
     const instance = instances[item.index];
     if (spot) {
-      instance.x = round3(f.x0 + spot[0] + dx);
-      instance.y = round3(f.y0 + spot[1] + dy);
+      instance.x = round3(f.x0 + spot[0] / K + dx);
+      instance.y = round3(f.y0 + spot[1] / K + dy);
       placed[item.index] = true;
     } else {
       const [bx0, by0, , by1] = item.fp.bounds;

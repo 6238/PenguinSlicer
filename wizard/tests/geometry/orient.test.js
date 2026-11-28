@@ -48,6 +48,23 @@ test('a face it would tip over from is never chosen, and is marked as unstable',
   assert.ok(choice.stable);
 });
 
+test('a part lying as modelled within 5% of its best cost is left as modelled, not turned for nothing', () => {
+  // A block 60 x 60 x 50 whose two bottom edges are chamfered at 30 degrees: as modelled the
+  // chamfers hang over air, upside down nothing does.
+  const chamfered = (w) => {
+    const h = w * Math.tan(Math.PI / 6);
+    return turned(prism([[w, 0], [60 - w, 0], [60, h], [60, 50], [0, 50], [0, h]], 0, 60), rotationX(90));
+  };
+  const part = analysePart(chamfered(0.26));
+  const choice = autoOrient(part);
+  const best = Math.min(...choice.candidates.filter((c) => c.stable && c.contact >= 25).map((c) => c.cost));
+  const modelled = choice.candidates.find((c) => c.modelled);
+  assert.ok(best < modelled.cost && modelled.cost <= 1.05 * best, `best ${best}, as modelled ${modelled.cost}`);
+  assert.equal(choice.modelled, true);
+  // Beyond 5% the better way is taken.
+  assert.equal(autoOrient(analysePart(chamfered(3))).modelled, false);
+});
+
 test('a part with no candidate, as round as a ball, stays as modelled', () => {
   const tris = [];
   const rows = 24, cols = 48, r = 15;

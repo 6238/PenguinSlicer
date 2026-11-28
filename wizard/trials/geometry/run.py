@@ -57,11 +57,11 @@ REAL = [
     ("pulley-v3", "Pulley v3"),
 ]
 MADE = [("hub-150k", "Hub 150k"), ("hex-spacer", "Hex Spacer")]
-# The mix of real parts for Arrange at 150 instances: many of the small parts, a few of the
-# large, as a plate of a robot's parts might be.
-MIX = {"clamp-plate-inner": 20, "elevator-block-bottom-inner": 2, "elevator-block-carriage": 2,
-       "elevator-block-top": 2, "elevator-top-inner": 4, "inner-spacer": 60, "outer-clamp": 20,
-       "pulley-v3": 40}
+# The mix of real parts for Arrange at 150 instances: every real part, the large ones once or
+# twice and the one small part, the pulley, for the rest, so that the plate is nearly full.
+MIX = {"clamp-plate-inner": 2, "elevator-block-bottom-inner": 1, "elevator-block-carriage": 1,
+       "elevator-block-top": 1, "elevator-top-inner": 1, "inner-spacer": 2, "outer-clamp": 2,
+       "pulley-v3": 140}
 
 
 class GeometryTrialHandler(serve.TrialsHandler):
@@ -161,8 +161,10 @@ def main():
             mix = page.evaluate("spec => window.trial.arrange(spec)", {"parts": mix_parts, "printer": H2S})
             mix_drag = page.evaluate("spec => window.trial.drag(spec)", {
                 "plateConfiguration": mix["plateConfiguration"], "parts": mix_parts, "printer": H2S})
-            write_json(RESULTS / "arrange-spacers-150.json", {**spacers, "drag": spacer_drag})
-            write_json(RESULTS / "arrange-mix-150.json", {**mix, "drag": mix_drag})
+            for name, arranged, dragged in (("arrange-spacers-150", spacers, spacer_drag), ("arrange-mix-150", mix, mix_drag)):
+                picture = arranged.pop("picture")
+                (PICTURES / f"{name}.png").write_bytes(base64.b64decode(picture.split(",", 1)[1]))
+                write_json(RESULTS / f"{name}.json", {**arranged, "drag": dragged})
             longest = page.evaluate("window.trial.longestTaskMs()")
             page_machine = page.evaluate("window.trial.machine()")
             version = browser.version

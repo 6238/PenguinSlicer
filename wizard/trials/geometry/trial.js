@@ -5,6 +5,7 @@
 import { drawPart } from './render.js';
 import { readBinaryStl } from '/src/geometry/stl.js';
 import { analysePart } from '/src/geometry/part.js';
+import { placedOutlines } from '/src/geometry/placement.js';
 
 // The part's flat faces: the faces of its hull of at least 25 mm² that are mostly the part's
 // own material (not a bridge across a hollow), and whether each got a hull patch. Worked out on
@@ -154,10 +155,48 @@ async function arrange({ parts, printer, supports = false, runs = 5 }) {
     result = a.result;
   }
   const check = must(await ask({ op: 'check', plateConfiguration: onPlate(result), geometry, printer, supports }));
+  const points = {};
+  for (const p of parts) points[p.key] = analysePart(readBinaryStl(await fetchPart(p.url), 'mm')).hull.points;
+  const outlines = placedOutlines(onPlate(result), points).map((o) => o.hull);
   return {
     instances: instances.length, placed: result.placed.filter(Boolean).length, packer: result.packer, tried: result.tried,
     arrangeMs: stats(times), problemsAfter: check.result.problems.length, plateConfiguration: result.plateConfiguration, placedFlags: result.placed,
+    picture: drawPlate(outlines, printer, plateParts, onPlate(result)),
   };
+}
+
+// The arranged plate seen from above: the printable area, its 3 mm margin, and each instance's
+// outline as the placement check measures it.
+function drawPlate(outlines, printer, plateParts, pc) {
+  const scale = 2;
+  const canvas = document.createElement('canvas');
+  canvas.width = (printer.max[0] - printer.min[0]) * scale + 40;
+  canvas.height = (printer.max[1] - printer.min[1]) * scale + 60;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const at = ([x, y]) => [20 + (x - printer.min[0]) * scale, 40 + (printer.max[1] - y) * scale];
+  const rect = (x0, y0, x1, y1) => { const [a, b] = at([x0, y1]); const [c, d] = at([x1, y0]); return [a, b, c - a, d - b]; };
+  ctx.strokeStyle = '#1f2328';
+  ctx.strokeRect(...rect(printer.min[0], printer.min[1], printer.max[0], printer.max[1]));
+  ctx.setLineDash([4, 4]);
+  ctx.strokeRect(...rect(printer.min[0] + 3, printer.min[1] + 3, printer.max[0] - 3, printer.max[1] - 3));
+  ctx.setLineDash([]);
+  const colours = ['#9fb4c8', '#b7a6d6', '#9cc9b0', '#d6c08f', '#c9a0a0', '#8fc3d6', '#b0b0b0', '#d9a5c4'];
+  const keys = Object.keys(plateParts);
+  outlines.forEach((outline, i) => {
+    ctx.beginPath();
+    outline.forEach((q, k) => { const [x, y] = at(q); if (k === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
+    ctx.closePath();
+    ctx.fillStyle = colours[keys.indexOf(pc.instances[i].ref) % colours.length];
+    ctx.fill();
+    ctx.strokeStyle = '#3b4148';
+    ctx.stroke();
+  });
+  ctx.fillStyle = '#1f2328';
+  ctx.font = '16px sans-serif';
+  ctx.fillText(`${outlines.length} instances on the plate, seen from above (dashed: the 3 mm margin)`, 20, 24);
+  return canvas.toDataURL('image/png');
 }
 
 const onPlate = (result) => ({

@@ -40,6 +40,7 @@ export const CONTACT_GAP_MM = 0.1;      // a triangle this close to the plate to
 export const OVERHANG_DEG = 45;         // a downward face steeper than this from vertical hangs over air
 export const HEIGHT_CHARGE_PER_MM = 0.01;   // the small charge for height
 export const NO_CONTACT_PENALTY = 100;  // the large penalty when almost nothing touches
+export const AS_MODELLED_MARGIN = 0.05; // as modelled is kept when within this share of the best cost
 
 // Arrange.
 export const PILE_GRID_MM = 5;
@@ -47,3 +48,6 @@ export const PILE_REFINE_MM = 1;
 // Arrange leaves this much more than the spacing between outlines, so that a plate it
 // arranges passes the placement check by more than the check's rounding.
 export const ARRANGE_SLACK_MM = 0.05;
+// Arrange's map of the plate is in squares this wide; each outline it marks may take up to
+// about one square's diagonal more room than it needs.
+export const ARRANGE_CELL_MM = 0.5;
