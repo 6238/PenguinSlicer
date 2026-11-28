@@ -16,6 +16,7 @@ import urllib.request
 
 from helpers import FAILSAFE_S, box_stl, install_fake_orca, open_gate, part_entry
 from penguin_slice import __main__ as cli
+from penguin_slice import jobs
 
 BOX = box_stl(20, 20, 10)
 USER = {"X-Penguin-User-Key": "user-a"}
@@ -140,6 +141,10 @@ def test_a_stop_while_orca_runs_finishes_the_slice_and_exits_once_its_file_is_de
         seen["still_serving"] = not returned.is_set()
         seen["deleted"] = client.json("DELETE", f"/slices/{job}/file")
         seen["job"] = job
+        # The deletion itself ends the drain (the sweeper, which would also wake the wait,
+        # is not started in this test).
+        log.wait_for(event("slice_service_stopped", how="drained"))
+    monkeypatch.setattr(jobs.JobPool, "start_sweeper", lambda self, *args, **kwargs: None)
     code, log, failure = serve_with(tmp_path, monkeypatch, drive)
     assert failure is None, failure
     assert code == 0

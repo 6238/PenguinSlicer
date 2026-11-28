@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import shapely
+import shapely.ops
 
 from . import limits
 from .plate import ORIENTATION_MATRICES
@@ -322,6 +323,33 @@ def contact_area_mm2(mesh, matrix):
     a, b, c = (rotated[flat[:, i], :2] for i in range(3))
     cross = (b[:, 0] - a[:, 0]) * (c[:, 1] - a[:, 1]) - (b[:, 1] - a[:, 1]) * (c[:, 0] - a[:, 0])
     return float(np.abs(cross).sum() / 2)
+
+
+def first_layer_section(mesh, matrix, at_mm):
+    """The part's section `at_mm` above its lowest point once it is turned by `matrix`: a
+    shapely geometry in plate millimetres (even-odd, so a hole through the part stays a
+    hole), empty when the part has no wall crossing that height. The slicer cuts its first
+    layer from this section: a part that touches the plate at a point or along a line is
+    still millimetres across there when it is curved, and a fraction of a line across when
+    it stands on an edge."""
+    rotated = mesh.vertices @ np.asarray(matrix, dtype=np.float64).T
+    height = rotated[:, 2].min() + at_mm
+    above = rotated[:, 2] >= height
+    faces = mesh.faces[above[mesh.faces].any(axis=1) & ~above[mesh.faces].all(axis=1)]
+    if len(faces) == 0:
+        return shapely.Polygon()
+    edges = np.stack([faces[:, [0, 1]], faces[:, [1, 2]], faces[:, [2, 0]]], axis=1)      # (n, 3, 2)
+    edges = np.sort(edges, axis=2)            # each edge in one order, so both faces cut it at one point
+    crossing = above[edges[:, :, 0]] != above[edges[:, :, 1]]                          # two per face
+    lo, hi = rotated[edges[:, :, 0][crossing]], rotated[edges[:, :, 1][crossing]]
+    t = (height - lo[:, 2]) / (hi[:, 2] - lo[:, 2])
+    points = (lo[:, :2] + t[:, None] * (hi[:, :2] - lo[:, :2])).reshape(-1, 2, 2)
+    merged = shapely.ops.linemerge(shapely.MultiLineString(list(points)))
+    section = shapely.Polygon()
+    for line in getattr(merged, 'geoms', [merged]):
+        if line.is_ring and len(line.coords) >= 4:
+            section = section.symmetric_difference(shapely.make_valid(shapely.Polygon(line.coords)))
+    return section
 
 
 def orientation_footprints(mesh):

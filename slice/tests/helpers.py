@@ -123,6 +123,29 @@ def cylinder_stl(radius=10.0, height=15.0, segments=64):
     return mesh_stl(vertices, faces)
 
 
+def ball_stl(radius=20.0, rings=32):
+    """A closed UV sphere resting on z = 0 at one pole: it touches the plate at a point only,
+    and its section a first layer above the plate is millimetres across, so it prints."""
+    vertices = [[0.0, 0.0, 0.0]]
+    for i in range(1, rings):
+        t = np.pi * (1 - i / rings)                      # from the bottom pole up
+        for j in range(2 * rings):
+            p = np.pi * j / rings
+            vertices.append([radius * np.sin(t) * np.cos(p), radius * np.sin(t) * np.sin(p),
+                             radius + radius * np.cos(t)])
+    vertices.append([0.0, 0.0, 2 * radius])
+    top, per = len(vertices) - 1, 2 * rings
+
+    def ring(i, j):
+        return 1 + (i - 1) * per + j % per
+    faces = [(0, ring(1, j + 1), ring(1, j)) for j in range(per)]
+    for i in range(1, rings - 1):
+        for j in range(per):
+            faces += [(ring(i, j), ring(i, j + 1), ring(i + 1, j + 1)), (ring(i, j), ring(i + 1, j + 1), ring(i + 1, j))]
+    faces += [(ring(rings - 1, j), ring(rings - 1, j + 1), top) for j in range(per)]
+    return mesh_stl(vertices, faces)
+
+
 def part_from_stl(directory, name, stl):
     """A parts[ref] entry for write_plate_3mf, its STL written under `directory`."""
     path = Path(directory) / f'{len(list(Path(directory).iterdir()))}.stl'

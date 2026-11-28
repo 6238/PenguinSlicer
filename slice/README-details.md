@@ -836,10 +836,24 @@ plate changes nothing, since Orca puts every object's lowest point on the plate.
 check accepts such a plate, since its footprint is sound, and the wizard's agrees; the slice
 service explains Orca's failure instead (`slice.rests_on_an_edge`: on a -100 failure with no
 reason it recognises, `plate_configuration.resting_on_no_face` reads each part again and
-names the instances whose own faces on the plate, `mesh.contact_area_mm2` within
-`mesh.ON_THE_PLATE_MM` (0.001 mm) of the lowest point, add up to less than
-`plate_configuration.REST_AREA_MM2`, 0.01 mm²; a part that cannot be read again leaves
-`slice.orca_failed`). The upstream check pins it
+names the instances that meet two conditions. Their own faces on the plate,
+`mesh.contact_area_mm2` within `mesh.ON_THE_PLATE_MM` (0.001 mm) of the lowest point, add
+up to less than `plate_configuration.REST_AREA_MM2`, 0.01 mm². And their section at the
+middle of the first layer, `mesh.first_layer_section` at half the process's
+`initial_layer_print_height`, is empty once shrunk by half its `initial_layer_line_width`,
+so no line of the first layer fits anywhere in it; both values are read from the slice
+job's process with its overrides, and one that is missing or no length in millimetres (0,
+a percentage) is the default process's, `FIRST_LAYER_MM` 0.3 and `FIRST_LINE_MM` 0.62. The
+second condition keeps curved parts out: a ball of radius 20 mm on its pole and a tube of
+radius 10 mm lying on a line of its vertices have no face on the plate, but at 0.15 mm up
+they are 4.6 mm and 3.3 mm across and print, while the bracket on its hull face is 0.33 mm
+across there and a box on an edge 0.30 mm. A part that cannot be read again leaves
+`slice.orca_failed`, and so does a debug log whose warnings
+(`plate_configuration.LOGGED_OBJECT_RE` over the detail's "orca debug log warning" lines)
+name instances none of which is so named: Orca's evidence then points elsewhere, and the
+general sentence keeps its warnings. The fast suite holds both conditions
+(`tests/test_errors.py`, `TestRestsOnAnEdge`; `tests/test_mesh.py`,
+`TestFirstLayerSection`). The upstream check pins it
 (`test_a_part_resting_on_an_edge_has_no_first_layer_unless_supported_on_a_raft`). The
 upstream check slices a bracket laid by a `rotation` on a face of the part itself
 (`test_a_rotation_and_a_part_in_inches_slice_where_the_checks_place_them`): Orca's first
@@ -1013,11 +1027,16 @@ floating cantilever"; beside a needle that fails, the slice fails because of the
 the needle is named nowhere, and the mushroom's warning is the only one the sentence can
 add (the real-Orca suite holds both plates). A log that is missing, unreadable or holds no
 such line leaves the general sentence, "The slicer could not slice this plate.": the
-service never states a reason the log does not give. Some reasons reach no file at all. A part
+service never states a reason of Orca's the log does not give. Some reasons reach no file at all. A part
 whose first layer is empty (a needle 0.3 mm across and 300 mm tall, thinner than the
 nozzle prints) fails as an error that the pinned Orca collects and loses (it prints
 `Errors` on stderr): neither `result.json` nor the debug log, even at `--debug 5`, holds
-the reason, so that part gets the general sentence. The debug log's format is Orca's and
+the reason, so that part gets the general sentence. The one exception is the slice
+service's own finding, `slice.rests_on_an_edge`: an instance resting on no face of its own,
+measured from the part itself and never from a reason Orca did not give
+([The plate configuration in its phase 2 form](#the-plate-configuration-in-its-phase-2-form)
+has its rule; a needle stands on a face
+and keeps the general sentence). The debug log's format is Orca's and
 can change at an upgrade: the upstream check slices the block on a stem and fails when the
 reason is no longer found (see "Taking a new upstream version").
 
@@ -2087,7 +2106,7 @@ sentence, remedy, action, retryable flag and evidence its report must carry.
 | `slice.print_empty` | slicing | Orca printed "The print is empty." (a part thinner than the nozzle prints): check size and thickness. Names the part when the plate has one. |
 | `slice.nothing_on_plate` | slicing | Orca's return code -50: no instance fully on the plate. |
 | `slice.orca_failed` | slicing | Any other non-zero exit, -100 without a reason the service recognises, or a code it does not know; Orca's words are in the detail. When Orca's debug log holds warnings it reported while slicing, the sentence adds them, labelled as possibly unrelated ("It also warned, though this may not be why it failed: ..."). |
-| `slice.rests_on_an_edge` | slicing | Orca's return code -100 with no reason the service recognises, on a plate where an instance touches the plate only along an edge or at a point (its part's own faces on the plate under 0.01 mm²): the pinned Orca's reason, an empty first layer, reaches no file. The report names the first such instance (`where.instance`), the detail every one ("resting on no face of its own: ...") before Orca's words; the remedy lays the part on one of its own flat faces or turns on supports with a raft (with supports on, adds a raft); `action` `choose_orientation`. |
+| `slice.rests_on_an_edge` | slicing | Orca's return code -100 with no reason the service recognises, on a plate where an instance touches the plate only along an edge or at a point (its part's own faces on the plate under 0.01 mm², and its section at the middle of the first layer nowhere as wide as one line of that layer), unless Orca's debug log warns of other instances only: the pinned Orca's reason, an empty first layer, reaches no file. The report names the first such instance (`where.instance`), the detail every one ("resting on no face of its own: ...") before Orca's words; the remedy lays the part on one of its own flat faces or turns on supports with a raft (with supports on, adds a raft); `action` `choose_orientation`. |
 | `slice.no_output` | slicing | Orca exited 0 without writing the sliced file. |
 | `slice.unreadable_output` | slicing | The sliced file is not a zip (also a directory entry asking for a zip version the reader does not know), an entry fails its checksum, a plate's sliced file has no `Metadata/plate_1.json`, or that entry has no list of objects. Worth retrying. |
 | `slice.no_gcode` | slicing | The sliced file has no `Metadata/plate_1.gcode`. |

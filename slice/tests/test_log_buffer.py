@@ -66,6 +66,16 @@ class TestTheBuffer:
         second = buffer.read(first["lines"][-1]["n"])
         assert [line["n"] for line in second["lines"]] == [1001] and second["more"] is False
 
+    def test_exactly_an_answers_lines_come_in_one_answer_without_more(self):
+        answer = filled(log_buffer.LOG_ANSWER_LINES).read(0)
+        assert len(answer["lines"]) == log_buffer.LOG_ANSWER_LINES and answer["more"] is False
+
+    def test_a_callers_own_number_time_and_component_are_dropped(self):
+        buffer = LogBuffer(clock=Clock())
+        buffer({"event": "slice_job", "n": 99, "time": "yesterday", "component": "front", "job": "j1"})
+        assert buffer.read(0)["lines"] == [{"n": 1, "time": "2026-11-27T22:13:05.412Z", "component": "slice",
+                                            "event": "slice_job", "job": "j1"}]
+
     def test_a_full_buffer_drops_the_oldest_and_counts_them(self):
         buffer = filled(12, capacity=10)
         answer = buffer.read(0)

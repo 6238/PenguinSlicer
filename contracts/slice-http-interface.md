@@ -270,7 +270,8 @@ and writes them with every other component's into the log
 credential to store anything itself.
 
 **Request.** `after`, a whole number: the `n` of the last line the front server received from
-this process, `0` for none.
+this process, `0` for none (left out, it is `0`). Any other `after` is answered `400`
+`slice.bad_request`.
 
 **Answer.** `200`:
 
@@ -298,7 +299,7 @@ checks and of a slice, are listed in the slice service's details file
 | Code | Status | When |
 |---|---|---|
 | `slice.no_user_key` | `400` | A request that needs the user key arrived without it, or with an empty one. A fault of the front server's; the front server answers its page `500` `front.unexpected` |
-| `slice.bad_request` | `400`, `404`, `405` | No `Content-Length` on an upload; a path the interface does not offer; a method a path does not take |
+| `slice.bad_request` | `400`, `404`, `405` | No `Content-Length` on an upload; an `after` on `GET /log` that is not a whole number; a path the interface does not offer; a method a path does not take |
 | `slice.bad_units` | `400` | An upload whose units label is missing or is neither `mm` nor `in` |
 | `slice.bad_plate_configuration` | `400`, `413` | A plate configuration that is not JSON, is multipart, breaks its form, or is over 1,048,576 bytes (`413`) |
 | `slice.stopping` | `503` | A new plate configuration while the slice service has been asked to stop; `retryable` true. Never `slice.busy` |

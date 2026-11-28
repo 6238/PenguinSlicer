@@ -773,6 +773,27 @@ def test_a_sound_parts_warning_is_not_given_as_the_reason_another_part_failed(tm
     assert "Needle" not in report["message"]                     # the needle's reason reaches no file
 
 
+def test_a_ball_that_prints_is_not_blamed_for_the_block_on_a_stem(tmp_path):
+    """Protects: slice.rests_on_an_edge names only an instance with no first layer. A ball of
+    radius 20 mm touches the plate at a point, yet slices alone; beside the block on a stem
+    0.4 mm across, which fails with Orca's general failure, the report stays
+    slice.orca_failed with Orca's warning of the block, and the ball is named nowhere."""
+    from helpers import ball_stl
+    ball, block = ball_stl(), block_on_a_stem_stl()
+    alone = phase_2({"ball": ("Ball", ball)}, [{"ref": "ball", "orientation": "+z", "angle": 0, "x": 100.0, "y": 150.0}],
+                    submission_id="ball-alone")
+    _stages, report, _data, _summary = through_the_http_interface(tmp_path / "alone", alone, [ball])
+    print(f"\n[orca] a ball alone: {report['state']} {report.get('error')}")
+    assert report["state"] == "done", report.get("error")
+    both = phase_2({"ball": ("Ball", ball), "block": ("Block", block)},
+                   [{"ref": "ball", "orientation": "+z", "angle": 0, "x": 60.0, "y": 150.0},
+                    {"ref": "block", "orientation": "+z", "angle": 0, "x": 160.0, "y": 150.0}], submission_id="ball-block")
+    _stages, report, _data, _summary = through_the_http_interface(tmp_path / "both", both, [ball, block])
+    print(f"\n[orca] a ball beside a block on a stem: {report['state']} {report.get('error')}")
+    assert report["state"] == "failed" and report["error"]["code"] == "slice.orca_failed", report.get("error")
+    assert "Ball" not in report["error"]["message"] and "Block #1 has floating regions" in report["error"]["message"]
+
+
 def test_the_reference_plate_of_100_spacers(tmp_path):
     """Protects: the measurement behind MAX_INSTANCES (slice/README-details.md, "Plate limits"). 100
     hex shaft spacers in a 10 by 10 grid, through the HTTP interface: delivered with every

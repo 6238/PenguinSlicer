@@ -122,7 +122,8 @@ and in [the guide](../../../../slice/README.md).
     check is added for a part whose first layer is empty" is about the part (a needle); this
     looks at the pose, and only after Orca has refused. To overrule: drop `_explain_an_edge`
     and the code; or refuse the pose before Orca, which changes the shared plates and the
-    wizard's check in one commit.
+    wizard's check in one commit. The rule as first built (the face area alone) blamed curved
+    parts that print; decision 19 replaces it.
 15. **The code is not added to the contract's table of codes a user interface acts on.** That
     table says what the wizard does; adding a row would oblige the wizard's builder and its
     tests in the same commit. The action carries the right behaviour meanwhile. To overrule:
@@ -144,6 +145,52 @@ and in [the guide](../../../../slice/README.md).
     lines on the plate. It prints with supports and a raft. Left unchanged in the contract, as
     the task asked; the details file says why the upstream check slices a bracket on a face of
     its own instead.
+
+### After the review
+
+19. **Which instance rests on no face of its own (the review's blocking finding).** The
+    review found that the area of faces lying on the plate is 0 for a tessellated ball and
+    for a tube lying on a line of vertices, both of which print, so a ball beside the block on
+    a stem was named in place of the block. The documents say only that the service never
+    states a reason the log does not give. Chosen: an instance is named only when both hold:
+    its faces on the plate add up to under 0.01 mm², and its section at the middle of the
+    first layer (`mesh.first_layer_section`, at half the process's
+    `initial_layer_print_height`) is empty once shrunk by half the process's
+    `initial_layer_line_width`, so no line of the first layer fits in it. Both values come
+    from the slice job's process with its overrides; one that is no length in millimetres (0,
+    a percentage) is taken as the default process's, 0.3 mm and 0.62 mm. Measured at 0.15 mm
+    (`mesh.first_layer_section`): the bracket on its hull face is at most 0.33 mm across, a
+    box on an edge 0.30 mm, a ball of radius 20 mm 4.6 mm, a tube of radius 10 mm on a vertex
+    line 3.3 mm. Why both conditions and not the width alone: the width alone would also name
+    the block on a stem 0.4 mm across and the needle, which stand on a face, under a sentence
+    ("touches the plate only along an edge or at a point") that would be false for them; the
+    guide keeps those parts on the general sentence. To overrule: drop the face-area
+    condition and give thin parts their own code and sentence.
+20. **Orca's own warnings take precedence.** Also from the review: when Orca's debug log warns
+    of instances and none of them is one the slice service would name, the report stays
+    `slice.orca_failed` with Orca's warnings. The real Orca warns "floating regions" of the
+    bracket on its hull face itself (with supports off), so the explanation still fires there;
+    with tree supports on it warns of nothing and the explanation fires too. Cost: a plate
+    where one instance rests on an edge and Orca warns only of another loses the explanation
+    and gets the general sentence with Orca's warning. To overrule: drop `_logged_objects`'
+    test in `_explain_an_edge`.
+21. **`GET /log`'s 400 in the contract (minor finding 4).** The contract's table of codes now
+    lists "an `after` on `GET /log` that is not a whole number" under `slice.bad_request`, and
+    its request paragraph says so. Only the When column grew; no name or shape changed.
+22. **The two surviving mutations of the log's buffer and the weak proof of the drain (minor
+    findings 1 to 3).** Tests added: exactly 1,000 lines answer `more` false; a caller's own
+    `n`, `time` and `component` are dropped; and the serve test of the stop now starts no
+    sweeper and waits for `slice_service_stopped` after the deletion (behind `FAILSAFE_S`), so
+    with `delete_file`'s `notify_all` removed it fails in 10 s instead of passing 20 s late.
+    Each test was seen to fail under its mutation.
+23. **Findings declined.** Minor 5 (`slice.rests_on_an_edge` not in "Codes a user interface
+    acts on"): declined, decision 15 stands. The finding says the wizard loses the Slice again
+    it offers for `slice.orca_failed`, but slicing the same plate again fails the same way,
+    and the error report's rules say a remedy never proposes an action that cannot help; the
+    report's `action`, `choose_orientation`, gives the wizard its Back to Layout. Minor 6 (the
+    plate configuration contract's stale opening): declined, as decision 16 and the task say;
+    not of this batch. Minor 7 (not every test seen to fail first): nothing to change; Targets
+    missed 2 discloses it, and every test of the review's fixes was seen to fail first.
 
 ## Targets missed
 
@@ -210,6 +257,8 @@ plates by the service's own rotation) was done by slice-1; slice-1's (items 7, 5
 - The log: `curl -s 'http://127.0.0.1:<port>/log?after=0'` on a running slice service.
 - The refused hull-face pose and its explanation:
   `flock /var/tmp/penguin-locks/real-orca.lock slice/.venv/bin/python -m pytest -s -p no:randomly slice/tests_orca/test_orca.py -k resting_on_an_edge`
-  prints the three error reports and the slice with supports and a raft.
-- The fast suite and its branch coverage: `make -C slice test` (1,641 tests) and
+  prints the three error reports and the slice with supports and a raft; `-k ball_that_prints`
+  prints the ball alone (done) and beside the block on a stem (`slice.orca_failed`, the
+  block's warning, the ball named nowhere).
+- The fast suite and its branch coverage: `make -C slice test` (1,660 tests) and
   `make -C slice coverage` (100%).

@@ -283,7 +283,12 @@ is sound, and the wizard and the slice service agree on that. When Orca then ref
 slice service names the instance and says that it touches the plate only along an edge or at
 a point, and what to do: lay the part on one of its own flat faces, or turn on supports with
 a raft. Orca writes its own reason nowhere the slice service can read, so the slice service
-finds the instance itself, by the area of the part's own faces lying on the plate. A part
+finds the instance itself: one whose own faces lying on the plate have almost no area and
+whose cut through the middle of the first layer is nowhere as wide as one line of that
+layer. A ball or a tube lying on its side also touches the plate only at a point or along a
+line, but is millimetres across a first layer up and prints, so it is never named. When
+Orca's own warnings name other instances only, the slice service names none and gives the
+general sentence with those warnings. A part
 laid by a general rotation on a face of the part itself slices, and Orca prints it within
 0.6 mm of where the check put it.
 
@@ -1104,7 +1109,7 @@ one exception described under
 | Nothing printable was found | That no layers were found (a surface with holes, a part too thin), or that the print is empty (a part thinner than the nozzle prints), naming the part when the plate has one | Repair the part in CAD, or check its size |
 | An instance lies partly or wholly off the plate in Orca's eyes | That it is not on the plate | Move it |
 | Orca failed and gave only a general reason | "The slicer could not slice this plate.", with Orca's warnings added and labelled as possibly unrelated | Act on a warning if one fits |
-| Orca failed so, and an instance touches the plate only along an edge or at a point | Which instance, and that the slicer can give it no first layer | Lay the part on one of its own flat faces, or turn on supports with a raft (with supports already on, add a raft) |
+| Orca failed so, and an instance touches the plate only along an edge or at a point, too narrow there for one line of the first layer | Which instance, and that the slicer can give it no first layer | Lay the part on one of its own flat faces, or turn on supports with a raft (with supports already on, add a raft) |
 | Orca crashed, or something on the server killed it | That the slicer crashed, or was stopped before it finished | Slice again |
 | Orca finished but its file is missing, damaged or incomplete | That the sliced file is damaged or missing | Slice again |
 | The sliced file is larger than 50 MB | That the sliced file is too large, and how large it may be | Fewer instances or a new plate; for a single instance, split or simplify the part |
@@ -1125,11 +1130,14 @@ In these sentences "the print server" is the old word for the slice service. Whe
 remedy is another plate, the sentences say "a new plate", the words of the wizard's
 panel.
 
-Two failures have a known weak spot. A part whose very first layer is empty (a needle
-thinner than the nozzle prints, for example) fails with only the general sentence, because
-the pinned Orca writes that reason nowhere the slice service can read. That is a known
-limit and stays as it is: no check is added for such a part and Orca is not patched for
-it. And the sentences that tell a user to ask someone for help still use the old words
+Two failures have a known weak spot. A part whose very first layer is empty because the
+part is too thin where it stands (a needle thinner than the nozzle prints, for example)
+fails with only the general sentence, because the pinned Orca writes that reason nowhere
+the slice service can read. That is a known limit and stays as it is: no check is added for
+such a part and Orca is not patched for it. The one empty first layer the slice service
+explains is a part resting on no face of its own, as described under the placement check
+above, found by the slice service's own measure and never by a reason Orca did not give.
+And the sentences that tell a user to ask someone for help still use the old words
 for people; changing them is known future work.
 
 ### Orca's own sentence in an error report
