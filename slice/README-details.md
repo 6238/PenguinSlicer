@@ -25,7 +25,7 @@ The phases named here are those of [the plan](../docs/plans/penguin-slicer-plan.
 
 **Built and tested** (on `main` after pull request 12): the HTTP interface, the checks on
 every part before Orca runs, slicing with the pinned Orca 2.4.2, Orca's own stages and
-percentage as progress, cancellation, abandonment and cleanup that leave no Orca and no
+percentage as progress, ending a slice job early and cleanup that leave no Orca and no
 files, the memory watchdog at a 2,000 MB memory ceiling, Orca's reasons read from its
 `result.json` and its debug log, one log line per slice job transition, and
 `make upgrade-orca` with the upstream check. The fast suite covers every branch of the
@@ -44,7 +44,13 @@ the shared plates now go through `POST /slices` after their parts are uploaded. 
 6 are built too: the table of settings, generated from Orca 2.4.2's source with every
 process setting classified and served by `GET /settings-table`, and every setting of it
 accepted in `overrides` under Orca's own name (see
-[The table of settings](#the-table-of-settings)).
+[The table of settings](#the-table-of-settings)). Items 7 to 9 are built as well: a plate's
+later slice job replaces its earlier one and a repeated submission is answered with its
+first attempt's slice job (see
+[A plate's slice jobs: repeats, replacement and the places](#a-plates-slice-jobs-repeats-replacement-and-the-places)),
+every waiting slice job's report says how many are ahead and every slice job ended early
+says why, and a slice job goes on without its page (see
+[Progress, cancellation and cleanup](#progress-cancellation-and-cleanup)).
 
 **Not built or not known:**
 
@@ -130,9 +136,8 @@ past such an item; where the work cannot wait, the line says which reading to bu
   two values the page makes and every plate configuration carries
   ([The plate and the submission](../contracts/plate-configuration.md#the-plate-and-the-submission)).
 - A slice job **ended early** is one whose final progress report has the state
-  `cancelled` and a `cancel_reason`; the code as built calls it cancelled.
-- A **follower** of a slice job is a connection that follows its progress stream; the code
-  as built calls it a "subscriber", which is the same thing.
+  `cancelled` and a `cancel_reason`; the code calls ending it early cancelling it.
+- A **follower** of a slice job is a connection that follows its progress stream.
 - A **progress stream** is the connection of server-sent events on which a slice job is
   followed: as built, `GET /slices/<job>/events`.
 - The **table of settings** describes every setting a plate configuration may replace,
@@ -200,15 +205,16 @@ The items are in the order to build them; each rests on those before it, except 
 the shared plates, which was written first of all, before item 1, since the wizard's builder
 runs it from the start and it needs only the placement check as built; it is built. Items 1
 to 4, which replace the way parts arrive, are built too, and so are 5 and 6, which replace
-the settings; 7 to 13 replace the life of a slice job, and 14 to 18 finish the phase.
+the settings; 7 to 13 replace the life of a slice job, of which 7 to 9 are built, and 14 to
+18 finish the phase.
 
 **1 to 4. The user key, the part store, units and the plate configuration.** Built: see
 [The user key, the part store, units and the plate configuration](#the-user-key-the-part-store-units-and-the-plate-configuration).
-What they leave to later items: a plate's id and a submission's value are carried and
-logged, and compared among the slice jobs of one user key only from item 7; the three
+What they leave to later items: the three
 routes that answer for the whole slice service and are not scoped to a user key (the table
 of settings, item 5, built; the list of slice jobs, item 11; the log, item 16) ignore the
-header; the first progress report has no `ahead` until item 8.
+header. A plate's id and a submission's value are compared among the slice jobs of one user
+key (item 7) and the first progress report carries `ahead` (item 8), both built.
 
 **5 and 6. The table of settings, and every setting that is a parameter.** Built: see
 [The table of settings](#the-table-of-settings). What they leave to later items: nothing.
@@ -217,60 +223,27 @@ header; the first progress report has no `ahead` until item 8.
 ([Run one slice at a time, and let a few wait](README.md#run-one-slice-at-a-time-and-let-a-few-wait),
 [A plate configuration submitted twice](README.md#a-plate-configuration-submitted-twice);
 [The plate and the submission](../contracts/plate-configuration.md#the-plate-and-the-submission)).
-Nothing limits the slice jobs of one user key; everyone shares the places (one running and
-two waiting, `jobs.MAX_RUNNING` and `jobs.MAX_QUEUED`, as built). A plate configuration is
-handled in this order:
-
-1. **A repeat.** When the user key and `submission_id` are those of a slice job the slice
-   service remembers (for as long as it remembers the slice job, item 10), it answers 202
-   with that slice job, as if just accepted, before step 1 of the checks: it starts
-   nothing, replaces nothing and takes no place. A refused submission started no slice
-   job, so its value is not remembered.
-2. **The checks**, as in [The plate configuration in its phase 2 form](#the-plate-configuration-in-its-phase-2-form).
-3. **The replacement.** An earlier slice job of the same user key and `plate_id` that is
-   still waiting or running is ended early, its last report `cancelled` with
-   `cancel_reason` `replaced`, and gives up its place before the new one is counted, so a
-   user who slices a changed plate while every place is taken is not refused on account
-   of their own earlier slice. It is ended early as built: a waiting one at once, one
-   building its plate at the next part or instance, one whose Orca runs only once Orca and
-   every child are gone; its sliced file is discarded. Only a plate configuration that
-   passed its checks replaces ([the contract](../contracts/slice-http-interface.md#post-slices--submit-a-plate-configuration)), so a refused change leaves the earlier slice
-   running. A slice job is never ended early on account of another plate's or another
-   user key's.
-4. **A place**, or `slice.busy` (HTTP 503, retryable, "The slicer is busy, try again in a
-   minute.", as built).
-
-Tests: a later plate configuration of the same plate ends the earlier one while queued,
-while building its plate and while a hanging fake Orca runs, each with `cancel_reason`
-`replaced` only once the work has stopped; a slice job of another plate of the same user
-key, and one of another user key with the same `plate_id`, are untouched; with every place
-taken by one user key's slice jobs, a changed plate of that user key is accepted and
-another plate is refused `slice.busy`; a repeat answers the first attempt's slice job and
-leaves its sequence of reports unbroken; a repeat after the first was refused is checked
-afresh; one `submission_id` under two user keys is two submissions; a refused change leaves
-the earlier slice job running. [D97, D98, D295]
+Built: see
+[A plate's slice jobs: repeats, replacement and the places](#a-plates-slice-jobs-repeats-replacement-and-the-places).
+What it leaves to later items: a repeat is recognised for as long as the slice job's record
+lasts, an hour after it ends until item 10 makes it two; a stopping slice service still
+answers `slice.busy` until item 14, which answers `slice.stopping`, the repeat already being
+looked for first. [D97, D98, D295]
 
 **8. Progress reports say how many are ahead, and why a slice job ended early**
 ([Report progress](README.md#report-progress), [End a slice job early](README.md#end-a-slice-job-early);
-[A slice job's reports](../contracts/progress-report.md#a-slice-jobs-reports)). Every
-`queued` report carries `ahead`: the slice jobs running and those waiting before it, over
-every user key; a new report (`sequence` plus one) is sent whenever `ahead` changes. Every
-`cancelled` report carries `cancel_reason`: `replaced` (item 7), `shutdown` (item 14) or
-`requested`, for `DELETE /slices/<job>`, which stays as built, is not extended, and which
-no component of PenguinSlicer sends. The stage words stay ("Waiting for the slicer").
-Replaces: the queued report with no count, and a reason in the log lines only. Tests: with
-one running and two queued, the queued ones report 1 and 2 ahead, and when the running one
-ends the last reports 1 in a new report; each of the three reasons appears in its
-`cancelled` report and its log line; no other component's report is affected.
+[A slice job's reports](../contracts/progress-report.md#a-slice-jobs-reports)). Built: see
+"How many are ahead" and "Ending a slice job early" under
+[Progress, cancellation and cleanup](#progress-cancellation-and-cleanup) (tests:
+`tests/test_jobs.py` `TestAhead`, `TestCancelReason`). What it leaves to later items: the
+`shutdown` reason is given by the stop as built, which ends every slice job; item 14 keeps it
+for the waiting ones and a second stop only.
 
 **9. A slice job goes on without its page** ([Go on without the page](README.md#go-on-without-the-page)).
-Once accepted, a slice job runs to its end whether or not anything follows it. A slice
-whose user never returns holds the one Orca until it ends, which the time limit bounds
-(accepted). Replaces: `jobs.ABANDON_GRACE_S` (120 s), the sweep's ending of a slice job
-nobody follows, `"cancel_reason": "abandoned"`, and the paragraph "Cleanup" under
-[Progress, cancellation and cleanup](#progress-cancellation-and-cleanup) as far as it
-concerns abandonment. Tests: on a fake clock moved past 120 s, a slice job with no follower
-ends `done`; the tests of abandonment are removed. [D95, D96, D297]
+Built: see "Going on without its page" under
+[Progress, cancellation and cleanup](#progress-cancellation-and-cleanup) (tests:
+`tests/test_jobs.py` `TestGoesOnWithoutItsPage`, `tests/test_web.py`
+`TestGoesOnWithoutItsPage`). What it leaves to later items: nothing. [D95, D96, D297]
 
 **10. Slice jobs remembered for two hours; the sliced file deleted once stored**
 ([Go on without the page](README.md#go-on-without-the-page)). The slice service remembers
@@ -617,7 +590,8 @@ instances the plate slices.
 
 `serve` writes one JSON log line per slice job transition on stderr; stopping it with
 Ctrl-C or SIGTERM (what a container host sends) cancels every slice job, sends each
-subscriber its `cancelled` report and waits until every Orca is gone. A setting it refuses
+follower its `cancelled` report (`cancel_reason` `shutdown`) and waits until every Orca is
+gone. A setting it refuses
 (see Settings) stops it before it listens, with a message naming the setting and exit
 status 2.
 
@@ -639,10 +613,10 @@ other routes (`GET /slices`, `DELETE /slices/<job>/file`, `GET /log`) are still
 | Request | Answer |
 |---|---|
 | `POST /parts?units=mm` or `?units=in`, one binary STL as the body | 201 with the part's record (see [The part store](#the-part-store)) |
-| `POST /slices`, a phase 2 plate configuration as a JSON body | 202 with `job`, `plate_id`, `submission_id`, the first progress report (`progress`) and the `part_warnings`, each naming its part |
+| `POST /slices`, a phase 2 plate configuration as a JSON body | 202 with `job`, `plate_id`, `submission_id`, the first progress report (`progress`, `queued` with `ahead`) and the `part_warnings`, each naming its part; for a repeat, the same with the latest report (see [A plate's slice jobs: repeats, replacement and the places](#a-plates-slice-jobs-repeats-replacement-and-the-places)) |
 | `GET /slices/<job>` | The latest progress report |
 | `GET /slices/<job>/events` | The progress reports as `text/event-stream`, the latest first, ending with the final one |
-| `DELETE /slices/<job>` | Cancel: `{"cancel": "cancelled" \| "cancelling" \| "finished"}` |
+| `DELETE /slices/<job>` | Cancel: `{"cancel": "cancelled" \| "cancelling" \| "finished"}`, its `cancelled` report with `cancel_reason` `requested`; kept as built and sent by no component of PenguinSlicer |
 | `GET /slices/<job>/file` | The sliced file of a done slice job, and nothing else |
 | `GET /slices/<job>/summary` | The sliced file's summary ([sliced-file.md](../contracts/sliced-file.md), "Summary") as a JSON body |
 | `GET /settings-table` | The table of settings whole, `gzip`-encoded when the request accepts it; the user key is not looked at (see [The table of settings](#the-table-of-settings)) |
@@ -840,7 +814,8 @@ uploads nothing.
   [its example](../contracts/examples/slice-http/slice-accepted.json)), the warnings now
   naming their part; the front server makes its own answer from it
   ([Submitting a plate configuration](../contracts/wizard-front-server.md#submitting-a-plate-configuration)).
-  The progress report has no `ahead` until item 8.
+  Its progress report is the slice job's first, `queued` with `ahead`; a repeat and a
+  replacement are under [A plate's slice jobs: repeats, replacement and the places](#a-plates-slice-jobs-repeats-replacement-and-the-places).
 
 The `overrides` are checked against the table of settings in step 3
 ([Settings a plate configuration may replace](#settings-a-plate-configuration-may-replace)),
@@ -1671,8 +1646,8 @@ or delivered with the note).
    is so). With the real Orca the moment between writing the file and exiting is about
    30 ms; the real-Orca suite holds Orca there and asks a timeout and a watchdog stop.
 2. A stop the slice service sent and that ended Orca: `slice.timeout`,
-   `slice.out_of_memory`, or `cancelled`. A cancel (the user's, an abandoned slice
-   job's, a shutdown's) discards even a complete file. A stop is sent only while Orca is
+   `slice.out_of_memory`, or `cancelled`. A cancel (a replacement, a shutdown, a
+   requested cancel) discards even a complete file. A stop is sent only while Orca is
    still running (checked with `waitid`, without reaping Orca, before the SIGTERM, so a
    stop asked after Orca ended by itself is never sent or reported); of two, the first
    reason asked is the one reported.
@@ -1741,9 +1716,10 @@ and records a plate stopped there as `over`.
 ## Progress, cancellation and cleanup
 
 `jobs.JobPool` runs slice jobs one at a time (`MAX_RUNNING`), with at most `MAX_QUEUED`
-waiting; a further one is refused with `slice.busy`. Each slice job's latest progress
-report is kept with a `sequence` that rises by one with every report; a subscriber that
-connects late gets it at once. The stages, in order:
+waiting; a further one is refused with `slice.busy` (see
+[A plate's slice jobs: repeats, replacement and the places](#a-plates-slice-jobs-repeats-replacement-and-the-places)).
+Each slice job's latest progress report is kept with a `sequence` that rises by one with
+every report; a follower that connects late gets it at once. The stages, in order:
 
 | Stage | Words | Fraction |
 |---|---|---|
@@ -1768,34 +1744,53 @@ messages then refine it. Checking the parts happens before a slice job exists, w
 plate configuration arrives. Every report carries `elapsed_s` and `expected_s`, the time
 model's estimate from the plate's volume, instances and supports
 (`limits.estimate_seconds`). The final states are `done`, `failed` (with the error report)
-and `cancelled`.
+and `cancelled` (ended early, with `cancel_reason`).
 
-**Cancelling.** A queued slice job is cancelled at once. A running one that is still
+**How many are ahead.** Every `queued` report carries `ahead`
+([the contract](../contracts/progress-report.md#fields)): the slice jobs running and those
+waiting before it, over every user key, in the order they were accepted, which is the order
+the pool's executor runs them. A running slice job that is being stopped counts as running,
+since it still holds the one Orca until Orca is gone. Whenever a slice job leaves the queue,
+starts or ends, the pool works out `ahead` again for every waiting one
+(`JobPool._refresh_ahead`) and sends a new report (`sequence` plus one) to each whose count
+changed, and to no other. No report but a `queued` one carries `ahead`. With one running and
+two waiting, the waiting ones report 1 and 2; when the running one ends the first reports
+0 and the last 1, and when the first starts the last stays at 1. The stage words stay
+("Waiting for the slicer").
+
+**Ending a slice job early.** `JobPool.cancel(job, reason)` ends a slice job early with one
+of `jobs.CANCEL_REASONS`, which its `cancelled` report carries as `cancel_reason` and its
+`cancelling` and `cancelled` log lines as `cancel_reason` too: `replaced` (the same plate's
+later slice job, see below), `shutdown` (`JobPool.shutdown`) or `requested`
+(`DELETE /slices/<job>`, kept as built, which no component of PenguinSlicer sends). A slice
+job keeps the first reason it was given. A worker that ends with `SliceCancelled` without
+the pool having asked (which nothing does) is reported with `requested`, so a `cancelled`
+report never lacks its reason; no other report carries one. A queued slice job is ended at
+once. A running one that is still
 writing its plate 3MF (`building_plate`) stops at the next object it writes: the write
 looks at the stop before each part's mesh and each instance's object, and once it is set
-ends with `cancelled`, never starts Orca, and its files are removed; the same holds for an
-abandonment and a shutdown during the write. On the largest plate (150 instances of a hub
+ends with `cancelled`, never starts Orca, and its files are removed; the same holds for a
+replacement and a shutdown during the write. On the largest plate (150 instances of a hub
 at `MAX_PART_TRIANGLES`, one part or 25), `cancelled` came 0.05 to 0.17 s after the
 `DELETE`, at any moment of the 24 to 28 s write. Orca is also never started for a slice job
 whose stop is already set (`slicer._run_orca` looks first). A running one whose Orca has
 started is reported
 `cancelled` only after its Orca and every child are gone, or `failed` when it had already
 failed (a watchdog stop or a timeout asked first is the one reported, and so is a crash or
-someone else's kill that ended Orca before the cancel's SIGTERM could). A cancel the
-user asked for before the final report always discards the sliced file, even one Orca
-finished at the same instant (the user asked not to have it; the `cancelled` log line
-names it in `file_discarded`); cancelling a finished slice job changes nothing and answers
-`finished`; an unknown slice job answers `unknown`; cancelling twice answers `cancelling`
-twice and is logged once.
+someone else's kill that ended Orca before the cancel's SIGTERM could). Ending a slice job
+early before its final report always discards the sliced file, even one Orca finished at
+the same instant (a replaced slice is of a plate that has since changed; the `cancelled`
+log line names the file in `file_discarded`); ending a finished slice job changes nothing
+and answers `finished`; an unknown slice job answers `unknown`; ending one twice answers
+`cancelling` twice and is logged once.
 
-**Cleanup.** A slice job nobody follows is cancelled `ABANDON_GRACE_S` (120 s) after its
-last subscriber left, or after it was submitted if none ever came; a subscriber that
-returns in time keeps it. When every subscriber has gone and the grace time has passed,
-nobody is waiting for the file, and the slice job ends `cancelled` like a user's
-cancel: a slice that finishes at that instant is discarded too, and a subscriber who comes
-back later finds `cancelled`. Its `cancelling` and `cancelled` log lines carry
-`"cancel_reason": "abandoned"`, and the `cancelled` line `file_discarded` when a finished
-sliced file was thrown away. Scratch folders are removed on every way out (success,
+**Going on without its page.** Once accepted, a slice job runs to its end whether or not
+anything follows its progress stream: following one, or ceasing to, changes nothing about
+it (`JobPool.follow` counts no followers), and the sweep only drops expired records. A slice
+whose user never returns holds the one Orca until it ends, which the time limit bounds; the
+front server follows every unfinished slice job itself and collects its sliced file.
+
+**Cleanup.** Scratch folders are removed on every way out (success,
 failure, timeout, cancel); at start the HTTP interface removes the scratch of any process
 that is no longer running (`service.clean_stale_scratch`: the folder name carries the
 process id and its start time, so a reused process id is not mistaken for the living one).
@@ -1828,8 +1823,63 @@ Every upload of a part leaves one line, `{"event": "part_upload", ...}`, with `s
 `bytes`, `http_status`, and the `sha256`, triangles, size and warning codes of a part kept
 or the `error_code` and `error_detail` of a refusal. A request without the user key, and a
 request about another user key's slice job, leave a line `{"event": "slice_http_refused",
-...}` with the path, the job, the user key, the status and the code. No payload, path of the
-caller or environment variable is logged.
+...}` with the path, the job, the user key, the status and the code. A repeated submission
+leaves one line `{"event": "slice_repeat", ...}` with the `job` it was answered with, the
+`user_key`, `plate_id`, `submission_id`, `http_status` 202 and that slice job's `state`. No
+payload, path of the caller or environment variable is logged.
+
+### A plate's slice jobs: repeats, replacement and the places
+
+Item 7 of [Phase 2](#phase-2-one-machine), built ([Run one slice at a time, and let a few wait](README.md#run-one-slice-at-a-time-and-let-a-few-wait),
+[A plate configuration submitted twice](README.md#a-plate-configuration-submitted-twice);
+[The plate and the submission](../contracts/plate-configuration.md#the-plate-and-the-submission)).
+[D97, D98, D295]
+
+**The places.** One slice job running and two waiting (`jobs.MAX_RUNNING`, `jobs.MAX_QUEUED`)
+are the slice service's three places, counted together over every user key: nothing limits
+the slice jobs of one user key. A slice job holds a place from its acceptance until it ends
+or is asked to end early; one being stopped holds none, though its Orca may run on for the
+moment it takes to stop (it still counts in `ahead`). A plate configuration that finds every
+place taken is refused `slice.busy` (HTTP 503, retryable, "The slicer is busy, try again in a
+minute.").
+
+**The order.** `POST /slices` handles a plate configuration in this order:
+
+1. **A repeat.** When the body is a JSON object whose `submission_id` is a string, and the
+   user key and that `submission_id` are those of a slice job the slice service remembers
+   (`JobPool.remembered`, for as long as the record lasts), the answer is 202 with that slice
+   job, `{job, plate_id, submission_id, progress, part_warnings}` exactly as when it was
+   accepted but with its latest progress report, before any check: it starts nothing,
+   replaces nothing, takes no place and adds no report to the slice job. A refused submission
+   started no slice job, so its value is not remembered and is checked afresh when it comes
+   again. One `submission_id` under two user keys is two submissions.
+2. **The checks**, as in [The plate configuration in its phase 2 form](#the-plate-configuration-in-its-phase-2-form).
+3. **The parts held** in a new folder for the slice job (`slice.scratch_unwritable`,
+   `slice.part_missing` as there).
+4. **The pool decides, under its lock** (`JobPool.submit(..., plate_id, submission_id)`):
+   first the repeat again, since two attempts of one submission can pass the first look
+   together (`jobs.RepeatedSubmission`: the second's folder is removed and it is answered as
+   a repeat); then a stopping pool (`slice.busy` until item 14); then the places, counting
+   as given up the place of every earlier slice job of the same user key and `plate_id` that
+   is still waiting or running; then **the replacement**: each such earlier slice job is
+   ended early with `cancel_reason` `replaced` (a waiting one at once, its files removed; a
+   running one through its stop, reported only once its work has stopped, its sliced file
+   discarded), and the new slice job is queued behind every other. So a user who slices a
+   changed plate while every place is taken is accepted, and a plate configuration refused
+   at any step, `slice.busy` included, ends nothing. A slice job is never ended early on
+   account of another plate's or another user key's.
+
+Tests (`tests/test_jobs.py` `TestReplacement`, `TestRepeat`; `tests/test_web.py`
+`TestReplacementAndRepeat`, `TestStopDuringThePlateWrite`): a later plate configuration of
+the same plate ends the earlier one while queued, while building its plate and while a
+hanging fake Orca runs, each with `cancel_reason` `replaced` only once the work has stopped
+(the fake Orca's process gone); another plate of the same user key and another user key's
+same `plate_id` are untouched; with every place taken by one user key's slice jobs a changed
+plate is accepted and another plate refused `slice.busy`; a repeat answers the first
+attempt's slice job and leaves its sequence of reports unbroken, before any check and with
+every place taken; a repeat after the first was refused is checked afresh; one
+`submission_id` under two user keys is two submissions; a refused change leaves the earlier
+slice job as it was; the race of two attempts at once.
 
 ## Modules
 
@@ -1846,7 +1896,7 @@ caller or environment variable is logged.
 | `print_config.py` | The profile catalog, the profile choice, the overrides written over the process profile and whether supports are on |
 | `settings_table.py` | The table of settings (`settings/table.json`, with `settings/classification.json`) and the check of the overrides against it |
 | `slicer.py` | Everything that runs Orca or reads what it writes |
-| `jobs.py` | The job queue: progress reports, cancellation, abandonment, expiry, the log |
+| `jobs.py` | The job queue: the places, progress reports with the count ahead, ending early and its reason, the replacement and the repeat, expiry, the log |
 | `limits.py` | Every cap, the memory and time models, the memory ceiling setting, and the sentences that refuse them |
 
 ## Error codes
@@ -1881,7 +1931,7 @@ sentence, remedy, action, retryable flag and evidence its report must carry.
 | `slice.orca_missing` | slicing | No Orca at `PENGUIN_SLICE_ORCA` or `tools/orca`. |
 | `slice.orca_unstartable` | slicing | Orca is there but will not start (not executable, another architecture), or exits 126 or 127 with no `result.json` (the loader could not load a library it needs). |
 | `slice.timeout` | slicing | Orca took longer than `PLATE_SLICE_TIMEOUT_S`; the service stopped it, and the stop is what ended Orca, before its sliced file was complete. On a plate of one instance the remedy is to simplify or split the part, with no action. |
-| `slice.cancelled` | slicing | The slice was cancelled (by a client, as abandoned, or at shutdown) and Orca is gone. |
+| `slice.cancelled` | slicing | The slice job was ended early (replaced, at shutdown, or by a requested cancel) and Orca is gone: the answer of its file and summary (HTTP 409). Its `cancelled` report itself carries no error report, only `cancel_reason`. |
 | `slice.out_of_memory` | slicing | The memory watchdog stopped Orca at the memory ceiling before its sliced file was complete (the detail holds the measured peak); or Orca was killed and the cgroup's `oom_kill` count rose (the kernel's out-of-memory killer); or Orca printed `bad_alloc`. On a plate of one instance the remedy is to split or simplify the part, with no action. |
 | `slice.orca_crashed` | slicing | Orca died on a signal that means it failed (SIGSEGV, SIGABRT, SIGBUS, SIGFPE, SIGILL, SIGTRAP, SIGSYS), also when a stop of the service's was asked at the same moment (the detail says so). |
 | `slice.orca_killed` | slicing | Something else stopped Orca with a signal the service did not send (SIGKILL with the `oom_kill` count unchanged or unreadable, SIGTERM, SIGINT and the rest), also when a stop of the service's was asked at the same moment or Orca ignored the service's SIGTERM (the detail says so). |
