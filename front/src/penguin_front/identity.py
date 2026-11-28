@@ -13,6 +13,7 @@ development identity", "The cookie", "Groups and the current group").
 
 from flask import g, redirect, request
 
+from .answers import target_path
 from .context import context
 from .cookie import (COOKIE_EXTEND_AFTER_S, COOKIE_LIFETIME_S, COOKIE_NAME,
                      COOKIE_SIZE_LINE_BYTES, Identity)
@@ -95,10 +96,14 @@ def acts_for_group(view):
 def current_group(identity):
     """The current group's id, accepted only when the cookie lists it."""
     header = request.headers.get(GROUP_HEADER)
-    query = request.args.get(GROUP_PARAMETER) if request.method in ("GET", "HEAD") else None
+    queries = request.args.getlist(GROUP_PARAMETER) if request.method in ("GET", "HEAD") \
+        else []
+    query = queries[0] if queries else None
     named = header if header is not None else query
     why = None
-    if header is not None and query is not None and header != query:
+    if len(set(queries)) > 1:
+        why = "the query names more than one group"
+    elif header is not None and query is not None and header != query:
         why = "the header and the query name different groups"
     elif named is None or named == "":
         why = "no group named"
@@ -106,11 +111,11 @@ def current_group(identity):
         why = "a group the cookie does not list"
     if why is not None:
         shown = {"header": _cut(header), "query": _cut(query)}
+        path = target_path()
         context()["log"].write("refused", reason="group_not_allowed", why=why,
                                user_key=identity.user_id, method=request.method,
-                               path=request.path, **shown)
-        raise FrontError("front.group_not_allowed",
-                         f"{request.method} {request.path}: {why}")
+                               path=path, **shown)
+        raise FrontError("front.group_not_allowed", f"{request.method} {path}: {why}")
     g.penguin_group = named
     return named
 

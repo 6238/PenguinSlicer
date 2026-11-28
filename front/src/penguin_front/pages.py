@@ -91,8 +91,10 @@ def _policy():
 
 def page():
     if identity_or_none() is None:
-        query = request.query_string.decode("latin-1")
-        back = target_path() + (f"?{query}" if query else "")
+        # Bytes throughout: WSGI gives the path as Latin-1 text standing for its bytes, and
+        # the query is bytes, so each byte is percent-encoded once, as it was sent.
+        query = request.query_string
+        back = target_path().encode("latin-1") + (b"?" + query if query else b"")
         return redirect("/signin?return=" + quote(back, safe=""), 302)
     response = Response(context()["pages"].index, 200, mimetype="text/html")
     response.headers["Content-Security-Policy"] = _policy()

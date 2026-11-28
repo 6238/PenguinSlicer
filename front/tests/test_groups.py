@@ -152,6 +152,23 @@ def test_header_and_query_that_differ_are_refused(client, log):
     assert (line["header"], line["query"]) == (FIRST, SECOND)
 
 
+def test_a_get_naming_two_different_groups_in_the_query_is_refused(client, log):
+    answer = client.get(f"/api/test-group?group={FIRST}&group={SECOND}")
+    line = refused(answer, log, "the query names more than one group")
+    assert line["query"] == FIRST
+
+
+def test_a_get_naming_one_group_twice_in_the_query_is_accepted(client):
+    answer = client.get(f"/api/test-group?group={FIRST}&group={FIRST}")
+    assert answer.get_json() == {"group": FIRST}
+
+
+def test_the_refusal_line_and_the_error_line_carry_the_same_path_as_sent(client, log):
+    answer = client.post("/api/test-%67roup", headers={"X-PenguinSlicer-Group": "dev-group"})
+    line = refused(answer, log, "a group the cookie does not list")
+    assert line["path"] == log.events("error")[-1]["path"] == "/api/test-%67roup"
+
+
 def test_a_changing_request_with_the_group_in_the_query_alone_is_refused(client, log):
     refused(client.post("/api/test-group", query_string={"group": FIRST}), log,
             "no group named")
@@ -213,20 +230,37 @@ def test_the_requests_marked_as_acting_for_a_group_are_the_details_files_built_s
     assert marked(app) <= offered(app)
 
 
-@pytest.mark.parametrize("named, accepted", [(FIRST, True), ("dev-group", False), (None, False)])
-def test_every_request_that_acts_for_a_group_checks_it(tmp_path, clock, named, accepted):
+#: Each way of naming the group: the header, the query, and whether a `GET` and a changing
+#: request are accepted (a changing request reads the header alone).
+NAMINGS = [
+    (FIRST, None, True, True),
+    ("dev-group", None, False, False),
+    (None, None, False, False),
+    (FIRST, SECOND, False, True),
+    (None, FIRST, True, False),
+    (None, [FIRST, SECOND], False, False),
+]
+
+
+@pytest.mark.parametrize("header, query, get_accepted, change_accepted", NAMINGS)
+def test_every_request_that_acts_for_a_group_checks_it(tmp_path, clock, header, query,
+                                                       get_accepted, change_accepted):
     log = Lines()
     app = front(tmp_path, clock, log)
     client = app.test_client()
     client.set_cookie(COOKIE_NAME, CookieKey(KEY).seal(identity_of(EXAMPLE_ME, clock.now())))
-    headers = {"X-PenguinSlicer-Group": named} if named else {}
+    headers = {"X-PenguinSlicer-Group": header} if header else {}
+    query_string = {"group": query} if query else None
+    refusals = 0
     for method, rule in sorted(marked(app)):
         path = re.sub(r"<[^>]+>", "j1", rule)
-        answer = client.open(path, method=method, headers=headers, json={})
+        answer = client.open(path, method=method, headers=headers, json={},
+                             query_string=query_string)
         code = (answer.get_json() or {}).get("code")
+        accepted = get_accepted if method == "GET" else change_accepted
         if accepted:
             assert code != "front.group_not_allowed", (method, rule)
         else:
             assert code == "front.group_not_allowed", (method, rule)
-    if not accepted:
-        assert len(log.events("refused")) == len(marked(app))
+            refusals += 1
+    assert len(log.events("refused")) == refusals

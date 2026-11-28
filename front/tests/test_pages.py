@@ -53,6 +53,14 @@ def test_the_page_without_a_cookie_sends_the_browser_to_signin_with_return(clien
     assert answer.headers["Cache-Control"] == "no-store"
 
 
+def test_raw_bytes_in_the_query_are_kept_as_sent_through_the_sign_in(client):
+    # A client that is not a browser may send "é" as its two UTF-8 bytes, unencoded; the
+    # server gives them as the Latin-1 text WSGI uses for bytes.
+    answer = client.get("/", environ_overrides={"QUERY_STRING": "q=\xc3\xa9"})
+    assert answer.headers["Location"] == "/signin?return=%2F%3Fq%3D%C3%A9"
+    assert client.get(answer.headers["Location"]).headers["Location"] == "/?q=%C3%A9"
+
+
 def test_the_trip_from_the_page_comes_back_signed_in_to_the_page(client):
     first = client.get("/?plate=2")
     back = client.get(first.headers["Location"]).headers["Location"]

@@ -34,7 +34,9 @@ class Raw:
 
 class SliceClient:
     def __init__(self, base_url, timeout_s=SLICE_TIMEOUT_S):
-        self._client = httpx.Client(base_url=base_url, timeout=timeout_s)
+        # trust_env off: the slice service's address is used as given, never through a proxy
+        # or with credentials that the environment names (HTTP_PROXY, .netrc).
+        self._client = httpx.Client(base_url=base_url, timeout=timeout_s, trust_env=False)
 
     def get_raw(self, path, headers=None):
         """`GET path`, its answer's bytes as sent, not decompressed."""

@@ -600,8 +600,10 @@ Also open there: what a user meets for a document of a company they are not in, 
 raises `front.not_signed_in`; `current_group(identity)` reads the header, and on a `GET` or
 `HEAD` the query's `group` (a changing request naming its group in the query alone names
 none), compares the id exactly with the cookie's, and on a refusal writes `refused`
-(`reason` `group_not_allowed`, `why`, `user_key`, `method`, `path`, and the `header` and
-`query` named, each cut to 200 characters) before the `error` line. Each request that acts
+(`reason` `group_not_allowed`, `why`, `user_key`, `method`, `path` as sent, still
+percent-encoded like the `error` line's, and the `header` and the first `query` named, each
+cut to 200 characters) before the `error` line. A query naming `group` twice is accepted
+when both are the same id and refused when they differ. Each request that acts
 for a group is marked `@acts_for_group`, which is how the tests find them. `/api/me` keeps
 the cookie's order of groups; with the development identity that is its one group.
 
@@ -610,8 +612,9 @@ the cookie's order of groups; with the development identity that is its one grou
 Built: `tests/test_groups.py`, except those marked phase 4.
 
 - On every request that acts for a group, enumerated from the application, a request naming
-  a group the cookie lists is accepted; one naming another group, one naming none, and one
-  whose header and query differ are each refused `403` `front.group_not_allowed` with a
+  a group the cookie lists is accepted; one naming another group, one naming none, one
+  whose header and query differ (on a `GET`; a changing request reads the header alone) and
+  one whose query names two groups are each refused `403` `front.group_not_allowed` with a
   refusal line.
 - A `GET` with the group in the query alone is accepted.
 - `/api/me` answers the cookie's user and groups in order, and the stand-in for Onshape
@@ -777,7 +780,8 @@ the page no request to cancel one. A slice service that does not answer is, to t
 is a fault of the front server's and is answered `500` `front.unexpected`.
 
 **As built** (`penguin_front.slice_client.SliceClient`, used so far by the table of
-settings): one httpx client for `PENGUIN_SLICE_URL`; `get_raw(path, headers)` gives the
+settings): one httpx client for `PENGUIN_SLICE_URL`, with `trust_env` off so that no proxy
+or `.netrc` the environment names is used for it; `get_raw(path, headers)` gives the
 status, the headers and the answer's bytes as sent, never decompressed; no connection, a
 connection cut, or nothing for `SLICE_TIMEOUT_S` (30 s, *proposed*) is `SliceUnreachable`.
 

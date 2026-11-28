@@ -58,6 +58,21 @@ def test_the_answer_is_the_slice_services_table_whole_and_unchanged(client, stan
     assert asked.method == "GET" and asked.headers["accept-encoding"] == "identity"
 
 
+def test_a_proxy_named_in_the_environment_is_not_used_for_the_slice_service(
+        tmp_path, clock, standin, monkeypatch):
+    for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "all_proxy"):
+        monkeypatch.setenv(name, "http://127.0.0.1:1")      # nothing listens there
+    for name in ("NO_PROXY", "no_proxy"):
+        monkeypatch.delenv(name, raising=False)
+    app = front(tmp_path, clock, Lines(), PENGUIN_SLICE_URL=standin.url)
+    try:
+        client = app.test_client()
+        sign_in(client)
+        assert client.get("/api/settings-table").status_code == 200
+    finally:
+        app.extensions["penguin_front"]["slice"].close()
+
+
 def test_the_answer_is_compressed_when_the_browser_accepts_it(client, standin):
     answer = client.get("/api/settings-table", headers={"Accept-Encoding": "gzip, deflate, br"})
     assert answer.status_code == 200 and answer.headers["Content-Encoding"] == "gzip"

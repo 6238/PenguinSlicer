@@ -245,8 +245,11 @@ the front server has, the **cookie key**, so the browser can neither read it nor
 it.
 
 The cookie is the whole of the sign-in. Nothing about it is kept on the server, and the
-cookie key is a setting the front server is given when it starts, not something it
-makes up in memory. That is why a restart or a deploy signs nobody out, why there is no
+hosted service's cookie key is a setting the front server is given when it starts, not
+something it makes up in memory. (On one machine, with the development identity on and no
+key given, the front server makes one up at start; a restart there signs the development
+user out, and the next page signs them in again at once.) That is why a restart or a
+deploy of the hosted service signs nobody out, why there is no
 table of sessions to store, clean or lose, and why two front servers of different
 versions agree at once about who a user is.
 

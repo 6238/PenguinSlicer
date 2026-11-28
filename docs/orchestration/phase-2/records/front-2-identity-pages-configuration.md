@@ -73,7 +73,16 @@ passed from the slice service. Written Fri 2026-11-27, Pacific time.
     Chosen: the six rules are checked on the request's document as it is, then the canonical
     form is written.
 14. **"The first rule broken".** Chosen: the lowest-numbered rule the document breaks, and
-    among that rule's mistakes the first in the document's order. A `note` is held to the
+    among that rule's mistakes the first the checks meet, in a fixed order of fields rather
+    than the document's: in each object the fields missing (by name) before the fields not
+    listed; then `printer`, `upload_units`, `note`, `filaments`; each filament's `name`,
+    `colour`, `note`, `profiles`; each profile's `name`, `purpose`, `printer`, `filament`,
+    `process`, `note`, `overrides`; lists in their order. (This record and the details file
+    first said "the document's order", which the code never did; the review found it and
+    both texts were corrected, with tests of the order.) Reason: the contract asks only for
+    "the first rule broken", and a fixed order is the same for every document. To overrule:
+    sort the found mistakes by their place in the document in `configuration.parse`. A
+    `note` is held to the
     contract's 2,000 characters under rule 4; a colour's hexadecimal digits may be of either
     case; names are compared exactly. No rule was added beyond the contract's.
 15. **The sentences of `front.configuration_invalid`.** The contract says its sentence names
@@ -104,6 +113,36 @@ passed from the slice service. Written Fri 2026-11-27, Pacific time.
     code; its tests in `tests/test_groups.py` came after and were seen to fail by breaking
     the check by hand (four failures), which stands in for seeing them fail first.
 
+### Decisions made while fixing the review
+
+22. **JSON nested too deeply is "not JSON".** Python's reader raises `RecursionError`, not
+    `ValueError`, on nesting deeper than about 10,000 levels, so such a saved document was
+    answered `500` `front.unexpected`. Chosen: it counts as rule 1's "not JSON" on a read,
+    and a write that reads the old document treats it as unreadable (empty). The walk of the
+    old document for the `configuration_edited` line keeps a list of its own instead of
+    calling itself, since a document of 5,000 levels is read by the reader but is deeper
+    than Python's limit of 1,000 calls. To overrule: `configuration._loads` and
+    `configuration._leaves`.
+23. **What a line and an answer show of a long name or a wrong value.** Silent. Chosen: a
+    field's name cut to 200 characters (with "…"), the same figure as the refusal line; a
+    wrong `format` by its kind ("a list", "an object") or as JSON cut to 40 characters. A
+    path then no longer names a field over 200 characters exactly. To overrule:
+    `MAX_SHOWN_KEY_CHARS` and `MAX_SHOWN_VALUE_CHARS` in `configuration.py`.
+24. **A query naming `group` twice.** Silent. Chosen: accepted when both values are the same
+    id, refused `front.group_not_allowed` ("the query names more than one group") when they
+    differ, so that a link cannot carry a second group the check never looks at.
+25. **The refusal line's path** is the path as sent, still percent-encoded, as the `error`
+    line's is, so that the two lines of one refusal agree.
+26. **Raw bytes in the query of `GET /`.** The return address is built from the path's and
+    query's bytes as sent, each byte percent-encoded once; before, raw non-ASCII bytes were
+    encoded twice.
+27. **No proxy for the slice service.** The httpx client is built with `trust_env` off, so
+    that an `HTTP_PROXY` or `.netrc` in the environment never carries the slice service's
+    requests elsewhere.
+28. **Review findings declined.** Minor finding 1 (decision 21: item 7's tests written after
+    its code): nothing can be changed after the fact; the record already says so, and the
+    reviewer's own mutations of the check were caught. All other findings were fixed.
+
 ## Targets missed
 
 - **The cookie's size for a user in many groups.** A user in sixty groups with
@@ -112,7 +151,8 @@ passed from the slice service. Written Fri 2026-11-27, Pacific time.
   sign in. The `cookie_large` line is written. The guide leaves this open for phase 3
   ([Whether the cookie fits](../../../../front/README.md#whether-the-cookie-fits)); a real
   account's tokens and group count decide it.
-- **The fast suite's time.** 588 tests in about 11 seconds on two of eight shared
+- **The fast suite's time.** 588 tests in about 11 seconds (603 after the review's fixes,
+  in 10 to 11 seconds) on two of eight shared
   processors, from about 2 seconds before the batch; each test builds the application on
   fresh folders (about 15 ms). Still "seconds", but no longer "a few".
 
