@@ -1,5 +1,6 @@
 """Builders shared by the fast suite: binary STL shapes, parts, archives and the fake Orca."""
 import fcntl
+import hashlib
 import json
 import os
 import re
@@ -207,15 +208,65 @@ class ManualTimers:
         return self.made[-1]
 
 
-def write_plate_configuration(directory, plate_configuration, stls):
-    """Write `stls` ({file name: bytes}) and the plate configuration JSON into `directory`; its path."""
-    directory = Path(directory)
-    directory.mkdir(parents=True, exist_ok=True)
-    for name, data in stls.items():
-        (directory / name).write_bytes(data)
-    path = directory / "plate-configuration.json"
-    path.write_text(json.dumps(plate_configuration))
-    return path
+USER_KEY = "user-a"            # the user key the tests' parts and slice jobs are under
+PLATE_ID = "plate-1"
+SUBMISSION_ID = "submission-1"
+
+
+def sha256(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def part_entry(name, data, units="mm"):
+    """A part of a phase 2 plate configuration, named by the hash of `data`."""
+    return {"name": name, "sha256": sha256(data), "units": units}
+
+
+def phase_2(parts, instances, **fields):
+    """A phase 2 plate configuration: `parts` is {key: (name, bytes)} or {key: (name, bytes, units)}."""
+    data = {"plate_id": PLATE_ID, "submission_id": SUBMISSION_ID,
+            "parts": {key: part_entry(*part) for key, part in parts.items()}, "instances": instances}
+    data.update(fields)
+    return data
+
+
+class Parts:
+    """A part store in a test's folder (its clock a list the test moves: `clock[0]`), and the
+    plate configurations read against it."""
+
+    def __init__(self, directory, max_bytes=1024 * 1024 * 1024, ttl_s=None):
+        from penguin_slice.part_store import PART_STORE_TTL_S, PartStore
+        self.clock = [1000.0]
+        self.store = PartStore(Path(directory) / "store", max_bytes, ttl_s=ttl_s or PART_STORE_TTL_S,
+                               clock=lambda: self.clock[0])
+
+    def add(self, data, units="mm", user_key=USER_KEY):
+        """Upload `data` (service.upload_part): its record."""
+        from penguin_slice.service import upload_part
+        return upload_part(self.store, user_key, units, data)[0]
+
+    def find(self, user_key=USER_KEY):
+        return lambda digest, units: self.store.get(user_key, digest, units)
+
+    def read(self, data, user_key=USER_KEY, environ=None):
+        from penguin_slice.service import read_plate_configuration
+        return read_plate_configuration(data, self.find(user_key), environ=environ)
+
+
+def upload(client, data, units="mm", user_key=USER_KEY):
+    """POST /parts of `data` through a Flask test client: the answer."""
+    query = "" if units is None else f"?units={units}"
+    headers = {} if user_key is None else {"X-Penguin-User-Key": user_key}
+    # Content-Length as every HTTP client sends it, for an empty body too (the test client leaves it out).
+    return client.post(f"/parts{query}", data=data, headers=headers, content_type="application/octet-stream",
+                       environ_overrides={"CONTENT_LENGTH": str(len(data))})
+
+
+def submit(client, plate_configuration, user_key=USER_KEY):
+    """POST /slices of a plate configuration as JSON through a Flask test client: the answer."""
+    headers = {} if user_key is None else {"X-Penguin-User-Key": user_key}
+    return client.post("/slices", data=json.dumps(plate_configuration), headers=headers,
+                       content_type="application/json")
 
 
 INCH_MM = 25.4

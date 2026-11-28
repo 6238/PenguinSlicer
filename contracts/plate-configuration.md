@@ -23,7 +23,14 @@ design under To be built wins.
 
 ## To be built
 
-*To be built in phase 2.*
+*Partly built in phase 2.* Built in the slice service: parts named by hash with their
+units, no files sent, `plate_id` and `submission_id` required and logged, an instance's
+`rotation`, the parts missing from the part store listed in one report, and the limits of
+[Limits in phase 2](#limits-in-phase-2); the slice service no longer reads the form of
+[Fields](#fields), [Part](#part) and [Instance](#instance) below. To be built: every setting
+of the table of settings under Orca's own name (the `overrides` are still those of
+[Overrides](#overrides)), and the repeat and the replacement of
+[The plate and the submission](#the-plate-and-the-submission).
 
 What changes, in short:
 
@@ -363,8 +370,9 @@ phase 2, before the rest of its work, since the wizard's builder runs it from th
 
 ## Fields
 
-*Built today. Phase 2 adds `plate_id` and `submission_id` and gives `overrides` Orca's own
-names: see [Fields in phase 2](#fields-in-phase-2).*
+*The form before phase 2, which the slice service no longer reads: it reads
+[Fields in phase 2](#fields-in-phase-2). Kept for the example of [Example](#example), which
+the sliced file's example was made from.*
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
@@ -383,8 +391,8 @@ silently ignored. A `printer`, `filament` or `process` name over 200 characters
 
 ### Part
 
-*Built today. In phase 2 `stl` gives way to `sha256` and `units`: see
-[A part in phase 2](#a-part-in-phase-2).*
+*The form before phase 2, which the slice service no longer reads: `stl` gave way to
+`sha256` and `units`, see [A part in phase 2](#a-part-in-phase-2).*
 
 The key of a part is 1 to 64 letters, digits, `-` or `_`.
 
@@ -395,7 +403,7 @@ The key of a part is 1 to 64 letters, digits, `-` or `_`.
 
 ### Instance
 
-*Built today. Phase 2 lets `rotation` stand in place of `orientation`: see
+*Built, with `rotation` standing in place of `orientation` when it is given: see
 [An instance in phase 2](#an-instance-in-phase-2).*
 
 | Field | Type | Required | Meaning |
@@ -414,9 +422,10 @@ The printer shows these names in its list of objects to skip.
 
 ## Coordinates
 
-*Built today. In phase 2 the part's STL is in its units, scaled to millimetres first: see
-[A part in phase 2](#a-part-in-phase-2); and step 1 may use a general rotation in place of
-the six orientations: see [An instance in phase 2](#an-instance-in-phase-2).*
+*Built, with the part's STL in its units, scaled to millimetres first (see
+[A part in phase 2](#a-part-in-phase-2)), and step 1 using a general rotation in place of
+the six orientations when an instance gives one (see
+[An instance in phase 2](#an-instance-in-phase-2)).*
 
 **The part.** The STL's own coordinates, in millimetres, with any origin. The slice service
 never moves the part's mesh itself; it only places instances of it.
@@ -482,8 +491,8 @@ Each override is optional; its value must be one of the listed values, of the li
 
 ## Limits
 
-*Built today. Phase 2 adds a limit on the whole plate configuration and changes what
-`MAX_PARTS` bounds: see [Limits in phase 2](#limits-in-phase-2).*
+*Built, with the limit on the whole plate configuration and the meaning of `MAX_PARTS` of
+[Limits in phase 2](#limits-in-phase-2).*
 
 | Limit | Value | Meaning |
 |---|---|---|
@@ -530,7 +539,8 @@ fitted to), so it only goes into the slice service's log; it refuses nothing.
 
 ## Checks
 
-*Built today. Phase 2 changes step 4: see [Checks in phase 2](#checks-in-phase-2).*
+*Built as [Checks in phase 2](#checks-in-phase-2) changes it: step 4 finds the parts in the
+part store, and the checks of a part listed in step 4 below run when it is uploaded.*
 
 The slice service checks a plate configuration in this order and refuses it at the first
 failure, before anything reaches Orca, with the [error report](error-report.md) whose code
@@ -564,10 +574,12 @@ Orca may still refuse a plate that passes these checks; the slice service's deta
 
 ## Example
 
-*Built today. For phase 2 see [Example in phase 2](#example-in-phase-2).*
+*In the form before phase 2; the slice service's tests send it with each part named by the
+hash of its file. For the form the slice service reads, see
+[Example in phase 2](#example-in-phase-2).*
 
 See [examples/plate-configuration.json](examples/plate-configuration.json), which places
 two instances of [examples/parts/bracket.stl](examples/parts/bracket.stl) and one of
-[examples/parts/spacer.stl](examples/parts/spacer.stl). Each `stl` is the name the file
-is sent under ([Use](../slice/README-details.md#use), in the slice service's details
-file, shows the `curl` command).
+[examples/parts/spacer.stl](examples/parts/spacer.stl). Each `stl` names one of those
+files ([Use](../slice/README-details.md#use), in the slice service's details file, shows
+how a plate is sent with `curl`).

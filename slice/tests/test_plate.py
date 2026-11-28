@@ -110,6 +110,48 @@ def test_instance_hull_rotates_then_moves():
     assert [[round(v, 9) + 0.0 for v in p] for p in hull] == [[11, 18], [11, 22], [9, 22], [9, 18]]
 
 
+class TestRotation:
+    """An instance's `rotation`, a unit quaternion [w, x, y, z] (contracts/plate-configuration.md,
+    "An instance in phase 2"): its matrix, and the one transform for both forms of a turn."""
+
+    def test_the_identity_and_a_quarter_turn_about_z(self):
+        assert plate.quaternion_matrix((1, 0, 0, 0)) == ((1, 0, 0), (0, 1, 0), (0, 0, 1))
+        half = 0.5 ** 0.5
+        m = plate.quaternion_matrix((half, 0, 0, half))
+        assert [list(row) for row in m] == [pytest.approx(r, abs=1e-12) for r in ([0, -1, 0], [1, 0, 0], [0, 0, 1])]
+
+    def test_each_orientation_has_a_rotation_with_its_matrix(self):
+        half = 0.5 ** 0.5
+        quaternions = {'+z': (1, 0, 0, 0), '-z': (0, 1, 0, 0), '+x': (half, 0, -half, 0), '-x': (half, 0, half, 0),
+                       '+y': (half, half, 0, 0), '-y': (half, -half, 0, 0)}
+        for name, q in quaternions.items():
+            m = plate.quaternion_matrix(q)
+            for row, expected in zip(m, plate.ORIENTATION_MATRICES[name]):
+                assert list(row) == pytest.approx(list(expected), abs=1e-12), name
+
+    def test_q_and_minus_q_are_one_turn(self):
+        q = (0.707106781, -0.588348405, 0.39223227, 0.0)
+        for row, minus in zip(plate.quaternion_matrix(q), plate.quaternion_matrix(tuple(-v for v in q))):
+            assert list(row) == pytest.approx(list(minus), abs=1e-15)
+
+    def test_a_rotation_is_divided_by_its_length(self):
+        assert plate.quaternion_matrix((2, 0, 0, 0)) == ((1, 0, 0), (0, 1, 0), (0, 0, 1))
+
+    def test_the_turn_of_an_instance(self):
+        assert plate.turn_of({'orientation': '-x'}) == '-x'
+        assert plate.turn_of({'rotation': [1.0, 0.0, 0.0, 0.0]}) == (1.0, 0.0, 0.0, 0.0)
+        assert plate.turn_matrix('-x') == plate.ORIENTATION_MATRICES['-x']
+        assert plate.turn_matrix((1.0, 0.0, 0.0, 0.0)) == ((1, 0, 0), (0, 1, 0), (0, 0, 1))
+
+    def test_the_transform_of_a_rotation_is_rz_angle_after_m(self):
+        half = 0.5 ** 0.5
+        offset = [1.0, 2.0, 3.0]
+        by_rotation = plate.instance_matrix((half, 0, -half, 0), 30, offset, 100.0, 50.0)
+        by_orientation = plate.instance_matrix('+x', 30, offset, 100.0, 50.0)
+        for row, expected in zip(by_rotation, by_orientation):
+            assert row == pytest.approx(expected, abs=1e-12)
+
+
 def test_sanitize_edge_cases():
     assert plate.sanitize_part_name('') == 'part'
     assert plate.sanitize_part_name('x' * 41) == 'x' * 40

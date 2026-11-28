@@ -153,8 +153,9 @@ class JobPool:
 
     # -- public ---------------------------------------------------------
 
-    def submit(self, payload=None, *, describe=None, expected_s=None):
-        """Queue a job; its id. `describe` (a dict) goes into every log line of the job."""
+    def submit(self, payload=None, *, describe=None, expected_s=None, user_key=None):
+        """Queue a job; its id. `describe` (a dict) goes into every log line of the job;
+        `user_key` is whose it is (owned_by)."""
         job_id = "j" + secrets.token_hex(8)
         with self._lock:
             if self._closing.is_set() or sum(1 for r in self._jobs.values() if r["state"] == "queued") >= \
@@ -166,7 +167,7 @@ class JobPool:
                                   "state": "queued", "submitted": now, "started": None, "finished": None,
                                   "stop": Stop(), "subscribers": 0, "alone_since": now, "result": None,
                                   "describe": describe or {}, "expected_s": expected_s, "cancel_asked": None,
-                                  "payload": payload}
+                                  "payload": payload, "user_key": user_key}
             if expected_s is not None:
                 self._jobs[job_id]["report"]["expected_s"] = expected_s
             self._log_transition(job_id, "queued")
@@ -178,6 +179,12 @@ class JobPool:
         with self._lock:
             record = self._jobs.get(job_id)
             return self._snapshot(record) if record else None
+
+    def owned_by(self, job_id, user_key):
+        """Whether the job is known and was submitted under `user_key`."""
+        with self._lock:
+            record = self._jobs.get(job_id)
+            return record is not None and record["user_key"] == user_key
 
     def result(self, job_id):
         """The worker's result of a done job, else None."""
@@ -275,12 +282,15 @@ class JobPool:
             self._cleanup(payload)
         return len(abandoned), len(expired)
 
-    def start_sweeper(self, interval_s=SWEEP_INTERVAL_S):
-        """A daemon thread that sweeps every `interval_s` until shutdown()."""
+    def start_sweeper(self, interval_s=SWEEP_INTERVAL_S, also=()):
+        """A daemon thread that sweeps every `interval_s` until shutdown(), calling each of
+        `also` after each sweep (the part store's sweep)."""
         def loop():
             while not self._closing.wait(interval_s):
                 try:
                     self.sweep()
+                    for sweep in also:
+                        sweep()
                 except Exception:   # never let the sweeper die
                     self._log({"event": "slice_sweeper_error", "traceback": traceback.format_exc()})
         thread = threading.Thread(target=loop, name="slice-jobs-sweeper", daemon=True)
