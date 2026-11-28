@@ -1,0 +1,295 @@
+# Phase 2, batch wizard-1b-trial-geometry: the second trial and the Layout step's geometry
+
+The builder's record of the second half of item 1 of
+[the wizard's details, "By phase"](../../../../wizard/README-details.md#phase-2-one-machine):
+the second opening trial, laying on a face, auto-orient and Arrange on real exported parts,
+with the geometry it tried written as the wizard's own modules. Written on Fri 2026-11-27
+(Pacific time) on branch `phase-2/wizard-1b-trial-geometry`.
+
+What was built:
+
+- The worker, [wizard/src/geometry.worker.js](../../../../wizard/src/geometry.worker.js), and
+  the geometry in `wizard/src/geometry/`: the STL reader, a quickhull, finding the faces a part
+  can lie on, the turn of an instance as a quaternion and its plate-configuration fields,
+  auto-orient, Arrange, the placement check and the worker's messages, all written fresh. How
+  each works is in [The geometry, in a worker](../../../../wizard/README-details.md#the-geometry-in-a-worker).
+- Tests on Node's runner in `wizard/tests/geometry/` (105 of them when written): every step on
+  small solids made in the tests, the eight real parts and the two made parts against the
+  trial's recorded answers, every shared placement plate with its expected answer, and each
+  error report.
+- The trial in `wizard/trials/geometry/`: its page, its script (`make -C wizard trials-geometry`),
+  its results, its pictures and [its notes](../../../../wizard/trials/geometry/README.md).
+- The wizard's guide and details file brought up to date: what is built, the tuned rules, the
+  measured figures.
+
+The shared plates of `contracts/plate-configuration.md` were already on `main` (batch
+slice-0-shared-plates) when the branch was made; the wizard's check gives exactly the expected
+answer on all thirteen.
+
+## Decisions made
+
+1. **The worker's modules and messages.** The details propose a module `geometry.worker` and
+   are silent on its messages. I wrote `wizard/src/geometry.worker.js`, which only wires
+   `wizard/src/geometry/messages.js` to the worker's messages, so that the tests run the same
+   messages in their own thread; the messages are `read`, `faces`, `orient`, `arrange`, `check`
+   and `forget`, each answered `{id, ok, result}` or `{id, ok: false, error}`. To overrule:
+   rename the files or messages; only the trial's page and the tests use them so far.
+2. **The geometry's error codes.** The details say a part the page cannot draw gets the
+   wizard's own notification (that PenguinSlicer could not show the part and that it cannot
+   be imported) and name no code. I made two error reports: `wizard.part_not_drawable` (a file
+   the reader refuses, or a part with no hull), matching the page report's `what` of the same
+   name, and `wizard.layout_failed` (a message about a part never read, an unknown message, or
+   the geometry failing), matching the report's `layout_failed`. To overrule: change the codes
+   and sentences in `wizard/src/geometry/errors.js` and the table in the details file.
+3. **The hull's method and tolerance.** The guide says a faster hull may be needed. I wrote
+   quickhull with each face keeping its outside corners and repeated corners dropped first.
+   A corner within 1e-6 mm of a face counts as on it: 1e-3 mm, tried first, left a corner of
+   Clamp Plate Inner 0.006 mm outside its hull, too near the 0.01 mm by which the two
+   placement checks must agree. To overrule: change `HULL_EPS_MM`; the hull test on a real
+   part and on random spheres says whether a value works.
+4. **Thin strips of the hull are part of the flat face beside them.** The documents are
+   silent. On real parts a flat face came out of the hull as a large piece and strips a
+   tenth of a degree off it (a fillet's corners a thousandth of a millimetre above the
+   face), which the 0.06-degree join cannot reach. A face whose corners all lie within
+   0.01 mm of a larger neighbour's plane, turning from it by less than 1 degree, is merged
+   into it (`FLAT_GAP_MM`, `FLAT_TURN_DEG`). To overrule: drop `mergeFlat` in
+   `geometry/faces.js`; the hub then gets two stray patches on its base.
+5. **A round side is judged across shallow bends, not only between neighbours.** The details
+   name this as known to be needed ("treat a run joined by shallow bends as one round side").
+   A face is dropped when any face it reaches through faces all within 20 degrees of it is at
+   least half its size. To overrule: limit the search to direct neighbours, as first written;
+   the carriage then gets five patches on fillet facets.
+6. **A flat face of the part's own surface is not dropped beside a bridging hull face.** The
+   documents are silent; the rule as written dropped Elevator Top Inner's four flat sides,
+   each 3 degrees from a hull face of the same size bridging down to a smaller lower block.
+   A face of at least 25 mm² that is mostly the part's own surface is not dropped on account
+   of a neighbour that is mostly a bridge. To overrule: remove `spares` in
+   `geometry/faces.js`; the bounding-box patches then cover those sides instead.
+7. **The tip-over test marks patches and hides none.** The guide says Orca's tool lacks the
+   test and PenguinSlicer's should have it, and is silent on what it does. Tried as a filter
+   it hid Elevator Top Inner's four real flat sides and two large flat backs of the elevator
+   blocks; a printer's plate holds a print's first layer whichever way its weight falls. Each
+   patch carries `stable` and `height` for the Layout step to use (for instance in the
+   pointer line). To overrule: drop the patches whose `stable` is false in the worker's
+   `faces` answer.
+8. **Auto-orient's score kept as the mockup had it.** The details say the overhang
+   threshold was invented and is to be tuned on real parts. I kept 45 degrees, 0.1 mm of
+   contact gap, 0.01 per millimetre of height and 100 for almost no contact, since the
+   choices on the real parts look right to me except one I am unsure of (below). To overrule:
+   change the four constants; the real-parts test then shows what moves.
+9. **A part that lies as modelled nearly as well as its best way stays as modelled.** The
+   documents are silent. The made hub was turned over for a 5% difference in how its two
+   ends were cut. As modelled is kept within `AS_MODELLED_MARGIN`, 5% of the best cost. To
+   overrule: set it to 0.
+10. **Arrange on a map of half-millimetre squares.** The details give the packers and are
+    silent on how free spots are found. Each outline, grown by half the spacing plus
+    0.025 mm and held by a 32-corner outline, is marked on a map of the plate; two outlines
+    sharing no square are at least the spacing apart, so an arranged plate always passes the
+    placement check, at the cost of up to about a millimetre more room. 1 mm squares placed 99
+    of the mix of 150, half-millimetre ones 104. To overrule: change `ARRANGE_CELL_MM`, or
+    replace the map by exact distances (slower).
+11. **Where an instance Arrange cannot place waits.** The guide says beside the plate. I put
+    such instances in a column 20 mm to the right of the plate. To overrule: change
+    `BESIDE_GAP_MM` and the placing loop in `geometry/arrange.js`.
+12. **What the placement check gives the Layout step.** The guide's messages need the edge
+    crossed, the distance and the size as turned. Each problem carries `edges` (`left`,
+    `right`, `front` for low y, `back` for high y), `size`, `height` or `distance`, in the
+    slice service's order. To overrule: rename the edges; nothing else uses them yet.
+13. **Serving the wizard's modules to the trial without touching the shared server.** The
+    trials' server serves only `wizard/trials/`, `wizard/vendor/` and the real parts. The
+    geometry trial's script takes `serve.make_server("127.0.0.1", 0)` and swaps in a handler
+    of its own that also serves `wizard/src/` at `/src/`, with the same guards. So
+    `make -C wizard trials-serve` does not serve the geometry page's modules. To overrule: add
+    `/src/` to the roots of `wizard/trials/serve.py`.
+14. **The pictures are drawn on a 2D canvas, not with three.js.** The details ask for one
+    picture of each part in its chosen orientation with its patches. I drew four views on one
+    picture (as modelled from above and from below, as laid from two sides, the patch it is
+    laid on edged in red) by painting triangles far to near, so that no graphics card is
+    needed. To overrule: draw them with three.js under the WebGL recipe the first trial uses.
+15. **What each time measures.** "Selecting" is asking a worker that has already laid the
+    part down for its patches, since the faces are found when the part arrives; "arriving" is
+    reading the file and auto-orient on a fresh worker. The time to find the faces from
+    nothing is recorded beside them. To overrule: count the faces from nothing against
+    `PATCHES_MS` (215 ms for the hub: it would miss).
+16. **The mix of real parts.** The details say "a mix of the real parts" at 150 instances. The
+    first mix (60 Inner Spacers, 40 pulleys and so on) put only 38 on the plate. The mix is
+    140 of Pulley v3 and one or two of each other real part, nearly a full plate. To overrule:
+    change `MIX` in `run.py`.
+17. **The main thread is measured by a heartbeat.** The details say the page measures holds
+    by the browser's long-task timing. In the trial that timing reported up to about a second
+    during the hub's steps, while no answer took over 0.3 s and a 10 ms heartbeat never went
+    more than 15 ms between beats; in a rerun the long task moved to another part (hub-150k
+    0 ms, Elevator Block Bottom Inner 519 ms). The trial records both and counts the
+    heartbeat. After review the details' "Keeping the page answering" says so: the heartbeat
+    is the page's measure, and an Open line asks why Chromium reports those tasks. To
+    overrule: count the long tasks, in the details and in `run.py`.
+18. **When the trial fails.** The details give its passing conditions. `run.py` exits 1 when a
+    time is missed or a real part's flat face has no hull patch, naming each, after writing the
+    results. A flat face is a hull face of at least 25 mm² of which at least half is the part's
+    own surface.
+19. **After review: the placement check's footprints are kept by the part's hull corners.**
+    The reviewer found that the worker kept footprints across `check` messages by the plate
+    configuration's part key, so a key that came to point at another read part (the spacer
+    read in inches after millimetres) answered from the old part's footprints: `[]` for a plate
+    a fresh worker refuses with two `off_plate` and a `too_close`. Confirmed with a test that
+    failed for that reason. The cache is now a `WeakMap` keyed by the hull's corner array of
+    the part as read, then by turn and angle; a part read again gets a new array, and a
+    forgotten part's footprints go with it, so `forget` no longer clears anything. Arrange's
+    own cache is keyed the same way. To overrule: key by the read key instead, which must then
+    also be cleared on every `read`.
+20. **After review: the remedy of `wizard.layout_failed`.** The details quoted two sentences
+    of each geometry error report that the guide did not have, and the remedy "Reload the page;
+    your parts and settings are kept." left out the layout. The guide now carries all four
+    sentences (under its part that cannot be used, and under "Keeping the page answering"), the
+    remedy reads "Reload the page; your parts, layout and settings are kept in this browser.",
+    the wording the guide already uses for what the browser keeps, and a test checks that each
+    sentence of each report is quoted in both files. The promise holds only once the page keeps
+    the plate in the browser's storage, which is built with the page; no user sees the
+    sentence before then. To overrule: change the sentences in the guide, the details and
+    `geometry/errors.js` together.
+21. **After review: declined, the hull's "could not be closed" refusal has no test that
+    produces it.** It guards an inconsistency of the horizon that only corners closer than the
+    hull's tolerance could cause, and no input I could construct reaches it (the hull is
+    checked on random spheres and every real part without meeting it). A test would have to
+    reach into the hull's internals. The two other refusals the reviewer named ("no size",
+    "one line") now have a test each that tells them from the flat refusal. To overrule: find
+    an input that reaches it and add it as a test. The second reviewer accepted this.
+22. **After the second review: three checks pinned that a mutation survived.** The reviewer
+    loosened three checks by hand and every test still passed: the too-tall rule's tolerance
+    (`EPS_MM` to 0.5 mm), `instanceTurn`'s whole-degree test (1e-6 to 0.5 degrees) and the
+    round-side rule's "at least half its size" (`/ 2` to `/ 1.5`); and dropping `instanceTurn`'s
+    "w not negative". Each now has a test that fails under that mutation, checked by making it
+    again: a 10 x 10 post exactly 340 mm tall passes and one 340.01 mm tall is `too_tall`; the
+    reviewer's two clicks (laid on the face of normal (0.48, 0.6, -0.64), then on the -x face) are
+    sent as the rotation [0.628064719, -0.324861061, -0.628064719, -0.324861061], and the +x lay
+    turned 10.5, 30.00001 and 0.4 degrees is sent as a rotation; a lay given with w negative is
+    sent with w positive, the same as its opposite; a block whose +x side is two faces of its own
+    surface bending 10 degrees loses both when the smaller is six tenths of the larger and only
+    the smaller at four tenths. The code was right in each case and is unchanged. To overrule:
+    none needed; a test changes only with the rule it pins.
+23. **After the second review: instance names are reduced one code point at a time.** The
+    reviewer found that `instanceLabels` replaced each UTF-16 half of a character outside the
+    Basic Multilingual Plane, giving 'Bracket___ #1' where the slice service's
+    `sanitize_part_name` (Python, which works in code points) gives 'Bracket__ #1'. Confirmed
+    with a test that failed for that reason; the pattern now has the `u` flag. After the
+    replacement every character is ASCII, so taking the first 40 is the same in both. The test
+    has an emoji name, one of 50 emoji (40 underscores) and one of 30 (30 underscores, a
+    different name from the 50, so its count starts at 1). To overrule: the contract's
+    "Instance naming" would have to count UTF-16 units, and the slice service with it.
+24. **After the second review: a malformed instance is the page's fault, not a green plate.**
+    The reviewer found that `check` answered no problems for an instance with `x` NaN or the
+    rotation [0, 0, 0, 0], which the slice service refuses as `slice.bad_plate_configuration`.
+    The documents are silent on whether the worker checks an instance's form. I chose to: before
+    `arrange` and `check`, the worker checks every instance against the contract's form ("An
+    instance in phase 2": `x` and `y` finite numbers, `angle` a whole number from 0 to 359,
+    exactly one of `orientation` (one of the six) and `rotation` (four finite numbers of length 1
+    within 1e-6)) and answers `wizard.layout_failed` naming the instance, since only the page
+    builds instances. A test sends twelve malformed instances to both messages, and one rotation
+    as the page sends it, which passes. The details' table of the worker's error reports says
+    so. Not checked: fields the contract does not list (`ref` is checked since the third review,
+    decision 29). To overrule: drop `checkInstances` in `geometry/messages.js` and the row's words.
+25. **After the second review: `layout_failed` and `page_failed` are told apart when the reports
+    are built.** The reviewer pointed out that the contract's report `what` list has `page_failed`
+    for the page's own faults, while the worker answers `wizard.layout_failed` for those too. The
+    notification is the same either way, so I kept one code for the worker's answers and added a
+    sentence to the details' "Failures in the browser": a fault the page asked for (a message
+    unknown, a part never read, a malformed instance) is reported as `page_failed`, the geometry's
+    own failure as `layout_failed`, and the worker tells the two apart in its answer when the
+    reports are built. Nothing sends reports yet. To overrule: give the page's faults an error
+    code of their own now, in `geometry/errors.js`, the details and the guide.
+26. **After the second review: the heartbeat under shared load.** The reviewer's rerun, with
+    other builders on the machine, met every time but saw the heartbeat's longest gap reach 52 ms
+    on the hub (the details record about 15 ms from this trial) and a 1,886 ms long task. 52 ms is
+    within `MAIN_THREAD_HOLD_MS` (250 ms), and the long task is the Open line of decision 17, so
+    nothing changes; the trial's figures stay as recorded. To overrule: rerun the trial on an
+    idle machine and replace the details' "about 15 ms" with a range.
+27. **After the third review: auto-orient's stability rule has a test of its own.** The reviewer
+    found that removing `c.stable &&` from the filter of counted candidates left every test
+    passing, because the one test of an unstable face (the post with an arm) also loses that
+    face on cost. Confirmed by that mutation. The new test in `tests/geometry/orient.test.js`
+    uses a round post 12 mm across and 20 mm tall leaning 16 mm along x (39 degrees from
+    upright, so its underside, steeper than 45 degrees from horizontal, counts as no overhang),
+    with a flat cut 25 degrees in from its upper side (the shape `leaning` in
+    `tests/geometry/shapes.js`). Standing on either end it is the cheapest candidate (cost 0.200,
+    111 mm² touching, no overhang) and would tip over, its centre of mass 8.1 mm out over a 6 mm
+    radius; the flat cut is the one stable way (cost 1.028). With the mutation the test fails
+    (the part is left standing as modelled); without it, it passes. The documents fix the rule;
+    only the test is new. To overrule: nothing to overrule short of changing the rule.
+28. **After the third review: the coarse outline is tested to hold the hull.** The reviewer
+    found that `simplified` could return a subset of the hull's corners with every test passing,
+    though the placement check skips a pair whose coarse outlines are the spacing apart and
+    Arrange marks its map from the grown coarse outline. Confirmed with the reviewer's mutation
+    (every fourth corner), under which two 64-sided discs of radius 20 set 4.9 mm apart pass the
+    check. Two tests in `tests/geometry/placement.test.js` now fail under that mutation: two such
+    discs 4.99 mm apart along eight directions, four of them midway between corners of the
+    coarse outline, are too close (4.99 mm) and 5 mm apart pass; and every corner of regular
+    outlines of 33, 64 and 200 corners at three phases lies inside its coarse outline of at most
+    32 corners (within 1e-9 mm). No code changed. To overrule: nothing; the details fix the rule.
+29. **After the third review: an instance's `ref` is checked before `arrange` and `check`.** The
+    reviewer found that an instance whose `ref` the worker was not given ended in
+    `wizard.layout_failed` with the bare detail 'TypeError: Invalid value used as weak map key'.
+    The documents are silent on this detail. I chose to treat it as a malformed instance like
+    those of decision 24: a `ref` that is not an own key of the plate configuration's `parts`, or
+    not an own key of the message's `geometry`, gives `wizard.layout_failed` whose detail names
+    the instance and the ref (`instance 1: ref "washer" names no part of the plate
+    configuration`). The test of decision 24 gains three such instances, `toString` among them
+    so that an inherited key is refused too; it failed for the reviewer's reason before the
+    change. The details' table of the worker's error reports names the two cases. To overrule:
+    drop `refFault` in `geometry/messages.js` and the row's words.
+30. **After the third review: the column of instances waiting beside the plate is tested for
+    its spacing.** The reviewer found that dropping `+ plate.spacing` from the column's step left
+    the tests passing. Confirmed. The test "what does not fit waits beside the plate" now checks
+    the waiting instances, with supports off and on, against the placement check and asserts
+    they are only off the plate, never too close; with the mutation it fails with `too_close`.
+    No code changed. To overrule: nothing.
+31. **After the third review: Arrange's rounding of x and y to a thousandth is kept (minor
+    finding 2 declined).** The reviewer noted that rounding can move an instance by up to
+    0.0005 mm, more than the check's 1e-6 mm, and that it could matter only where a pile exactly
+    fills the frame. Between instances it cannot matter: Arrange leaves `ARRANGE_SLACK_MM`
+    (0.05 mm) beyond the spacing, a hundred times the rounding. At the edges, the pile is
+    centred on the plate, so a pile that fills the frame's width sits symmetrically in it. I
+    tried 3,000 plates of one block between 333.9988 and 334 mm wide (filling the 334 mm frame)
+    with two others of random sizes, and the placement check passed every one. Rounding keeps the
+    plate configuration's numbers short and reproducible. To overrule: inset Arrange's frame by
+    0.0005 mm on each side in `frame` of `geometry/arrange.js`, or drop `round3`.
+
+## Targets missed
+
+- The fixes of the third and last review (decisions 27 to 31) were merged without a further
+  review.
+
+## Not done
+
+- The round parts exported from Onshape at its coarse and fine settings: only the owner can
+  supply them. The trial used `pulley-v3.stl` and `inner-spacer.stl`, as the details say, and
+  its summary says so; Inner Spacer is a square plate with rounded corners, so the pulley is
+  the only real round side tried.
+- A round side of fewer than 18 facets, and a part modelled at an angle to its axes: the
+  details list both as needed on real parts; no part kept in the repository has either, so
+  neither has a rule or a test.
+- The malformed STL ending in a notification on the main thread, with the panel never held
+  past 250 ms: it needs the page (items 7 and 10 of "By phase"); the worker's error report for
+  it is built and tested.
+- The Layout step itself (the view, the gestures, the messages): item 10, a later batch.
+- After review, the trial was not run again: the fixes change the worker's cache (which only
+  makes a fresh footprint where a stale one was used) and the trial page's constants (the same
+  values by name), not what the trial measures. `summary.json`'s note was brought into line by
+  hand with the note `run.py` now writes, its figures left as recorded.
+- After the second review, the trial was not run again either: the fixes add tests, a check of
+  each instance's form before `arrange` and `check` (a loop over at most 150 instances), and the
+  `u` flag on the naming pattern; none changes the geometry the trial times.
+- After the third review, the trial was not run again: the fixes add tests and a check of each
+  instance's `ref` before `arrange` and `check`; none changes the geometry the trial times.
+
+## For the owner to look at
+
+- Each part's picture, in `wizard/trials/geometry/pictures/`, with the table "Each part, as a
+  person would see it" in [the trial's notes](../../../../wizard/trials/geometry/README.md).
+  Look first at [Elevator Block Bottom Inner](../../../../wizard/trials/geometry/pictures/elevator-block-bottom-inner.png):
+  auto-orient turns it upside down, 82.6 mm tall, and I am not sure a person would; it also
+  has nine patches on hull faces that bridge its pockets, which Orca offers too.
+- The two arranged plates, [the spacers](../../../../wizard/trials/geometry/pictures/arrange-spacers-150.png)
+  and [the mix](../../../../wizard/trials/geometry/pictures/arrange-mix-150.png): they pass, but
+  the packing is uneven.
+- `make -C wizard trials-geometry` runs the trial again (about a minute); the figures land in
+  `wizard/trials/geometry/results/summary.json`.
