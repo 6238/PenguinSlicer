@@ -196,6 +196,20 @@ def test_a_repeat_is_answered_before_any_check_and_the_stopping_answer_before_th
     assert answer.status_code == 503 and answer.json() == example("slice-http/stopping.json")
 
 
+@pytest.mark.parametrize("content_type, body", [
+    ("application/json", b"{not json"),
+    ("multipart/form-data; boundary=b", b'--b\r\nContent-Disposition: form-data; name="x"\r\n\r\n{}\r\n--b--\r\n'),
+])
+def test_a_stopping_slice_service_refuses_a_body_it_cannot_read_before_it_answers_stopping(
+        standin, http, content_type, body):
+    # The real slice service reads the body as JSON before the repeat and the stopping answer
+    # (slice/src/penguin_slice/web.py, `submit`): a body that is not JSON, or a multipart
+    # form, is answered 400 slice.bad_plate_configuration even while it stops.
+    standin.stopping = True
+    answer = http.post("/slices", content=body, headers={**KEY, "Content-Type": content_type})
+    assert answer.status_code == 400 and answer.json()["code"] == "slice.bad_plate_configuration"
+
+
 def test_a_slice_job_that_starts_at_once_is_accepted_with_its_latest_report(standin, http):
     # The real slice service answers a new slice job with its latest report, which is
     # already `running` when nothing else waits and Orca starts at once

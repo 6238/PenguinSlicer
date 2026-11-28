@@ -110,7 +110,8 @@ Written Fri 2026-11-27, Pacific time.
     own process, which the servers inherit. The real-Orca walk keeps the time limit and
     drops the address-space one, since the slice service sets Orca's own ceiling.
 17. **The suite runs one test at a time.** Each test starts two servers; the machine's
-    rule allows two workers, and the run takes 37 to 42 seconds serially.
+    rule allows two workers, and a clean run took 37.6 to 46.7 seconds serially on the shared
+    machine (37.6 s, and the reviewer's 39.6, 39.9 and 46.7 s).
 18. **A test of the front server's fast suite that failed about one run in eight was fixed
     at its cause.** `test_a_finished_slice_job_followed_already_is_counted_in_no_kind[stored]`
     in `front/tests/test_collecting.py` began its following on a slice job already done with
@@ -161,8 +162,9 @@ Written Fri 2026-11-27, Pacific time.
     service, whose second stop gives up a running Orca, the front server has nothing a
     second stop could hurry, and its stop is bounded by its own parts. Tested by
     `test_a_second_stop_during_the_stop_still_writes_what_the_log_gathered`, seen to fail
-    first. To overrule: let the second stop end the process, and say so in the details
-    file's stop paragraph.
+    first. That test sends the second stop both as `_end` begins and at the `stop` line, so
+    an `ignore` moved later than the start of the stop fails it. To overrule: let the second
+    stop end the process, and say so in the details file's stop paragraph.
 25. **The real-Orca walk checks the profiles travel inside the archive** by reading
     `Metadata/project_settings.config`, the entry Orca writes the settings it sliced with
     into, and checking it names the plate configuration's printer, process and filament and
@@ -200,6 +202,13 @@ Each in full, with its evidence, in [the record of the seam](../seam-front-slice
 7. **A stop at the moment the front server said it listened ended it without its stop line
    or its gathered log.** The front server wrote its `start` line before taking the stop
    signals. Fixed in the front server: the signals are taken first.
+8. **While stopping, a body that cannot be read as JSON.** The slice service reads the body
+   first (the repeat is found by its `submission_id`), so a multipart form or a body that is
+   not JSON is answered `400` `slice.bad_plate_configuration` while it stops; the stand-in
+   answered `503` `slice.stopping`, which the contract's words ("`POST /slices` answers
+   `503`") read like. The front server always sends JSON it built, so no page meets it.
+   Fixed in the stand-in, with a test; the contract's words now say such a body is refused
+   as at any other time. Found by the second review.
 
 ## The review's findings
 
@@ -225,6 +234,37 @@ eight were found real and fixed; none was declined.
 8. **The profiles inside the archive:** checked by the real-Orca walk (decision 25), which
    passed under the real-Orca lock.
 
+A second review found one blocking finding and five minor ones. Five were fixed; one was
+declined in part.
+
+1. **Blocking: nothing checked that the slice service's wait for the answers being written
+   ends when they end.** With the handler's `notify_all` removed, every stop waited the full
+   10 s and every suite passed. Fixed in `slice/tests/test_serve_stop.py`:
+   `test_the_answer_to_the_delete_that_ends_the_drain_is_written_before_serve_returns` now
+   sets `STOP_ANSWERS_S` to 3,600, releases the held answer while holding the wait's lock (so
+   the answer can end only once `serve` waits, and the wait's first look always finds it),
+   and the driver fails the test if `serve` has not returned within `FAILSAFE_S`, waking it
+   so the test ends; it also checks no `slice_service_answers_cut` line is written. With
+   `notify_all` removed it fails in 10.7 s; as built it passes in under a second. The slice
+   service's details say the wait ends with the last answer.
+2. **The joined check of `slice_ended_at` cannot tell the slice's end from the collecting.**
+   Declined as a change to the test, recorded instead: both moments are RFC 3339 to the
+   second, set by two real processes' clocks, so separating them needs the wall clock to pass
+   a second boundary, a wait of a duration the quality bar forbids; neither process takes a
+   fake clock. The front server's fast suite checks it on its fake clock
+   (`front/tests/test_collecting.py`, which the reviewer saw fail). The test's comment and
+   the record of the seam now say what the joined check does show: `ended_at` crossing in a
+   form the front server takes.
+3. **The stand-in's `400` against the slice service's `503` while stopping:** fixed as
+   mismatch 8.
+4. **The second-stop test sent its signal only at the stop line:** the test also sends one
+   as `_end` begins (decision 24); with `ignore` moved to just before the `stop` line it
+   fails.
+5. **The record of the seam omitted `GET /log`'s `process` changing across a slice service
+   restart:** added to what only a stand-in still exercises.
+6. **The joined suite's time:** the figure now gives the measured range, 37.6 to 46.7 s
+   (decision 17).
+
 ## Targets missed
 
 1. **A deploy of the slice container loses up to 60 seconds of the slice service's lines
@@ -245,8 +285,8 @@ eight were found real and fixed; none was declined.
 
 ## For the owner to look at
 
-- `make -C together install`, then `make -C together test`: the joined suite, 37 to 42
-  seconds on an aarch64 Linux machine. Each server's output is kept in `slice.log` and
+- `make -C together install`, then `make -C together test`: the joined suite, 37.6 to 46.7
+  seconds on a shared aarch64 Linux machine. Each server's output is kept in `slice.log` and
   `front.log` in the test's temporary folder.
 - `make -C together test-orca`: the walk with the real Orca, under the real-Orca lock.
 - [The record of the seam](../seam-front-slice.md), and in it

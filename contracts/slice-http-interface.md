@@ -82,7 +82,9 @@ process knows none of the slice jobs of the process before it, and answers them
 
 **While stopping.** From the moment the slice service is asked to stop, `POST /slices`
 answers `503` `slice.stopping` (except a repeat of a remembered submission, which is answered
-with its slice job); every other request is answered as usual until the process exits
+with its slice job, and a body that cannot be read as JSON at all — a multipart form, a body
+over the size cap or one that is not JSON — which is refused `slice.bad_plate_configuration`
+as at any other time, since the body is read before the repeat is looked for); every other request is answered as usual until the process exits
 ([the slice service's details, item 14](../slice/README-details.md#phase-2-one-machine)).
 
 **Old and new versions together.** From phase 3 the front server and the slice service are

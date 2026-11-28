@@ -389,11 +389,20 @@ class _SecondStop(io.StringIO):
         return written
 
 
-def test_a_second_stop_during_the_stop_still_writes_what_the_log_gathered(tmp_path, clock):
+def test_a_second_stop_during_the_stop_still_writes_what_the_log_gathered(tmp_path, clock, monkeypatch):
     # The stop takes up to a few seconds (the progress streams, the followings, the web
     # server's threads). A second SIGTERM or Ctrl-C in that time must not cut it short: the
     # stop line and the log's writing out of what it gathered still happen. Run in the main
-    # thread, where the front server takes the signals.
+    # thread, where the front server takes the signals. A second stop is sent both as the
+    # stop begins (before the first thing it ends) and at its stop line.
+    import penguin_front.server as server_module
+
+    real_end = server_module._end
+
+    def end_after_a_second_stop(*args):
+        os.kill(os.getpid(), signal.SIGTERM)
+        return real_end(*args)
+    monkeypatch.setattr(server_module, "_end", end_after_a_second_stop)
     stdout = _SecondStop()
     try:
         status = serve(parse_args(["serve", "--port", "0"]),

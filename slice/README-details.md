@@ -568,9 +568,12 @@ the stopping answer of [Submitting a plate configuration](../contracts/wizard-fr
    kept by the web server's request handler (`__main__.InFlight.handler`), from a
    connection's acceptance to the end of its handling, since the development server closes
    each connection after one answer and skips the app's `close` when its client has gone
-   away. Answers still being written at the bound are cut, with a line
+   away. The wait ends when the last answer ends, woken by the handler, not at the bound.
+   Answers still being written at the bound are cut, with a line
    `slice_service_answers_cut` naming them (`answering`, `waited_s`). Tests:
-   `tests/test_serve_stop.py`, the answer that drains it and the answer cut at the bound.
+   `tests/test_serve_stop.py`, the answer that drains it (with the bound set far beyond
+   the test's backstop, so a wait that only the bound ends fails, and no
+   `slice_service_answers_cut` line) and the answer cut at the bound.
 
 The log lines: `slice_service_stopping` with `stop` 1, the ids of the waiting slice jobs it
 ended (`waiting_ended`) and whether the pool was drained at once; `slice_service_stopping`

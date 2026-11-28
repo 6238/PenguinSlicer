@@ -354,6 +354,14 @@ class SliceStandIn:
                           | {"detail": f"plate configuration Content-Length {length:,} "
                                        f"bytes, cap {MAX_PLATE_CONFIGURATION_BYTES:,}"})
         body = request.get_data()
+        # The real slice service reads the body as JSON first: a multipart form, or a body
+        # that is not JSON, is refused before the repeat and the stopping answer.
+        if request.mimetype.startswith("multipart/"):
+            raise _bad_plate("a multipart form, not a JSON body")
+        try:
+            json.loads(body)
+        except ValueError as exc:
+            raise _bad_plate(f"not JSON: {exc}") from None
         with self._lock:
             # A remembered submission is answered before any check, and the stopping answer
             # comes before the plate's form is read, as the real slice service does.
@@ -562,11 +570,14 @@ def _measure(body, units):
             "warnings": []}
 
 
+def _bad_plate(why):
+    return Refusal(400, _report(
+        "slice.bad_plate_configuration", "This plate configuration could not be read.",
+        "Lay out the plate again and send a new slice.", why))
+
+
 def _plate_configuration(body):
-    def refused(why):
-        return Refusal(400, _report(
-            "slice.bad_plate_configuration", "This plate configuration could not be read.",
-            "Lay out the plate again and send a new slice.", why))
+    refused = _bad_plate
 
     try:
         plate = json.loads(body)

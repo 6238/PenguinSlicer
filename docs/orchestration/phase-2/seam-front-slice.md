@@ -27,7 +27,7 @@ batch's record is [records/together-1-front-slice-seam.md](records/together-1-fr
 The two sides agree on every name, status, code, header and shape that passes between
 them. Joined, every request of the HTTP interface the front server uses was answered as the
 front server expects, through a whole walk, failures, repeats, replacement, a stop and two
-kinds of restart. Seven mismatches were found. Two of them, both about stopping, could
+kinds of restart. Eight mismatches were found. Two of them, both about stopping, could
 leave a slice unfinished for the user; the rest broke no request:
 
 | # | What | Which side departs | Done |
@@ -39,6 +39,7 @@ leave a slice unfinished for the user; the rest broke no request:
 | 5 | The slice service's last lines before it stops never reach the log bucket | Neither contract; the architecture's promise | Not fixed: a choice for the owner, below |
 | 6 | A stopping slice service exits before answering the DELETE that drained it | The slice service | Fixed in the slice service |
 | 7 | A stop sent the moment the front server says it listens ends it without its stop line or its gathered log | The front server | Fixed in the front server |
+| 8 | While stopping, a body that cannot be read as JSON: `400` or `503` | The stand-in; the contract's words were silent | Fixed in the stand-in; the contract's words now say it |
 
 ## Mismatches
 
@@ -184,7 +185,11 @@ or has returned, and reads on the line straight after `serve` returns whether th
 written. With the wait removed it fails every run (eight of eight), since the answer is then
 released only after `serve` has returned; with the wait it passes every run. (Its first form
 checked only after the driver thread, which itself waits for the answer, was joined, and so
-could not fail; a review found that.) A second test checks the cut at the bound.
+could not fail; a review found that.) The same test sets the bound to 3,600 seconds, far
+beyond its 10-second backstop, and lets the answer end only once `serve` waits, so the wait
+must be ended by the answer's end, not by its bound: with the handler's wake-up removed it
+fails, where before it passed 10 seconds slower; and it checks that no
+`slice_service_answers_cut` line is written. A second test checks the cut at the bound.
 
 ### 7. A stop at the moment the front server says it listens
 
@@ -212,6 +217,28 @@ that arrives before the web server runs ends it the same way. Two tests in its f
 run in the main thread: the handler is in place when the `start` line is written, and a stop
 raised before the serving begins still writes the `stop` line and the log. The joined suite
 now fails any stop of the front server that is not clean (exit status 0 and a `stop` line).
+A second test sends a second `SIGTERM` as the stop begins, before the first thing it ends,
+as well as at its `stop` line, so the second stop is ignored for the whole of the stop.
+
+### 8. While stopping, a body that cannot be read as JSON
+
+**The words.** [While stopping](../../../contracts/slice-http-interface.md#rules-for-every-request):
+"`POST /slices` answers `503` `slice.stopping` (except a repeat of a remembered
+submission)", which read as every `POST /slices`, whatever its body.
+
+**The two sides.** The slice service reads the body as JSON first, since the repeat is found
+by the body's `submission_id` (`web.submit`): a multipart form, a body over the size cap
+or one that is not JSON is refused `400` (or `413` for size) `slice.bad_plate_configuration`
+before the repeat and the stopping answer. The stand-in answered such a body `503`
+`slice.stopping` while stopping (it checked only the size first).
+
+**Evidence.** Reading the two; a review of this batch found it. The front server always sends
+a JSON body it built itself, so no page can meet it.
+
+**Done.** The slice service's order is the one the repeat needs, so it is kept. The stand-in
+now refuses a multipart form or a body that is not JSON before the repeat and the stopping
+answer, with a test (`test_a_stopping_slice_service_refuses_a_body_it_cannot_read_before_it_answers_stopping`),
+and the contract's words say that such a body is refused as at any other time.
 
 ## A choice for the owner: the slice service's lines at a deploy
 
@@ -281,7 +308,10 @@ Each of these had been exercised, on the front server's side, only against the s
   sliced file stored, offered under its name, and the slice service's copy deleted once.
 - `GET /slices` at a front server's start: a running slice followed again, a slice that
   ended while the front server was down collected with `ended_at` as its `slice_ended_at`,
-  `file_on_disk` false after.
+  `file_on_disk` false after. Both moments are to the second and usually fall in the same
+  one, so the joined check shows `ended_at` crossing in a form the front server takes, not
+  that the two hours count from the slice's end rather than from the collecting: the front
+  server's fast suite checks that on its fake clock.
 - `GET /settings-table`, compressed and plain, the configuration's profiles found in its
   catalog.
 - `GET /log`: the lines gathered into the log folder, each once, with the group added, the
@@ -298,4 +328,9 @@ Each of these had been exercised, on the front server's side, only against the s
 - `slice.no_user_key`: the front server always sends the user key.
 - A slice job of another user key: the development identity is one user.
 - `GET /log`'s `dropped` and `more`, which need more than 1,000 and 10,000 lines.
+- `GET /log`'s `process` changing across a slice service restart, and the front server
+  starting again from `after=0` of the new process: the joined log test restarts only the
+  front server (the front server's own tests `test_a_changed_process_starts_again_from_zero`
+  and `test_a_restarted_front_server_beside_a_new_slice_service_starts_from_zero`, against
+  the stand-in).
 - A sliced file cut partway, and a slice service that stops answering mid-request.

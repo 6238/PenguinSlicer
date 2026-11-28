@@ -165,8 +165,14 @@ def test_the_answer_to_the_delete_that_ends_the_drain_is_written_before_serve_re
     # line until serve either starts waiting for the answers being written or has returned,
     # whichever comes first. A serve that waits writes it first; a serve that does not returns
     # with it unwritten, which `on_return` sees on the line straight after serve returns.
+    #
+    # The wait must also end when that answer ends, not at its bound: the bound is set far
+    # beyond FAILSAFE_S, and the answer is released while serve holds the wait's lock, so the
+    # handler can end the answer only once serve is waiting. Only the handler's wake-up then
+    # ends the wait; without it the driver's backstop wakes serve and the test fails.
     install_fake_orca(tmp_path, monkeypatch, "ok")
-    written, release, watch, at_return = threading.Event(), threading.Event(), [], []
+    monkeypatch.setattr(cli, "STOP_ANSWERS_S", 3600)
+    written, release, watch, at_return, waits = threading.Event(), threading.Event(), [], [], []
     real, real_wait_idle = cli.make_server, cli.InFlight.wait_idle
 
     def holding(host, port, app, **kwargs):
@@ -181,8 +187,10 @@ def test_the_answer_to_the_delete_that_ends_the_drain_is_written_before_serve_re
     monkeypatch.setattr(cli, "make_server", holding)
 
     def waiting(self, seconds):
-        release.set()
-        return real_wait_idle(self, seconds)
+        waits.append(self)
+        with self._changed:                   # the handler cannot end the answer until serve waits
+            release.set()
+            return real_wait_idle(self, seconds)
     monkeypatch.setattr(cli.InFlight, "wait_idle", waiting)
 
     def on_return():
@@ -196,11 +204,16 @@ def test_the_answer_to_the_delete_that_ends_the_drain_is_written_before_serve_re
         os.kill(os.getpid(), signal.SIGTERM)
         log.wait_for(event("slice_service_stopping", stop=1))
         assert client.json("DELETE", f"/slices/{job}/file") == (200, {"job": job, "file": "deleted"})
+        if not returned.wait(FAILSAFE_S):
+            with waits[0]._changed:           # the backstop: wake serve so that the test can fail
+                waits[0]._changed.notify_all()
+            raise AssertionError("serve's wait did not end when the last answer ended")
     monkeypatch.setattr(jobs.JobPool, "start_sweeper", lambda self, *args, **kwargs: None)
     code, log, failure = serve_with(tmp_path, monkeypatch, drive, on_return)
     assert at_return == [True], "serve returned before the answer that drained it was written"
     assert failure is None, failure
     assert code == 0
+    assert not [line for line in log.lines if line.get("event") == "slice_service_answers_cut"]
 
 
 def test_an_answer_still_being_written_past_the_bound_is_cut_and_logged(tmp_path, monkeypatch):
