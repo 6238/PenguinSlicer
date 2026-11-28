@@ -1,0 +1,23 @@
+{
+ "plate_id": "4a1c86f9-0a12-5230-b3ab-a42c320d5793",
+ "submission_id": "9cfa3c05-78ec-5e94-be7d-bccdd5888dea",
+ "parts": {
+  "hex-spacer": {
+   "name": "Hex Spacer",
+   "sha256": "4e9493b4171a6efa92e1fc43e02597706647967e8e224be310164e987e913d44",
+   "units": "mm"
+  }
+ },
+ "instances": [
+  {
+   "ref": "hex-spacer",
+   "orientation": "+z",
+   "angle": 0,
+   "x": 170.0,
+   "y": 160.0
+  }
+ ],
+ "overrides": {
+  "enable_support": "0"
+ }
+}
