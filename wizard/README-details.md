@@ -500,7 +500,7 @@ Settings). The page acts on a report's `code` and `retryable`, never on the stat
 | Printer delivery's, from phase 5: a send refused, a print that failed or waits for a person, a wrong pairing code, a limit passed | `delivery.*` | Printer delivery | Shows them as they are |
 | The front server's own: a sign-in that could not be made, a group the user is not in, a sliced file that has expired or would be too large | `front.*` ([its list](../contracts/wizard-front-server.md#the-front-servers-error-reports)) | The front server | Shows them as they are |
 | The Onshape integration's, from phase 4: a part Onshape cannot export | Named in phase 4 | The Onshape integration | Shows them as they are |
-| In the browser: no answer from the front server, an answer of the front server the page cannot read, the page's own checks before sending (a file over the size limit, a twenty-sixth part, a plate over 150 instances, a setting's value that does not fit), every placement problem on the Layout step, a file the page itself cannot read, a 3D view that is lost, storage that fails | `wizard.*` (`wizard.bad_answer`, `wizard.layout_failed`, `wizard.part_not_drawable`, `wizard.part_over_size`, `wizard.file_unreadable`, `wizard.too_many_parts`, `wizard.too_many_instances`, `wizard.setting_refused`, …): the wizard's own, gathered in `wizard/src/sentences.js` and, for the geometry, `wizard/src/geometry/errors.js` (not `messages.js`, a name the worker's module has) | The wizard | Writes them |
+| In the browser: no answer from the front server, an answer of the front server the page cannot read, the page's own checks before sending (a file over the size limit, a twenty-sixth part, a plate over 150 instances, a setting's value that does not fit), every placement problem on the Layout step, a file the page itself cannot read, a 3D view that is lost, storage that fails | `wizard.*` (`wizard.bad_answer`, `wizard.layout_failed`, `wizard.part_not_drawable`, `wizard.part_over_size`, `wizard.file_unreadable`, `wizard.too_many_parts`, `wizard.too_many_instances`, `wizard.setting_refused`, `wizard.plate_not_ready`, `wizard.plate_configuration_over_size`, …): the wizard's own, gathered in `wizard/src/sentences.js`, for the Preview step's checks before sending (`wizard.plate_not_ready`, `wizard.plate_configuration_over_size`) in `wizard/src/slicing-sentences.js`, and, for the geometry, `wizard/src/geometry/errors.js` (not `messages.js`, a name the worker's module has) | The wizard | Writes them |
 
 States that are not failures are the wizard's to put into words, from the figures it is
 sent: a slice waiting behind others or waiting while the slicer restarts, a busy printer, a
@@ -1993,9 +1993,11 @@ into the mockup's `#slice-card` (without `#btn-cancel`), `#preview-errors` and
   less `plate_id`, `submission_id` and `local_time` (the time moves each minute); kept with the
   slice in the stored plate's `slice` as `{id, submission_id, fingerprint, submitted_ms}`.
   Entering the step with the fingerprint of the slice in hand changes nothing on the step
-  (slicing, sliced or failed as it stands); with that of the stored slice on a page that has
-  none in hand, the stored slice is followed and nothing is submitted; otherwise a new
-  submission. The store's `sliced` follows the fingerprint after every change of the plate
+  while that slice is slicing or sliced; a plate that failed or found no room to wait is not
+  sliced, so entering the step submits it again with a new `submission_id`. With the
+  fingerprint of the stored slice on a page that has none in hand, the stored slice is
+  followed and nothing is submitted; a stored slice of another fingerprint is never followed.
+  Otherwise a new submission. The store's `sliced` follows the fingerprint after every change of the plate
   (`plateChanged`, told by the Layout step, the Settings step, the Parts step and the store).
 - **Before sending,** a plate whose filament or profile the configuration does not hold is the
   wizard's `wizard.plate_not_ready` ("This plate cannot be sliced: its filament or profile is
@@ -2022,7 +2024,16 @@ into the mockup's `#slice-card` (without `#btn-cancel`), `#preview-errors` and
   no `missing_parts`, also send a `page_failed` report.
 - **A slice job unknown** (`404` `front.slice_unknown`, on the stream or on asking) submitted
   less than `SLICED_FILE_KEEP_S` ago by the page's clock is the slice service restarted; one
-  submitted longer ago is submitted again with no line (the expired message is item 14).
+  submitted longer ago has expired, and the page does not slice again by itself: the refusal's
+  own sentences are shown as a failure with Slice again and Back to Layout, and entering the
+  step again slices, as for any plate not yet sliced (the expired message of item 14 is to take
+  the refusal's place).
+- **A running report without a number in `elapsed_s`** (which the contract requires) counts the
+  time taken from the card's start. A report naming another slice job than the one followed is
+  ignored.
+- **A part uploaded again** after `slice.part_missing` must be answered with a record naming
+  the `sha256` and `units` asked for, as for a first upload: once more when it names others,
+  and the second time `wizard.bad_answer`, shown, with a `page_failed` report.
 - **The buttons** are `failureButtons(report)`: the action's button (`enable_supports`,
   `slice_again`), then the code's row, the first primary. Turn on Supports and slice again sets
   the Supports quick change to On, waits for the Layout step's check, and with a problem calls

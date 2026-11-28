@@ -2372,8 +2372,11 @@ The Preview step's slicing is built as [Slicing](#slicing) and
 [When a slice fails](#when-a-slice-fails) describe it. Entering the step sends the plate's
 description, made from the stored plate, the Settings step's changes and the Layout step's
 instances, in exactly the form the slice service reads; a plate already sliced, or slicing,
-as it stands is not sent again, and a slice goes on, still followed, when the user leaves the
-step. A repeat after a lost answer, the plate sent again while the slicer stops, and the
+as it stands is not sent again, a plate that failed or found no room to wait is sent again,
+since it is not sliced, and a slice goes on, still followed, when the user leaves the
+step. A slice the server no longer knows two hours or more after it was sent is not sent
+again by the page itself: until the expired message is built, the server's own sentence shows
+with Slice again, and entering the step again slices. A repeat after a lost answer, the plate sent again while the slicer stops, and the
 plate sent again after the parts the slicer no longer holds have been uploaded again from the
 browser's storage (twice at most; a third time is shown as a failure) all carry the same
 value, so that they start one slice; the page sends a new value only when it decides to slice

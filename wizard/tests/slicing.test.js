@@ -225,6 +225,33 @@ test('a part to upload again that the upload refuses is that refusal, shown', as
   assert.equal(page.view().report.code, 'slice.part_too_large');
 });
 
+test('a part uploaded again whose record names another hash is uploaded once more; twice is the wizard\'s bad answer, shown and reported', async () => {
+  const page = await openPage();
+  const missing = errorReport('slice.part_missing', { where: { stage: 'checking', missing_parts: [{ key: 'p1', sha256: hex(A), units: 'mm' }] } });
+  const other = { ...example('wizard-front/part-record.json'), sha256: 'e'.repeat(64), units: 'mm', warnings: [] };
+  page.server.script('POST', '/api/slices', steps.report(missing, { status: 422 }));
+  page.server.script('POST', '/api/parts', steps.answer(201, other), steps.answer(201, { ...other, sha256: hex(A), units: 'in' }));
+  await page.enter();
+  assert.equal(page.server.made('POST', '/api/parts').length, 2);
+  assert.equal(page.submissions().length, 1);
+  assert.equal(page.view().kind, 'failed');
+  assert.equal(page.view().report.code, 'wizard.bad_answer');
+  assert.deepEqual(page.reports.map((r) => r.what), ['page_failed']);
+});
+
+test('a part uploaded again whose first record names another hash and whose second is right: the plate is submitted again', async () => {
+  const page = await openPage();
+  const missing = errorReport('slice.part_missing', { where: { stage: 'checking', missing_parts: [{ key: 'p1', sha256: hex(A), units: 'mm' }] } });
+  const other = { ...example('wizard-front/part-record.json'), sha256: 'e'.repeat(64), units: 'mm', warnings: [] };
+  page.server.script('POST', '/api/slices', steps.report(missing, { status: 422 }));
+  page.server.script('POST', '/api/parts', steps.answer(201, other));
+  feedStream(page);
+  await page.enter();
+  assert.equal(page.server.made('POST', '/api/parts').length, 2);
+  assert.equal(page.submissions().length, 2);
+  assert.equal(page.view().kind, 'card');
+});
+
 test('a missing part whose bytes the browser no longer holds shows the slice service\'s own sentences', async () => {
   const page = await openPage();
   const missing = errorReport('slice.part_missing', { where: { stage: 'checking', missing_parts: [{ key: 'p9', sha256: 'f'.repeat(64), units: 'mm' }] } });
@@ -393,6 +420,25 @@ test('a stage the page does not know is shown by its words alone, after the last
   assert.equal(card.stages.some((s) => s.state === 'now'), false);
 });
 
+test('a running report without elapsed_s: the time taken counts from the card\'s start, never "NaN"', async () => {
+  const page = await openPage();
+  feedStream(page, events.progress(progress({ elapsed_s: undefined })), events.progress(progress({ elapsed_s: 'soon', sequence: 18 })));
+  await page.enter();
+  assert.equal(page.card().elapsed, '0:00');
+  await page.clock.advance(5 * S);
+  assert.equal(page.card().elapsed, '0:05');
+  assert.equal(page.card().left, T.ABOUT_LEFT('1:10'));
+});
+
+test('a report about another slice job than the one followed changes nothing', async () => {
+  const page = await openPage();
+  feedStream(page, events.progress(progress()), events.progress(progress({ job: 'someone-else', fraction: 0.9, sequence: 18 })), events.progress({ ...doneReport(19), job: 'someone-else' }));
+  await page.enter();
+  assert.equal(page.view().kind, 'card');
+  assert.equal(page.card().pct, '42%');
+  assert.equal(page.store.get().sliced, false);
+});
+
 test('the front server cannot be reached: the figures stop and the time-left line says there is no news; the first report after says Reconnected', async () => {
   const page = await openPage();
   const first = feedStream(page, events.progress(progress()));
@@ -475,16 +521,25 @@ test('a slice job the front server no longer knows, submitted less than two hour
   assert.equal(page.card().conn.text, T.SLICER_RESTARTED);
 });
 
-test('a slice job unknown two hours or more after it was submitted is not a restart: the plate is submitted again with no line', async () => {
+test('a slice job unknown two hours or more after it was submitted is not a restart: the page does not slice again by itself, it shows Slice again; entering the step again slices', async () => {
   const page = await openPage();
   const feed = feedStream(page, events.progress(progress()));
   await page.enter();
   for (let t = 0; t < SLICED_FILE_KEEP_S; t += 15) { await page.clock.advance(15 * S); feed.send(events.keepAlive()); }
-  page.server.script('GET', EVENTS, steps.report(errorReport('front.slice_unknown')));     // at 7,200 s exactly
-  feedStream(page);
+  const unknown = errorReport('front.slice_unknown');
+  page.server.script('GET', EVENTS, steps.report(unknown));     // at 7,200 s exactly
   feed.end();
   await page.clock.advance(0);
+  assert.equal(page.submissions().length, 1);
+  assert.equal(page.view().kind, 'failed');
+  assert.equal(page.view().what, unknown.message);
+  assert.deepEqual(page.view().actions.map((a) => a.id), ['again', 'layout']);
+  assert.equal(page.store.get().sliced, false);
+  await page.leave();
+  feedStream(page);
+  await page.enter();
   assert.equal(page.submissions().length, 2);
+  assert.equal(page.view().kind, 'card');
   assert.equal(page.card().conn, null);
 });
 
@@ -526,6 +581,31 @@ test('a page opened on a plate whose stored slice is the plate as it stands foll
   assert.equal(page.submissions().length, 1);
   assert.equal(slicing.model().kind, 'card');
   assert.equal(page.server.made('GET', EVENTS).at(-1).path, `/api/slices/${kept.id}/events`);
+});
+
+test('a page opened on a plate changed since its stored slice submits the plate as it stands and never follows the stored slice', async () => {
+  const page = await openPage();
+  feedStream(page, events.progress(progress()));
+  await page.enter();
+  const kept = page.storage.plate().slice;
+  // the plate changes, then a page opens on it (a reload) before the Preview step is entered again
+  const plate = page.storage.plate();
+  await page.storage.update({ instances: plate.instances.map((i, n) => (n === 0 ? { ...i, x: 95 } : i)) });
+  const store = createStore();
+  store.set({ ...page.store.get(), step: 'layout', sliced: false });
+  const slicing = createSlicing({ api: page.api, clock: page.clock, storage: page.storage, store, settings: {}, layout: page.layout, panel: { goTo() {} }, report() {}, newId: () => 'other', random: () => 0.5 });
+  page.server.script('POST', '/api/slices', steps.answer(202, { slice: { ...accepted().slice, id: 'job-2' } }));
+  feedStream(page);
+  store.set({ step: 'preview' });
+  await page.clock.advance(0);
+  const sent = page.submissions();
+  assert.equal(sent.length, 2);
+  assert.equal(sent[1].submission_id, 'other');
+  assert.equal(sent[1].instances[0].x, 95);
+  assert.deepEqual(page.server.made('GET', EVENTS).map((r) => r.path), [`/api/slices/${kept.id}/events`, '/api/slices/job-2/events']);
+  assert.equal(slicing.model().kind, 'card');
+  assert.equal(store.get().sliced, false);
+  assert.equal(page.storage.plate().slice.id, 'job-2');
 });
 
 // ---- when a slice fails
@@ -645,14 +725,32 @@ test('Slice again after a failure submits with a new value', async () => {
   assert.equal(page.view().kind, 'card');
 });
 
-test('coming back to a failed plate unchanged shows the failure again and submits nothing', async () => {
+test('coming back to a failed plate unchanged submits it again with a new value, since it is not sliced', async () => {
   const page = await openPage();
-  feedStream(page, events.progress(failedReport(errorReport('slice.out_of_memory'))));
+  feedStream(page, events.progress(failedReport(errorReport('slice.timeout', { retryable: true }))));
   await page.enter();
   await page.leave('parts');
+  feedStream(page, events.progress(progress({ sequence: 40 })));
   await page.enter();
-  assert.equal(page.submissions().length, 1);
-  assert.equal(page.view().kind, 'failed');
+  const sent = page.submissions();
+  assert.equal(sent.length, 2);
+  assert.notEqual(sent[1].submission_id, sent[0].submission_id);
+  assert.equal(page.view().kind, 'card');
+  assert.equal(page.card().pct, '42%');
+});
+
+test('coming back to a plate that found no room to wait submits it again with a new value', async () => {
+  const page = await openPage();
+  page.server.script('POST', '/api/slices', steps.report(errorReport('slice.busy', { retryable: true }), { status: 503 }));
+  await page.enter();
+  assert.equal(page.view().kind, 'busy');
+  await page.leave('settings');
+  feedStream(page);
+  await page.enter();
+  const sent = page.submissions();
+  assert.equal(sent.length, 2);
+  assert.notEqual(sent[1].submission_id, sent[0].submission_id);
+  assert.equal(page.view().kind, 'card');
 });
 
 test('Turn on Supports and slice again on a plate laid out 5 mm apart goes to the Layout step with its line and submits nothing', async () => {

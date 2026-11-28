@@ -80,6 +80,13 @@ test('only the parts an instance names are sent, keyed p1, p2… in the plate\'s
   assert.deepEqual(configuration.instances.map((i) => i.ref), ['p1']);
 });
 
+test('an angle kept outside whole degrees from 0 to 359 is sent as one, since the contract takes no other', () => {
+  const angles = [360, -90, 45.6, 719.4];
+  const plate = { ...EXAMPLE_PLATE, instances: angles.map((angle) => ({ ...EXAMPLE_PLATE.instances[0], angle })) };
+  const { configuration } = plateConfiguration({ plate, configuration: EXAMPLE_CONFIGURATION, plateId: PLATE_ID, submissionId: SUBMISSION, now: AT });
+  assert.deepEqual(configuration.instances.map((i) => i.angle), [0, 270, 46, 359]);
+});
+
 test('an instance whose part is no longer on the plate is left out', () => {
   const plate = { ...EXAMPLE_PLATE, parts: EXAMPLE_PLATE.parts.filter((p) => p.sha256 === BRACKET) };
   const { configuration } = plateConfiguration({ plate, configuration: EXAMPLE_CONFIGURATION, plateId: PLATE_ID, submissionId: SUBMISSION, now: AT });

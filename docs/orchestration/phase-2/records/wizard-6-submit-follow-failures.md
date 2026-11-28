@@ -68,18 +68,29 @@ How it was checked beyond the fast suite and the browser tests:
    `plate_id`, `submission_id` and `local_time`. The details propose "less its two ids"; the
    local time moves every minute, so leaving it in would make every plate "not sliced as it
    stands" a minute later. To overrule: `fingerprint` in `wizard/src/plate-configuration.js`.
-10. **Entering the step with the plate as it stands changes nothing on the step,** whatever it
-    shows: a slice still running, a sliced plate, and also a failure or no room to wait are shown
-    again and nothing is submitted; Slice again submits. The documents speak only of a sliced
-    plate. Reason: a failure of the same plate would fail the same way, and no room to wait says
-    the page does not submit again by itself.
+10. **Entering the step with the plate as it stands changes nothing while its slice is slicing
+    or sliced; a plate that failed or found no room to wait is submitted again** with a new
+    `submission_id`. This is not the builder's choice: the guide ("Slicing": entering the step
+    submits the plate, coming back to a plate already sliced shows the result),
+    [the plate configuration's contract](../../../../contracts/plate-configuration.md) ("The
+    submission's value") and [the wizard and front server contract](../../../../contracts/wizard-front-server.md)
+    (`POST /api/slices`, "For:") all submit on entering with "a plate not yet sliced as it
+    stands", and a failed or busy plate is not sliced. The first build kept the failure on the
+    step and submitted nothing; the review found that against the three documents, and it was
+    brought into line. So a plate that ran out of memory is sliced again, and fails again, each
+    time the user enters the step. To overrule: the guide and both contracts, then the
+    condition at the top of `enter` in `wizard/src/slicing.js`.
 11. **A page with no slice in hand whose stored slice is of the plate as it stands follows that
-    slice** and submits nothing. That is the part of "coming back" (item 16) the Preview step
-    needs; the rest of item 16 is not built (see Not done).
+    slice** and submits nothing; a stored slice of another fingerprint is never followed, and
+    the plate as it stands is submitted (a test now holds that half too: removing the
+    fingerprint's comparison fails it). That is the part of "coming back" (item 16) the Preview
+    step needs; the rest of item 16 is not built (see Not done).
 12. **A slice job unknown (`404` `front.slice_unknown`) two hours or more after it was submitted
-    is submitted again with no line.** The details give it the expired message with Slice again
-    and no slicing by itself, which is item 14, not built here. To overrule: `onRefused` in
-    `createSlicing`, when item 14 is built.
+    is not submitted again by the page itself.** The guide says "the page does not slice again
+    by itself" and gives the expired message with Slice again, which is item 14, not built here.
+    Until then the refusal's own sentences (the front server's) are shown as a failure with
+    Slice again and Back to Layout, and entering the step again slices, as decision 10 says for
+    any plate not sliced. To overrule: `onRefused` in `createSlicing`, when item 14 is built.
 13. **Parts missing.** A listed part whose bytes the browser no longer holds, or one listed in a
     form the page cannot use, ends with the `slice.part_missing` report itself shown (its
     sentences "exist for … a page that cannot upload the parts again"); an upload of a missing
@@ -120,6 +131,42 @@ How it was checked beyond the fast suite and the browser tests:
     into spans so that "waited" and the separator can change; `#preview-result` is left empty in
     the markup, for the layer preview's builder, and holds one plain line once the plate is
     sliced.
+24. **A running report without a number in `elapsed_s`** (the contract requires one, so only a
+    hostile or broken answer lacks it) counts the card's time taken from the card's start rather
+    than reading "NaN:NaN". The documents are silent. To overrule: `elapsedS` in `slicing.js`.
+25. **A part uploaded again after `slice.part_missing` is checked as a first upload is:** its
+    record must name the `sha256` and `units` asked for; once more when it names others, and the
+    second time `wizard.bad_answer`, shown, with a `page_failed` report. The details said only
+    "uploads each listed part again"; the rule is the Parts step's, so the two uploads agree.
+    To overrule: `uploadOne` in `slicing.js`.
+
+### After the review
+
+The reviewer's findings on pull request #44, and what became of each:
+
+- Blocking 1 (a stored slice followed without checking it is the plate as it stands): the check
+  was there, but no test held it. A test now opens a page on a plate changed since its stored
+  slice and requires a new submission and no stream of the old slice job; it fails when the
+  comparison is removed. Decision 11.
+- Blocking 2 (entering Preview with a failed or busy plate submitted nothing): fixed, decision
+  10, with a test for each; the details brought back into line with the guide.
+- Minor 1 (a slice unknown at two hours or more submitted again by itself): fixed, decision 12.
+- Minor 2 ("NaN:NaN elapsed"): fixed, decision 24.
+- Minor 3 (the job-id check held by no test): a test now feeds a report, and a `done`, naming
+  another slice job; it fails when the check is removed.
+- Minor 4 (`wholeAngle`'s normalising held by no test): a test now sends angles of 360, -90,
+  45.6 and 719.4 and requires 0, 270, 46 and 359; it fails when the normalising is removed.
+- Minor 5 (`replaced` or `requested` on the followed slice job freezes the card): declined, see
+  Not done 3.
+- Minor 6 (parts uploaded again not checked against what was asked): fixed, decision 25.
+- Minor 7 (the details naming only `sentences.js` for the wizard's sentences): fixed; the row of
+  "Who writes the sentences of a failure" names `slicing-sentences.js` for the Preview step's two
+  codes.
+- Minor 8 ("no news since 0:31" changing colour partway): declined, nothing to fix. The span is
+  one element with one colour (`.slice-times .late`, `#slice-expected` in
+  `wizard/src/panel/preview-step.js`); magnified six times, `480-no-news-wizard.png` shows the
+  whole of "no news since 0:31" in the same amber. The grey look of "no" at its own size is the
+  antialiasing of thin small type beside the grey separator.
 
 ## Targets missed
 
@@ -147,12 +194,21 @@ How it was checked beyond the fast suite and the browser tests:
 
 1. **The result and the layer preview** (item 13): a sliced plate shows one plain line in their
    place; the next batch joins the layer preview's module.
-2. **A sliced plate that expires** (item 14): a slice unknown two hours after it was submitted is
-   submitted again with no message (decision 12), and a `failed` report with
-   `front.sliced_file_expired` is shown as a failure with Slice again and Back to Layout.
-3. **Coming back** (item 16): the "Back where you were" notifications and the returning page's
+2. **A sliced plate that expires** (item 14): a slice unknown two hours after it was submitted
+   shows the front server's refusal with Slice again in place of the expired message (decision
+   12), and a `failed` report with `front.sliced_file_expired` is shown as a failure with Slice
+   again and Back to Layout.
+3. **A `cancelled` report with `cancel_reason` `replaced` or `requested` about the slice job
+   being followed** stops following and leaves the card as it was. The review found that this
+   freezes the card. Declined: the details say "`cancel_reason` `requested` never reaches a
+   page", and a page is told `replaced` about its own slice job only after it has itself
+   submitted a newer one, which it then follows (the old job's stream is closed first, so the
+   report does not arrive). No document says what a page should show for a report that cannot
+   arrive, and inventing a failure without an error report would break "every failure is an
+   error report".
+4. **Coming back** (item 16): the "Back where you were" notifications and the returning page's
    other rows; only following a stored slice of the plate as it stands is built (decision 11).
-4. **The browser half of the joined suite**, which drives this page against the real components,
+5. **The browser half of the joined suite**, which drives this page against the real components,
    is the joined suite's own batch; this batch walked the path once by hand.
 
 ## For the owner to look at

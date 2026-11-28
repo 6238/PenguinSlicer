@@ -169,7 +169,11 @@ export function createSlicing({
 
   function elapsedS(now) {
     if (!card) return 0;
-    if (card.phase === 'running' && card.report) return card.report.elapsed_s + (now - card.arrivedAt) / 1000;
+    // a report's own elapsed_s when it carries a number (the contract requires one); otherwise
+    // the time since the card began
+    if (card.phase === 'running' && card.report && Number.isFinite(card.report.elapsed_s)) {
+      return card.report.elapsed_s + (now - card.arrivedAt) / 1000;
+    }
     return (now - card.since) / 1000;
   }
 
@@ -243,10 +247,14 @@ export function createSlicing({
     follower = null;
     if (r.code === 'front.slice_unknown') {
       // neither the slice service nor the state bucket knows it: a slice service that restarted,
-      // when it was submitted less than two hours ago, by the page's own clock
-      const young = clock.now() - current.submittedMs < SLICED_FILE_KEEP_S * 1000;
-      slice({ restarted: young });
-      return;
+      // when it was submitted less than two hours ago, by the page's own clock, and the page
+      // submits again by itself; two hours or more, it has expired, and the page does not slice
+      // again by itself: the refusal is shown with Slice again, and entering the step again slices
+      // (the expired message of item 14 is to take its place)
+      if (clock.now() - current.submittedMs < SLICED_FILE_KEEP_S * 1000) {
+        slice({ restarted: true });
+        return;
+      }
     }
     fail(r);
   }
@@ -265,10 +273,27 @@ export function createSlicing({
       if (!part || typeof part.sha256 !== 'string' || !UNITS.has(part.units)) return refusal;
       const bytes = await storage.partBytes(part.sha256, part.units);
       if (!bytes) return refusal;
-      const answer = await api.post(`/api/parts?units=${part.units}`, { bytes, upload: true });
-      if (!answer.ok) return answer.report;
+      const refused = await uploadOne(part, bytes);
+      if (refused) return refused;
     }
     return null;
+  }
+
+  // One part uploaded again; its record must name the hash and units asked for, as for a first
+  // upload (parts.js): once more when it names others, and the second time a fault, shown and
+  // reported.
+  async function uploadOne(part, bytes) {
+    const path = `/api/parts?units=${part.units}`;
+    let answer;
+    for (let tries = 0; tries < 2; tries += 1) {
+      answer = await api.post(path, { bytes, upload: true });
+      if (!answer.ok) return answer.report;
+      const record = answer.body;
+      if (record && record.sha256 === part.sha256 && record.units === part.units) return null;
+    }
+    const detail = `POST ${path}: the record named another part twice; the page asked for ${part.sha256}.${part.units}`;
+    report('page_failed', { part_sha256: part.sha256, detail });
+    return { ...badAnswer(path, answer.status, JSON.stringify(answer.body)), detail };
   }
 
   function accept(mine, body) {
@@ -409,7 +434,9 @@ export function createSlicing({
       return;
     }
     const fp = fingerprint(built.configuration);
-    if (current && current.fingerprint === fp) return;       // slicing, sliced or failed as it stands
+    // slicing or sliced as it stands: nothing changes; a failed plate, or one that found no room to
+    // wait, is not sliced, so it is submitted again (wizard/README.md, "Slicing")
+    if (current && current.fingerprint === fp && (view.kind === 'card' || view.kind === 'done')) return;
     const kept = storage.plate().slice;
     if (!current && kept && typeof kept.id === 'string' && kept.fingerprint === fp && Number.isFinite(kept.submitted_ms)) {
       resume(kept);
