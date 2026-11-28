@@ -1137,7 +1137,8 @@ filament's colour is a 12 px square inside the Filament menu's box, before the n
 `profiles`, `chooseFilament`, `chooseProfile`, `quick`, `setQuick`, `set`, `reset`, `resetAll`,
 `changes`, `changedIn`, `sections`, `caution`, `boxTitle`, `openAdvanced`, `closeAdvanced`,
 `subscribe`, `resume`), with the pure `QUICK`, `formatValue`, `readInput`, `sameValue`,
-`quickMenu`, `profileValues` and `sectionsOf`. It holds the changes in memory in the order made
+`quickMenu`, `profileValues` and `sectionsOf`. `setQuick` takes only a value its menu offers
+(`quickMenu`'s entries) and ignores any other. It holds the changes in memory in the order made
 and writes them at once into the stored plate's `settings.changes`, with the filament and the
 profile when they change; a change of filament or profile from any cause (a menu, or the
 configuration read again without the plate's own) clears them. It hears the store and publishes
@@ -1186,13 +1187,19 @@ at most `max_length`. Orca's `explanation` is the label's tooltip, followed for 
 quick change by "Also on the Settings step as Infill." Ids are the mockup's: `adv-row-<name>`,
 `adv-<name>`, `adv-reset-<name>`, `adv-sec-<section>`, `adv-grp-<section>-<group>`,
 `adv-tab-<section>`, `adv-expand-<section>`, each section's and group's words with every run of
-other characters than letters and digits made one `-`.
+other characters than letters and digits made one `-`; words that fold to an id already drawn
+("A/B" after "A B") get `-2`, `-3` after it in the table's order, so each id is unique and the
+same at each drawing. Which sections and setting groups are closed is kept by their words, never
+by their ids.
 
 **A value refused where it is typed** (`readInput`), as the slice service would refuse it
 (`slice/src/penguin_slice/settings_table.py`): a number must match its form in ASCII digits
 (`-?[0-9]+`, a decimal `-?[0-9]+(\.[0-9]+)?`, a percentage that decimal with `%`, which is added
 when typed without it, or either), be at most 40 characters, a whole number within a C++ int,
-and within `min` and `max`; a text at most `max_length`, with no control character and no lone
+and within `min` and `max` (a value at either bound accepted); a text at most `max_length`
+characters counted by code points, as the slice service's Python counts them (a character outside
+the basic plane, an emoji, is one; the field's own `maxlength`, which counts UTF-16 units, is
+twice `max_length` so that it never refuses first), with no control character and no lone
 surrogate; a choice one of its values. The refusal is the wizard's own error report
 `wizard.setting_refused` (`settingRefused` in `wizard/src/sentences.js`), shown in red under the
 setting (`.bad`) with the field marked `invalid`, and nothing changes: "Wall loops must be between
@@ -1210,12 +1217,16 @@ reopens it, and on any other step does not. Its width class `wide` follows the p
 at `ADVANCED_WIDE_PX` (480) by a `ResizeObserver`, so a panel dragged across 480 px redraws it.
 While it is open `#wiz-header`, `#wiz-body` and `#wiz-nav` are `inert`. Which sections and
 setting groups are closed, and the rail's chosen section, live in `createSettingsStep`'s closure
-and nowhere else. A changed value redraws only its row and the changed counts, and the line
-under a changed row is kept in place, so that a press on Reset that blurs the field still lands.
+and nowhere else. A changed value never redraws advanced mode as a whole: each drawn row is
+brought up to date in place (its value, its look as changed, the line under it) and the changed
+counts are written again, and the line under a changed row is kept in place, so that a press on
+Reset that blurs the field still lands.
 Reset all is disabled with no change and asks with the confirmation of
 [How the panel tells the user something](#how-the-panel-tells-the-user-something), inside
 `#advanced`: "Put all 2 changed settings back to Structural’s values?" (for one, "Put the changed
 setting back to Structural’s values?") with Keep my changes, first and focused, and Reset all.
+Kept, the focus returns to Reset all; reset, Reset all is disabled and the focus goes where
+opening puts it, the first section's heading.
 The page's reports name the step `advanced` while it is open.
 
 Tests: changing the filament clears the changes and picks the first profile; the caution
@@ -2786,8 +2797,9 @@ The page opened directly in a browser, with the development identity and no sign
    ([Every request](#every-request-headers-answers-and-retrying)).
 3. **Retrying and the panel line.** Built ([Retrying](#retrying)), with a part's row saying it
    is slow.
-4. **The panel as a whole.** Built ([The panel as a whole](#the-panel-as-a-whole)), advanced
-   mode's sections across 480 px with advanced mode, item 9.
+4. **The panel as a whole.** Built ([The panel as a whole](#the-panel-as-a-whole)); advanced
+   mode's sections across 480 px were built with advanced mode in item 9
+   ([Advanced mode](#advanced-mode)).
 5. **Who the user is and the configuration.** Built ([The current group](#the-current-group),
    [The configuration and the table of settings](#the-configuration-and-the-table-of-settings)).
 6. **The browser's storage.** Built ([What the browser keeps](#what-the-browser-keeps)), with a

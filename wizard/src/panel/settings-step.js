@@ -153,8 +153,18 @@ export function createSettingsStep({ root, settings, store, window: win = global
   let rows = new Map();                 // name: {row, input, entry}
   let counts = [];                      // [{node, test, rail}] the changed counts drawn
 
+  let usedIds = new Set();              // the ids drawn by this render
   const sectionOpen = (s) => closedSections.get(s) ?? true;
-  const groupKey = (s, g) => `${s}|${g}`;
+  // a key no two pairs of words share, whatever the words hold
+  const groupKey = (s, g) => JSON.stringify([s, g]);
+  // An id from Orca's words, made unique among those drawn: words that fold to the same id ("A/B"
+  // and "A B") get "-2", "-3" in the table's order, the same at each render.
+  function uniqueId(base) {
+    let id = base;
+    for (let n = 2; usedIds.has(id); n += 1) id = `${base}-${n}`;
+    usedIds.add(id);
+    return id;
+  }
   const groupOpen = (s, g) => closedGroups.get(groupKey(s, g)) ?? true;
   const wide = () => advanced.classList.contains('wide');
 
@@ -217,7 +227,7 @@ export function createSettingsStep({ root, settings, store, window: win = global
     const allOpen = groups.every((g) => groupOpen(sectionName, g.group));
     const b = el('button', 'icon-btn adv-expand');
     b.type = 'button';
-    b.id = `adv-expand-${idPart(sectionName)}`;
+    b.id = uniqueId(`adv-expand-${idPart(sectionName)}`);
     b.append(icon(doc, allOpen ? UNFOLD_LESS : UNFOLD_MORE));
     b.title = allOpen ? COLLAPSE_ALL : EXPAND_ALL;
     b.setAttribute('aria-label', IN_SECTION(b.title, sectionName));
@@ -252,7 +262,9 @@ export function createSettingsStep({ root, settings, store, window: win = global
       input = el('input', setting.kind === 'number' ? 'num-text' : 'text-value');
       input.type = 'text';
       if (setting.kind === 'number') input.inputMode = 'decimal';
-      else input.maxLength = setting.max_length;
+      // the field counts UTF-16 units, the slice service code points: room for max_length
+      // characters of any plane, the exact count readInput's
+      else input.maxLength = setting.max_length * 2;
       unit = setting.unit ?? '';
     }
     input.id = id;
@@ -356,7 +368,7 @@ export function createSettingsStep({ root, settings, store, window: win = global
       const group = el('div', `adv-grp${isOpen ? ' open' : ''}`);
       const head = el('button', 'adv-sub');
       head.type = 'button';
-      head.id = `adv-grp-${idPart(groupKey(sectionName, g.group))}`;
+      head.id = uniqueId(`adv-grp-${idPart(`${sectionName} ${g.group}`)}`);
       head.setAttribute('aria-expanded', String(isOpen));
       head.append(chevron(doc, isOpen), el('span', 'nm', g.group));
       countNode(head, (s) => s.section === sectionName && s.group === g.group);
@@ -380,6 +392,7 @@ export function createSettingsStep({ root, settings, store, window: win = global
     const focusId = active && advanced.contains(active) && active.id ? active.id : null;
     rows = new Map();
     counts = [];
+    usedIds = new Set();
     body.replaceChildren();
     const sections = settings.sections();
     if (wide()) {
@@ -391,7 +404,7 @@ export function createSettingsStep({ root, settings, store, window: win = global
         const on = s.section === railSection;
         const b = el('button', on ? 'on' : '', s.section);
         b.type = 'button';
-        b.id = `adv-tab-${idPart(s.section)}`;
+        b.id = uniqueId(`adv-tab-${idPart(s.section)}`);
         b.setAttribute('role', 'tab');
         b.setAttribute('aria-selected', String(on));
         countNode(b, (x) => x.section === s.section, 'n');
@@ -424,7 +437,7 @@ export function createSettingsStep({ root, settings, store, window: win = global
         const headRow = el('div', 'adv-sec-head');
         const head = el('button', 'adv-sec-btn');
         head.type = 'button';
-        head.id = `adv-sec-${idPart(s.section)}`;
+        head.id = uniqueId(`adv-sec-${idPart(s.section)}`);
         head.setAttribute('aria-expanded', String(isOpen));
         head.append(chevron(doc, isOpen), el('span', 'nm', s.section));
         countNode(head, (x) => x.section === s.section);
@@ -463,7 +476,9 @@ export function createSettingsStep({ root, settings, store, window: win = global
       question: RESET_ALL_QUESTION(n, store.get().plate.profile ?? ''), go: RESET_ALL, keep: KEEP_CHANGES,
     });
     if (go) settings.resetAll();
-    resetAll.focus();
+    // kept: back on Reset all; reset: Reset all is disabled now, so where opening puts the focus
+    if (!resetAll.disabled) resetAll.focus();
+    else (body.querySelector('button') ?? $('#adv-done')).focus();
   });
   if (win.ResizeObserver) {
     new win.ResizeObserver(() => { if (fit() && shown) render(); }).observe(advanced);

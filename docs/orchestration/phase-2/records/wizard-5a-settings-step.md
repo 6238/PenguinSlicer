@@ -102,6 +102,34 @@ guide's [The Settings step](../../../../wizard/README.md#the-settings-step) and
     Speed, Support, Multimaterial, Others, 39 setting groups), where the guide and details said
     five. The documents are corrected to say the table's sections.
 
+Decided while fixing the review's findings (pull request #42):
+
+18. **After Reset all goes ahead, the focus goes where opening advanced mode puts it**, the
+    first section's heading (the first rail tab from 480 px), since Reset all is then disabled
+    and a disabled button cannot hold the focus; after Keep my changes it returns to Reset all.
+    The documents are silent. To overrule: the Reset all handler in
+    `wizard/src/panel/settings-step.js`.
+19. **A text's length is counted by code points, as the slice service counts it**, so an emoji
+    is one character, and the field's own `maxlength` (which counts UTF-16 units) is twice
+    `max_length` so that the field never refuses before `readInput` does. The documents said
+    "characters" without saying which. To overrule: `readInput` in `wizard/src/settings.js` and
+    `control` in `wizard/src/panel/settings-step.js`, together with the slice service's check.
+20. **Sections and setting groups whose words fold to the same id get `-2`, `-3` after it**, in
+    the table's order, and which ones are closed is kept by their words (a key no two pairs of
+    words share), never by their ids. The real table has no such pair; the case is hostile words.
+    To overrule: `uniqueId` and `groupKey` in `wizard/src/panel/settings-step.js`.
+21. **A quick change takes only a value its menu offers**; any other value is ignored, so the
+    shared changes can reach a value outside the menus only through advanced mode, which reads and
+    refuses it. To overrule: `setQuick` in `wizard/src/settings.js`.
+22. **The review's finding that a changed value redraws every drawn row, where the details file
+    said only its row, was settled in the document, not the code**: each drawn row is brought up
+    to date in place, at most the real table's 338, which costs nothing a user sees, and a Reset
+    all changes every row at once. The details file now says so.
+
+Findings of the review declined: none. The finding on the pictures' heights (747 px against
+760 px) is recorded under "Targets missed" rather than removed: making them equal would mean
+taking the 24 built pictures again for 13 px of panel at the bottom.
+
 ## Targets missed
 
 1. **Each filament's colour beside its name in the open Filament menu**: only the chosen
@@ -125,6 +153,16 @@ guide's [The Settings step](../../../../wizard/README.md#the-settings-step) and
    - A `decimal_or_percent` setting's unit, "mm or %", is wider than the others', so its field
      sits further left than its neighbours'. The mockup's sample has no such setting; the real
      table has 36.
+   - The `*-reset-all` pairs: the built picture still shows the Layer height row refused in the
+     state before (0.9 in red, with its sentence), and the mockup's shows 0.3 with no refusal.
+     The mockup's faked script draws its list again when Reset all is pressed and so drops the
+     refusal; the wizard keeps a refusal under its setting until the user types again in that
+     field or resets it, and opening the confirmation changes nothing. Not removed, since the
+     difference is behaviour, not look.
+   - The pictures are 747 px tall for the mockup and 760 px for the wizard at every width, as
+     in wizard-4: the mockup's frame gives its panel 747 px, the wizard's picture is taken in a
+     760 px window. The wizard's picture shows 13 px more of the panel's scrolling content
+     above its bottom bar; everything else lines up.
 3. **Not measured:** how long advanced mode takes to draw the real table's 338 settings on a
    slow machine; no document sets a target for it.
 

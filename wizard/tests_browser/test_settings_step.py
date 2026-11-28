@@ -125,11 +125,14 @@ def test_the_changes_box_takes_the_buttons_place_and_its_line_opens_advanced_mod
     assert page.locator("#adv-effect li").all_inner_texts() == ["Others › Brim: Off (profile Auto)"]
     # its section and setting group closed first, so that the line must open them
     open_advanced(w)
+    page.click("#adv-grp-Others-Brim")
+    assert page.locator("#adv-grp-Others-Brim").get_attribute("aria-expanded") == "false"
     page.click("#adv-sec-Others")
     page.click("#adv-done")
     page.click("#chg-line-brim_type")
     page.wait_for_selector("#advanced:not([hidden])")
     assert page.locator("#adv-sec-Others").get_attribute("aria-expanded") == "true"
+    assert page.locator("#adv-grp-Others-Brim").get_attribute("aria-expanded") == "true"
     assert "flash" in page.locator("#adv-row-brim_type").get_attribute("class")
     assert page.evaluate("() => document.activeElement.id") == "adv-brim_type"
     page.click("#adv-done")
@@ -252,10 +255,14 @@ def test_reset_all_asks_first_and_then_puts_every_setting_back(settings_page):
     page.keyboard.press("Escape")
     assert len(changes(w)) == 2
     assert page.locator("#advanced").is_visible()
+    assert page.evaluate("() => document.activeElement.id") == "adv-reset-all"
     page.click("#adv-reset-all")
     page.click(".confirm-pop .btn.primary")
     assert changes(w) == []
     assert page.locator("#adv-body .adv-row.changed").count() == 0
+    # Reset all is disabled now, so the focus goes where opening puts it, never to the page's body
+    assert page.locator("#adv-reset-all").is_disabled()
+    assert page.evaluate("() => document.activeElement.id") == "adv-sec-Quality"
 
 
 def test_closed_sections_survive_leaving_and_a_resize_across_480_px_and_are_open_after_a_reload(settings_page):
@@ -336,3 +343,23 @@ def test_hostile_words_of_the_table_and_configuration_are_shown_as_text(settings
     w.page.click("#adv-done")
     assert w.page.locator(".filament-swatch").is_hidden()
     assert w.problems == []
+
+
+def test_sections_and_setting_groups_whose_words_fold_to_the_same_id_stay_apart(settings_page):
+    table = example("settings-table.json")
+    for i, (section, group) in enumerate([("A|B", "C"), ("A", "B|C"), ("A B", "X"), ("A/B", "X")]):
+        table["settings"][i]["section"] = section
+        table["settings"][i]["group"] = group
+    w = settings_page(table=table)
+    open_advanced(w)
+    page = w.page
+    ids = page.evaluate("() => [...document.querySelectorAll('#advanced [id]')].map((e) => e.id)")
+    assert len(ids) == len(set(ids))
+    groups = page.locator("#adv-body .adv-sub")
+    assert groups.nth(0).get_attribute("aria-expanded") == "true"
+    groups.nth(1).click()
+    assert groups.nth(1).get_attribute("aria-expanded") == "false"
+    assert groups.nth(0).get_attribute("aria-expanded") == "true"
+    page.locator("#adv-body .adv-sec-btn").nth(3).click()
+    assert page.locator("#adv-body .adv-sec-btn").nth(3).get_attribute("aria-expanded") == "false"
+    assert page.locator("#adv-body .adv-sec-btn").nth(2).get_attribute("aria-expanded") == "true"

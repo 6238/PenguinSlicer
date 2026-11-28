@@ -99,7 +99,9 @@ export function readInput(entry, text, current) {
     return values.includes(raw) ? { ok: true, value: raw } : refuse('cannot be that value: choose one of the values Orca offers for it', `${JSON.stringify(raw.slice(0, 120))} is not a choice`);
   }
   if (entry.kind === 'text') {
-    if (raw.length > entry.max_length) return refuse(`can be at most ${entry.max_length} characters long`, `${raw.length} characters, max_length ${entry.max_length}`);
+    // counted by code points, as the slice service's Python counts a string, a lone surrogate as one
+    const length = [...raw].length;
+    if (length > entry.max_length) return refuse(`can be at most ${entry.max_length} characters long`, `${length} characters, max_length ${entry.max_length}`);
     if (CONTROL.test(raw)) return refuse('cannot hold a line break or other control character', 'a control character');
     if (LONE_SURROGATE.test(raw)) return refuse('cannot hold a character that is not valid text', 'a lone surrogate');
     return { ok: true, value: raw };
@@ -345,11 +347,14 @@ export function createSettings({ store, storage }) {
       return { id: q.id, label: q.label, name: q.name, entries: menu.entries, chosen: menu.chosen,
         changed: Object.hasOwn(changes, q.name), title: IN_ADVANCED_MODE(entry ? entry.label : q.label) };
     }),
-    // A quick change's menu set to `v`: the profile's own value removes the change. Supports On
-    // also writes support_type tree(auto); Off writes nothing for support_type.
+    // A quick change's menu set to `v`, one of the entries the menu offers (anything else is
+    // ignored): the profile's own value removes the change. Supports On also writes support_type
+    // tree(auto); Off writes nothing for support_type.
     setQuick(id, v) {
       const quick = QUICK.find((q) => q.id === id);
       if (!quick) return;
+      const menu = quickMenu(quick, entryOf(quick.name), profileValue(quick.name), value(quick.name));
+      if (!menu.entries.some((e) => e.value === v)) return;
       setChange(quick.name, v);
       if (quick.id === 'supports' && v === '1') setChange(SUPPORTS_ON.name, SUPPORTS_ON.value);
       commit();

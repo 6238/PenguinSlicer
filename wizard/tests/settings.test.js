@@ -158,6 +158,21 @@ test('Supports On writes enable_support and support_type tree(auto), whatever th
   assert.deepEqual(plain.settings.changes(), [{ name: 'enable_support', value: '1' }]);
 });
 
+test('a quick change takes only a value its menu offers', async () => {
+  const page = await openPage();
+  page.settings.setQuick('walls', '7');
+  page.settings.setQuick('brim', 'everywhere');
+  page.settings.setQuick('infill', '-5%');
+  page.settings.setQuick('nothing', '1');
+  assert.deepEqual(page.settings.changes(), []);
+  // a value off the list that the menu shows as its top entry is one it offers
+  page.settings.set('wall_loops', '5');
+  page.settings.setQuick('walls', '3');
+  page.settings.set('wall_loops', '5');
+  page.settings.setQuick('walls', '5');
+  assert.deepEqual(page.settings.changes(), [{ name: 'wall_loops', value: '5' }]);
+});
+
 test('Supports shows On when enable_support is "1", whatever support_type is', async () => {
   const page = await openPage();
   assert.equal(page.settings.set('enable_support', '1').ok, true);
@@ -200,6 +215,13 @@ test('a change set in advanced mode off the list is the menu\'s top entry while 
   assert.deepEqual(walls().entries.map((e) => e.text), ['2', '3', '4', '6']);
 });
 
+test('with both the profile\'s value and the change off the list, the profile\'s entry comes first', () => {
+  const infill = QUICK.find((q) => q.id === 'infill');
+  const menu = quickMenu(infill, entry('sparse_infill_density'), '35%', '70%');
+  assert.deepEqual(menu.entries.map((e) => e.text), ['35 %', '70 %', '15 %', '25 %', '40 %', '60 %', '100 %']);
+  assert.equal(menu.chosen, '70%');
+});
+
 test('a value written another way than the list\'s is the list\'s entry, not one more ("40.0%" is "40 %")', () => {
   const infill = QUICK.find((q) => q.id === 'infill');
   const menu = quickMenu(infill, entry('sparse_infill_density'), '40.0%', '40.0%');
@@ -229,6 +251,21 @@ test('a number is read in its form: a whole number, a decimal, a percentage with
   assert.deepEqual(readInput(entry('initial_layer_line_width'), '110%'), { ok: true, value: '110%' });
 });
 
+test('a value exactly at the least or the greatest value is accepted', () => {
+  assert.deepEqual(readInput(entry('wall_loops'), '0'), { ok: true, value: '0' });
+  assert.deepEqual(readInput(entry('wall_loops'), '1000'), { ok: true, value: '1000' });
+  assert.deepEqual(readInput(entry('sparse_infill_density'), '0'), { ok: true, value: '0%' });
+  assert.deepEqual(readInput(entry('sparse_infill_density'), '100'), { ok: true, value: '100%' });
+  assert.deepEqual(readInput(entry('layer_height'), '0'), { ok: true, value: '0' });
+});
+
+test('a number of exactly 40 characters is read; one of 41 is refused', () => {
+  const forty = `0.${'1'.repeat(38)}`;
+  assert.equal(forty.length, 40);
+  assert.equal(readInput(entry('layer_height'), forty).ok, true);
+  assert.equal(readInput(entry('layer_height'), `${forty}1`).ok, false);
+});
+
 test('a value that does not fit is refused where it is typed, with the wizard\'s own sentences and the value kept', () => {
   const cases = [
     [entry('wall_loops'), '2.5', 'Wall loops must be a whole number.'],
@@ -244,6 +281,9 @@ test('a value that does not fit is refused where it is typed, with the wizard\'s
     [entry('initial_layer_line_width'), '10%%', 'First layer must be a number or a percentage.'],
     [{ name: 't', kind: 'number', label: 'Big', number_form: 'decimal', max: 9 }, '10', 'Big must be at most 9.'],
     [entry('wall_loops'), '9'.repeat(41), 'Wall loops must be a whole number.'],
+    // past the slice service's 40 characters, on a decimal setting that has no greatest value:
+    // refused for its length alone
+    [entry('layer_height'), `0.${'1'.repeat(39)}`, 'Layer height must be a number.'],
     [{ name: 't', kind: 'number', label: 'Count', number_form: 'integer' }, '3000000000', 'Count must be a whole number.'],
   ];
   for (const [setting, text, message] of cases) {
@@ -264,6 +304,25 @@ test('a text is refused past its greatest length or with a control character', (
   assert.equal(readInput(text, 'a\nb').report.message, 'Name cannot hold a line break or other control character.');
 });
 
+test('a text holding a lone surrogate is refused; a whole pair is text', () => {
+  const text = { name: 'filename_format', kind: 'text', label: 'Name', max_length: 8 };
+  for (const bad of ['a\ud800b', 'a\udc00', '\ud83d']) {
+    const read = readInput(text, bad);
+    assert.equal(read.ok, false, JSON.stringify(bad));
+    assert.equal(read.report.code, 'wizard.setting_refused');
+    assert.equal(read.report.message, 'Name cannot hold a character that is not valid text.');
+  }
+  assert.deepEqual(readInput(text, 'a🐧'), { ok: true, value: 'a🐧' });
+});
+
+test('a text\'s length is counted in characters as the slice service counts them, a character outside the basic plane as one', () => {
+  const text = { name: 'filename_format', kind: 'text', label: 'Name', max_length: 2 };
+  assert.deepEqual(readInput(text, '🐧🐧'), { ok: true, value: '🐧🐧' });
+  const read = readInput(text, '🐧🐧a');
+  assert.equal(read.report.message, 'Name can be at most 2 characters long.');
+  assert.match(read.report.detail, /^filename_format: 3 characters, max_length 2$/);
+});
+
 test('a choice is one of its values only', () => {
   assert.deepEqual(readInput(entry('brim_type'), 'brim_ears'), { ok: true, value: 'brim_ears' });
   assert.equal(readInput(entry('brim_type'), 'everywhere').ok, false);
@@ -273,6 +332,19 @@ test('numbers are compared as numbers: "0.30" is the profile\'s "0.3", and a per
   assert.equal(sameValue(entry('layer_height'), '0.30', '0.3'), true);
   assert.equal(sameValue(entry('initial_layer_line_width'), '62%', '0.62'), false);
   assert.equal(sameValue(entry('brim_type'), 'auto_brim', 'auto_brim'), true);
+  // the same figure, once a percentage and once a plain number, is two values
+  assert.equal(sameValue(entry('initial_layer_line_width'), '50%', '50'), false);
+  assert.equal(sameValue(entry('initial_layer_line_width'), '50', '50%'), false);
+});
+
+test('a plain number typed over a profile\'s percentage of the same figure is a change', async () => {
+  const table = structuredClone(TABLE);
+  for (const v of Object.values(table.process_values)) v.initial_layer_line_width = '50%';
+  const page = await openPage(undefined, { table });
+  assert.equal(page.settings.set('initial_layer_line_width', '50').ok, true);
+  assert.deepEqual(page.settings.changes(), [{ name: 'initial_layer_line_width', value: '50' }]);
+  assert.equal(page.settings.set('initial_layer_line_width', '50%').ok, true);
+  assert.deepEqual(page.settings.changes(), []);
 });
 
 test('a setting set to the profile\'s value is no change; one refused leaves the changes as they were', async () => {
