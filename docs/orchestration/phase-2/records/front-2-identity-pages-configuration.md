@@ -143,6 +143,28 @@ passed from the slice service. Written Fri 2026-11-27, Pacific time.
     its code): nothing can be changed after the fact; the record already says so, and the
     reviewer's own mutations of the check were caught. All other findings were fixed.
 
+### Decisions made while fixing the second review
+
+29. **`Accept-Encoding` with `gzip;q=0` and `*`.** The details file said "names `gzip` or
+    `*` with a weight above zero", which let `gzip;q=0, *` accept gzip. Chosen: RFC 9110's
+    reading, that a coding named explicitly overrides `*`: gzip is accepted when `gzip` is
+    named with a weight above zero, or is not named and `*` has a weight above zero. The
+    details file now says so. No browser sends such a header; the change costs nothing. To
+    overrule: `settings_table.accepts_gzip`.
+30. **A silent slice service is tested without waiting.** The `SLICE_TIMEOUT_S` branch is
+    produced by an httpx transport that raises `ReadTimeout`, passed to `SliceClient`
+    (a new `transport` argument, for tests only), rather than by a listening socket and a
+    small real time limit, which would make a test wait a number of seconds against the
+    quality bar. A second test pins `SLICE_TIMEOUT_S` at 30 on a client built by default.
+    What it does not prove is that httpx raises `ReadTimeout` after 30 s of silence: that is
+    httpx's own behaviour. To overrule: a socket test with a short `timeout_s`.
+31. **Review findings declined.** None: the three blocking findings were checked against the
+    code and found real, and the reviewer's mutations (`found[0]` for the lowest rule; `<`
+    for `<=` in `_text`, the filaments' count, the profiles' count and an override's name),
+    each made alone by hand, fail the new tests; both minor findings were fixed. The coverage drop to
+    99% (decision 23's two branches, never reached) went unnoticed in round 1's fixes
+    because `make -C front coverage` was not rerun; it is 100% again.
+
 ## Targets missed
 
 - **The cookie's size for a user in many groups.** A user in sixty groups with
@@ -152,7 +174,8 @@ passed from the slice service. Written Fri 2026-11-27, Pacific time.
   ([Whether the cookie fits](../../../../front/README.md#whether-the-cookie-fits)); a real
   account's tokens and group count decide it.
 - **The fast suite's time.** 588 tests in about 11 seconds (603 after the review's fixes,
-  in 10 to 11 seconds) on two of eight shared
+  in 10 to 11 seconds; 629 after the second review's, in about 4 seconds on two workers and
+  7 on one) on two of eight shared
   processors, from about 2 seconds before the batch; each test builds the application on
   fresh folders (about 15 ms). Still "seconds", but no longer "a few".
 

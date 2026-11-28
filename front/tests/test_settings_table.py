@@ -6,10 +6,14 @@ import gzip
 import json
 from pathlib import Path
 
+import httpx
 import pytest
 
-from front_helpers import Lines, front, sign_in
+from front_helpers import Lines, environ, front, sign_in
+from penguin_front.app import create_app
+from penguin_front.settings import Settings
 from penguin_front.settings_table import accepts_gzip
+from penguin_front.slice_client import SLICE_TIMEOUT_S, SliceClient
 from slice_standin import SliceStandIn
 
 TABLE = (Path(__file__).resolve().parents[2] / "contracts" / "examples" /
@@ -86,6 +90,9 @@ def test_the_answer_is_compressed_when_the_browser_accepts_it(client, standin):
     ("*", True), ("gzip;q=0", False), ("gzip;q=0.000", False), ("deflate, br", False),
     ("", False), ("x-gzip", False), ("gzip;q=abc", False), ("identity", False),
     ("gzip;q=1.2.3", False), (",,gzip", True),
+    # An explicit weight for gzip overrides `*`, in either order (RFC 9110, 12.5.3).
+    ("gzip;q=0, *", False), ("*, gzip;q=0", False), ("*;q=0, gzip", True),
+    ("*;q=0", False), ("br, *;q=0.1", True),
 ])
 def test_a_browser_accepts_gzip_by_its_accept_encoding(header, accepted):
     assert accepts_gzip(header) is accepted
@@ -115,6 +122,33 @@ def test_a_slice_service_that_was_never_there_is_front_slice_unreachable(tmp_pat
     client = app.test_client()
     sign_in(client)
     assert client.get("/api/settings-table").get_json()["code"] == "front.slice_unreachable"
+
+
+def test_a_slice_service_that_connects_and_then_sends_nothing_is_front_slice_unreachable(
+        tmp_path, clock, log):
+    # The slice service's silence, past SLICE_TIMEOUT_S, is what the transport raises; no
+    # test waits out a real time limit.
+    def silent(request):
+        raise httpx.ReadTimeout("timed out", request=request)
+
+    app = create_app(Settings.from_environ(environ(tmp_path)), clock=clock, log=log,
+                     slice_client=SliceClient("http://slice.invalid",
+                                              transport=httpx.MockTransport(silent)))
+    client = app.test_client()
+    sign_in(client)
+    answer = client.get("/api/settings-table")
+    assert answer.status_code == 503
+    report = answer.get_json()
+    assert report["code"] == "front.slice_unreachable" and report["retryable"] is True
+    assert "ReadTimeout" in log.events("error")[-1]["detail"]
+
+
+def test_the_slice_client_waits_slice_timeout_s_for_the_next_bytes():
+    client = SliceClient("http://slice.invalid")
+    try:
+        assert client.timeout_s == SLICE_TIMEOUT_S == 30
+    finally:
+        client.close()
 
 
 def test_without_a_sign_in_it_is_refused_and_the_slice_service_is_not_asked(app, standin):

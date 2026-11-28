@@ -30,8 +30,10 @@ def register(app):
 
 
 def accepts_gzip(header):
-    """Whether an `Accept-Encoding` header accepts gzip: named, or `*`, with a weight above
-    zero."""
+    """Whether an `Accept-Encoding` header accepts gzip: gzip named with a weight above zero,
+    or, when gzip is not named, `*` with a weight above zero (RFC 9110, 12.5.3: a coding
+    named explicitly overrides `*`)."""
+    weights = {}
     for item in header.split(","):
         match = _CODING.fullmatch(item)
         if match is None or match[1].lower() not in ("gzip", "*"):
@@ -40,9 +42,8 @@ def accepts_gzip(header):
             weight = float(match[2]) if match[2] is not None else 1.0
         except ValueError:
             continue
-        if weight > 0:
-            return True
-    return False
+        weights[match[1].lower()] = max(weight, weights.get(match[1].lower(), 0.0))
+    return weights.get("gzip", weights.get("*", 0.0)) > 0
 
 
 def settings_table():

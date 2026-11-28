@@ -184,6 +184,8 @@ INVALID = [
     (2, "format", changed(setting("1", "format"))),
     (2, "format", changed(setting(True, "format"))),
     (2, "format", changed(setting(1.0, "format"))),
+    (2, "format", changed(setting([1], "format"))),
+    (2, "format", changed(setting({}, "format"))),
     # 3: a field missing or not listed, in the document, a filament or a profile.
     (3, "printer", changed(dropping("printer"))),
     (3, "upload_units", changed(dropping("upload_units"))),
@@ -310,6 +312,73 @@ def test_the_first_rule_broken_is_the_one_named(client, saved, log):
     saved(document)
     read(client)
     assert log.events("configuration_invalid")[0]["rule"] == 3
+
+
+@pytest.mark.parametrize("change, where", [
+    # Rule 6 in the first filament is met before rule 4 in the third.
+    (lambda d: (d["filaments"][0]["profiles"][0]["overrides"].update(wall_loops=4),
+                d["filaments"][2].update(colour="red")), "filaments[2].colour"),
+    # In one profile, rule 5 (its printer) is met before rule 4 (its note).
+    (lambda d: d["filaments"][0]["profiles"][0].update(
+        printer="Bambu Lab X1 Carbon 0.4 nozzle", note="n" * 2001),
+     "filaments[0].profiles[0].note"),
+], ids=["rule6-before-rule4", "rule5-before-rule4"])
+def test_the_lowest_rule_broken_is_named_though_the_checks_meet_a_higher_one_first(
+        client, saved, log, change, where):
+    document = changed(change)
+    saved(document)
+    read(client)
+    line = log.events("configuration_invalid")[0]
+    assert (line["rule"], line["path"]) == (4, where)
+    detail = write(client, None, document).get_json()["detail"]
+    assert detail.startswith(f"rule 4, at {where}:")
+
+
+def test_a_wrong_format_of_a_list_or_an_object_is_shown_by_its_kind(client, saved, log):
+    saved(changed(setting([1], "format")))
+    read(client)
+    assert log.events("configuration_invalid")[-1]["why"].startswith("format a list ")
+    saved(changed(setting({}, "format")))
+    read(client)
+    assert log.events("configuration_invalid")[-1]["why"].startswith("format an object ")
+
+
+def at_the_limits(which):
+    """The hand-written example with one field or list at its upper limit."""
+    document = copy.deepcopy(HAND_WRITTEN)
+    filament, profile = document["filaments"][0], document["filaments"][0]["profiles"][0]
+    if which == "name":
+        filament["name"] = profile["name"] = "n" * 40
+    elif which == "purpose":
+        profile["purpose"] = "p" * 120
+    elif which == "note":
+        document["note"] = filament["note"] = profile["note"] = "n" * 2000
+    elif which == "filaments":
+        document["filaments"].extend(dict(filament, name=f"F{n}")
+                                     for n in range(20 - len(document["filaments"])))
+    elif which == "profiles":
+        filament["profiles"].extend(dict(profile, name=f"P{n}")
+                                    for n in range(20 - len(filament["profiles"])))
+    elif which == "override name":
+        profile["overrides"]["k" * 100] = "1"
+    return document
+
+
+LIMITS = ["name", "purpose", "note", "filaments", "profiles", "override name"]
+
+
+@pytest.mark.parametrize("which", LIMITS)
+def test_a_document_at_each_upper_limit_is_read_as_the_groups_own(client, saved, which):
+    document = at_the_limits(which)
+    assert len(document["filaments"]) <= 20
+    saved(document)
+    answer = read(client).get_json()
+    assert answer["source"] == "group" and answer["configuration"] == document
+
+
+@pytest.mark.parametrize("which", LIMITS)
+def test_a_document_at_each_upper_limit_is_written(client, which):
+    assert write(client, None, at_the_limits(which)).status_code == 200
 
 
 def test_among_one_rule_the_earlier_filament_in_the_list_is_named(client, saved, log):

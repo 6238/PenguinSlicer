@@ -33,10 +33,14 @@ class Raw:
 
 
 class SliceClient:
-    def __init__(self, base_url, timeout_s=SLICE_TIMEOUT_S):
+    def __init__(self, base_url, timeout_s=SLICE_TIMEOUT_S, transport=None):
+        """`transport` replaces the network in a test, which then raises what a silent or
+        cut-off slice service would make the network raise."""
+        self.timeout_s = timeout_s
         # trust_env off: the slice service's address is used as given, never through a proxy
         # or with credentials that the environment names (HTTP_PROXY, .netrc).
-        self._client = httpx.Client(base_url=base_url, timeout=timeout_s, trust_env=False)
+        self._client = httpx.Client(base_url=base_url, timeout=timeout_s, trust_env=False,
+                                    transport=transport)
 
     def get_raw(self, path, headers=None):
         """`GET path`, its answer's bytes as sent, not decompressed."""

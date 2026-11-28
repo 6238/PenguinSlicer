@@ -784,6 +784,8 @@ settings): one httpx client for `PENGUIN_SLICE_URL`, with `trust_env` off so tha
 or `.netrc` the environment names is used for it; `get_raw(path, headers)` gives the
 status, the headers and the answer's bytes as sent, never decompressed; no connection, a
 connection cut, or nothing for `SLICE_TIMEOUT_S` (30 s, *proposed*) is `SliceUnreachable`.
+A test passes an httpx `transport` in place of the network, which raises what a silent
+slice service makes the network raise, so that no test waits out the 30 s.
 
 ### Tests
 
@@ -1346,6 +1348,13 @@ Built: `tests/test_configuration.py`.
   (rule 1), and a write over it, or over one read but nested deeper than Python's limit of
   calls, is written.
 - Among one rule, the checks' fixed order of fields decides which mistake is named.
+- The lowest rule broken is named even where the checks meet a higher one first: rule 6 in
+  the first filament before rule 4 in the third, and rule 5 before rule 4 in one profile.
+- A document at each upper limit (a 40-character name, a 120-character purpose, a
+  2,000-character note, 20 filaments, 20 profiles, a 100-character override name) is read
+  as the group's own and accepted on a write; a document of exactly 256 KB is read, not
+  refused by rule 1.
+- A wrong `format` that is a list or an object is shown by its kind.
 - A write with `based_on` `null` creates the document; a second such write answers `409`.
 - An edit writes a line with the user's name and the changed fields.
 
@@ -1369,8 +1378,10 @@ the table under a running front server; it asks the slice service each time, whi
 printer its table lacks).
 
 **As built** (`penguin_front.settings_table`): the front server asks with
-`Accept-Encoding: gzip` when the browser's `Accept-Encoding` names `gzip` or `*` with a
-weight above zero (`accepts_gzip`), and `identity` otherwise, and answers the bytes and the
+`Accept-Encoding: gzip` when the browser's `Accept-Encoding` names `gzip` with a weight
+above zero, or does not name `gzip` and names `*` with a weight above zero (`accepts_gzip`;
+a coding named explicitly overrides `*`, as RFC 9110 says), and `identity` otherwise, and
+answers the bytes and the
 `Content-Encoding` as the slice service sent them, with `Vary: Accept-Encoding`. It sends no
 user key. A failure answered with the slice service's own error report (a JSON object whose
 `code` starts `slice.`, not compressed) is passed byte for byte with its status; any other
@@ -1383,7 +1394,8 @@ Built: `tests/test_settings_table.py`.
 - The answer is the stand-in's table, byte for byte once decompressed, compressed when the
   request accepts it.
 - A changed table at the stand-in is answered at the next request with no restart.
-- The stand-in not answering gives `503` `front.slice_unreachable`.
+- The stand-in not answering gives `503` `front.slice_unreachable`: a refused connection,
+  a slice service never there, and one that connects and then sends nothing.
 
 ## The bucket interface
 
