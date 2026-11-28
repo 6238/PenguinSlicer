@@ -1872,9 +1872,9 @@ card are confirmed.
 | Arrange | Under 2 seconds for 150 instances | A button that feels like a button; anything longer would need progress and a way to cancel | Set here. Met: at most 0.06 s for 150 instances | The same |
 | The placement check | Keeps up with a drag, with 150 instances on the plate | The status line telling the truth while the user moves things | Set here. Met: at most 5 ms for each check, against a frame's 100 ms at 10 frames a second | The same |
 | The Layout view | At least 30 frames a second while an instance is dragged or the view turned, on the machine with a graphics card, and at least 10 on the one without, at the largest plate allowed: 150 instances of parts of up to 150,000 triangles | Dragging an instance feeling joined to the hand | Set here, with no measurement behind it: the same figures as the layer preview, since the same hand does the dragging | Timed in Chrome on both machines, and reported by the page in real use |
-| The layer preview | In Chrome, at least 30 frames a second on the machine with a graphics card and at least 10 on the one without, while the view is turned or the layer bar dragged, on a 14.1 MB sliced file and on a plate at the 150-instance limit; a simpler look allowed while moving | Inspecting a plate being possible at all on a machine that draws in software | Set here. Measured: the one method tried took many seconds a frame without a graphics card ([The risks to try first](#the-risks-to-try-first-in-phase-2)) | Timed in Chrome on both machines, reported by the page in real use, and test renders |
-| The first layer drawn | Within 5 seconds of opening the Preview step on a sliced plate, with the print time and filament shown at once | The numbers a user plans around not waiting for the picture | Set here; unmeasured | The same |
-| The page's memory | Under 1 GB for the page at the largest plate, with the layer preview of a 14.1 MB sliced file open | A laptop with 8 GB of memory, of which the browser has a share, not closing the page | Set here; unmeasured. Twenty-five parts of 7.5 MB are about 190 MB before anything is drawn | Measured in Chrome at that plate |
+| The layer preview | In Chrome, at least 30 frames a second on the machine with a graphics card and at least 10 on the one without, while the view is turned or the layer bar dragged, on a 14.1 MB sliced file and on a plate at the 150-instance limit; a simpler look allowed while moving | Inspecting a plate being possible at all on a machine that draws in software | Set here. Measured: the mockup's method took many seconds a frame without a graphics card; the method chosen in the first trial of phase 2 kept 10 to 20 there, with a thin margin on a busy machine ([The risks to try first](#the-risks-to-try-first-in-phase-2)); with a graphics card, unmeasured | Timed in Chrome on both machines, reported by the page in real use, and test renders |
+| The first layer drawn | Within 5 seconds of opening the Preview step on a sliced plate, with the print time and filament shown at once | The numbers a user plans around not waiting for the picture | Set here. Measured in the first trial without a graphics card: 1.5 to 2.7 seconds from fetching the sliced file to the first layers on the screen, the full look 2.4 to 8.5 seconds | The same |
+| The page's memory | Under 1 GB for the page at the largest plate, with the layer preview of a 14.1 MB sliced file open | A laptop with 8 GB of memory, of which the browser has a share, not closing the page | Set here. Measured in the first trial: 839 MB at the heaviest plate. Twenty-five parts of 7.5 MB are about 190 MB before anything is drawn | Measured in Chrome at that plate |
 | Time since the user last interacted before a self-reload | 120 seconds, unless the user moves between steps | The page never refreshing under a person who is looking at it or touching it | Set here | A test with a clock the test moves |
 | The wizard's reports about itself | At most a few a minute from one page | The log not filling from one broken page | Set here; the front server sets its own limit as well | A test that makes failures faster than the limit |
 | A sliced file | At most 50 MB; 8.8 to 14.1 MB on the plates measured | The time to the first picture, and the download | Someone else's: the limit is the slice service's and the front server's; the range is measured by the slice service | A slice whose file would be larger ends with the slice service's sentence |
@@ -2236,17 +2236,19 @@ twelve of its largest block with supports, 14.1 MB; 150 spacers, 2.7 MB), on the
 machine (8 processors and 12 GB, shared with other work at the time), in the Chromium the
 wizard's tests use. All three draw every line as a small box as wide as the line and as tall
 as its layer, so that stacked layers close into surfaces: that is how the look has no combs
-and no show-through. Drawing every box in every frame managed one to seven frames a second
-and held the page for up to six seconds. The way the Preview step is built on draws, while
+and no show-through. Drawing every box in every frame managed one to ten frames a second
+and held the page for up to seven seconds. The way the Preview step is built on draws, while
 the view is turned or the layer bar dragged, only every fourth or eighth layer, each of those
 boxes as tall as the layers it stands for, which keeps the four colours and the shape; when
-the view comes to rest it draws the full look a piece at a time, over about a second at the
-heaviest plate, without holding the page, and shows it when it is whole. It kept 15 to 20
-frames a second while turning and dragging on all three plates, never held the page for more
-than about a sixth of a second, drew the first layer within about two seconds and stayed
-under 1 GB at the heaviest plate. The margin at the heaviest plate is thin on a machine busy
-with other work: one of three runs there fell to 8.6 frames a second and held the page for
-0.3 seconds. The look while moving is visibly coarser (some infill shows
+the view comes to rest it draws the full look a piece at a time, the ghost of what is still
+to print last, over one to two seconds at the heaviest plate, without holding the page, and
+shows it when it is whole. It kept 10 to 20 frames a second while turning and dragging on
+all three plates, never held the page for more than a fifth of a second, drew the first
+layer within three seconds and stayed under 1 GB at the heaviest plate. The margin is thin
+on a machine busy with other work: at the heaviest plate the last run reached exactly 10
+frames a second while turning, and an earlier one fell to 8.6 and held the page for 0.3
+seconds; on the 150 spacers, one run of a later check held the page for a third of a second.
+The look while moving is visibly coarser (some infill shows
 on the sides of round parts); the full look is the one the requirements describe. The
 figures, the renders and the reasons are in the trial's
 [record](../docs/orchestration/phase-2/records/wizard-1a-trial-preview.md). Still the

@@ -30,16 +30,17 @@ METHODS = {"A": "a-every.html", "B": "b-moving.html", "C": "c-progressive.html"}
 PLATES = ["four-each-b-supports", "blocks-12-supports", "spacers-150"]
 VIEWS = ["default", "top", "edge-on", "edge-on-side", "zoom", "zoom-edge-on", "zoom-top"]
 GROUPS = ["walls", "infill", "surfaces", "supports"]
-# The targets (wizard/README-details.md, "The layer preview" and "Performance targets").
+# The builder's part of passing (wizard/README-details.md, "The layer preview" and "How the
+# trials and measurements are run").
 FPS_SOFTWARE = 10
 HOLD_MS = 250
-FIRST_LAYER_S = 5
-PAGE_MEMORY_MB = 1024
-# The coarse checks of the look: the plate covers at least this much of the view, a colour
-# counts as shown at this share of the view, and the layer bar changes this much of it.
+# The coarse checks of the look, on what the method put on the screen at rest: the plate covers
+# at least this much of the view, a colour counts as shown at this share of the view, the layer
+# bar changes this much of it, and the ghost above the middle layer this much.
 COVERED = 0.05
 GROUP_SHOWN = 0.0005
 CHANGED = 0.01
+GHOST_SHOWN = 0.002
 VIEW_SIZE = (640, 480)
 
 
@@ -83,7 +84,8 @@ def verdict(m):
     hold = max(m["turn"]["longest_hold_ms"], m["layers"]["longest_hold_ms"], m["load"]["longest_hold_ms"]) <= HOLD_MS
     look = m["look"]
     look_ok = (look["covered"] >= COVERED and look["groups_seen"] >= look["groups_present"]
-               and look["changes_with_layer"] >= CHANGED and bool(look["draws_after_context_lost"]))
+               and look["changes_with_layer"] >= CHANGED and look["ghost_mid_layer"] >= GHOST_SHOWN
+               and look["covered_after_context_lost"] >= COVERED and look["ghost_after_context_lost"] >= GHOST_SHOWN)
     return {"frames": frames, "hold": hold, "look": look_ok, "passes": frames and hold and look_ok}
 
 
@@ -93,11 +95,24 @@ def slowest_fps(per_plate):
 
 def choose(results):
     """The method the Preview step is built on: the fastest that passes on every plate, or,
-    when none does, the fastest with the required look, with the target missed."""
-    passing = [name for name, per_plate in results.items() if all(verdict(m)["passes"] for m in per_plate.values())]
-    pool = passing or list(results)
+    when none does, the fastest with the required look on every plate, with the target missed;
+    None when no method has the look."""
+    def every(name, part):
+        return all(verdict(m)[part] for m in results[name].values())
+    passing = [name for name in results if every(name, "passes")]
+    pool = passing or [name for name in results if every(name, "look")]
+    if not pool:
+        return {"method": None, "passes": False}
     best = max(pool, key=lambda name: slowest_fps(results[name]))
     return {"method": best, "passes": bool(passing)}
+
+
+def report_path(out):
+    """Where the report goes: the committed report.html beside the committed figures, or, for
+    figures written elsewhere, a report beside them, so that a trial run aside never replaces
+    the committed one."""
+    out = Path(out).resolve()
+    return PREVIEW / "report.html" if out == RESULTS.resolve() else out / "report.html"
 
 
 # ------------------------------------------------------------------ the report
@@ -140,7 +155,11 @@ def report_html(results, chosen, mach, render_dir):
                 f'loading="lazy"><figcaption>{html.escape(r[:-4])}</figcaption></figure>' for r in m.get("renders", []))
             cells.append(f"<section><h3>{name}</h3><div class=\"renders\">{imgs}</div></section>")
         pictures.append(f"<h2 id=\"{html.escape(plate)}\">{html.escape(plate)}</h2>{''.join(cells)}")
-    word = "passes" if chosen["passes"] else "misses the target and is the fastest with the required look"
+    if chosen["method"] is None:
+        answer = "No method has the required look on every plate."
+    else:
+        word = "passes" if chosen["passes"] else "misses the target and is the fastest with the required look"
+        answer = f"Method {chosen['method']} {word}."
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Layer preview trial</title>
 <style>
@@ -157,7 +176,7 @@ figure {{ margin: 0; }} figure img {{ width: 320px; height: 240px; display: bloc
 figcaption {{ color: #a89e8b; font-size: 12px; }}
 </style></head><body>
 <h1>Layer preview trial</h1>
-<p>Method {chosen['method']} {word}. The machine: {f(mach.get('cpus'))} processors and {f(mach.get('memory_gb'))} GB of
+<p>{answer} The machine: {f(mach.get('cpus'))} processors and {f(mach.get('memory_gb'))} GB of
 memory as its cgroup gives them ({html.escape(str(mach.get('arch')))}), {html.escape(str(mach.get('browser', '')))},
 drawing in software ({html.escape(str(mach.get('renderer', '')))}). Frames a second are typical / worst; the hold is the
 longest the main thread was held, loading, moving or coming to rest; "rest" is the time from the end of a turn until the
@@ -236,19 +255,29 @@ def measure(playwright, port, name, plate, steps, views, out_dir):
         m["memory"] = memory
         layers = m["layer_count"]
         mid = max(1, layers // 2)
-        top_look = page.evaluate("trial.look()")
+        # Each look is what the method itself put on the screen at rest (viewer.js, look).
+        # The colours of the middle layer are sorted without the ghost, which lies between the
+        # camera and the cut and tints every colour under it; the ghost is the difference.
+        top_look = page.evaluate("trial.look('top')")
         page.evaluate(f"trial.setLayer({mid})")
-        mid_look = page.evaluate("trial.look()")
+        page.evaluate("trial.look('mid')")
+        mid_look = page.evaluate("trial.look('mid-bare', { ghost: false })")
         present = [g for g, n in enumerate(m["stats"]["groups"]) if n > 0]
         seen = [g for g in present if max(top_look["groups"][g], mid_look["groups"][g]) >= GROUP_SHOWN]
-        changes = page.evaluate(f"trial.lookChanges({layers}, {mid})")
+        changes = page.evaluate("trial.changed('top', 'mid-bare')")
+        ghost = page.evaluate("trial.changed('mid', 'mid-bare')")
         page.evaluate(f"trial.setLayer({layers})")
         page.evaluate("trial.loseContext()")
-        after = page.evaluate("trial.look()")
+        page.evaluate(f"trial.setLayer({mid})")
+        after = page.evaluate("trial.look('after')")
+        page.evaluate("trial.look('after-bare', { ghost: false })")
         m["look"] = {"covered": top_look["covered"], "groups_top": top_look["groups"], "groups_mid_layer": mid_look["groups"],
                      "groups_present": len(present), "groups_seen": len(seen),
-                     "changes_with_layer": changes, "draws_after_context_lost": after["covered"] >= COVERED,
+                     "changes_with_layer": changes, "ghost_mid_layer": ghost,
+                     "covered_after_context_lost": after["covered"],
+                     "ghost_after_context_lost": page.evaluate("trial.changed('after', 'after-bare')"),
                      "context_lost": page.evaluate("trial.contextLost || 0")}
+        page.evaluate(f"trial.setLayer({layers})")
         renders = []
         folder = out_dir / name / plate
         folder.mkdir(parents=True, exist_ok=True)
@@ -328,11 +357,12 @@ def main(argv):
     results = {name: per_plate for name, per_plate in
                sorted({**previous_results(out, methods, plates), **results}.items())}
     chosen = choose(results)
-    (PREVIEW / "report.html").write_text(report_html(
-        results, chosen, mach, render_dir=lambda m, p: os.path.relpath(out / m / p, PREVIEW)))
+    report = report_path(out)
+    report.write_text(report_html(
+        results, chosen, mach, render_dir=lambda m, p: os.path.relpath(out / m / p, report.parent)))
     (out / "chosen.json").write_text(json.dumps(chosen) + "\n")
     print(f"Method {chosen['method']} {'passes' if chosen['passes'] else 'misses the target'}; "
-          f"{PREVIEW / 'report.html'} shows the figures and the renders.", file=sys.stderr)
+          f"{report} shows the figures and the renders.", file=sys.stderr)
     return 0 if chosen["passes"] else 1
 
 

@@ -1,8 +1,11 @@
 {
+ "plate_id": "c3a85e3b-b833-50f5-b55b-1680f086c61f",
+ "submission_id": "a7ec59a4-5d22-5c4f-844c-a78605d1d082",
  "parts": {
   "hex-spacer": {
    "name": "Hex Spacer",
-   "stl": "hex-spacer.stl"
+   "sha256": "4e9493b4171a6efa92e1fc43e02597706647967e8e224be310164e987e913d44",
+   "units": "mm"
   }
  },
  "instances": [

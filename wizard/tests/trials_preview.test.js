@@ -6,6 +6,7 @@ import { deflateRawSync, crc32 } from 'node:zlib';
 import { readZipEntry, parseGcode, GROUPS, groupOf } from '../trials/preview/gcode.js';
 import { decimationFor } from '../trials/preview/methods-prepare.js';
 import { readStl, placeInstance, ghostOf, boxes, cull, fullPieces, boxVertices, VERTEX_BYTES, SEGMENT_VERTICES } from '../trials/preview/prepare.js';
+import { sortPixels, changedShare, BACKGROUND, COLOURS } from '../trials/preview/look.js';
 
 // A zip of `entries` ({name: string or bytes}), deflated unless `stored`.
 function zip(entries, stored = false) {
@@ -147,14 +148,42 @@ test('a part is placed as the contract places an instance', () => {
   assert.throws(() => readStl(stl([[0, 0, 0, 1, 0, 0, 0, 1, 0]]).slice(0, 100)), /not a whole binary STL/);
 });
 
-test('the ghost holds every instance of the plate', () => {
+test('the ghost holds every instance of the plate, each part found by its key', () => {
   const corners = readStl(stl([[0, 0, 0, 1, 0, 0, 0, 1, 1]]));
-  const plate = { parts: { a: { name: 'A', stl: 'a.stl' } },
+  const plate = { parts: { a: { name: 'A', sha256: '0'.repeat(64), units: 'mm' } },
     instances: [{ ref: 'a', orientation: '+z', angle: 0, x: 10, y: 10 }, { ref: 'a', orientation: '+z', angle: 0, x: 30, y: 10 }] };
-  const ghost = ghostOf(plate, { 'a.stl': corners });
+  const ghost = ghostOf(plate, { a: corners });
   assert.equal(ghost.corners.length, 18);
   assert.equal(ghost.corners[9], 29.5);
   assert.deepEqual([...ghost.bounds], [9.5, 9.5, 0, 10.5, 10.5, 1, 29.5, 9.5, 0, 30.5, 10.5, 1]);
+});
+
+test('a part in inches is scaled to millimetres before it is placed', () => {
+  const corners = readStl(stl([[0, 0, 0, 1, 0, 0, 0, 1, 1]]));
+  const plate = { parts: { a: { name: 'A', sha256: '0'.repeat(64), units: 'in' } },
+    instances: [{ ref: 'a', orientation: '+z', angle: 0, x: 100, y: 100 }] };
+  const { bounds } = ghostOf(plate, { a: corners });
+  assert.deepEqual([...bounds].map((v) => +v.toFixed(3)), [87.3, 87.3, 0, 112.7, 112.7, 25.4]);
+});
+
+test('the look is sorted into the background, the four colours and the walls\' shades', () => {
+  const bg = BACKGROUND.map((v) => Math.round(v * 255));
+  const colour = (g, shade = 1) => COLOURS[g].map((v) => Math.round(v * shade * 255));
+  const pixels = [bg, bg, bg, bg, colour(0), colour(0, 0.7), colour(1), colour(2), colour(3), [255, 0, 0]];
+  const px = new Uint8Array(pixels.flatMap((c) => [...c, 255]));
+  const look = sortPixels(px);
+  assert.equal(look.covered, 0.6);
+  assert.deepEqual(look.groups, [0.2, 0.1, 0.1, 0.1]);
+});
+
+test('the share of the view two looks differ in counts every pixel that changed', () => {
+  const a = new Uint8Array([1, 2, 3, 255, 1, 2, 3, 255, 1, 2, 3, 255, 1, 2, 3, 255]);
+  const b = Uint8Array.from(a);
+  assert.equal(changedShare(a, b), 0);
+  b[2] = 9; b[12] = 0;
+  assert.equal(changedShare(a, b), 0.5);
+  b[7] = 0;                                    // the alpha byte is not a colour
+  assert.equal(changedShare(a, b), 0.5);
 });
 
 test('each segment is packed as eight floats for the box methods', () => {
@@ -238,6 +267,47 @@ test('each segment kept is six vertices of a box, layer by layer', () => {
   assert.equal(vertices[1 * VERTEX_BYTES * SEGMENT_VERTICES + 10] & 3, 1, 'the second kept segment is infill');
 });
 
+test('a diagonal segment is pushed out along its own direction at both ends', () => {
+  // (10, 10) to (13, 14): 5 mm long, along (0.6, 0.8), 0.5 mm wide, so each end moves 0.25 mm.
+  const p = parseGcode(gcode(['M83', '; CHANGE_LAYER', '; Z_HEIGHT: 0.2', '; LAYER_HEIGHT: 0.2', 'G1 Z.2',
+    '; FEATURE: Outer wall', '; LINE_WIDTH: 0.5', 'G1 X10 Y10', 'G1 X13 Y14 E1']));
+  const { vertices } = boxVertices(p);
+  const u16 = new Uint16Array(vertices.buffer), i8 = new Int8Array(vertices.buffer);
+  const at = (v) => [...u16.slice(v * VERTEX_BYTES / 2, v * VERTEX_BYTES / 2 + 2)];
+  for (let role = 0; role < 3; role++) {
+    assert.deepEqual(at(role * 2), [985, 980], `the near end, role ${role}`);
+    assert.deepEqual(at(role * 2 + 1), [1315, 1420], `the far end, role ${role}`);
+  }
+  assert.deepEqual([i8[6], i8[7]], [-102, 76], 'the normal, (-0.8, 0.6)');
+});
+
+test('a box taller than its byte can hold is refused, never clipped', () => {
+  const lines = ['M83'];
+  for (let l = 1; l <= 16; l++) lines.push('; CHANGE_LAYER', `; Z_HEIGHT: ${(l * 0.4).toFixed(1)}`, '; LAYER_HEIGHT: 0.4',
+    `G1 Z${(l * 0.4).toFixed(1)}`, '; FEATURE: Outer wall', `G1 X0 Y${l}`, `G1 X5 Y${l} E1`);
+  const p = parseGcode(gcode(lines));
+  assert.equal(boxVertices(p, null, { decimate: 8 }).vertices[9], 160, 'eight layers of 0.4 mm, in fiftieths');
+  assert.throws(() => boxVertices(p, null, { decimate: 16 }), /6\.40 mm tall, over the 5\.10 mm a box can be/);
+});
+
+test('the look while moving never drops so many layers that a box is too tall to hold', () => {
+  // 16 layers of 0.4 mm, one segment each: every 16th layer would be a box 6.4 mm tall.
+  const p = { layerStart: Uint32Array.from({ length: 17 }, (_, l) => l), layerZ: Float32Array.from({ length: 16 }, (_, l) => (l + 1) * 0.4) };
+  assert.equal(decimationFor(p, 1), 8);
+  const thin = { layerStart: p.layerStart, layerZ: Float32Array.from({ length: 16 }, (_, l) => (l + 1) * 0.2) };
+  assert.equal(decimationFor(thin, 1), 16, 'sixteen layers of 0.2 mm fit');
+});
+
+test('a line type the reading does not know is not carried into the next reading', () => {
+  const lines = (feature) => ['M83', '; CHANGE_LAYER', '; Z_HEIGHT: 0.2', '; LAYER_HEIGHT: 0.2', 'G1 Z.2',
+    `; FEATURE: ${feature}`, 'G1 X0 Y0', 'G1 X5 Y0 E1'];
+  const first = parseGcode(gcode(lines('Something new')));
+  assert.equal(first.features[first.feature[0]], 'Something new');
+  const second = parseGcode(gcode(lines('Outer wall')));
+  assert.ok(!second.features.includes('Something new'), second.features.join(', '));
+  assert.equal(second.features[second.feature[0]], 'Outer wall');
+});
+
 test('decimated, only every D-th layer is kept, as tall as the layers it stands for', () => {
   const lines = ['M83'];
   for (let l = 1; l <= 4; l++) lines.push('; CHANGE_LAYER', `; Z_HEIGHT: ${l * 0.2}`, '; LAYER_HEIGHT: 0.2', `G1 Z${l * 0.2}`,
@@ -250,7 +320,7 @@ test('decimated, only every D-th layer is kept, as tall as the layers it stands 
 
 test('the look while moving drops the fewest layers that bring it within the budget', () => {
   // 8 layers of 10 segments: 80 in all, 40 at every 2nd layer, 20 at every 4th, 10 at every 8th.
-  const p = { layerStart: Uint32Array.from({ length: 9 }, (_, l) => l * 10) };
+  const p = { layerStart: Uint32Array.from({ length: 9 }, (_, l) => l * 10), layerZ: Float32Array.from({ length: 8 }, (_, l) => (l + 1) * 0.2) };
   assert.equal(decimationFor(p, 80), 1);
   assert.equal(decimationFor(p, 79), 2);
   assert.equal(decimationFor(p, 20), 4);

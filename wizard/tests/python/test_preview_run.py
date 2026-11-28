@@ -21,13 +21,14 @@ def test_the_memory_is_the_cgroups_limit_in_gigabytes():
 
 
 def measured(fps_turn=12.0, fps_layers=11.0, hold=120.0, load_hold=90.0, covered=0.3, groups_seen=4, groups_present=4,
-             changes=0.2, redrawn=True):
+             changes=0.2, ghost=0.05, covered_after=0.3, ghost_after=0.05):
     return {
         "turn": {"fps_typical": fps_turn, "longest_hold_ms": hold},
         "layers": {"fps_typical": fps_layers, "longest_hold_ms": hold},
         "load": {"longest_hold_ms": load_hold},
         "look": {"covered": covered, "groups_seen": groups_seen, "groups_present": groups_present,
-                 "changes_with_layer": changes, "draws_after_context_lost": redrawn},
+                 "changes_with_layer": changes, "ghost_mid_layer": ghost,
+                 "covered_after_context_lost": covered_after, "ghost_after_context_lost": ghost_after},
     }
 
 
@@ -35,10 +36,16 @@ def test_a_plate_passes_at_10_frames_typical_holds_within_250_ms_and_the_coarse_
     assert run.verdict(measured())["passes"] is True
 
 
+def test_exactly_10_frames_a_second_and_exactly_250_ms_pass():
+    assert run.verdict(measured(fps_turn=10.0, fps_layers=10.0, hold=250.0, load_hold=250.0))["passes"] is True
+
+
 @pytest.mark.parametrize("change, failed", [
     ({"fps_turn": 9.9}, "frames"), ({"fps_layers": 9.0}, "frames"), ({"hold": 251.0}, "hold"),
     ({"load_hold": 400.0}, "hold"), ({"covered": 0.01}, "look"), ({"groups_seen": 3}, "look"),
-    ({"changes": 0.0}, "look"), ({"redrawn": False}, "look"),
+    ({"changes": 0.0}, "look"), ({"covered_after": 0.0}, "look"),
+    # The ghost the method put on the screen at rest, and again after a lost drawing context.
+    ({"ghost": 0.0}, "look"), ({"ghost_after": 0.0}, "look"),
 ])
 def test_each_part_of_passing_can_fail_it(change, failed):
     v = run.verdict(measured(**change))
@@ -67,6 +74,19 @@ def test_when_none_passes_the_fastest_is_chosen_and_the_target_is_missed():
     assert chosen == {"method": "C", "passes": False}
 
 
+def test_when_none_passes_the_fastest_with_the_required_look_is_chosen():
+    results = results_of(A=0.5, B=6.0, C=8.0)
+    results["C"]["b"]["look"]["ghost_mid_layer"] = 0.0             # C, the fastest, shows no ghost on one plate
+    assert run.choose(results) == {"method": "B", "passes": False}
+
+
+def test_when_no_method_has_the_required_look_none_is_chosen():
+    results = results_of(A=0.5, C=8.0)
+    for method in results.values():
+        method["a"]["look"]["covered"] = 0.0
+    assert run.choose(results) == {"method": None, "passes": False}
+
+
 def test_the_figures_of_methods_not_measured_again_are_kept(tmp_path):
     (tmp_path / "A-p.json").write_text(json.dumps({"method": "A"}))
     (tmp_path / "C-p.json").write_text(json.dumps({"method": "C"}))
@@ -84,3 +104,17 @@ def test_the_report_shows_every_method_and_plate_side_by_side_with_their_renders
         assert name in page, name
     assert "C passes" in page
     json.dumps(results)                                       # the figures are plain JSON
+
+
+def test_the_report_beside_the_committed_results_is_the_committed_one_and_any_other_goes_with_its_figures(tmp_path):
+    assert run.report_path(run.RESULTS) == run.PREVIEW / "report.html"
+    assert run.report_path(tmp_path / "scratch") == tmp_path / "scratch" / "report.html"
+
+
+def test_a_missing_sliced_file_is_named_and_exits_2(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(run, "SLICED", tmp_path)
+    (tmp_path / "four-each-b-supports.gcode.3mf").write_bytes(b"PK")
+    assert run.main(["--plates", "four-each-b-supports,spacers-150", "--out", str(tmp_path / "out")]) == 2
+    err = capsys.readouterr().err
+    assert f"{tmp_path / 'spacers-150.gcode.3mf'} is missing: make the sliced files first" in err
+    assert not (tmp_path / "out").exists()

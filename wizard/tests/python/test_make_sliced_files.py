@@ -2,7 +2,9 @@
 configurations in wizard/trials/plates/, and the client that has a slice service slice each
 one and saves its sliced file. The slice service here is a fake on a port the system chooses;
 the real one is started by hand (wizard/trials/preview/README.md)."""
+import hashlib
 import json
+import re
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -81,14 +83,38 @@ def test_every_plate_fits_inside_the_plate_margin_and_names_files_that_exist(nam
     _, boxes = least_gap(configuration)
     assert all(b[0] >= 3 and b[1] >= 3 and b[2] <= 337 and b[3] <= 317 for b in boxes)
     files = msf.part_files(configuration)
-    assert set(files) == {part["stl"] for part in configuration["parts"].values()}
+    assert set(files) == set(configuration["parts"])
     assert all(path.is_file() for path in files.values())
 
 
-class FakeSliceService:
-    """Answers POST /slices, the event stream, the file and the summary, as told."""
+ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
-    def __init__(self, post_status=202, post_body=None, reports=None, file_bytes=b"PK fake"):
+
+@pytest.mark.parametrize("name", ["four-each-b-supports", "blocks-12-supports", "spacers-150"])
+def test_every_plate_is_a_plate_configuration_in_its_phase_2_form(name):
+    """contracts/plate-configuration.md, "Fields in phase 2" and "A part in phase 2": the plate's
+    id and a submission's value, and each part named by the hash of its bytes and its units."""
+    configuration = msf.plate_configurations()[name]
+    assert set(configuration) == {"plate_id", "submission_id", "parts", "instances", "overrides"}
+    assert ID.match(configuration["plate_id"]) and ID.match(configuration["submission_id"])
+    files = msf.part_files(configuration)
+    for key, part in configuration["parts"].items():
+        assert set(part) == {"name", "sha256", "units"}
+        assert part["units"] == "mm"
+        assert part["sha256"] == hashlib.sha256(files[key].read_bytes()).hexdigest()
+
+
+def test_each_plate_has_its_own_id():
+    ids = [c["plate_id"] for c in msf.plate_configurations().values()]
+    assert len(set(ids)) == 3
+
+
+class FakeSliceService:
+    """Answers POST /parts, POST /slices, the event stream, the file and the summary, as told,
+    and keeps every request: (method, path, headers, body)."""
+
+    def __init__(self, post_status=202, post_body=None, reports=None, file_bytes=b"PK fake", part_status=201,
+                 part_body=None, file_status=200, file_body=None):
         self.received = []
         self.post_status = post_status
         self.post_body = post_body if post_body is not None else {"job": "j1", "progress": {}, "part_warnings": []}
@@ -96,6 +122,8 @@ class FakeSliceService:
             {"job": "j1", "state": "running", "elapsed_s": 1, "sequence": 1, "fraction": 0.5},
             {"job": "j1", "state": "done", "elapsed_s": 2, "sequence": 2, "fraction": 1}]
         self.file_bytes = file_bytes
+        self.part_status, self.part_body = part_status, part_body
+        self.file_status, self.file_body = file_status, file_body
         fake = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -110,17 +138,31 @@ class FakeSliceService:
                 self.end_headers()
                 self.wfile.write(data)
 
+            def keep(self, body=b""):
+                fake.received.append((self.command, self.path, dict(self.headers), body))
+
             def do_POST(self):
                 length = int(self.headers["Content-Length"])
-                fake.received.append((self.path, self.headers["Content-Type"], self.rfile.read(length)))
-                self.answer(fake.post_status, fake.post_body)
+                body = self.rfile.read(length)
+                self.keep(body)
+                if self.path.startswith("/parts?"):
+                    record = fake.part_body if fake.part_body is not None else {
+                        "sha256": hashlib.sha256(body).hexdigest(), "units": self.path.split("units=")[1],
+                        "measurements": {}, "warnings": []}
+                    self.answer(fake.part_status, record)
+                else:
+                    self.answer(fake.post_status, fake.post_body)
 
             def do_GET(self):
+                self.keep()
                 if self.path == "/slices/j1/events":
                     body = "".join(f"data: {json.dumps(r)}\n\n" for r in fake.reports).encode()
                     self.answer(200, body, "text/event-stream")
                 elif self.path == "/slices/j1/file":
-                    self.answer(200, fake.file_bytes, "application/octet-stream")
+                    if fake.file_status != 200:
+                        self.answer(fake.file_status, fake.file_body)
+                    else:
+                        self.answer(200, fake.file_bytes, "application/octet-stream")
                 elif self.path == "/slices/j1/summary":
                     self.answer(200, {"file": "x.gcode.3mf", "layer_count": 13})
                 else:
@@ -146,10 +188,70 @@ def test_a_plate_sliced_is_saved_with_its_summary(tmp_path):
     assert path == tmp_path / "spacers-150.gcode.3mf"
     assert path.read_bytes() == b"PK the sliced file"
     assert json.loads((tmp_path / "spacers-150.summary.json").read_text())["layer_count"] == 13
-    (route, content_type, body), = service.received
-    assert route == "/slices" and content_type.startswith("multipart/form-data; boundary=")
-    assert b'name="plate_configuration"' in body and b'name="hex-spacer.stl"; filename="hex-spacer.stl"' in body
-    assert (WIZARD / "trials" / "parts" / "hex-spacer.stl").read_bytes() in body
+    assert [(m, p) for m, p, _, _ in service.received] == [
+        ("POST", "/parts?units=mm"), ("POST", "/slices"), ("GET", "/slices/j1/events"),
+        ("GET", "/slices/j1/file"), ("GET", "/slices/j1/summary")]
+
+
+def test_each_part_is_uploaded_by_itself_and_the_plate_configuration_names_it_by_hash(tmp_path):
+    with FakeSliceService() as service:
+        msf.slice_plate(service.url, "four-each-b-supports", tmp_path)
+    uploads = [(path, headers, body) for method, path, headers, body in service.received if path.startswith("/parts")]
+    assert len(uploads) == 8                                     # eight different parts, each once
+    for path, headers, body in uploads:
+        assert path == "/parts?units=mm" and headers["Content-Type"] == "application/octet-stream"
+    spacer = (WIZARD.parent / "contracts" / "examples" / "parts" / "real" / "inner-spacer.stl").read_bytes()
+    assert spacer in [body for _, _, body in uploads]
+    (_, _, headers, body), = [r for r in service.received if r[1] == "/slices"]
+    assert headers["Content-Type"] == "application/json"
+    sent = json.loads(body)
+    committed = msf.plate_configurations()["four-each-b-supports"]
+    assert sent["parts"] == committed["parts"] and sent["instances"] == committed["instances"]
+    assert sent["plate_id"] == committed["plate_id"]
+    # A new value for each submission (contracts/plate-configuration.md, "The submission's value").
+    assert sent["submission_id"] != committed["submission_id"] and ID.match(sent["submission_id"])
+
+
+def test_every_request_carries_the_user_key(tmp_path):
+    with FakeSliceService() as service:
+        msf.slice_plate(service.url, "spacers-150", tmp_path, user_key="someone")
+    assert {headers.get("X-Penguin-User-Key") for _, _, headers, _ in service.received} == {"someone"}
+
+
+def test_a_part_the_slice_service_refuses_says_its_code_and_sentence(tmp_path):
+    refusal = {"code": "slice.part_too_detailed", "message": "This part is too detailed.", "retryable": False, "detail": ""}
+    with FakeSliceService(part_status=413, part_body=refusal) as service:
+        with pytest.raises(msf.SliceFailed) as failed:
+            msf.slice_plate(service.url, "spacers-150", tmp_path)
+    assert str(failed.value) == ("spacers-150: the slice service refused the part hex-spacer "
+                                 "(HTTP 413, slice.part_too_detailed): This part is too detailed.")
+    assert [p for _, p, _, _ in service.received] == ["/parts?units=mm"]
+    assert not list(tmp_path.iterdir())
+
+
+def test_a_part_kept_under_another_hash_is_a_failure(tmp_path):
+    record = {"sha256": "0" * 64, "units": "mm", "measurements": {}, "warnings": []}
+    with FakeSliceService(part_body=record) as service:
+        with pytest.raises(msf.SliceFailed) as failed:
+            msf.slice_plate(service.url, "spacers-150", tmp_path)
+    assert str(failed.value).startswith(f"spacers-150: the slice service kept the part hex-spacer as {'0' * 64} in mm, not as ")
+    assert [p for _, p, _, _ in service.received] == ["/parts?units=mm"]
+
+
+def test_a_sliced_file_that_is_not_there_is_a_failure_and_nothing_is_saved(tmp_path):
+    gone = {"code": "slice.file_gone", "message": "The sliced file is no longer on the print server.",
+            "retryable": False, "detail": ""}
+    with FakeSliceService(file_status=410, file_body=gone) as service:
+        with pytest.raises(msf.SliceFailed) as failed:
+            msf.slice_plate(service.url, "spacers-150", tmp_path)
+    assert str(failed.value) == ("spacers-150: /slices/j1/file answered HTTP 410 (slice.file_gone): "
+                                 "The sliced file is no longer on the print server.")
+    assert not list(tmp_path.iterdir())
+
+
+def test_the_command_line_without_a_slice_service_exits_2(capsys):
+    assert msf.main(["--plate", "spacers-150"]) == 2
+    assert "--url is needed: the address of a slice service started by hand" in capsys.readouterr().err
 
 
 def test_a_plate_the_slice_service_refuses_says_its_code_and_sentence(tmp_path):

@@ -1,36 +1,46 @@
 {
+ "plate_id": "c52a05e2-b7f9-5e31-b55d-996e7e990028",
+ "submission_id": "dbe2de03-0fab-5e84-adac-ffd2ac5db598",
  "parts": {
   "elevator-block-top": {
    "name": "Elevator Block Top",
-   "stl": "elevator-block-top.stl"
+   "sha256": "6a25d7cb3bc9059207c8be4abfbf172dc877c1d5cd263dfcf289284f9980a629",
+   "units": "mm"
   },
   "elevator-block-bottom-inner": {
    "name": "Elevator Block Bottom Inner",
-   "stl": "elevator-block-bottom-inner.stl"
+   "sha256": "db902cd519da10b6385371a0527157173ff4dbc2e708a549854dd827fd76144a",
+   "units": "mm"
   },
   "elevator-block-carriage": {
    "name": "Elevator Block Carriage",
-   "stl": "elevator-block-carriage.stl"
+   "sha256": "d49c63d0cb761a9ce6f0658ace43428c376f1af1fc09ae397dd1fe884c10532b",
+   "units": "mm"
   },
   "pulley-v3": {
    "name": "Pulley v3",
-   "stl": "pulley-v3.stl"
+   "sha256": "24d2932b43e72e50a2186757a4bbc405df65f19e7e0270346c357478d5fa4a98",
+   "units": "mm"
   },
   "elevator-top-inner": {
    "name": "Elevator Top Inner",
-   "stl": "elevator-top-inner.stl"
+   "sha256": "0b5c9685e3f59a711d06ce9d0f6c60ff7ff5351d707d9f050545dddeb2f0448e",
+   "units": "mm"
   },
   "clamp-plate-inner": {
    "name": "Clamp Plate Inner",
-   "stl": "clamp-plate-inner.stl"
+   "sha256": "19e59b003a77568599cbcd85e31a2ac74f6df3bbedf57f3ac5bf0c0f00b2827b",
+   "units": "mm"
   },
   "outer-clamp": {
    "name": "Outer Clamp",
-   "stl": "outer-clamp.stl"
+   "sha256": "8e005120bcc415a62f13f6343172af0dee2347d8f11a9e2fdac7cdb596619d7e",
+   "units": "mm"
   },
   "inner-spacer": {
    "name": "Inner Spacer",
-   "stl": "inner-spacer.stl"
+   "sha256": "7f155e29cb33cb18b1dd33b40db99445e416d108b18f9bc6290a896ff4f200bb",
+   "units": "mm"
   }
  },
  "instances": [

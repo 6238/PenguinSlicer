@@ -5,7 +5,9 @@ import { readZipEntry, parseGcode } from './gcode.js';
 import { readStl, ghostOf } from './prepare.js';
 import * as methods from './methods-prepare.js';
 
-const PART_URL = (stl) => (stl === 'hex-spacer.stl' ? `/parts/${stl}` : `/parts/real/${stl}`);
+// A part's key in the trial's plate configurations is its file's name without `.stl`
+// (make_sliced_files.py): the made spacer in wizard/trials/parts/, the real parts beside it.
+const PART_URL = (key) => (key === 'hex-spacer' ? `/parts/${key}.stl` : `/parts/real/${key}.stl`);
 
 async function bytesOf(url) {
   const answer = await fetch(url);
@@ -27,7 +29,7 @@ self.onmessage = async ({ data }) => {
     const tPrepared = performance.now();
     const plateConfiguration = JSON.parse(new TextDecoder().decode(await bytesOf(`/plates/${plate}.json`)));
     const corners = {};
-    for (const part of Object.values(plateConfiguration.parts)) corners[part.stl] = readStl(await bytesOf(PART_URL(part.stl)));
+    for (const key of Object.keys(plateConfiguration.parts)) corners[key] = readStl(await bytesOf(PART_URL(key)));
     const ghost = ghostOf(plateConfiguration, corners);
     const tGhost = performance.now();
     const groups = [0, 0, 0, 0];

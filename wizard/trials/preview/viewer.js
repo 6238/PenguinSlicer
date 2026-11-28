@@ -4,10 +4,10 @@
 import * as THREE from 'three';
 import { OrbitControls } from '/vendor/three/examples/jsm/controls/OrbitControls.js';
 import { GROUP_COLOURS, GROUP_NAMES } from './gcode.js';
+import { BACKGROUND, COLOURS, sortPixels, changedShare } from './look.js';
+export { BACKGROUND, COLOURS };
 
 const rgb = (hex) => [(hex >> 16 & 255) / 255, (hex >> 8 & 255) / 255, (hex & 255) / 255];
-export const BACKGROUND = rgb(0xf2f4f7);          // the view's background, as the mockup's
-export const COLOURS = GROUP_COLOURS.map(rgb);
 // The walls' light, as the mockup's: from the front left, above.
 export const LIGHT = (() => { const x = -0.4, y = -0.6, l = Math.hypot(x, y); return [x / l, y / l]; })();
 const GHOST = [...rgb(0x95a0ac), 0.36];           // the mockup's ghost: grey, 36 % opaque
@@ -116,8 +116,9 @@ function scenery(gl, ghostCorners) {
 const median = (xs) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.floor(s.length / 2)] : null; };
 
 // The trial's page. `method` is { name, prepare, options, create(gl, prepared, info) }, and
-// create returns { draw(frame, scene, fresh) -> { segments, complete, again }, drawFull(frame, scene) }:
-// `fresh` says the view or the layer changed since the last frame; `complete` that the full
+// create returns { draw(frame, scene, fresh) -> { segments, complete, again } }:
+// `fresh` says the view or the layer changed since the last frame; `segments` how many
+// toolpath boxes the frame drew (0 for a frame of the plate alone); `complete` that the full
 // look is on the screen; `again` that the method wants another frame to go on drawing.
 export async function start(method) {
   const q = new URLSearchParams(location.search);
@@ -170,9 +171,14 @@ export async function start(method) {
   const layers = data.layers;
   let k = layers - 1, moving = false, dirty = true, more = false, scene = null, drawer = null, lost = false;
   let complete = false;
+  // The ghost has arrived on the graphics side; a lost drawing context loses it with the rest.
+  let ghostDone = false;
+  // While false, the ghost is left out of every frame (the coarse check of the ghost compares).
+  let ghostShown = true;
 
   function build() {
     const t = performance.now();
+    ghostDone = false;
     scene = scenery(gl, data.ghost);
     drawer = method.create(gl, data.prepared, { resolution: [width, height] });
     trial.build_ms = performance.now() - t;
@@ -230,11 +236,11 @@ export async function start(method) {
       pxPerUnit: camera.projectionMatrix.elements[5] * height / 2, k, moving,
       layerZ: data.layerZ, layers };
   }
-  let drawnLast = 0, ghostDone = false;
+  let drawnLast = 0;
   function render(fresh) {
     if (lost) return { segments: 0, complete: false };
     gl.viewport(0, 0, width, height);
-    const r = drawer.draw(frameState(), scene, fresh);
+    const r = drawer.draw(frameState(), ghostShown ? scene : { ...scene, ghost() {} }, fresh);
     // The ghost uploads behind the toolpaths; once it has arrived, the view is drawn again
     // with it, and until then the full look is not counted as on the screen.
     if (!ghostDone) {
@@ -280,7 +286,9 @@ export async function start(method) {
     watchers.add(w);
     dirty = true;
   });
-  await new Promise((resolve) => { const w = () => { watchers.delete(w); resolve(); }; watchers.add(w); dirty = true; });
+  // The first layer drawn: the first frame that drew toolpaths, not one of the plate alone
+  // while the boxes upload.
+  await new Promise((resolve) => { const w = (now, js, r) => { if (r.segments > 0) { watchers.delete(w); resolve(); } }; watchers.add(w); dirty = true; });
   await afterFrame();
   const tFirst = performance.now();
   await untilComplete();
@@ -350,24 +358,28 @@ export async function start(method) {
     };
   }
 
-  // The coarse checks of the look: the full look drawn, without the ghost, whose grey would
-  // tint the colours under it, and its pixels sorted.
-  function look() {
-    gl.viewport(0, 0, width, height);
-    drawer.drawFull(frameState(), { ...scene, ghost() {} });
-    const px = new Uint8Array(width * height * 4);
-    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, px);
-    const counts = [0, 0, 0, 0];
-    let background = 0;
-    const ramps = COLOURS.map((c, g) => (g === 0 ? [0.66, 0.75, 0.83, 0.92, 1] : [1]).map((s) => c.map((v) => v * s * 255)));
-    for (let i = 0; i < px.length; i += 4) {
-      const r = px[i], gg = px[i + 1], bb = px[i + 2];
-      if (Math.abs(r - BACKGROUND[0] * 255) < 3 && Math.abs(gg - BACKGROUND[1] * 255) < 3 && Math.abs(bb - BACKGROUND[2] * 255) < 3) { background++; continue; }
-      ramps.forEach((ramp, g) => { if (ramp.some((c) => Math.abs(c[0] - r) + Math.abs(c[1] - gg) + Math.abs(c[2] - bb) < 24)) counts[g]++; });
-    }
-    dirty = true;
-    const all = width * height;
-    return { covered: 1 - background / all, groups: counts.map((c) => c / all), pixels: px };
+  // The coarse checks of the look read what the method itself put on the screen at rest: the
+  // view is drawn again, as after any change, and its pixels are read on the frame that put the
+  // full look on the screen, ghost included, before the browser shows it and clears it. Each
+  // look is kept under its name for `changed`. With `ghost` false the ghost is left out, so
+  // comparing the two looks shows how much of the view the ghost takes.
+  const looks = {};
+  function look(name, { ghost = true } = {}) {
+    return new Promise((resolve) => {
+      ghostShown = ghost;
+      const w = (now, js, r) => {
+        if (!r.complete) return;
+        watchers.delete(w);
+        const px = new Uint8Array(width * height * 4);
+        gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        ghostShown = true;
+        dirty = true;
+        looks[name] = px;
+        resolve(sortPixels(px));
+      };
+      watchers.add(w);
+      dirty = true;
+    }).then(async (sorted) => { await afterFrame(); return sorted; });
   }
 
   Object.assign(trial, {
@@ -385,16 +397,9 @@ export async function start(method) {
     async stopMoving() { moving = false; await untilComplete(); await afterFrame(); },
     turn: (steps) => runPath(steps, turnPath(steps)),
     dragLayers: (steps) => runPath(steps, layerPath(steps)),
-    look() { const l = look(); delete l.pixels; return l; },
-    lookChanges(layerA, layerB) {
-      const keep = k;
-      k = layerA - 1; const a = look().pixels;
-      k = layerB - 1; const bpx = look().pixels;
-      k = keep;
-      let c = 0;
-      for (let i = 0; i < a.length; i += 4) if (a[i] !== bpx[i] || a[i + 1] !== bpx[i + 1] || a[i + 2] !== bpx[i + 2]) c++;
-      return c / (a.length / 4);
-    },
+    look,
+    // The share of the view two kept looks differ in.
+    changed(a, b) { return changedShare(looks[a], looks[b]); },
     memory() { return performance.memory ? { js_heap_mb: performance.memory.usedJSHeapSize / 1048576 } : {}; },
     drawn: () => drawnLast,
     async loseContext() {

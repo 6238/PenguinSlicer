@@ -97,9 +97,10 @@ export function parseGcode(bytes, { arcTolerance = 0.02, mergeTolerance = 0.01 }
   const Y1 = new Grow(Float32Array, cap), Z = new Grow(Float32Array, cap), W = new Grow(Float32Array, cap);
   const G = new Grow(Uint8Array, cap), F = new Grow(Uint8Array, cap);
   const layerZ = [], layerHeight = [], layerStart = [];
+  const features = FEATURES.slice();             // this reading's line types: the known ones, then any new
   const decoder = new TextDecoder();
   let x = 0, y = 0, z = 0, e = 0, relXYZ = false, relE = false;
-  let feature = 'Custom', featureId = FEATURES.indexOf('Custom'), group = SUPPORTS, width = 0.4;
+  let feature = 'Custom', featureId = features.indexOf('Custom'), group = SUPPORTS, width = 0.4;
   let layer = -1, pendingZ = 0, pendingH = 0.2, lines = 0, moves = 0;
   // The run being merged: its start, its points so far, and whether it may take another point.
   let run = false, rx = 0, ry = 0, ex = 0, ey = 0;
@@ -148,8 +149,8 @@ export function parseGcode(bytes, { arcTolerance = 0.02, mergeTolerance = 0.01 }
       if (startsWith(bytes, i, lineEnd, C_FEATURE)) {
         flush();
         feature = decoder.decode(bytes.subarray(i + C_FEATURE.length, lineEnd)).trim();
-        featureId = FEATURES.indexOf(feature);
-        if (featureId < 0) { FEATURES.push(feature); featureId = FEATURES.length - 1; }
+        featureId = features.indexOf(feature);
+        if (featureId < 0) { features.push(feature); featureId = features.length - 1; }
         group = groupOf(feature);
       } else if (startsWith(bytes, i, lineEnd, C_WIDTH)) {
         const w = readNumber(bytes, i + C_WIDTH.length, lineEnd);
@@ -208,7 +209,7 @@ export function parseGcode(bytes, { arcTolerance = 0.02, mergeTolerance = 0.01 }
   layerStart.push(X0.n);
   return {
     count: X0.n, x0: X0.done(), y0: Y0.done(), x1: X1.done(), y1: Y1.done(), z: Z.done(), width: W.done(),
-    group: G.done(), feature: F.done(), features: FEATURES.slice(),
+    group: G.done(), feature: F.done(), features,
     height: heightsOf(layerStart, layerHeight, X0.n),
     layers: layerZ.length, layerZ: Float32Array.from(layerZ), layerHeight: Float32Array.from(layerHeight),
     layerStart: Uint32Array.from(layerStart), lines, moves,

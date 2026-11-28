@@ -176,7 +176,6 @@ export const methodA = {
         if (!full.upload()) { clear(gl); scene.plate(f.viewProj); return { segments: 0, complete: false, again: true }; }
         return { segments: drawFull(gl, full, f, scene), complete: true };
       },
-      drawFull(f, scene) { return drawFull(gl, full, f, scene); },
     };
   },
 };
@@ -205,7 +204,6 @@ export const methodB = {
         }
         return { segments: drawFull(gl, full, f, scene), complete: true };
       },
-      drawFull(f, scene) { return drawFull(gl, full, f, scene); },
     };
   },
 };
@@ -246,7 +244,7 @@ export const methodC = {
             moving.begin(f); moving.draw(0, Math.min(1, moving.layerStart[moving.layerStart.length - 1]), false);
           }
           warmed = true;
-          return { segments: 1, complete: false, again: true };
+          return { segments: 0, complete: false, again: true };       // not yet a layer on the screen
         }
         if (!fullReady) {
           const n = drawMoving(gl, full, moving, prepared.decimate, f, scene, false);
@@ -297,7 +295,6 @@ export const methodC = {
         shown = true;
         return { segments: 0, complete: true };
       },
-      drawFull(f, scene) { return drawFull(gl, full, f, scene); },
     };
   },
 };

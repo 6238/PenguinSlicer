@@ -50,8 +50,15 @@ export function placeInstance(corners, instance) {
 
 // Every instance of the plate configuration placed, as one array of triangle corners, and the
 // bounds of each instance (minX, minY, minZ, maxX, maxY, maxZ; for framing the view).
+// `partCorners` holds each part's corners under its key in the plate configuration; a part in
+// inches is scaled to millimetres first, as the contract says.
 export function ghostOf(plate, partCorners) {
-  const placed = plate.instances.map((i) => placeInstance(partCorners[plate.parts[i.ref].stl], i));
+  const inMm = {};
+  for (const [key, part] of Object.entries(plate.parts)) {
+    const corners = partCorners[key];
+    inMm[key] = part.units === 'in' ? corners.map((v) => v * 25.4) : corners;
+  }
+  const placed = plate.instances.map((i) => placeInstance(inMm[i.ref], i));
   const corners = new Float32Array(placed.reduce((n, p) => n + p.length, 0));
   const bounds = new Float32Array(placed.length * 6);
   let at = 0;
@@ -172,11 +179,14 @@ export function cull(p, { cell = 0.25 } = {}) {
 // Each segment drawn is a box: its top and the long side towards the camera, as six vertices
 // of 12 bytes: x, y, z as unsigned 16-bit hundredths of a millimetre (the end of the segment,
 // pushed out along it by half its width; z the top of the box), the segment's normal as two
-// signed bytes, its width in hundredths and its height in fiftieths of a millimetre as bytes,
+// signed bytes, its width in hundredths and its height in fiftieths of a millimetre as bytes
+// (so a box is at most MAX_BOX_MM tall; a taller one is refused, not clipped),
 // and a byte of flags: the group (bits 0 and 1) and the vertex's role (bits 2 and 3: 0 the
 // near top edge, 1 the far top edge, 2 the bottom of the near side). The vertex shader picks
 // the near side from the camera. VERTEX_BYTES and SEGMENT_VERTICES are what the page reads.
 export const VERTEX_BYTES = 12, SEGMENT_VERTICES = 6;
+// The tallest box the height byte holds: 255 fiftieths of a millimetre.
+export const MAX_BOX_MM = 255 / 50;
 
 // The vertices of the segments `select` keeps (all when null), layer by layer, and where each
 // layer starts. With `decimate` D above 1 only every D-th layer is kept (the layers D-1,
@@ -205,13 +215,14 @@ export function boxVertices(p, select = null, { decimate = 1 } = {}) {
       const ux = dx / len, uy = dy / len, r = p.width[s] / 2;
       const ends = [[p.x0[s] - ux * r, p.y0[s] - uy * r], [p.x1[s] + ux * r, p.y1[s] + uy * r]];
       const h = tall ?? p.height[s];
+      if (Math.round(h * 50) > 255) throw new Error(`A box of layer ${l + 1} would be ${h.toFixed(2)} mm tall, over the ${MAX_BOX_MM.toFixed(2)} mm a box can be.`);
       for (let role = 0; role < 3; role++) {
         for (const [x, y] of ends) {
           const o = v * VERTEX_BYTES;
           u16[o / 2] = q(x); u16[o / 2 + 1] = q(y); u16[o / 2 + 2] = q(p.z[s]);
           i8[o + 6] = Math.round(-uy * 127); i8[o + 7] = Math.round(ux * 127);
           bytes[o + 8] = Math.min(255, Math.round(p.width[s] * 100));
-          bytes[o + 9] = Math.min(255, Math.round(h * 50));
+          bytes[o + 9] = Math.round(h * 50);
           bytes[o + 10] = p.group[s] | (role << 2);
           v++;
         }

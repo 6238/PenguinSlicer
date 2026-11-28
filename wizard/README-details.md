@@ -1430,8 +1430,10 @@ drawing), walls' tops 0.01 mm over the lines that end against them; while moving
 or dragging the layer bar), every D-th layer of a coarser reading (arcs within 0.1 mm), each box D
 layers tall, D the smallest of 1, 2, 4, 8, 16 within 200,000 boxes, no ghost; at rest, the full look
 drawn into an image off the screen in pieces of at most 100,000 boxes, each after a fence shows the
-one before is drawn, then copied to the screen; the vertices uploaded 8 MB a frame behind a fence;
-a first frame of one box to build the pipelines.
+one before is drawn, then the ghost as a piece of its own, then copied to the screen; the vertices
+and the ghost uploaded 8 MB a frame behind a fence, and uploaded again after a lost drawing context;
+a first frame of one box to build the pipelines; a box at most 5.1 mm tall (its height is a byte of
+fiftieths of a millimetre), so D is never so large that a box of D layers would be taller.
 
 **The appearance** ([decision 33](../docs/mockups/print-wizard/DECISIONS.md#preview-step)):
 
@@ -1483,9 +1485,10 @@ fast but showed combs and show-through.
 
 Tried first in phase 2 ([The risks to try first in phase 2](README.md#the-risks-to-try-first-in-phase-2)),
 as [How the trials and measurements are run](#how-the-trials-and-measurements-are-run) says: method C
-reaches 10 frames a second typical (15 to 20 measured) and no hold over 250 ms on the three plates
-without a graphics card, with the required look at rest. The owner's part (the renders, and Chrome on
-the Mac) is still open.
+reaches 10 frames a second typical (10 to 20 measured) and no hold over 250 ms (113 to 198 ms) on the
+three plates without a graphics card, with the required look at rest, the ghost included, as read from
+the screen; the margin on a busy machine is thin (the trial's record). The owner's part (the renders,
+and Chrome on the Mac) is still open.
 
 Tests: a lost 3D context in each view, caused on purpose, draws again without a reload, twice in
 one page; the layer bar by arrow keys and its screen-reader layer; the colour key always has four
@@ -2026,9 +2029,9 @@ or is not yet in a contract:
 | Arrange | Under 2 s for 150 instances | Met: at most 30 ms for 150 of `hex-spacer.stl` (all placed) and 56 ms for a mix of 150 real parts (104 placed, the rest beside the plate) | The same |
 | The placement check | Keeps up with a drag at 150 instances | Met: at most 4.4 ms for each check of a drag at 150 instances, against one frame of 100 ms at 10 frames a second | The same |
 | The Layout view | 30 frames a second with a graphics card, 10 without, while dragging or turning, at 150 instances of parts up to 150,000 triangles | Set, no measurement | Timed in Chrome on both machines; reported in real use |
-| The layer preview | 30 with a graphics card, 10 without, while turning or dragging the layer bar, on a 14.1 MB sliced file and at 150 instances; a simpler look while moving | Without a graphics card, method C of the first trial: 15 to 20 typical on the three plates; with one, unmeasured | Timed in Chrome on both machines; reported in real use; test renders |
-| The first layer drawn | Within 5 s, print time and filament at once | The first trial: 0.8 to 2.1 s from fetching the sliced file (the look while moving; the full look 1.6 to 7.1 s) | The same |
-| The page's memory | Under 1 GB at the largest plate with the preview of a 14.1 MB sliced file | The first trial: 901 MB at that plate (the page's and the graphics process's peaks) | Measured in Chrome at that plate |
+| The layer preview | 30 with a graphics card, 10 without, while turning or dragging the layer bar, on a 14.1 MB sliced file and at 150 instances; a simpler look while moving | Without a graphics card, method C of the first trial: 10 to 20 typical on the three plates (10.0 turning at `blocks-12-supports`); with one, unmeasured | Timed in Chrome on both machines; reported in real use; test renders |
+| The first layer drawn | Within 5 s, print time and filament at once | The first trial, method C: 1.5 to 2.7 s from fetching the sliced file to the first frame with toolpaths (the look while moving; the full look 2.4 to 8.5 s) | The same |
+| The page's memory | Under 1 GB at the largest plate with the preview of a 14.1 MB sliced file | The first trial, method C: 839 MB at that plate (the page's and the graphics process's peaks) | Measured in Chrome at that plate |
 | Before a self-reload | 120 s since the user last interacted, or a step change | Set | Fake clock |
 | Reports about itself | A few a minute from one page | Set; the front server has its own limit | Fake clock |
 | A sliced file | At most 50 MB; 8.8 to 14.1 MB on the plates measured | The slice service's and the front server's | A slice whose file would be larger ends with the slice service's sentence |
@@ -2213,9 +2216,13 @@ processors and memory. The **machine with a graphics card** is the owner's Mac, 
 owner can take figures there.
 
 **The layer preview's speed without a graphics card** (the first trial of phase 2). Three real sliced
-files, made by `wizard/trials/make_sliced_files.py`, which submits each plate to a slice
-service started by hand on the same machine through its HTTP interface as built today (a plate
-configuration with its files) and saves the sliced file:
+files, made by `wizard/trials/make_sliced_files.py`, which has a slice service started by hand on
+the same machine slice each plate through its phase 2 HTTP interface
+([contracts/slice-http-interface.md](../contracts/slice-http-interface.md)): each part uploaded by
+itself with `POST /parts?units=mm`, then the plate configuration in its phase 2 form as JSON with
+`POST /slices` (its parts named by `sha256` and `units`, the plate's fixed `plate_id` and a new
+`submission_id` for each slice), every request under the user key `wizard-trials`; it saves the
+sliced file and its summary:
 
 | Plate | What it is | Sliced file | What making it needs |
 |---|---|---|---|

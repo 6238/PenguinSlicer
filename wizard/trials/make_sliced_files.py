@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """The first trial's three real sliced files.
 
-Writes the three plates of the layer preview's trial as plate configurations into
-wizard/trials/plates/ (`--write-plates`), and has a slice service started by hand on the same
-machine slice each one through its HTTP interface as built today (a plate configuration with
-its STL files), saving the sliced file and its summary into wizard/trials/sliced/, which is not
-committed. How to start the slice service, with the real-Orca lock and the memory ceiling the
-blocks plate needs, is in wizard/trials/preview/README.md.
+Writes the three plates of the layer preview's trial as plate configurations in their phase 2
+form into wizard/trials/plates/ (`--write-plates`), and has a slice service started by hand on
+the same machine slice each one through its HTTP interface (contracts/slice-http-interface.md):
+each part uploaded by itself (POST /parts?units=mm), then the plate configuration as JSON,
+naming each part by the hash of its bytes and its units, with a new submission value (POST
+/slices), every request under one user key; it saves the sliced file and its summary into
+wizard/trials/sliced/, which is not committed. How to start the slice service, with the
+real-Orca lock and the memory ceiling the blocks plate needs, is in
+wizard/trials/preview/README.md.
 
 The plates (wizard/README-details.md, "How the trials and measurements are run"):
 
@@ -18,10 +21,12 @@ The plates (wizard/README-details.md, "How the trials and measurements are run")
   supports off.
 """
 import argparse
+import hashlib
 import http.client
 import json
 import sys
 import uuid
+from functools import cache
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -34,6 +39,11 @@ MADE = TRIALS / "parts"
 PLATE_CENTRE = (170.0, 160.0)          # the H2S plate, 340 x 320 mm
 FINAL = {"done", "failed", "cancelled"}
 TIMEOUT_S = 600                        # a socket that says nothing for this long is a failure
+USER_KEY_HEADER = "X-Penguin-User-Key"
+USER_KEY = "wizard-trials"             # the user key every request of the script carries
+# The plates' ids and committed submission values are fixed, so that the committed plates are
+# what the script writes; each slice sends a new submission value of its own.
+IDS = uuid.UUID("6f1c3a52-0d6e-4b0a-9f7e-2c5d8e4a1b30")
 
 # ref -> (file, the part's name, the axis that points up: its largest flat face on the plate)
 PARTS = {
@@ -57,9 +67,17 @@ def instance(ref, x, y):
     return {"ref": ref, "orientation": PARTS[ref][2], "angle": 0, "x": round(float(x), 6), "y": round(float(y), 6)}
 
 
-def configuration(instances, supports):
+@cache
+def sha256_of(ref):
+    return hashlib.sha256(PARTS[ref][0].read_bytes()).hexdigest()
+
+
+def configuration(name, instances, supports):
+    """A plate configuration in its phase 2 form (contracts/plate-configuration.md): each part
+    under its key (its file's name without .stl) by the hash of its bytes, in millimetres."""
     refs = list(dict.fromkeys(i["ref"] for i in instances))
-    return {"parts": {ref: {"name": PARTS[ref][1], "stl": PARTS[ref][0].name} for ref in refs},
+    return {"plate_id": str(uuid.uuid5(IDS, f"{name}/plate")), "submission_id": str(uuid.uuid5(IDS, f"{name}/submission")),
+            "parts": {ref: {"name": PARTS[ref][1], "sha256": sha256_of(ref), "units": "mm"} for ref in refs},
             "instances": instances, "overrides": {"supports": "on" if supports else "off"}}
 
 
@@ -81,9 +99,9 @@ def plate_configurations():
     # The block's footprint is 88.9 by 63.5 mm, so 12.5 mm apart is a pitch of 101.4 by 76.
     blocks = grid("elevator-block-bottom-inner", 3, 4, 88.9 + 12.5, 63.5 + 12.5)
     spacers = grid("hex-spacer", 13, 12, 22.0, 22.0, count=150)
-    return {"four-each-b-supports": configuration(four_each_b, True),
-            "blocks-12-supports": configuration(blocks, True),
-            "spacers-150": configuration(spacers, False)}
+    return {"four-each-b-supports": configuration("four-each-b-supports", four_each_b, True),
+            "blocks-12-supports": configuration("blocks-12-supports", blocks, True),
+            "spacers-150": configuration("spacers-150", spacers, False)}
 
 
 def write_plates(folder=PLATES_DIR):
@@ -94,52 +112,45 @@ def write_plates(folder=PLATES_DIR):
 
 
 def part_files(plate):
-    """{the stl file name the HTTP interface receives: the file on disk}."""
-    by_name = {path.name: path for path, _, _ in PARTS.values()}
-    return {part["stl"]: by_name[part["stl"]] for part in plate["parts"].values()}
-
-
-def multipart(plate):
-    boundary = uuid.uuid4().hex
-    chunks = [f'--{boundary}\r\nContent-Disposition: form-data; name="plate_configuration"\r\n'
-              f"Content-Type: application/json\r\n\r\n".encode(), json.dumps(plate).encode(), b"\r\n"]
-    for name, path in part_files(plate).items():
-        chunks += [f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"; filename="{name}"\r\n'
-                   f"Content-Type: application/octet-stream\r\n\r\n".encode(), path.read_bytes(), b"\r\n"]
-    chunks.append(f"--{boundary}--\r\n".encode())
-    return f"multipart/form-data; boundary={boundary}", b"".join(chunks)
+    """{each part's key in the plate configuration: its file on disk}."""
+    return {key: PARTS[key][0] for key in plate["parts"]}
 
 
 def sentence(report):
     return f"{report.get('code', 'no code')}): {report.get('message', 'no sentence')}"
 
 
-def slice_plate(url, name, out_dir=SLICED_DIR, plate=None):
-    """Has the slice service at `url` slice the plate `name`, follows its progress stream to its
-    final report, and saves `<name>.gcode.3mf` and `<name>.summary.json` in `out_dir`."""
+def slice_plate(url, name, out_dir=SLICED_DIR, plate=None, user_key=USER_KEY):
+    """Has the slice service at `url` slice the plate `name`: uploads each of its parts, submits
+    it with a new submission value, follows its progress stream to its final report, and saves
+    `<name>.gcode.3mf` and `<name>.summary.json` in `out_dir`."""
     plate = plate_configurations()[name] if plate is None else plate
     address = urlsplit(url)
     connection = http.client.HTTPConnection(address.hostname, address.port, timeout=TIMEOUT_S)
+    key = {USER_KEY_HEADER: user_key}
     try:
-        content_type, body = multipart(plate)
         try:
-            connection.request("POST", "/slices", body, {"Content-Type": content_type})
+            for ref, path in part_files(plate).items():
+                upload(connection, name, ref, path, plate["parts"][ref], key)
+            submission = dict(plate, submission_id=str(uuid.uuid4()))
+            connection.request("POST", "/slices", json.dumps(submission).encode(),
+                               {"Content-Type": "application/json", **key})
             answer = connection.getresponse()
+            payload = json.loads(answer.read() or b"{}")
         except OSError as error:
             raise SliceFailed(f"{name}: no slice service answers at {url} ({error})") from None
-        payload = json.loads(answer.read() or b"{}")
         if answer.status != 202:
             raise SliceFailed(f"{name}: the slice service refused it (HTTP {answer.status}, {sentence(payload)}")
         job = payload["job"]
-        last = follow(connection, job)
+        last = follow(connection, job, key)
         if last is None or last["state"] not in FINAL:
             state = last["state"] if last else "none"
             raise SliceFailed(f"{name}: the progress stream ended before the slice job did (last state: {state})")
         if last["state"] != "done":
             error = last.get("error") or {"code": f"slice job {last['state']}", "message": str(last)}
             raise SliceFailed(f"{name}: the slice {last['state']} ({sentence(error)}")
-        sliced = fetch(connection, f"/slices/{job}/file", name)
-        summary = fetch(connection, f"/slices/{job}/summary", name)
+        sliced = fetch(connection, f"/slices/{job}/file", name, key)
+        summary = fetch(connection, f"/slices/{job}/summary", name, key)
     finally:
         connection.close()
     out_dir = Path(out_dir)
@@ -150,9 +161,23 @@ def slice_plate(url, name, out_dir=SLICED_DIR, plate=None):
     return path
 
 
-def follow(connection, job):
+def upload(connection, name, ref, path, part, key):
+    """Uploads one part (POST /parts) and checks the slice service kept it under the hash and
+    the units the plate configuration names it by."""
+    connection.request("POST", f"/parts?units={part['units']}", path.read_bytes(),
+                       {"Content-Type": "application/octet-stream", **key})
+    answer = connection.getresponse()
+    record = json.loads(answer.read() or b"{}")
+    if answer.status != 201:
+        raise SliceFailed(f"{name}: the slice service refused the part {ref} (HTTP {answer.status}, {sentence(record)}")
+    if record.get("sha256") != part["sha256"] or record.get("units") != part["units"]:
+        raise SliceFailed(f"{name}: the slice service kept the part {ref} as {record.get('sha256')} "
+                          f"in {record.get('units')}, not as {part['sha256']} in {part['units']}")
+
+
+def follow(connection, job, key):
     """The last progress report of the slice job's event stream."""
-    connection.request("GET", f"/slices/{job}/events")
+    connection.request("GET", f"/slices/{job}/events", headers=key)
     answer = connection.getresponse()
     last = None
     for line in answer:
@@ -167,8 +192,8 @@ def follow(connection, job):
     return last
 
 
-def fetch(connection, path, name):
-    connection.request("GET", path)
+def fetch(connection, path, name, key):
+    connection.request("GET", path, headers=key)
     answer = connection.getresponse()
     body = answer.read()
     if answer.status != 200:
@@ -183,6 +208,7 @@ def main(argv):
     parser.add_argument("--out", default=str(SLICED_DIR))
     parser.add_argument("--write-plates", action="store_true", help="write the plate configurations and stop")
     parser.add_argument("--plates-dir", default=str(PLATES_DIR))
+    parser.add_argument("--user-key", default=USER_KEY, help="the user key every request carries")
     args = parser.parse_args(argv)
     if args.write_plates:
         write_plates(args.plates_dir)
@@ -198,7 +224,7 @@ def main(argv):
     for name in args.plate or known:
         print(f"{name}: slicing", file=sys.stderr, flush=True)
         try:
-            path = slice_plate(args.url, name, args.out)
+            path = slice_plate(args.url, name, args.out, user_key=args.user_key)
         except SliceFailed as failed:
             print(failed, file=sys.stderr)
             return 1

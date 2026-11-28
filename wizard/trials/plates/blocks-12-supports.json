@@ -1,8 +1,11 @@
 {
+ "plate_id": "e5312b99-2838-5585-b8fa-360d481cc248",
+ "submission_id": "649e6614-a4be-5964-ab5a-0226299baecf",
  "parts": {
   "elevator-block-bottom-inner": {
    "name": "Elevator Block Bottom Inner",
-   "stl": "elevator-block-bottom-inner.stl"
+   "sha256": "db902cd519da10b6385371a0527157173ff4dbc2e708a549854dd827fd76144a",
+   "units": "mm"
   }
  },
  "instances": [
