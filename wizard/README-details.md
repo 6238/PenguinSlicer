@@ -1324,7 +1324,11 @@ of which only the change from the one sent is taken, since an orientation may ho
 of the lay. Instances follow the arrived parts' quantities when the step is shown and, while it is
 shown, whenever the parts change; the first instances of a plate are arranged without a message,
 and those that join a plate already laid out are put at the middle of the instances on the plate
-and settled (the worker's `settle`), every other instance where it stands. Supports are on as
+and settled (the worker's `settle`), every other instance where it stands. Each time the step
+is shown, every part on the plate has its best way asked of the worker once (`orient`), those
+of a page opened again included, and a page opened again runs the placement check on its
+stored instances before it says anything fits. A move whose place or angle is not a finite
+number is not taken. Supports are on as
 `supportsFor` says (the user's change of `enable_support`, else the profile's override, else the
 table's `process_values` for its process). The figures line names the printer by the
 configuration's `printer`, the printer profile's name, until phase 5. An instance's name in the
@@ -1357,8 +1361,13 @@ slab, rib and beam: every problem row with its sentence and button, Turn it to f
 degrees, Arrange's partial message and its offer, a lay-down that fits, one moved and one beside,
 Auto-orient arranging again, the turning moments of arrival and of Auto-orient, supports turned
 on, the messages going on leaving the step, instances following quantities and a part arriving on
-the step, the stored layout taken up and an unusable stored instance, the selection line and its
-link, the patches found once, and a worker that has failed. `tests/geometry/settle.test.js` and
+the step, the stored layout taken up and an unusable stored instance, Auto-orient, Arrange's offer
+and an instance beside the plate with its own message on a page opened again, Arrange's partial
+message with no offer, several instances laid down at once (moved and beside), the empty plate,
+Auto-orient arranging again for an instance left across an edge, a move that is not a number,
+the selection line and its link, the patches found once, a lay-down answered before the worker
+returns the faces (the worker's `faces` held by the fake worker's `hold('faces')`: no patches
+until it answers, then the patches), and a worker that has failed. `tests/geometry/settle.test.js` and
 `tests/geometry/coarse.test.js` for the geometry it added. `tests_browser/test_layout_step.py` in
 Chromium on the real clock (the view draws on animation frames, which a paused fake clock never
 runs): the view draws and fills roughly the expected part of the view, a drag moves an instance
@@ -1367,8 +1376,7 @@ clears, the rotation handle stays on its circle and Shift snaps mid-drag, a patc
 instance down with the pointer line, the four keys and Delete, Ctrl+D, Ctrl+Z, Ctrl+Y and
 Backspace doing nothing, the help, the seven widths with no sideways scroll and the view square
 then 4:3, and a malformed file of the largest size ending in its notification with the main thread
-held under 250 ms. Not built: the details' test of a lay-down answered before the worker returns
-the faces in Chromium (without a browser window, `patches` answers only once the worker has).
+held under 250 ms.
 `make -C wizard look-layout-step` writes the mockup's Layout step beside the built one at 320, 480,
 520 and 680 px in each state the mockup shows into `docs/orchestration/phase-2/look/wizard-5b/`,
 and `make -C wizard measure-layout` the view's frame rate at 150 instances into
@@ -2521,7 +2529,7 @@ or is not yet in a contract:
 | Tooltip delay; printer details close | 150 ms; 300 ms | The mockup | Fake clock |
 | Quiet retrying; retrying in all | 20 s; 300 s, waits doubling 1 to 30 s | The guide | Fake clock |
 | A progress stream counted as failed | 20 s failing to reopen, 45 s open and silent | The guide | Fake clock, fake front server |
-| The main thread held | Never over 250 ms, any step, any plate up to the limits, on the machine without a graphics card | Set; measured for reading a part and drawing its picture: at most 12 ms in Chromium on that machine, `hub-150k.stl` included; for a malformed file of the largest size, under 250 ms; while dragging at 150 instances, 0.42 to 0.49 s for the real mix and 0.22 to 0.26 s for 150 spacers (missed), 0.10 to 0.13 s for 150 of `hub-150k.stl` drawn coarse (`make -C wizard measure-layout`) | Measured by the page in tests and real use |
+| The main thread held | Never over 250 ms, any step, any plate up to the limits, on the machine without a graphics card | Set; measured for reading a part and drawing its picture: at most 12 ms in Chromium on that machine, `hub-150k.stl` included; for a malformed file of the largest size, under 250 ms; while dragging at 150 instances (missed), 0.39 to 0.49 s for the real mix, 0.22 to 0.30 s for 150 spacers and 0.10 to 0.28 s for 150 of `hub-150k.stl` drawn coarse (`make -C wizard measure-layout`, six runs) | Measured by the page in tests and real use |
 | A part's row says it is slow | 4 s | The mockup | Fake clock |
 | One part; different parts; instances | 7.5 MB (150,000 triangles); 25; 150 | The slice service's | One over each |
 | Storage in the browser | 25 parts of 7.5 MB for each tab's plate | Met for one tab in headless Chromium on the machine without a graphics card: stored and read back after a refresh, none refused; several tabs' full plates, and Chrome on the Mac, unmeasured | A full plate stored and reloaded |
@@ -2530,7 +2538,7 @@ or is not yet in a contract:
 | Auto-orient | Best way within 1 s of arriving | Met: at most 236 ms for `hub-150k.stl` from the file to its best way, faces included; at most 170 ms for a real part. Not measured in Chromium for a part as large on which step 5 drops faces, which reads the whole part once for each. On Node, from the mesh to its best way, on a machine shared with other builders (Sat 2026-11-28): a twelve-pointed star prism (radii 50 and 30 mm, 100 mm long) with its sides cut into 3,000 strips along its length (144,048 triangles, 12 faces dropped) 311 to 390 ms, into 600 strips (28,848) 59 to 113 ms; the L of `first-layer.test.js` 100 mm long cut into 12,000 strips (144,008, one face dropped) 204 to 299 ms; `hub-150k.stl` 248 to 330 ms | The same; the L cut into 600 strips in `first-layer.test.js` bounds the work of step 5's even-odd search |
 | Arrange | Under 2 s for 150 instances | Met: at most 30 ms for 150 of `hex-spacer.stl` (all placed) and 44 ms for a mix of 150 real parts (104 placed, the rest beside the plate) | The same |
 | The placement check | Keeps up with a drag at 150 instances | Met: at most 4.1 ms for each check of a drag at 150 instances, against one frame of 100 ms at 10 frames a second | The same |
-| The Layout view | 30 frames a second with a graphics card, 10 without, while dragging or turning, at 150 instances of parts up to 150,000 triangles | Met without a graphics card, with the coarse copies while moving: 150 instances of the real mix dragged at 16 to 19 and turned at 18 to 20, 150 of `hub-150k.stl` dragged at 14 to 41, 150 of `hex-spacer.stl` at 36 to 45, over four runs on a shared machine; the main thread held 0.42 to 0.49 s during a drag on the real mix and 0.22 to 0.26 s on the spacers (missed). With a graphics card, unmeasured | `make -C wizard measure-layout`, in Chromium; on the Mac, Chrome; reported in real use |
+| The Layout view | 30 frames a second with a graphics card, 10 without, while dragging or turning, at 150 instances of parts up to 150,000 triangles | Met without a graphics card, with the coarse copies while moving: 150 instances of the real mix dragged at 16 to 19 and turned at 17 to 20, 150 of `hub-150k.stl` dragged at 14 to 41, 150 of `hex-spacer.stl` at 34 to 45, over six runs on a shared machine; the main thread held 0.39 to 0.49 s during a drag on the real mix, 0.22 to 0.30 s on the spacers and 0.10 to 0.28 s on `hub-150k.stl` (missed). With a graphics card, unmeasured | `make -C wizard measure-layout`, in Chromium; on the Mac, Chrome; reported in real use |
 | The layer preview | 30 with a graphics card, 10 without, while turning or dragging the layer bar, on a 14.1 MB sliced file and at 150 instances; a simpler look while moving | Without a graphics card, method C of the first trial: 10 to 20 typical on the three plates (10.0 turning at `blocks-12-supports`); with one, unmeasured | Timed in Chrome on both machines; reported in real use; test renders |
 | The first layer drawn | Within 5 s, print time and filament at once | The first trial, method C: 1.5 to 2.7 s from fetching the sliced file to the first frame with toolpaths (the look while moving; the full look 2.4 to 8.5 s) | The same |
 | The page's memory | Under 1 GB at the largest plate with the preview of a 14.1 MB sliced file | The first trial, method C: 839 MB at that plate (the page's and the graphics process's peaks) | Measured in Chrome at that plate |

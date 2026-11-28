@@ -201,10 +201,14 @@ test('settle and fit answer through the messages, and a malformed instance is th
   assert.equal(settled.result.how, 'moved');
   const fit = ask(g, { id: 3, op: 'fit', plateConfiguration, geometry, printer: H2S, supports: false, index: 0 }).reply;
   assert.deepEqual(fit.result, { fits: true, angle: 0 });
-  for (const [id, index] of [[4, 2], [5, -1], [6, 0.5]]) {
-    const { reply } = ask(g, { id, op: 'settle', plateConfiguration, geometry, printer: H2S, supports: false, index });
-    assert.equal(reply.error.code, 'wizard.layout_failed');
-    assert.match(reply.error.detail, /index/);
+  let id = 4;
+  for (const op of ['settle', 'fit']) {
+    for (const index of [2, -1, 0.5, '0']) {
+      const { reply } = ask(g, { id: (id += 1), op, plateConfiguration, geometry, printer: H2S, supports: false, index });
+      assert.equal(reply.ok, false, `${op} at ${JSON.stringify(index)}`);
+      assert.equal(reply.error.code, 'wizard.layout_failed');
+      assert.match(reply.error.detail, /index .* names no instance/);
+    }
   }
 });
 

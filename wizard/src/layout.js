@@ -17,7 +17,7 @@
 // Layout step, at once, and otherwise the next time that step is shown. A new part's instances lie
 // their best way (auto-orient) and say nothing; the first instances of a plate are arranged, and
 // those that join a plate already laid out each take the free spot nearest the others' middle.
-import { MAX_INSTANCES } from './geometry/constants.js';
+import { MARGIN_MM, MAX_INSTANCES, SPACING_MM, SPACING_SUPPORTS_MM } from './geometry/constants.js';
 import { instanceLabels, supportsOn } from './geometry/placement.js';
 import { instanceTurn, layOnFace, rotateVector } from './geometry/turn.js';
 import * as W from './layout-sentences.js';
@@ -110,7 +110,7 @@ export function createLayout({ geometry, storage, store, parts, panel }) {
   const byId = (id) => instances.find((i) => i.id === id) || null;
   const printer = () => printerOf(store.get());
   const supports = () => supportsFor(store.get(), storage.plate().settings?.changes || {});
-  const spacingNow = () => (supports() ? 12 : 5);
+  const spacingNow = () => (supports() ? SPACING_SUPPORTS_MM : SPACING_MM);
 
   function failed(err) {
     const report = err && err.report;
@@ -236,7 +236,7 @@ export function createLayout({ geometry, storage, store, parts, panel }) {
     publish();
   }
 
-  const frameOf = (p) => [p.max[0] - p.min[0] - 6, p.max[1] - p.min[1] - 6];
+  const frameOf = (p) => [p.max[0] - p.min[0] - 2 * MARGIN_MM, p.max[1] - p.min[1] - 2 * MARGIN_MM];
   function tooLong(size, p) {
     const [w, d] = frameOf(p);
     return size[0] > w + 1e-6 || size[1] > d + 1e-6;
@@ -393,14 +393,18 @@ export function createLayout({ geometry, storage, store, parts, panel }) {
       const have = instances.filter((i) => i.part === row.key);
       const want = Math.min(row.quantity, MAX_INSTANCES);
       for (let k = have.length - 1; k >= want; k--) { instances.splice(instances.indexOf(have[k]), 1); changed = true; }
-      if (have.length < want) {
-        const { best } = await partInfo(row.key);
-        for (let k = have.length; k < want; k++) fresh.push(newInstance(row.key, best));
-      }
+      // every part on the plate has its best way known, those of a page opened again included,
+      // whose stored instances already make up the quantity: Auto-orient, Arrange's offer and
+      // the selection's link read it
+      if (want === 0) continue;
+      const { best } = await partInfo(row.key);
+      for (let k = have.length; k < want; k++) fresh.push(newInstance(row.key, best));
     }
     selected = selected.filter((id) => byId(id));
     if (fresh.length === 0) {
-      if (changed) { await persist(); await recheck(); }
+      if (changed) await persist();
+      // a page opened again has its stored instances checked before it says they fit
+      if (changed || checked.at < 0) await recheck();
       return;
     }
     const laidOut = instances.length > 0;
@@ -613,7 +617,8 @@ export function createLayout({ geometry, storage, store, parts, panel }) {
   function place(moves) {
     for (const m of moves) {
       const instance = byId(m.id);
-      if (!instance) continue;
+      // the view sends only numbers; a move that is not one is not taken
+      if (!instance || !finite(m.x) || !finite(m.y) || (m.angle !== undefined && !finite(m.angle))) continue;
       instance.x = m.x;
       instance.y = m.y;
       if (m.angle !== undefined) instance.angle = m.angle;

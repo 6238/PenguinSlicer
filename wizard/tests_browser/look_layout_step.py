@@ -135,7 +135,10 @@ def wizard_pictures(browser, server, width):
     settle()
     page.mouse.move(1, 1)
     shoot(page, f"{width}-selected-wizard.png")
-    page.keyboard.press("Escape")
+    # shoot() has taken the focus off the view, whose keys listen on it: the selection is cleared
+    # through the step itself, as Escape on the view does, so that nothing is selected after
+    w.run("wizard.layout.select(null, 'none');")
+    w.until("return wizard.layout.model().selected.length === 0;")
 
     # the second instance dragged to 2 mm behind the first
     w.run("const [a, b] = wizard.layout.model().instances; const ad = a.bounds[3] - a.bounds[1], bd = b.bounds[3] - b.bounds[1]; "
@@ -148,8 +151,9 @@ def wizard_pictures(browser, server, width):
     w.until("return !document.querySelector('#layout-errors .msg.error');")
     w.run("document.getElementById('wiz-body').scrollTop = 0;")
 
+    # pushed across the right edge, as the mockup's scenario pushes its instance
     a = w.run("return wizard.layout.model().instances[1];")
-    w.run("wizard.layout.place([{ id: arg.id, x: 12, y: arg.y }]); await wizard.layout.endDrag();", a)
+    w.run("wizard.layout.place([{ id: arg.id, x: wizard.layout.model().printer.max[0] - 12, y: arg.y }]); await wizard.layout.endDrag();", a)
     settle()
     w.page.wait_for_selector("#layout-errors .msg.error")
     show_messages(page)

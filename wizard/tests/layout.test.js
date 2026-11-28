@@ -116,6 +116,8 @@ test('supports are on by the user\'s change, else the profile\'s own override, e
   const state = { configuration, settingsTable: TABLE, plate: { filament: 'PETG', profile: 'Standard' } };
   assert.equal(supportsFor(state), false);
   assert.equal(supportsFor(state, { enable_support: '1' }), true);
+  // only '1' is on, as the slice service and the worker's check read it
+  for (const other of ['', 'true', '2', 1]) assert.equal(supportsFor(state, { enable_support: other }), false);
   assert.equal(supportsFor({ ...state, plate: { filament: 'PETG', profile: 'Structural' } }), true);
   assert.equal(supportsFor({ ...state, plate: { filament: 'PETG', profile: 'Structural' } }, { enable_support: '0' }), false);
   const table = structuredClone(TABLE);
@@ -216,6 +218,53 @@ test('the stored layout is taken up when the page opens again, every instance wh
   again.store.set({ step: 'layout' });
   await settleAll(again);
   assert.deepEqual(again.layout.model().instances.map(({ lay, angle, x, y }) => ({ lay, angle, x, y })), kept);
+});
+
+// The page opened again: the stored instances make up every part's quantity, so no instance
+// joins, yet Auto-orient, Arrange's offer and its button need each part's best way.
+async function reopened(b, page) {
+  await page.storage.written();
+  b.locks.closeTab('A');                       // the refresh: the browser lets the tab's lock go
+  const again = await openPage(b);
+  again.store.set({ step: 'layout' });
+  await settleAll(again);
+  return again;
+}
+
+test('Auto-orient works on a page opened again, on instances no part has joined since', async () => {
+  const b = browser();
+  const page = await openPage(b);
+  await addParts(page, [['Slab.stl', boxPart('slab', [10, 250, 200])]]);
+  await enterLayout(page);
+  page.layout.selectAll();
+  await page.layout.model().link.run();        // Put back as modelled: standing on its 10 mm side
+  await settleAll(page);
+  const again = await reopened(b, page);
+  assert.ok(Math.abs(downOf(again.layout.model().instances[0].lay)[2]) > 0.999, 'still as modelled');
+  await again.layout.autoOrient();
+  await settleAll(again);
+  assert.ok(Math.abs(downOf(again.layout.model().instances[0].lay)[0]) > 0.999, 'laid flat, its best way');
+  assert.deepEqual(again.panel.notices, []);
+});
+
+test('Arrange\'s offer and "Lay them the best way" work on a page opened again', async () => {
+  const b = browser();
+  const page = await openPage(b);
+  await addParts(page, [['Rod.stl', lyingRod()]]);
+  page.parts.setQuantity(page.parts.rows()[0].key, 30);
+  await enterLayout(page);
+  page.layout.selectAll();
+  await page.layout.model().link.run();        // Put back as modelled: lying on their sides
+  await settleAll(page);
+  const again = await reopened(b, page);
+  await again.layout.arrange();
+  await settleAll(again);
+  const [note] = again.layout.model().notes;
+  assert.deepEqual(note.actions.map((a) => a.label), ['Lay them the best way: all fit', 'Back to Parts']);
+  await note.actions[0].run();
+  await settleAll(again);
+  assert.deepEqual(again.layout.model().notes.map((n) => n.what), ['Laid 30 instances the best way and arranged again: every instance now fits.']);
+  assert.deepEqual(again.panel.notices, []);
 });
 
 test('a stored instance the page cannot use is dropped, and the part\'s quantity is made up with a new one', async () => {
@@ -468,6 +517,102 @@ test('a lay-down with no free spot waits beside the plate, in amber, the others 
   assert.equal(page.layout.model().status.first, '1 instance does not fit on the plate.');
 });
 
+test('an instance beside the plate that no message accounts for, on a page opened again, has its own message with Arrange, and holds Next', async () => {
+  const b = browser();
+  const page = await openPage(b);
+  await addParts(page, [['Slab.stl', boxPart('slab', [10, 250, 200])]]);
+  page.parts.setQuantity(page.parts.rows()[0].key, 2);
+  await enterLayout(page);
+  page.layout.selectAll();
+  await page.layout.model().link.run();
+  await settleAll(page);
+  const [a, c] = page.layout.model().instances;
+  page.layout.place([{ id: a.id, x: 170, y: 160 }, { id: c.id, x: 240, y: 160 }]);
+  await page.layout.endDrag();
+  await settleAll(page);
+  await page.layout.layOnNormal(c.id, [-1, 0, 0]);
+  await settleAll(page);
+  assert.equal(inst(page, 1).beside, true);
+  // the lay-down's message is not kept: opened again, nothing else accounts for the instance
+  const again = await reopened(b, page);
+  assert.deepEqual(again.layout.model().notes, []);
+  const [problem] = again.layout.model().problems;
+  assert.equal(problem.what, 'Slab #2 waits beside the plate: no spot on the plate is free for it.');
+  assert.equal(problem.todo, 'Press Arrange to make room, or lower the quantities and print the rest on a new plate.');
+  assert.equal(problem.action.label, 'Arrange');
+  assert.deepEqual(problem.instances, [ids(again)[1]]);
+  assert.equal(statusOf(again).ok, false);
+  assert.equal(statusOf(again).first, problem.what);
+  assert.equal(again.store.get().layoutProblem, problem.what);
+});
+
+test('Arrange that cannot fit everything with every instance already lying its best way offers no lay-down', async () => {
+  const page = await openPage();
+  await addParts(page, [['Slab.stl', boxPart('slab', [10, 250, 200])]]);
+  page.parts.setQuantity(page.parts.rows()[0].key, 2);
+  await enterLayout(page);                     // they arrive flat, 200 by 250: one fits
+  const [note] = page.layout.model().notes;
+  assert.equal(note.what, 'Arrange placed 1 of 2 instances; 1 instance does not fit and waits beside the plate.');
+  assert.equal(note.todo, 'Lower the quantities and print the rest on a new plate, or turn or lay instances another way to make room.');
+  assert.deepEqual(note.actions.map((x) => x.label), ['Back to Parts']);
+  await note.actions[0].run();
+  assert.equal(page.store.get().step, 'parts');
+});
+
+test('several instances laid down at once: those moved are counted in green, those beside in amber', async () => {
+  const page = await openPage();
+  await addParts(page, [['Rod.stl', lyingRod()]]);
+  page.parts.setQuantity(page.parts.rows()[0].key, 2);
+  await enterLayout(page);                     // standing on an end, 20 by 20
+  const [a, c] = page.layout.model().instances;
+  page.layout.place([{ id: a.id, x: 100, y: 160 }, { id: c.id, x: 100, y: 190 }]);   // 10 mm apart
+  await page.layout.endDrag();
+  await settleAll(page);
+  page.layout.selectAll();
+  await page.layout.model().link.run();        // Put back as modelled: lying along y, 200 long, on top of each other
+  await settleAll(page);
+  const [moved] = page.layout.model().notes;
+  assert.equal(moved.kind, 'ok');
+  assert.match(moved.what, /^[12] instances? no longer fitted where they stood and moved to the nearest free spots\.$/);
+  assert.deepEqual(page.layout.model().problems, []);
+  page.parts.setQuantity(page.parts.rows()[0].key, 30);
+  page.store.set({ step: 'parts' });
+  await enterLayout(page);
+  page.layout.selectAll();
+  await page.layout.autoOrient();              // all standing again
+  await settleAll(page);
+  page.layout.selectAll();
+  await page.layout.model().link.run();        // 30 lying on their sides: not all find a spot
+  await settleAll(page);
+  const [beside] = page.layout.model().notes;
+  assert.equal(beside.kind, 'warn');
+  assert.match(beside.what, /^(\d+) instances no longer fit on the plate and wait beside it\.$/);
+  assert.equal(beside.todo, 'No spot on the plate is free for them lying this way. The other instances stay where you put them; press Arrange to make room.');
+});
+
+test('an empty plate says how to fill it', async () => {
+  const page = await openPage();
+  await enterLayout(page);
+  assert.deepEqual(statusOf(page), { ok: true, first: 'No instances yet: add parts on the Parts step.' });
+  assert.equal(page.layout.model().holds, null);
+});
+
+test('Auto-orient that leaves an instance across an edge, with nothing too close, arranges the plate again', async () => {
+  const page = await openPage();
+  await addParts(page, [['Slab.stl', boxPart('slab', [10, 250, 200])]]);
+  await enterLayout(page);
+  page.layout.select(ids(page)[0]);
+  await page.layout.model().link.run();        // as modelled: 10 by 250 on the plate
+  await settleAll(page);
+  await moveTo(page, ids(page)[0], 320, 160);  // by the right edge, still on the plate
+  page.layout.clearSelection();
+  assert.deepEqual(page.layout.model().problems, []);
+  await page.layout.autoOrient();              // flat, 200 wide about x = 320: across the right edge
+  await settleAll(page);
+  assert.deepEqual(page.layout.model().notes.map((n) => n.what), ['Arranged the plate again to make room.']);
+  assert.deepEqual(page.layout.model().problems, []);
+});
+
 test('the messages about moves go when the user leaves the step; a problem stays', async () => {
   const page = await openPage();
   await addParts(page, [['Spacer.stl', contractPart('spacer.stl')]]);
@@ -578,6 +723,42 @@ test('the patches of a selected instance\'s part, found once', async () => {
   const posted = page.worker.posted.filter((m) => m.message.op === 'faces').length;
   await page.layout.patches(ids(page)[0]);
   assert.equal(page.worker.posted.filter((m) => m.message.op === 'faces').length, posted);
+});
+
+test('a lay-down answered before the worker returns the faces: no patches until then, then the patches', async () => {
+  const page = await openPage();
+  await addParts(page, [['Bracket.stl', contractPart('bracket.stl')]]);
+  await enterLayout(page);
+  const [a] = ids(page);
+  page.layout.select(a);
+  page.worker.hold('faces');
+  let shown = null;
+  const asked = page.layout.patches(a).then((list) => { shown = list; });
+  await page.layout.layOnNormal(a, [1, 0, 0]);
+  await settleAll(page);
+  assert.ok(Math.abs(downOf(inst(page, 0).lay)[0] - 1) < 1e-9, 'the lay-down is done');
+  assert.ok(page.worker.posted.some((m) => m.message.op === 'faces'), 'the faces were asked for');
+  assert.equal(shown, null, 'no patches while the worker has not returned the faces');
+  page.worker.release();
+  await asked;
+  assert.ok(shown.length >= 4);
+  assert.deepEqual(await page.layout.patches(a), shown, 'the part\'s patches, for the instance as it now lies');
+  assert.deepEqual(page.panel.notices, []);
+});
+
+test('a move to a place that is not a number is not taken', async () => {
+  const page = await openPage();
+  await addParts(page, [['Spacer.stl', contractPart('spacer.stl')]]);
+  await enterLayout(page);
+  const before = inst(page, 0);
+  for (const bad of [{ x: Number.NaN }, { y: Infinity }, { angle: Number.NaN }, { x: '10' }]) {
+    page.layout.place([{ id: before.id, x: before.x, y: before.y, ...bad }]);
+    await page.layout.endDrag();
+    await settleAll(page);
+  }
+  assert.deepEqual([inst(page, 0).x, inst(page, 0).y, inst(page, 0).angle], [before.x, before.y, before.angle]);
+  assert.deepEqual(page.panel.notices, []);
+  assert.equal(statusOf(page).first, '✓ Spacer #1 fits the plate.');
 });
 
 // ---- a worker that fails

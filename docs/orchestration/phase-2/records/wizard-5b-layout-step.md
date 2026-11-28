@@ -97,13 +97,67 @@ and, in plain words, in the guide's [What is to be built, by phase](../../../../
     selection's box at 28 px, its radius 7 px, a press moving under 4 px being a click, the
     wheel zooming towards the pointer, and the camera's three views (Zoom to instances, Whole
     plate, Top) fitted as the mockup fits them.
+20. **F, Ctrl+1, Ctrl+A and Escape act only while the 3D view has the keyboard's focus**, as in
+    the mockup, whose keys listen on its canvas: after a click on a message or a button, Escape
+    does nothing until the view is clicked again. The guide's table of keys does not say where
+    they listen. Chosen: the mockup's, so that the keys never take Ctrl+A or Escape from the
+    rest of the panel (a text field on another step, the browser's own select-all). To overrule:
+    the key listener in `wizard/src/panel/layout-view.js`, moved to the step's section.
+21. **The selection's link when the selection lies neither as modelled nor its best way** is
+    "Put back as modelled". The guide shows one link at most: "Lay it the best way" when the
+    selection does not lie its best way, "Put back as modelled" when it has been laid
+    differently from the model; for a selection that is both it does not say which. Chosen:
+    "Put back as modelled", since a user who laid it down by hand chose that way and the way
+    back to the model is otherwise lost, while Auto-orient on the toolbar always lays it the
+    best way. To overrule: `selectionLink` in `wizard/src/layout.js`.
+22. **Each part's best way is asked of the worker whenever the Layout step is shown**, not only
+    when the part needs new instances (review finding 1): a page opened again has its stored
+    instances, which already make up the quantities, and Auto-orient, Arrange's offer and "Lay
+    them the best way" read every part's best way. The answer is kept for the page's life, so
+    it is asked once a part. To overrule: `join` in `wizard/src/layout.js`.
+23. **A page opened again runs the placement check on its stored instances on entering the
+    Layout step.** Found while testing finding 2: before, a page opened again with nothing to
+    join checked nothing, so it said "✓ All 2 instances fit the plate." over an instance waiting
+    beside the plate and let Next through. To overrule: `join` in `wizard/src/layout.js`.
+24. **A move whose place or angle is not a finite number is not taken** (review minor finding
+    5). The view never sends one; taking it ended in a layout_failed notification beside a
+    status line still green. Dropping it keeps the plate as it was and says nothing, since no
+    user can make one. To overrule: `place` in `wizard/src/layout.js`.
+
+## Review of pull request #43, findings and what became of them
+
+Every finding of the review was checked against the code and found real; none was declined.
+
+- Blocking 1 (Auto-orient and Arrange crash on a page opened again): reproduced by two new
+  tests that failed with the reviewer's TypeError; fixed by decision 22.
+- Blocking 2 (WAITS_BESIDE and four other sentences unreached; two mutations survived): tests
+  now reach WAITS_BESIDE, ARRANGE_PARTIAL_TODO, MOVED_MANY, BESIDE_MANY and NO_INSTANCES; each
+  of the reviewer's three mutations (`continue;` for `if (coveredBeside) continue;`,
+  `=== 'too_close'` in Auto-orient, `checkIndex` taken out of `fit`) now fails a test, checked by
+  hand. Writing the first of those tests found decision 23.
+- Blocking 3 (the lay-down answered before the faces): built without a browser window; the fake
+  worker's `hold(op)` holds only the `faces` answers. It fails when `patches` answers before
+  the worker does (checked by hand by making it answer at once with no patches).
+- Blocking 4 (the guide and its details disagree on the main thread's hold): the guide's row now
+  gives the same figures as the details'.
+- Blocking 5 (the look pairs): the selection is cleared through the step before the later
+  pictures, and the instance is pushed across the right edge as the mockup's is; pictures taken
+  again at the four widths and looked at.
+- Minor 1: `spacingNow` and the plate's frame use `SPACING_MM`, `SPACING_SUPPORTS_MM` and
+  `MARGIN_MM`. Minor 2: the test of `supportsFor` now holds `''`, `'true'`, `'2'` and `1` off;
+  the reviewer's mutation fails it. Minor 3: decision 20, no change to the code. Minor 4:
+  decision 21, no change to the code. Minor 5: decision 24. Minor 6: the ranges widened in the
+  guide, the details and below, with one more run of `measure-layout`. Minor 7: a test of the
+  transport seam's body of bytes sent as a Blob, which fails without `bodyOf`.
 
 ## Targets missed
 
-- **The main thread held over 250 ms during a drag at 150 instances**: 0.42 to 0.49 s on the
-  real mix and 0.22 to 0.26 s on 150 spacers (`make -C wizard measure-layout`, four runs on an
-  aarch64 Linux machine of 8 processors shared with three other builders; 0.10 to 0.13 s on 150
-  of `hub-150k.stl`). A CPU profile shows over 95 % of the main thread's time outside the page's
+- **The main thread held over 250 ms during a drag at 150 instances**: 0.39 to 0.49 s on the
+  real mix, 0.22 to 0.30 s on 150 spacers and 0.10 to 0.28 s on 150 of `hub-150k.stl`
+  (`make -C wizard measure-layout`, six runs on an aarch64 Linux machine of 8 processors shared
+  with three other builders: the builder's four, the reviewer's and the fixer's on Sat
+  2026-11-28, which gave 411 ms, 300 ms and 284 ms). The frame rates of those runs: the real
+  mix dragged at 16 to 19 and turned at 17 to 20 frames a second, the target of 10 met. A CPU profile shows over 95 % of the main thread's time outside the page's
   JavaScript, in Chromium's own work (drawing, most likely); which frame holds it was not found.
 - **The look, against the mockup** (pairs in [look/wizard-5b](../look/wizard-5b/index.html)):
   - the plate and its grid are a little darker and bluer than the mockup's, and the parts'
@@ -111,8 +165,13 @@ and, in plain words, in the guide's [What is to be built, by phase](../../../../
     flat Lambert shading rather than the mockup's standard material;
   - a selected instance's tint is paler than the mockup's, and its patches are its hull faces'
     outlines, a little paler and with sharp corners where the mockup's are rounded;
-  - the camera after a move does not follow an instance dragged off to an edge (the mockup's
-    view, made by its scenario strip, shows the instance in sight);
+  - the camera after a move does not follow an instance dragged off to an edge, and after the
+    drags of the too-close and off-plate pictures the built view looks down more steeply and
+    from further off than the mockup's (the mockup's camera is set by its scenario strip, the
+    built one stays where the user left it);
+  - in the too-close and off-plate pairs the panel's body is scrolled about 12 px less than the
+    mockup's, so the built step shows a little more above the status line (both scrolled to
+    bring the messages in sight, from different heights of plate);
   - the rotation handle starts above the selection where the mockup's sits at its left (both
     move clear of the patches; the mockup's had been pushed aside);
   - with no graphics card the edges of parts are not smoothed (no antialiasing, decision 15);
@@ -126,10 +185,6 @@ and, in plain words, in the guide's [What is to be built, by phase](../../../../
 
 ## Not done
 
-- **The details' test of a lay-down answered before the worker returns the faces, in
-  Chromium**: the page's patches come from one question to the worker, and the test without a
-  browser window shows them found once; holding the worker's answer in Chromium needs a hook the
-  page does not have.
 - **The Layout view's drawing summaries in the page's reports about itself** (frames a second
   for each use of the view): item 18 of "By phase", not this batch.
 - **The submission's own plate configuration** (`description`, `local_time`, the profiles):
