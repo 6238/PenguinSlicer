@@ -25,13 +25,48 @@ FRONT_REPORTS = {
         "message": "Something went wrong on the server.",
         "remedy": "Your work is kept; try again in a moment.",
     },
+    "front.not_signed_in": {
+        "status": 401, "retryable": False,
+        "message": "You are not signed in to PenguinSlicer in this browser.",
+        "remedy": "Sign in again; your parts, layout and settings are kept in this browser.",
+    },
+    "front.group_not_allowed": {
+        "status": 403, "retryable": False,
+        "message": "This was asked for a group your sign-in does not include.",
+        "remedy": "Choose one of your own groups and try again.",
+    },
+    "front.configuration_changed": {
+        "status": 409, "retryable": False,
+        "message": "Someone else changed the configuration before this change was saved, "
+                   "so it was not saved.",
+        "remedy": "Reload the configuration and make the change again.",
+    },
+    "front.configuration_invalid": {
+        "status": 422, "retryable": False,
+        # The message names the first rule broken; this is its frame (configuration.py).
+        "message": "The configuration was not saved, because it breaks a rule.",
+        "remedy": "Correct the configuration and save it again.",
+    },
+    "front.slice_unreachable": {
+        "status": 503, "retryable": True,
+        "message": "The slicer is not answering.",
+        "remedy": "Your work is kept; try again in a moment.",
+    },
+    "front.state_bucket_unreachable": {
+        "status": 503, "retryable": True,
+        "message": "The server could not reach the store where it keeps configurations and "
+                   "sliced files.",
+        "remedy": "Your work is kept; try again in a moment.",
+    },
 }
 
 
-def error_report(code, detail, where=None, action=None):
-    """The error report for `code`, with `detail` for the server log."""
+def error_report(code, detail, where=None, action=None, message=None):
+    """The error report for `code`, with `detail` for the server log; `message`, when given,
+    in place of the code's own sentence, for a report that says what in particular went
+    wrong."""
     entry = FRONT_REPORTS[code]
-    report = {"code": code, "message": entry["message"]}
+    report = {"code": code, "message": message or entry["message"]}
     if where:
         report["where"] = where
     report["remedy"] = entry["remedy"]
@@ -46,8 +81,19 @@ class FrontError(Exception):
     """A failure the front server answers with its own error report. Raised anywhere a
     request is being answered; the application turns it into the answer."""
 
-    def __init__(self, code, detail, where=None, action=None):
+    def __init__(self, code, detail, where=None, action=None, message=None):
         super().__init__(f"{code}: {detail}")
         self.code = code
         self.status = FRONT_REPORTS[code]["status"]
-        self.report = error_report(code, detail, where, action)
+        self.report = error_report(code, detail, where, action, message)
+
+
+class PassedReport(Exception):
+    """Another component's error report (`report`, read from `body`), answered byte for byte
+    as that component gave it, with its status."""
+
+    def __init__(self, status, body, report):
+        super().__init__(report["code"])
+        self.status = status
+        self.body = body
+        self.report = report

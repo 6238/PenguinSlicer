@@ -53,7 +53,9 @@ def test_the_built_front_server_uses_the_folders_of_its_settings(tmp_path, clock
     assert context["version"] == VERSION
 
 
-def test_the_front_server_answers_over_http_writes_its_start_line_and_stops(tmp_path, clock):
+def run_served(tmp_path, clock, environment, use):
+    """Serve on a port the system chooses, call `use(port)`, stop; gives the lines written
+    on standard output and the exit status."""
     stdout = io.StringIO()
     listening = threading.Event()
     servers = []
@@ -63,26 +65,33 @@ def test_the_front_server_answers_over_http_writes_its_start_line_and_stops(tmp_
         listening.set()
 
     result = []
-    # Four threads, not the hundred of the default: each thread reserves its own memory, and
-    # the suite runs under a limit on its address space.
     thread = threading.Thread(target=lambda: result.append(serve(
-        parse_args(["serve", "--port", "0"]),
-        environ=environ(tmp_path, PENGUIN_FRONT_THREADS="4"), stdout=stdout,
+        parse_args(["serve", "--port", "0"]), environ=environment, stdout=stdout,
         stderr=io.StringIO(), clock=clock, on_listening=ready)))
     thread.start()
     assert listening.wait(10)
     port = int(servers[0].effective_port)
     try:
+        use(port)
+    finally:
+        stop_server(servers[0])
+        thread.join(10)
+    return [json.loads(line) for line in stdout.getvalue().splitlines()], result, port
+
+
+def test_the_front_server_answers_over_http_writes_its_start_line_and_stops(tmp_path, clock):
+    def use(port):
         answer = httpx.get(f"http://127.0.0.1:{port}/nothing", timeout=10)
         assert answer.status_code == 404
         assert answer.json()["code"] == "front.no_such_request"
         assert answer.headers["X-PenguinSlicer-Version"] == VERSION
         assert answer.headers["Cache-Control"] == "no-store"
-    finally:
-        stop_server(servers[0])
-        thread.join(10)
+
+    # Four threads, not the hundred of the default: each thread reserves its own memory, and
+    # the suite runs under a limit on its address space.
+    lines, result, port = run_served(tmp_path, clock,
+                                     environ(tmp_path, PENGUIN_FRONT_THREADS="4"), use)
     assert result == [0]
-    lines = [json.loads(line) for line in stdout.getvalue().splitlines()]
     start = lines[0]
     assert start["event"] == "start" and start["version"] == VERSION
     assert start["port"] == port and start["threads"] == 4
@@ -91,6 +100,23 @@ def test_the_front_server_answers_over_http_writes_its_start_line_and_stops(tmp_
     events = [json.loads(line)["event"] for path in written
               for line in path.read_text().splitlines()]
     assert events[0] == "start" and "error" in events and events[-1] == "stop"
+
+
+def test_a_start_without_a_cookie_key_makes_one_and_says_so_after_the_start_line(tmp_path,
+                                                                                 clock):
+    lines, result, _port = run_served(
+        tmp_path, clock, environ(tmp_path, PENGUIN_FRONT_THREADS="2"), lambda port: None)
+    assert result == [0]
+    assert [line["event"] for line in lines[:2]] == ["start", "cookie_key_made"]
+    assert "memory" in lines[1]["detail"]
+
+
+def test_a_start_with_a_cookie_key_makes_none(tmp_path, clock):
+    lines, _result, _port = run_served(
+        tmp_path, clock, environ(tmp_path, PENGUIN_FRONT_THREADS="2",
+                                 PENGUIN_COOKIE_KEY="a-cookie-key-only-the-tests-use-7f3a"),
+        lambda port: None)
+    assert "cookie_key_made" not in [line["event"] for line in lines]
 
 
 @pytest.fixture

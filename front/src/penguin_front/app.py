@@ -20,25 +20,43 @@ import math
 import secrets
 import traceback
 
-from flask import Flask, Response, request
+from flask import Flask, Response, g, request
 from werkzeug.exceptions import HTTPException, MethodNotAllowed, NotFound
 
-from .errors import FrontError, error_report
+from . import identity
+from .buckets import FolderBucket
+from .context import EXTENSION
+from .cookie import CookieKey
+from .errors import FrontError, PassedReport, error_report
 from .version import is_version, version_at
 
 VERSION_HEADER = "X-PenguinSlicer-Version"
 PAGE_HEADER = "X-PenguinSlicer-Page"
-EXTENSION = "penguin_front"
+#: The bytes of a cookie key made at start, when none is given (the development identity on).
+MADE_KEY_BYTES = 32
 
 
-def create_app(settings, *, clock, log, version=None):
+def create_app(settings, *, clock, log, version=None, state_bucket=None):
     """The front server's application. `log` takes `write(event, **fields)`; `version` is
-    the release's, or else the settings', or else the one made from this moment."""
+    the release's, or else the settings', or else the one made from this moment;
+    `state_bucket` is the state bucket, or else the folder of the settings.
+
+    With no cookie key given (allowed only with the development identity on), a key is made
+    here and kept in memory only (the start says so in its `cookie_key_made` line): a
+    restart then makes every cookie unreadable, and the page's trip signs the development
+    identity in again at once."""
     app = Flask("penguin_front", static_folder=None)
+    if settings.cookie_key is not None:
+        cookie_key = CookieKey(settings.cookie_key)
+    else:
+        cookie_key = CookieKey(secrets.token_bytes(MADE_KEY_BYTES))
     app.extensions[EXTENSION] = {
         "settings": settings, "clock": clock, "log": log,
         "version": version or settings.version or version_at(clock.now()),
+        "cookie_key": cookie_key,
+        "state_bucket": state_bucket or FolderBucket(settings.state_dir, clock),
     }
+    identity.register(app)
 
     @app.before_request
     def not_offered():
@@ -59,6 +77,10 @@ def create_app(settings, *, clock, log, version=None):
     def refused(error):
         return _answer_report(log, error.status, error.report)
 
+    @app.errorhandler(PassedReport)
+    def passed(error):
+        return _answer_report(log, error.status, error.report, body=error.body)
+
     @app.errorhandler(Exception)
     def failed(exc):
         if isinstance(exc, (NotFound, MethodNotAllowed)):
@@ -75,6 +97,7 @@ def create_app(settings, *, clock, log, version=None):
 
     @app.after_request
     def every_answer(response):
+        identity.extend_cookie(response)
         response.headers[VERSION_HEADER] = app.extensions[EXTENSION]["version"]
         if not getattr(response, "penguin_page_file", False):
             response.headers["Cache-Control"] = "no-store"
@@ -135,13 +158,21 @@ def _path():
     return target
 
 
-def _answer_report(log, status, report, **extra):
+def _answer_report(log, status, report, body=None, **extra):
+    """Answer `report` (as `body` when another component's bytes are passed unchanged),
+    writing its `error` line: the user key and the current group when known."""
     line = {"code": report["code"], "status": status, "method": request.method,
             "path": _path()}
+    who = g.get("penguin_identity")
+    if who is not None:
+        line["user_key"] = who.user_id
+    if g.get("penguin_group") is not None:
+        line["group"] = g.penguin_group
     page = request.headers.get(PAGE_HEADER, "")
     if is_version(page):
         line["page_version"] = page
     if status != 500:
-        line["detail"] = report["detail"]
+        line["detail"] = report.get("detail")
     log.write("error", **line, **extra)
-    return Response(json.dumps(report), status, mimetype="application/json")
+    return Response(body if body is not None else json.dumps(report), status,
+                    mimetype="application/json")

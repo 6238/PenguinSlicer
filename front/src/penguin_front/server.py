@@ -25,8 +25,8 @@ def build(settings, *, clock, stdout):
     """The application and its log, on the folders that stand for the two buckets."""
     log = Log(clock, stdout, FolderBucket(settings.log_dir, clock))
     version = settings.version or version_at(clock.now())
-    app = create_app(settings, clock=clock, log=log, version=version)
-    app.extensions[EXTENSION]["state_bucket"] = FolderBucket(settings.state_dir, clock)
+    app = create_app(settings, clock=clock, log=log, version=version,
+                     state_bucket=FolderBucket(settings.state_dir, clock))
     return app, log
 
 
@@ -49,6 +49,10 @@ def serve(args, *, environ=None, stdout, stderr, clock=None, on_listening=None):
     log.write("start", version=app.extensions[EXTENSION]["version"], host=args.host,
               port=int(server.effective_port), threads=settings.threads,
               dev_identity=settings.dev_identity)
+    if settings.cookie_key is None:
+        log.write("cookie_key_made", detail="no cookie key given: one was made and is kept "
+                  "in memory only, so after a restart the development identity signs in "
+                  "again")
     log.start()
     (on_listening or _nothing)(server)
     try:
