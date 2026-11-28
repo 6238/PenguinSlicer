@@ -127,7 +127,10 @@ def placed(plate_configuration, directory):
 
 class TestTheSet:
     def test_the_set_holds_exactly_the_plates_of_the_contract(self):
-        assert sorted(p.name for p in PLACEMENT.iterdir()) == PLATES
+        """Beside the plates, the folder holds only the wizard's offered faces, which the
+        real-Orca suite slices (tests_orca/test_offered_faces.py)."""
+        assert sorted(p.name for p in PLACEMENT.iterdir() if p.is_file()) == PLATES
+        assert sorted(p.name for p in PLACEMENT.iterdir() if not p.is_file()) == ["offered-faces"]
 
     def test_the_set_is_what_the_script_writes(self):
         written = make_plates()
