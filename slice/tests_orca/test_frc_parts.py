@@ -20,6 +20,7 @@ import numpy as np
 import pytest
 
 import frc_parts
+from helpers import Parts
 from penguin_slice import plate as plate_module
 from penguin_slice.errors import error_report
 from penguin_slice.mesh import orientation_footprints, read_binary_stl
@@ -102,8 +103,8 @@ def expected_warnings(instances, supports):
 def first_layer_box(instance, mesh, footprint):
     """The box of the part's points on the plate (within 0.05 mm of its lowest), placed by
     the instance: what Orca's bbox_objects gives for a part's first layer."""
-    m = np.asarray(instance_matrix(instance["orientation"], instance["angle"], footprint["offset"], instance["x"],
-                                   instance["y"]), dtype=np.float64)
+    m = np.asarray(instance_matrix(plate_module.turn_of(instance), instance["angle"], footprint["offset"],
+                                   instance["x"], instance["y"]), dtype=np.float64)
     points = mesh.vertices @ m[:, :3].T + m[:, 3]
     low = points[points[:, 2] < points[:, 2].min() + 0.05]
     return [low[:, 0].min(), low[:, 1].min(), low[:, 0].max(), low[:, 1].max()]
@@ -204,11 +205,11 @@ def slice_or_report(tmp_path, instances, supports):
     """The real parts' plate through the slice service: (summary, None) or (None, error report)."""
     configuration = frc_parts.plate_configuration(instances)
     configuration["overrides"] = {"supports": supports}
-    (tmp_path / "stls").mkdir()
-    for name, data in frc_parts.files_for(configuration).items():
-        (tmp_path / "stls" / name).write_bytes(data)
+    parts = Parts(tmp_path)
+    for data in frc_parts.files_for(configuration):
+        parts.add(data)
     try:
-        sliced = slice_plate_configuration(configuration, tmp_path / "out", base_dir=tmp_path / "stls")
+        sliced = slice_plate_configuration(parts.read(configuration), tmp_path / "out")
     except (SliceError, PlateConfigurationRefused) as exc:
         return None, error_report(exc)
     return sliced.summary, None

@@ -60,6 +60,9 @@ class Catalog:
         with open(Path(directory) / 'index.json', encoding='utf-8') as fh:
             return cls(directory, json.load(fh))
 
+    def printer_names(self):
+        return list(self._entries['printer'])
+
     def has_printer(self, name):
         return isinstance(name, str) and name in self._entries['printer']
 

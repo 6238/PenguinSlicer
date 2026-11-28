@@ -18,13 +18,19 @@ SLICE_DIR = "slice"
 
 @dataclass
 class CheckedPart:
-    """One part of a plate configuration, as it passed the checks (service._read_part)."""
+    """One part of a plate configuration, as it passed the checks (service._checked_part).
+    `stl_path` is its file in the part store, and once the slice job is accepted the slice
+    job's own hold on it; `footprints` are under each turn its instances use
+    (plate.turn_of); `scale` turns its units into millimetres."""
     name: str
     stl_path: Path
     footprints: dict
     triangles: int
     health: dict = field(default_factory=dict)       # mesh.analyse
     warnings: list = field(default_factory=list)     # mesh.part_warnings
+    scale: float = 1.0
+    sha256: str | None = None
+    units: str = "mm"
 
 
 @dataclass
@@ -47,6 +53,9 @@ class PlateConfiguration:
     expected_s: float | None = None
     memory_ceiling_mb: int | None = None  # the watchdog's ceiling; None: limits.max_peak_mb()
     work_dir: Path | None = None        # the HTTP interface's folder for this slice job's files
+    plate_id: str | None = None
+    submission_id: str | None = None
+    stored: dict = field(default_factory=dict)     # ref -> its part_store.StoredPart
 
     def triangles(self):
         return sum(self.parts[instance['ref']].triangles for instance in self.instances)
@@ -58,11 +67,13 @@ class PlateConfiguration:
     def describe(self):
         """The plate configuration for the server log: profiles, overrides, parts and instances."""
         return {
+            "plate_id": self.plate_id, "submission_id": self.submission_id,
             "printer": self.printer, "filament": self.filament, "process": self.process,
             "overrides": dict(self.overrides), "supports_on": self.supports_on,
             "estimated_peak_mb": self.estimated_peak_mb, "memory_ceiling_mb": self.memory_ceiling_mb,
             "expected_s": self.expected_s,
-            "parts": {ref: {"name": p.name, "triangles": p.triangles, **{k: p.health.get(k) for k in (
+            "parts": {ref: {"name": p.name, "sha256": p.sha256, "units": p.units, "triangles": p.triangles,
+                            **{k: p.health.get(k) for k in (
                 "size_mm", "volume_mm3", "volume_basis", "watertight", "shells", "open_edges")},
                 "warnings": [w["code"] for w in p.warnings]} for ref, p in self.parts.items()},
             "instances": [{"name": label, **instance} for label, instance in zip(self.labels, self.instances)],
@@ -95,7 +106,7 @@ def run_plate_configuration(configuration, scratch, stop=None, on_progress=None)
     report = on_progress or (lambda stage, fraction, message: None)
     report("building_plate", None, "Building the plate")
     model = scratch / MODEL_FILE
-    parts = {ref: {'name': part.name, 'stl_path': part.stl_path, 'footprints': part.footprints}
+    parts = {ref: {'name': part.name, 'stl_path': part.stl_path, 'footprints': part.footprints, 'scale': part.scale}
              for ref, part in configuration.parts.items()}
     try:
         names = write_plate_3mf(model, configuration.instances, parts, stop=stop)

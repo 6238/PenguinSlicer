@@ -23,6 +23,8 @@ REEXPORT_REMEDY = "Export the part again and send a new slice."
 # slice/README-details.md lists the same codes in this order, and tests/test_errors.py produces
 # each on purpose and states what its report must say.
 CODES = {
+    "slice.no_user_key": ("checking", False, None,
+                          "Try again; if it happens again, the server needs fixing."),
     "slice.bad_plate_configuration": ("checking", False, None,
                                       "Lay out the plate again and send a new slice."),
     "slice.too_many_instances": ("checking", False, "lower_quantities",
@@ -40,6 +42,8 @@ CODES = {
                                  "pinned version writes them again."),
     "slice.part_missing": ("checking", False, "refresh_parts",
                            "Load the parts again and send a new slice."),
+    "slice.bad_units": ("checking", False, None,
+                        "Choose millimetres or inches for the part and add it again."),
     "slice.part_unreadable": ("checking", False, "refresh_parts", REEXPORT_REMEDY),
     "slice.part_not_binary": ("checking", False, None,
                               "Export the part again as a binary STL and send a new slice."),

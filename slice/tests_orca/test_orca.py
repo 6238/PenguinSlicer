@@ -16,7 +16,8 @@ import pytest
 
 from flatten_orca_profiles import CATALOG_OUT, bbl_profile_dir, build_catalog, library_profile_dir, write_catalog, \
     write_profiles
-from helpers import CONTRACTS, FIXTURES, box_stl, l_prism_stl, make_part, part_from_stl, pinned_orca_version
+from helpers import (CONTRACTS, FIXTURES, PLATE_ID, SUBMISSION_ID, USER_KEY, box_stl, l_prism_stl, make_part,
+                     part_from_stl, phase_2, pinned_orca_version, sha256, submit, upload)
 from measure_plate import hub_stl, plate_layout
 from penguin_slice.errors import error_report
 from penguin_slice.mesh import read_binary_stl
@@ -71,31 +72,40 @@ def test_installed_orca_runs_and_is_the_pinned_release(tmp_path):
     assert stamp[1] in {"linux-x86_64", "linux-aarch64", "darwin-arm64"}
 
 
-def through_the_http_interface(work, configuration, files):
-    """Submit through the HTTP interface (a test client of the real app, the real Orca),
-    follow the event stream to the final report, fetch the sliced file and its summary:
-    (stages, final report, file bytes, summary). Nothing of the slice job is left after."""
-    import io
+def phase_2_example():
+    """The contract's example plate configuration in its phase 2 form: its parts named by the
+    hashes of their files, in millimetres, with a plate id and a submission."""
+    data = json.loads(EXAMPLE.read_text())
+    for part in data["parts"].values():
+        part.update(sha256=sha256((EXAMPLE_PARTS / part.pop("stl")).read_bytes()), units="mm")
+    return {"plate_id": PLATE_ID, "submission_id": SUBMISSION_ID, **data}
+
+
+def through_the_http_interface(work, configuration, parts):
+    """Upload each part of `parts` (bytes) and submit the phase 2 plate configuration through
+    the HTTP interface (a test client of the real app, the real Orca), follow the event stream
+    to the final report, fetch the sliced file and its summary: (stages, final report, file
+    bytes, summary). Nothing of the slice job is left after."""
     from penguin_slice.jobs import FINAL
     from penguin_slice.web import create_app
     app = create_app(work, start_sweeper=False)
     client = app.test_client()
-    form = {"plate_configuration": json.dumps(configuration)}
-    for name, data in files.items():
-        form[name] = (io.BytesIO(data), name)
-    answer = client.post("/slices", data=form)
+    headers = {"X-Penguin-User-Key": USER_KEY}
+    for data in parts:
+        assert upload(client, data).status_code == 201
+    answer = submit(client, configuration)
     assert answer.status_code == 202, answer.get_json()
     job_id = answer.get_json()["job"]
     stages = []
-    for chunk in client.get(f"/slices/{job_id}/events", buffered=False).response:
+    for chunk in client.get(f"/slices/{job_id}/events", headers=headers, buffered=False).response:
         report = json.loads((chunk.decode() if isinstance(chunk, bytes) else chunk).split("data: ", 1)[1])
         stages.append(report.get("stage"))
         if report["state"] in FINAL:
             break
-    fetched = client.get(f"/slices/{job_id}/file")
+    fetched = client.get(f"/slices/{job_id}/file", headers=headers)
     data = fetched.data if fetched.status_code == 200 else None
     fetched.close()
-    summary = client.get(f"/slices/{job_id}/summary").get_json()
+    summary = client.get(f"/slices/{job_id}/summary", headers=headers).get_json()
     app.extensions["penguin_slice_pool"].shutdown()
     return stages, report, data, summary
 
@@ -104,8 +114,8 @@ def through_the_http_interface(work, configuration, files):
 def example_slice(tmp_path_factory):
     """The contract's example plate configuration, sliced once through the HTTP interface."""
     out = tmp_path_factory.mktemp("example")
-    files = {name: (EXAMPLE_PARTS / name).read_bytes() for name in ("bracket.stl", "spacer.stl")}
-    stages, report, data, summary = through_the_http_interface(out / "work", json.loads(EXAMPLE.read_text()), files)
+    files = [(EXAMPLE_PARTS / name).read_bytes() for name in ("bracket.stl", "spacer.stl")]
+    stages, report, data, summary = through_the_http_interface(out / "work", phase_2_example(), files)
     assert report["state"] == "done", report
     (out / summary["file"]).write_bytes(data)
     return out, summary, stages
@@ -128,6 +138,46 @@ def test_the_http_interface_slices_the_contract_example(example_slice):
         {k: summary[k] for k in ("file", "instances", "layer_count", "warnings", "part_warnings")}
     for key in ("print_time_s", "filament_m", "filament_g"):
         assert summary[key] == pytest.approx(example[key], rel=0.05), key
+
+
+def test_a_rotation_and_a_part_in_inches_slice_where_the_checks_place_them(tmp_path):
+    """Protects: the phase 2 plate configuration's two new ways to place a part reach Orca as
+    the placement check sees them. The contract's phase 2 example (its fourth bracket laid on
+    its hull face by a `rotation`) with a fifth instance, a 1 x 1 x 0.5 inch block: every
+    instance is sliced, and the first layer Orca prints for the laid bracket and for the block
+    is where the slice service's own footprint puts them (within the real parts' 1 mm)."""
+    from test_frc_parts import PLACEMENT_TOLERANCE_MM, first_layer_box, first_layer_extrusions
+    from penguin_slice.mesh import turned_footprint, orientation_footprints
+    from penguin_slice.plate import quaternion_matrix
+    example = json.loads((CONTRACTS / "examples" / "plate-configuration-phase-2.json").read_text())
+    example["overrides"] = {"infill": 20, "walls": 3, "supports": "off", "brim": "auto"}    # until item 6
+    block = box_stl(1, 1, 0.5)
+    example["parts"]["block"] = {"name": "Block", "sha256": sha256(block), "units": "in"}
+    example["instances"].append({"ref": "block", "orientation": "+z", "angle": 0, "x": 80.0, "y": 240.0})
+    parts = [(EXAMPLE_PARTS / name).read_bytes() for name in ("bracket.stl", "spacer.stl")]
+    from penguin_slice.web import create_app
+    client = create_app(tmp_path / "work", start_sweeper=False).test_client()
+    assert upload(client, block, units="in").get_json()["measurements"]["size_mm"] == [25.4, 25.4, 12.7]
+    client.application.extensions["penguin_slice_pool"].shutdown()
+    _stages, report, data, summary = through_the_http_interface(tmp_path / "work2", example, parts + [block])
+    assert report["state"] == "done", report
+    sliced = tmp_path / summary["file"]
+    sliced.write_bytes(data)
+    assert sorted(plate_object_names(sliced)) == ["Block #1", "Bracket #1", "Bracket #2", "Bracket #3", "Spacer #1"]
+    with zipfile.ZipFile(sliced) as zf:
+        gcode = zf.read("Metadata/plate_1.gcode").decode()
+    boxes = first_layer_extrusions(gcode)
+    laid, inches = example["instances"][3], example["instances"][4]
+    bracket = read_binary_stl(parts[0], "Bracket")
+    rotation = [v / sum(q * q for q in laid["rotation"]) ** 0.5 for v in laid["rotation"]]
+    laid = dict(laid, rotation=rotation)
+    block = read_binary_stl(block, "Block", scale=25.4)
+    expected = {"Bracket #3": first_layer_box(laid, bracket, turned_footprint(bracket, quaternion_matrix(rotation))),
+                "Block #1": first_layer_box(inches, block, orientation_footprints(block)["+z"])}
+    errors = {name: max(abs(a - b) for a, b in zip(boxes[name], box)) for name, box in expected.items()}
+    print(f"\n[orca] phase 2 example with a block in inches: {json.dumps(summary)}; first-layer errors {errors}")
+    assert expected["Block #1"][2] - expected["Block #1"][0] == pytest.approx(25.4, abs=1e-3)
+    assert {name: e for name, e in errors.items() if e > PLACEMENT_TOLERANCE_MM} == {}
 
 
 def test_catalog_profiles_and_overrides_reach_the_gcode(example_slice):
@@ -674,10 +724,9 @@ def test_the_reference_plate_of_100_spacers(tmp_path):
     instance, under the default memory ceiling, its peak, time and size printed."""
     import time
     from helpers import spacer_grid, spacer_stl
-    configuration = {"parts": {"spacer": {"name": "Spacer", "stl": "spacer.stl"}}, "instances": spacer_grid(100)}
+    configuration = phase_2({"spacer": ("Spacer", spacer_stl())}, spacer_grid(100))
     started = time.monotonic()
-    _stages, report, data, summary = through_the_http_interface(tmp_path / "work", configuration,
-                                                                {"spacer.stl": spacer_stl()})
+    _stages, report, data, summary = through_the_http_interface(tmp_path / "work", configuration, [spacer_stl()])
     seconds = time.monotonic() - started
     assert report["state"] == "done", report
     (tmp_path / summary["file"]).write_bytes(data)

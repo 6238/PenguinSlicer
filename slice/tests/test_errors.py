@@ -13,46 +13,54 @@ from unittest import mock
 
 import pytest
 
-from helpers import CONTRACTS, FAILSAFE_S, FIXTURES, bounded, box_stl, install_fake_orca, kill_fake, write_plate_configuration
+from helpers import (CONTRACTS, FAILSAFE_S, FIXTURES, Parts, bounded, box_stl, install_fake_orca, kill_fake,
+                     part_entry, phase_2, submit, upload)
 from penguin_slice import limits, plate_configuration as plate_configuration_module, service as service_module, slicer
 from penguin_slice.errors import error_report
 from penguin_slice.errors import CODES
 from penguin_slice.jobs import JobFailure, JobPool, QueueFull
-from penguin_slice.service import read_plate_configuration, slice_plate_configuration
+from penguin_slice.service import slice_plate_configuration
 from penguin_slice.slicer import OrcaExit
 
 REQUIRED = {"code": str, "message": str, "remedy": str, "retryable": bool, "detail": str}
 OPTIONAL = {"where": dict, "action": str}
-WHERE_KEYS = {"part", "instance", "other_instance", "height_mm", "stage"}
+WHERE_KEYS = {"part", "instance", "other_instance", "height_mm", "stage", "missing_parts"}
 STAGES = {"checking", "queued", "building", "slicing", "saving", "fetching"}
+BOX = box_stl(20, 20, 10)
 
 
 def plate_configuration(**changes):
-    job = {"parts": {"box": {"name": "Box", "stl": "box.stl"}},
-           "instances": [{"ref": "box", "orientation": "+z", "angle": 0, "x": 50.0, "y": 50.0}]}
+    job = phase_2({"box": ("Box", BOX)}, [{"ref": "box", "orientation": "+z", "angle": 0, "x": 50.0, "y": 50.0}])
     job.update(changes)
     return job
 
 
 class Scene:
-    """A folder with a 20 x 20 x 10 mm box part, and ways to fail."""
+    """A part store with a 20 x 20 x 10 mm box part uploaded, and ways to fail."""
 
     def __init__(self, tmp_path, monkeypatch):
         self.tmp, self.monkeypatch = tmp_path, monkeypatch
-        self.base = tmp_path / "job"
-        self.base.mkdir(parents=True)
+        self.parts = Parts(tmp_path)
+        self.parts.add(BOX)
         self.out = tmp_path / "out"
-        (self.base / "box.stl").write_bytes(box_stl(20, 20, 10))
 
     def read(self, data):
-        return read_plate_configuration(data, self.base)
+        return self.parts.read(data)
+
+    def upload(self, data):
+        return self.parts.add(data)
 
     def slice(self, data=None, **kwargs):
-        return slice_plate_configuration(write_plate_configuration(self.base, data or plate_configuration(), {}), self.out, **kwargs)
+        return slice_plate_configuration(self.read(data or plate_configuration()), self.out, **kwargs)
+
+    def web(self, executor=None):
+        from penguin_slice.web import create_app, slice_worker
+        pool = JobPool(slice_worker, executor=executor or mock.Mock(), error_report=error_report)
+        return create_app(self.tmp / "work", pool, start_sweeper=False).test_client(), pool
 
     def orca_exit(self, returncode, return_code=None, archive=None):
         """Orca replaced at slicer.run_process: it writes result.json and the archive."""
-        self.monkeypatch.setenv(slicer.ORCA_ENV, str(self.base / "box.stl"))      # a file that exists
+        self.monkeypatch.setenv(slicer.ORCA_ENV, str(FIXTURES / "slice_info.config"))      # a file that exists
 
         def fake_run(cmd, **kwargs):
             out = Path(cmd[cmd.index("--outputdir") + 1])
@@ -76,14 +84,37 @@ def busy(scene):
 
 
 def stl(scene, data):
-    (scene.base / "box.stl").write_bytes(data)
-    scene.read(plate_configuration())
+    """`data` uploaded as a part (the checks on arrival)."""
+    scene.upload(data)
+
+
+def placed(scene, data):
+    """`data` uploaded, then a plate of one instance of it at (50, 50)."""
+    scene.upload(data)
+    scene.read(plate_configuration(parts={"box": part_entry("Box", data)}))
 
 
 def oversize(scene):
-    with open(scene.base / "box.stl", "r+b") as fh:
-        fh.truncate(limits.MAX_PART_BYTES + 1)
-    scene.read(plate_configuration())
+    """An upload whose Content-Length is one byte over the cap, through the HTTP interface."""
+    client, _pool = scene.web()
+    return client.post("/parts?units=mm", headers={"X-Penguin-User-Key": "user-a"},
+                       environ_overrides={"CONTENT_LENGTH": str(limits.MAX_PART_BYTES + 1)},
+                       content_type="application/octet-stream").get_json()
+
+
+def no_user_key(scene):
+    client, _pool = scene.web()
+    return upload(client, BOX, user_key=None).get_json()
+
+
+def bad_units(scene):
+    client, _pool = scene.web()
+    return upload(client, BOX, units="cm").get_json()
+
+
+def parts_gone(scene):
+    """A plate whose part the part store does not hold (another user key's)."""
+    scene.parts.read(plate_configuration(), user_key="user-b")
 
 
 def profile_unreadable(scene):
@@ -157,25 +188,21 @@ def disk_full(scene):
 def through_the_web(path):
     """A report the HTTP interface answers with: an unknown job, or the file of a queued one."""
     def produce(scene):
-        from penguin_slice.web import create_app, slice_worker
-        pool = JobPool(slice_worker, executor=mock.Mock(), error_report=error_report)
-        client = create_app(scene.tmp / "work", pool, start_sweeper=False).test_client()
+        client, pool = scene.web()
+        headers = {"X-Penguin-User-Key": "user-a"}
+        upload(client, BOX)
         if path == "file":
-            form = {"plate_configuration": json.dumps(plate_configuration()),
-                    "box.stl": (io.BytesIO((scene.base / "box.stl").read_bytes()), "box.stl")}
-            job_id = client.post("/slices", data=form).get_json()["job"]
-            return client.get(f"/slices/{job_id}/file").get_json()
+            job_id = submit(client, plate_configuration()).get_json()["job"]
+            return client.get(f"/slices/{job_id}/file", headers=headers).get_json()
         if path == "gone":
             install_fake_orca(scene.tmp, scene.monkeypatch, "ok")
             pool._executor = ImmediateExecutor()
-            form = {"plate_configuration": json.dumps(plate_configuration()),
-                    "box.stl": (io.BytesIO((scene.base / "box.stl").read_bytes()), "box.stl")}
-            job_id = client.post("/slices", data=form).get_json()["job"]
+            job_id = submit(client, plate_configuration()).get_json()["job"]
             Path(pool.result(job_id)["path"]).unlink()          # the sliced file left the disk
-            return client.get(f"/slices/{job_id}/file").get_json()
+            return client.get(f"/slices/{job_id}/file", headers=headers).get_json()
         if path == "nothing":
             return client.get("/nothing").get_json()
-        return client.get("/slices/j0000").get_json()
+        return client.get("/slices/j0000", headers=headers).get_json()
     return produce
 
 
@@ -215,6 +242,9 @@ class Expected:
 
 
 EXPECTED = {
+    "slice.no_user_key": Expected(
+        no_user_key, "The slicer was not told whose request this is.", "checking", False, None,
+        "Try again; if it happens again, the server needs fixing.", "POST /parts without X-Penguin-User-Key"),
     "slice.bad_plate_configuration": Expected(
         lambda s: s.read(plate_configuration(instances=[])), "This plate configuration could not be read: it has no instances.", "checking",
         False, None, "Lay out the plate again and send a new slice.", "it has no instances"),
@@ -224,7 +254,7 @@ EXPECTED = {
         "checking", False, "lower_quantities", "Lower the quantities and print the rest on a second plate.",
         "151 instances, cap 150"),
     "slice.too_many_parts": Expected(
-        lambda s: s.read(plate_configuration(parts={f"p{i}": {"name": "Box", "stl": "box.stl"} for i in range(26)},
+        lambda s: s.read(plate_configuration(parts={f"p{i}": part_entry("Box", BOX) for i in range(26)},
                                              instances=[dict(TWO[0], ref=f"p{i}") for i in range(26)])),
         "This plate uses 26 different parts; the slicer takes up to 25 on one plate, so print the rest on a second "
         "plate.", "checking", False, None, "Use fewer different parts on this plate and print the rest on a second "
@@ -251,35 +281,38 @@ EXPECTED = {
         lambda s: s.read(plate_configuration(parts={})), "An instance on the plate names a part this plate configuration does not include.",
         "checking", False, "refresh_parts", "Load the parts again and send a new slice.",
         "instance 0 names part 'box', which parts does not list"),
+    "slice.bad_units": Expected(
+        bad_units, "The slicer was not told whether this part is in millimetres or inches.", "checking", False, None,
+        "Choose millimetres or inches for the part and add it again.", "units 'cm', not 'mm' or 'in'"),
     "slice.part_unreadable": Expected(
-        lambda s: stl(s, b""), "The file for Box is empty.", "checking", False, "refresh_parts",
-        "Export the part again and send a new slice.", "box.stl: 0 bytes"),
+        lambda s: stl(s, b""), "The file for this part is empty.", "checking", False, "refresh_parts",
+        "Export the part again and send a new slice.", "upload: 0 bytes"),
     "slice.part_not_binary": Expected(
-        lambda s: stl(s, ASCII_BOX), "The file for Box is a text STL; the slicer needs a binary STL.", "checking",
-        False, None, "Export the part again as a binary STL and send a new slice.", "bytes of ASCII STL"),
+        lambda s: stl(s, ASCII_BOX), "The file for this part is a text STL; the slicer needs a binary STL.",
+        "checking", False, None, "Export the part again as a binary STL and send a new slice.", "bytes of ASCII STL"),
     "slice.part_too_detailed": Expected(
-        oversize, "Box is too detailed to print here (over 150,000 triangles).", "checking", False, None,
-        "Export the part with a coarser tessellation, or simplify it, and slice again.",
-        "box.stl: 7,500,085 bytes, cap 7,500,084"),
+        oversize, "This part is too detailed to print here (over 7,500,084 bytes, the size of 150,000 triangles).",
+        "checking", False, None, "Export the part with a coarser tessellation, or simplify it, and slice again.",
+        "upload Content-Length 7,500,085 bytes, cap 7,500,084"),
     "slice.part_too_small": Expected(
-        lambda s: stl(s, box_stl(0.05, 0.05, 0.05)), "Box is too small to print (0.05 x 0.05 x 0.05 mm).",
+        lambda s: stl(s, box_stl(0.05, 0.05, 0.05)), "This part is too small to print (0.05 x 0.05 x 0.05 mm).",
         "checking", False, None, "Check the part's units and size, then slice again.",
-        "box.stl: 0.05 x 0.05 x 0.05 mm"),
+        "upload: 0.05 x 0.05 x 0.05 mm"),
     "slice.part_no_volume": Expected(
-        lambda s: stl(s, LOOSE), "Box is loose triangles that enclose nothing, so there is nothing to print.",
+        lambda s: stl(s, LOOSE), "This part is loose triangles that enclose nothing, so there is nothing to print.",
         "checking", False, None, "Make the part a closed solid in CAD, export it again and send a new slice.",
         "1 triangles, none shares an edge with another"),
     "slice.part_too_large": Expected(
         lambda s: stl(s, box_stl(500, 500, 500)),
-        "Box is 500 x 500 x 500 mm, larger than the printer can print in any orientation (340.0 x 320.0 x 340.0 mm).",
-        "checking", False, None,
-        "Check the part's units, or split the part in CAD so each piece fits, and slice again.", "box.stl"),
+        "This part is 500 x 500 x 500 mm, larger than any printer here can print in any orientation (the largest "
+        "prints 340.0 x 320.0 x 340.0 mm).", "checking", False, None,
+        "Check the part's units, or split the part in CAD so each piece fits, and slice again.", "upload: "),
     "slice.placement_off_plate": Expected(
         lambda s: s.read(plate_configuration(instances=[dict(TWO[0], x=1.0)])), "Box #1 is not fully on the plate.", "checking",
         False, "arrange", "Move the instance fully onto the plate, or press Arrange, and slice again.",
         "Box #1 is not fully on the plate."),
     "slice.placement_too_tall": Expected(
-        lambda s: stl(s, box_stl(20, 20, 341)), "Box #1 is taller than the printer can print (340 mm).", "checking",
+        lambda s: placed(s, box_stl(20, 20, 341)), "Box #1 is taller than the printer can print (340 mm).", "checking",
         False, "choose_orientation", "Lay the part on another face so it is lower, and slice again.",
         "Box #1 is taller than the printer can print (340 mm)."),
     "slice.placement_too_close": Expected(
@@ -511,10 +544,10 @@ def test_orcas_reason_for_nothing_to_slice_names_the_only_part(code, tmp_path, m
 
 def test_with_two_parts_orcas_reason_names_none(tmp_path, monkeypatch):
     scene = Scene(tmp_path, monkeypatch)
-    (scene.base / "peg.stl").write_bytes(box_stl(8, 8, 8))
+    scene.upload(box_stl(8, 8, 8))
     install_fake_orca(tmp_path, monkeypatch, "no_layers")
-    job = plate_configuration(parts={"box": {"name": "Box", "stl": "box.stl"}, "peg": {"name": "Peg", "stl": "peg.stl"}},
-                    instances=[TWO[0], dict(TWO[1], ref="peg", x=90.0)])
+    job = plate_configuration(parts={"box": part_entry("Box", BOX), "peg": part_entry("Peg", box_stl(8, 8, 8))},
+                              instances=[TWO[0], dict(TWO[1], ref="peg", x=90.0)])
     with pytest.raises(slicer.SliceError) as caught:
         scene.slice(job)
     assert error_report(caught.value)["where"] == {"stage": "slicing"}
@@ -522,9 +555,9 @@ def test_with_two_parts_orcas_reason_names_none(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("code, where", [
     ("slice.part_missing", {}),
-    ("slice.part_unreadable", {"part": "Box"}), ("slice.part_too_small", {"part": "Box"}),
-    ("slice.part_too_detailed", {"part": "Box"}), ("slice.part_too_large", {"part": "Box"}),
-    ("slice.part_no_volume", {"part": "Box"}), ("slice.part_not_binary", {"part": "Box"}),
+    # On arrival a part has no name: its refusals name none.
+    ("slice.part_unreadable", {}), ("slice.part_too_small", {}), ("slice.part_too_detailed", {}),
+    ("slice.part_too_large", {}), ("slice.part_no_volume", {}), ("slice.part_not_binary", {}),
     ("slice.placement_too_close", {"part": "Box", "instance": "Box #1", "other_instance": "Box #2"}),
     ("slice.placement_too_tall", {"part": "Box", "instance": "Box #1"}),
     ("slice.left_off_plate", {"instance": "Box #1"}),
@@ -532,6 +565,23 @@ def test_with_two_parts_orcas_reason_names_none(tmp_path, monkeypatch):
 def test_where_names_the_part_and_instance(code, where, tmp_path, monkeypatch):
     _exc, report = produce(code, tmp_path, monkeypatch)
     assert {k: v for k, v in report["where"].items() if k != "stage"} == where
+
+
+def test_parts_missing_from_the_part_store_list_every_one(tmp_path, monkeypatch):
+    scene = Scene(tmp_path, monkeypatch)
+    with pytest.raises(service_module.PlateConfigurationRefused) as caught:
+        parts_gone(scene)
+    report = error_report(caught.value)
+    assert_report_shape(report)
+    assert (report["code"], report["action"], report["retryable"], report["remedy"]) == (
+        "slice.part_missing", "refresh_parts", False, "Add the parts again and slice again.")
+    assert [m["key"] for m in report["where"]["missing_parts"]] == ["box"]
+
+
+def test_the_contracts_parts_missing_example_is_what_the_code_produces(tmp_path, monkeypatch):
+    example = json.loads((CONTRACTS / "examples" / "error-report-parts-missing.json").read_text())
+    missing = example["where"]["missing_parts"]
+    assert error_report(service_module.parts_missing(missing)) == example
 
 
 def test_job_failure_reports_the_failure_that_caused_it(tmp_path):

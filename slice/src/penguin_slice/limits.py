@@ -24,7 +24,11 @@ MAX_INSTANCES = 150
 # whole plate: none was measured to refuse a plate the watchdog would have stopped without
 # also refusing plates that slice, so the watchdog alone decides.
 MAX_PARTS = 25
-PLATE_SLICE_TIMEOUT_S = 240                       # the sample part keeps slicer.DEFAULT_TIMEOUT_S
+# The whole plate configuration, all its settings in it, now that it carries no files: the
+# guide's figure, chosen without a measurement. It bounds what one submission makes the
+# slice service read.
+MAX_PLATE_CONFIGURATION_BYTES = 1_048_576
+PLATE_SLICE_TIMEOUT_S = 240                      # the sample part keeps slicer.DEFAULT_TIMEOUT_S
 
 # The memory model: a rough estimate of Orca's peak resident memory for a plate, in MB,
 #   (BASE + PER_INSTANCE * instances + PER_CM3 * part volume on the plate in cm3) * (SUPPORTS if supports on)
@@ -64,6 +68,9 @@ MEASURE_MAX_SECONDS = 180
 # The sentences, one per limit. {name} is filled in by the caller.
 TOO_DETAILED_MESSAGE = ("{name} is too detailed to print here "
                         f"(over {MAX_PART_TRIANGLES:,} triangles).")
+# An upload whose Content-Length is over the byte cap, refused before its body is read.
+TOO_DETAILED_BYTES_MESSAGE = ("{name} is too detailed to print here "
+                              f"(over {MAX_PART_BYTES:,} bytes, the size of {MAX_PART_TRIANGLES:,} triangles).")
 TOO_MANY_INSTANCES_MESSAGE = ("This plate has {count:,} instances; the slicer takes up to "
                               f"{MAX_INSTANCES} on one plate, so print the rest on a second plate.")
 TOO_MANY_PARTS_MESSAGE = ("This plate uses {count:,} different parts; the slicer takes up to "
@@ -77,6 +84,9 @@ ENCLOSES_NOTHING_MESSAGE = ("{name} is a surface folded onto itself that enclose
                             "to print.")
 PART_TOO_LARGE_MESSAGE = ("{name} is {x} x {y} x {z} mm, larger than the printer can print in any orientation "
                           "({px} x {py} x {pz} mm).")
+# The same on arrival, when no plate has named a printer: tested against the largest printer.
+PART_TOO_LARGE_ANY_PRINTER_MESSAGE = ("{name} is {x} x {y} x {z} mm, larger than any printer here can print in any "
+                                      "orientation (the largest prints {px} x {py} x {pz} mm).")
 PART_UNREADABLE_MESSAGE = "The file for {name} could not be read as a part."
 PART_EMPTY_MESSAGE = "The file for {name} is empty."
 PART_NOT_STL_MESSAGE = "The file for {name} is not an STL file."
