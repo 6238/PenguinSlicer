@@ -35,7 +35,8 @@ def serve(args, *, environ=None, stdout, stderr, clock=None, on_listening=None):
     clock = clock or RealClock()
     try:
         settings = Settings.from_environ(environ)
-    except SettingError as exc:
+        app, log = build(settings, clock=clock, stdout=stdout)
+    except SettingError as exc:  # a setting refused, or page files that cannot be served
         # The log's line, on standard output as every line is (the log bucket is not known
         # yet: its folder is a setting), and the same words for whoever typed the command.
         print(line_text({"time": utc_milliseconds(clock.now()), "component": "front",
@@ -43,7 +44,6 @@ def serve(args, *, environ=None, stdout, stderr, clock=None, on_listening=None):
                          "detail": str(exc)}), file=stdout, flush=True)
         print(f"penguin_front serve: {exc}", file=stderr, flush=True)
         return 2
-    app, log = build(settings, clock=clock, stdout=stdout)
     server = waitress.create_server(app, host=args.host, port=args.port,
                                     threads=settings.threads, ident="")
     log.write("start", version=app.extensions[EXTENSION]["version"], host=args.host,

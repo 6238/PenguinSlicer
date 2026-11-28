@@ -9,6 +9,7 @@ import threading
 import pytest
 
 from front_fakes import Announcer
+from front_helpers import environ
 from penguin_front.app import create_app
 from penguin_front.buckets import FolderBucket
 from penguin_front.log import LOG_FLUSH_S, Log, utc_milliseconds
@@ -403,7 +404,7 @@ def test_the_log_folder_failing_leaves_every_answer_unchanged(tmp_path, clock, s
     blocker.write_bytes(b"")
     good = Log(clock, io.StringIO(), FolderBucket(tmp_path / "good", clock))
     broken = Log(clock, stdout, FolderBucket(blocker, clock))
-    settings = Settings.from_environ({"PENGUIN_DEV_IDENTITY": "1"})
+    settings = Settings.from_environ(environ(tmp_path, PENGUIN_LOG_DIR=str(blocker)))
     answers = []
     for writer in (good, broken):
         client = create_app(settings, clock=clock, log=writer, version="x").test_client()

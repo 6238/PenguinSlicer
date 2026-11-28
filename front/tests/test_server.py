@@ -10,6 +10,7 @@ import httpx
 import pytest
 import waitress
 
+from front_helpers import make_dist
 from penguin_front.__main__ import main, parse_args
 from penguin_front.server import build, serve, stop_server
 
@@ -17,8 +18,10 @@ VERSION = "20261127T221405Z-1a2b3c4"
 
 
 def environ(tmp_path, **extra):
+    """Fresh folders, the development identity on and no cookie key."""
     return {"PENGUIN_DEV_IDENTITY": "1", "PENGUIN_STATE_DIR": str(tmp_path / "state"),
-            "PENGUIN_LOG_DIR": str(tmp_path / "log"), "PENGUIN_VERSION": VERSION, **extra}
+            "PENGUIN_LOG_DIR": str(tmp_path / "log"), "PENGUIN_VERSION": VERSION,
+            "PENGUIN_WIZARD_DIST": str(make_dist(tmp_path / "dist")), **extra}
 
 
 def test_a_refused_setting_stops_the_start_with_status_2_naming_it(tmp_path):
@@ -120,7 +123,7 @@ def test_a_start_with_a_cookie_key_makes_none(tmp_path, clock):
 
 
 @pytest.fixture
-def served(clock):
+def served(tmp_path, clock):
     """The application, with a planted `GET /t/x`, served by waitress on a port the system
     chooses; gives a function that sends one raw request line and gives (status, body)."""
     from penguin_front.app import create_app
@@ -132,7 +135,7 @@ def served(clock):
         def write(self, event, **fields):
             lines.append({"event": event, **fields})
 
-    app = create_app(Settings.from_environ({"PENGUIN_DEV_IDENTITY": "1"}), clock=clock,
+    app = create_app(Settings.from_environ(environ(tmp_path)), clock=clock,
                      log=Lines(), version=VERSION)
 
     @app.get("/t/x")
