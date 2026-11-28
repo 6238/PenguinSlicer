@@ -35,9 +35,14 @@ Run on Fri 2026-11-27 (Pacific time) on an aarch64 Linux machine without a graph
 
 Found from nothing, the faces take at most 215 ms for `hub-150k.stl` and at most 84 ms for a
 real part. While each step was timed the main thread never went more than 15 ms between beats
-of a 10 ms heartbeat. Chromium's long-task timing reported tasks of up to about a second
-during the hub's timed steps that neither the heartbeat nor any answer's time shows; the
-heartbeat is the figure counted.
+of a 10 ms heartbeat. Chromium's long-task timing reported tasks of 0.1 to 0.9 s that
+neither the heartbeat nor any answer's time shows, and on a different part from one run to
+the next (on `hub-150k.stl` in one run, on Elevator Block Bottom Inner in another, with
+none on the hub); the heartbeat is the figure counted.
+
+The drag at 150 instances of the mix checks all 150, the 46 that Arrange left beside the
+plate among them: the check is timed on the whole plate configuration, as a drag would
+check it.
 
 Every flat face of each real part (a hull face of at least 25 mm², at least half of it the
 part's own surface) has a hull patch. That took three changes to the rules as first written,

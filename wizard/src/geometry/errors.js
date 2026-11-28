@@ -18,7 +18,7 @@ const SENTENCES = {
   },
   [LAYOUT_FAILED]: {
     message: 'PenguinSlicer could not work out the layout of this plate.',
-    remedy: 'Reload the page; your parts and settings are kept.',
+    remedy: 'Reload the page; your parts, layout and settings are kept in this browser.',
     retryable: true,
   },
 };

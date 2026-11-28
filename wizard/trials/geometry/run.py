@@ -210,9 +210,9 @@ def main():
         "main_thread_held_by_the_trial_page_itself_ms": held_any,
         "main_thread_note": "For each timed step: the longest gap between beats of a 10 ms heartbeat on the main "
                             "thread (how long the page could not answer while the worker worked) and the longest "
-                            "long task the browser reported in the same time. On hub-150k the browser reports a "
-                            "long task of about a second that no heartbeat gap and no answer's time shows, so the "
-                            "heartbeat is the figure that counts. The second figure includes the trial page's own "
+                            "long task the browser reported in the same time. The browser reports long tasks of "
+                            "0.1 to 0.9 s, on a part that changes from run to run, that no heartbeat gap and no "
+                            "answer's time shows, so the heartbeat is the figure that counts. The second figure includes the trial page's own "
                             "drawing of its pictures and its untimed counts on the main thread, which the wizard "
                             "does not do.",
         "page_errors": errors,

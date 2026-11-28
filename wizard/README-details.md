@@ -1077,9 +1077,15 @@ keeps drawing and the user's gestures. Hashing a part uses the browser's own dig
 needs no worker. Every result arrives a moment after it was asked for, so each job has a "not
 yet" state (a row without its picture, an instance selected before its patches appear); a
 part's geometry is handed to the main thread as transferable buffers, so it is not copied
-twice. The page measures the longest stretch the main thread was held, by the browser's
-long-task timing, for its tests and its reports
-([What the wizard reports about itself](#what-the-wizard-reports-about-itself)).
+twice. The page measures the longest stretch the main thread was held by a heartbeat: a 10 ms
+timer on the main thread, the hold being the longest gap between two beats, for its tests and
+its reports ([What the wizard reports about itself](#what-the-wizard-reports-about-itself)).
+The browser's long-task timing is not the measure: in the second trial Chromium reported long
+tasks of 0.1 to 0.9 s during steps whose answers all came back in under 0.3 s while the
+heartbeat never went more than about 15 ms between beats
+([the trial's notes](trials/geometry/README.md)).
+Open: why Chromium's long-task timing reports those tasks; until it is known, a long-task
+figure is reported beside the heartbeat's and never counted against `MAIN_THREAD_HOLD_MS`.
 
 All of it is written fresh: an implementer may read Orca's source to understand a method,
 and no Orca code, comment or constant name enters the repository.
@@ -1183,7 +1189,11 @@ plate the wizard shows green and the slice service refuses is a defect in one of
 instance across the margin, then every one too tall, then every pair too close, `i < j`), each
 `{rule, instances}` with what the Layout step's messages need: the `edges` crossed (`left`,
 `right`, `front`, `back`) and the footprint's `size` for `off_plate`, the `height` for
-`too_tall`, the `distance` for `too_close`. Footprints are kept for each part and turn, pairs are
+`too_tall`, the `distance` for `too_close`. Footprints are kept for each part and turn, keyed by
+the part's hull corners as read and never by the plate configuration's part key (which means
+nothing beyond one plate configuration: a key may come to point at another part read under
+another key, or at a part read again in other units), so a check never answers from the
+footprint of a part the key pointed at before; pairs are
 compared only when their bounds come within the spacing, and two outlines are measured exactly
 only when their 32-corner outlines are closer than the spacing. Instances are named as the slice
 service names them (`instanceLabels`).
@@ -1199,7 +1209,7 @@ the error an error report of the wizard's own:
 | Code | When | `message`; `remedy` |
 |---|---|---|
 | `wizard.part_not_drawable` | A file the reader cannot read (shorter than the header, cut off or padded, no triangles, over `MAX_PART_BYTES` or `MAX_PART_TRIANGLES`, a coordinate not a number), or a part with no hull (flat, a line, a point) | "PenguinSlicer could not show this part, so it cannot be imported."; "Export the part again as a binary STL and add it again." Not retryable; `detail` says what was wrong |
-| `wizard.layout_failed` | A message about a part never read, a message the worker does not know, or the geometry's own code failing | "PenguinSlicer could not work out the layout of this plate."; "Reload the page; your parts and settings are kept." Retryable; `detail` names the fault |
+| `wizard.layout_failed` | A message about a part never read, a message the worker does not know, or the geometry's own code failing | "PenguinSlicer could not work out the layout of this plate."; "Reload the page; your parts, layout and settings are kept in this browser." Retryable (the remedy holds once the page keeps the plate in the browser's storage, [What the browser keeps](#what-the-browser-keeps), built with the page); `detail` names the fault |
 
 Tests (`wizard/tests/geometry/`, on Node's runner): on the eight real exported parts kept in the
 repository and the two made parts, the faces, patches and the way auto-orient lays each, as the
@@ -1209,7 +1219,10 @@ on small solids made in the tests (a box, a cylinder, a hex prism, a wedge, cham
 block, a round side with slivers between its facets, a strip a few thousandths of a millimetre
 off a face); the hull checked against every corner of a real part and of random spheres; the
 placement check against every shared plate, with the expected answer of each, and in the slice
-service's order; Arrange never changes an orientation, keeps the spacing with supports on and
+service's order, with each of the four edges of the margin reached on purpose, two instances too
+close front to back in either order, and a part key that comes to point at another part;
+laying an instance on a face keeps its turn about the vertical; the sentences of each error
+report are the guide's; Arrange never changes an orientation, keeps the spacing with supports on and
 off, centres the pile, and leaves beside the plate what does not fit; each of the reader's
 refusals and each error report through the worker's messages. To be built with the page (items 7
 and 10 of [By phase](#by-phase)): a malformed STL ends in a notification the main thread shows,

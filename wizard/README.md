@@ -661,9 +661,9 @@ which the slice service warns may be a file in inches read as millimetres.
 The page also reads each file itself, to draw it. A file the page cannot read is, in
 almost every case, one the slice service refuses, and the slice service's notification is
 the one shown. If the slice service accepts a part that the page cannot draw, that is a
-defect in the wizard. The part is not added, the wizard's own notification says that
-PenguinSlicer could not show the part and that it cannot be imported, and the failure
-reaches the server's log
+defect in the wizard. The part is not added, the wizard's own notification says "PenguinSlicer
+could not show this part, so it cannot be imported.", with the remedy "Export the part again
+as a binary STL and add it again.", and the failure reaches the server's log
 ([What the wizard reports about itself](#what-the-wizard-reports-about-itself)).
 
 A part whose upload gets no answer is not refused. Its row stays, because the part is
@@ -1563,6 +1563,13 @@ result arrives a moment after it was asked for, so each of these jobs needs a st
 "not yet" (a part's row without its picture, an instance selected before its patches
 appear), and a part's geometry is handed between two threads, which the page's memory
 target has to allow for.
+
+If the worker's own code fails on a plate, which is a defect in the wizard, the
+notification says "PenguinSlicer could not work out the layout of this plate.", with the
+remedy "Reload the page; your parts, layout and settings are kept in this browser.", and
+the failure reaches the server's log. The remedy holds because the parts, the layout and
+the settings are in the browser's storage
+([What the browser keeps](#what-the-browser-keeps-and-why-it-is-the-record)).
 
 ### Reading a part without changing it
 

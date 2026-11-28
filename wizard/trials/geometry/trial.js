@@ -6,9 +6,11 @@ import { drawPart } from './render.js';
 import { readBinaryStl } from '/src/geometry/stl.js';
 import { analysePart } from '/src/geometry/part.js';
 import { placedOutlines } from '/src/geometry/placement.js';
+import { BBOX_COVER_DEG, FLAT_GAP_MM, FLAT_TURN_DEG, MIN_CONTACT_MM2 } from '/src/geometry/constants.js';
 
-// The part's flat faces: the faces of its hull of at least 25 mm² that are mostly the part's
-// own material (not a bridge across a hollow), and whether each got a hull patch. Worked out on
+// The part's flat faces: the faces of its hull of at least MIN_CONTACT_MM2 (25 mm²) that are
+// mostly the part's own material (not a bridge across a hollow), counted as
+// wizard/tests/geometry/real-parts.test.js counts them, and whether each got a hull patch. Worked out on
 // the main thread, untimed, for the trial's question "every real part given hull patches on its
 // flat faces".
 function flatFaces(bytes, units) {
@@ -16,19 +18,19 @@ function flatFaces(bytes, units) {
   const p = part.mesh.positions;
   const n = part.triangleNormals;
   const a = part.triangleAreas;
-  const near = Math.cos(Math.PI / 180);
+  const near = Math.cos((FLAT_TURN_DEG * Math.PI) / 180);
   const out = [];
   part.faces.forEach((face, index) => {
-    if (face.area < 25) return;
+    if (face.area < MIN_CONTACT_MM2) return;
     const d = face.outline.reduce((s, q) => s + q[0] * face.normal[0] + q[1] * face.normal[1] + q[2] * face.normal[2], 0) / face.outline.length;
     let material = 0;
     for (let t = 0; t < a.length; t++) {
       if (n[t * 3] * face.normal[0] + n[t * 3 + 1] * face.normal[1] + n[t * 3 + 2] * face.normal[2] < near) continue;
       const c = [0, 1, 2].map((k) => (p[t * 9 + k] + p[t * 9 + 3 + k] + p[t * 9 + 6 + k]) / 3);
-      if (Math.abs(c[0] * face.normal[0] + c[1] * face.normal[1] + c[2] * face.normal[2] - d) < 0.01) material += a[t];
+      if (Math.abs(c[0] * face.normal[0] + c[1] * face.normal[1] + c[2] * face.normal[2] - d) < FLAT_GAP_MM) material += a[t];
     }
     if (material < 0.5 * face.area) return;
-    const boxCovers = part.patches.some((q) => q.kind === 'box' && q.normal[0] * face.normal[0] + q.normal[1] * face.normal[1] + q.normal[2] * face.normal[2] >= Math.cos((30.5 * Math.PI) / 180));
+    const boxCovers = part.patches.some((q) => q.kind === 'box' && q.normal[0] * face.normal[0] + q.normal[1] * face.normal[1] + q.normal[2] * face.normal[2] >= Math.cos((BBOX_COVER_DEG * Math.PI) / 180));
     out.push({
       face: index, normal: face.normal.map((v) => +v.toFixed(4)), area: +face.area.toFixed(1), material: +material.toFixed(1),
       patch: !face.dropped, dropped: face.dropped, coveredByBoxPatch: boxCovers,

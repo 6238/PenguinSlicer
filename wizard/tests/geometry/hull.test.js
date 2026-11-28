@@ -71,6 +71,15 @@ test('a flat part has no hull: an error the page can show, not an exception of i
   assert.throws(() => convexHull(pts), (err) => err instanceof GeometryError && err.report.code === 'wizard.part_not_drawable');
 });
 
+test('a part whose corners are all at one point, or all on one line, has no hull, each refused for its own reason', () => {
+  const point = new Float64Array([0, 0, 0, 1e-7, 0, 0, 0, 1e-7, 0, 0, 0, 1e-7]);
+  assert.throws(() => convexHull(point), (err) => err instanceof GeometryError
+    && err.report.code === 'wizard.part_not_drawable' && /no size/.test(err.report.detail));
+  const line = new Float64Array([0, 0, 0, 1, 1, 1, 2, 2, 2, 5, 5, 5]);
+  assert.throws(() => convexHull(line), (err) => err instanceof GeometryError
+    && err.report.code === 'wizard.part_not_drawable' && /no width/.test(err.report.detail));
+});
+
 test('fewer than four points have no hull', () => {
   assert.throws(() => convexHull(new Float64Array([0, 0, 0, 1, 0, 0, 0, 1, 0])), GeometryError);
 });

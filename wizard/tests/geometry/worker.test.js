@@ -74,6 +74,18 @@ test('a part never read, or a message the worker does not know, is the page\'s f
   }
 });
 
+test('a read in units other than mm or in is the page\'s fault, reported through the messages as one', () => {
+  const g = createGeometry();
+  const { reply } = ask(g, { id: 4, op: 'read', key: 'spacer', buffer: fileBuffer(join(MADE_PARTS, 'hex-spacer.stl')), units: 'cm' });
+  assert.equal(reply.ok, false);
+  assert.equal(reply.error.code, 'wizard.layout_failed');
+  assert.equal(reply.error.retryable, true);
+  assert.match(reply.error.detail, /units must be "mm" or "in", not "cm"/);
+  // Nothing was read under the key.
+  assert.equal(ask(g, { id: 5, op: 'faces', key: 'spacer' }).reply.error.code, 'wizard.layout_failed');
+  assert.match(ask(g, { id: 6, op: 'faces', key: 'spacer' }).reply.error.detail, /no part was read/);
+});
+
 test('Arrange and the placement check run on parts the worker has read', () => {
   const g = createGeometry();
   ask(g, { id: 1, op: 'read', key: 'spacer-key', buffer: fileBuffer(join(MADE_PARTS, 'hex-spacer.stl')), units: 'mm' });

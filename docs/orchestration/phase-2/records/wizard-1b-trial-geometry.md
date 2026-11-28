@@ -35,8 +35,8 @@ answer on all thirteen.
    and `forget`, each answered `{id, ok, result}` or `{id, ok: false, error}`. To overrule:
    rename the files or messages; only the trial's page and the tests use them so far.
 2. **The geometry's error codes.** The details say a part the page cannot draw gets the
-   wizard's own notification ("PenguinSlicer could not show the part and it cannot be
-   imported") and name no code. I made two error reports: `wizard.part_not_drawable` (a file
+   wizard's own notification (that PenguinSlicer could not show the part and that it cannot
+   be imported) and name no code. I made two error reports: `wizard.part_not_drawable` (a file
    the reader refuses, or a part with no hull), matching the page report's `what` of the same
    name, and `wizard.layout_failed` (a message about a part never read, an unknown message, or
    the geometry failing), matching the report's `layout_failed`. To overrule: change the codes
@@ -118,9 +118,38 @@ answer on all thirteen.
 17. **The main thread is measured by a heartbeat.** The details say the page measures holds
     by the browser's long-task timing. In the trial that timing reported up to about a second
     during the hub's steps, while no answer took over 0.3 s and a 10 ms heartbeat never went
-    more than 15 ms between beats. The trial records both and counts the heartbeat. The page
-    built later should check its long-task figures the same way before reporting them. To
-    overrule: count the long tasks.
+    more than 15 ms between beats; in a rerun the long task moved to another part (hub-150k
+    0 ms, Elevator Block Bottom Inner 519 ms). The trial records both and counts the
+    heartbeat. After review the details' "Keeping the page answering" says so: the heartbeat
+    is the page's measure, and an Open line asks why Chromium reports those tasks. To
+    overrule: count the long tasks, in the details and in `run.py`.
+19. **After review: the placement check's footprints are kept by the part's hull corners.**
+    The reviewer found that the worker kept footprints across `check` messages by the plate
+    configuration's part key, so a key that came to point at another read part (the spacer
+    read in inches after millimetres) answered from the old part's footprints: `[]` for a plate
+    a fresh worker refuses with two `off_plate` and a `too_close`. Confirmed with a test that
+    failed for that reason. The cache is now a `WeakMap` keyed by the hull's corner array of
+    the part as read, then by turn and angle; a part read again gets a new array, and a
+    forgotten part's footprints go with it, so `forget` no longer clears anything. Arrange's
+    own cache is keyed the same way. To overrule: key by the read key instead, which must then
+    also be cleared on every `read`.
+20. **After review: the remedy of `wizard.layout_failed`.** The details quoted two sentences
+    of each geometry error report that the guide did not have, and the remedy "Reload the page;
+    your parts and settings are kept." left out the layout. The guide now carries all four
+    sentences (under its part that cannot be used, and under "Keeping the page answering"), the
+    remedy reads "Reload the page; your parts, layout and settings are kept in this browser.",
+    the wording the guide already uses for what the browser keeps, and a test checks that each
+    sentence of each report is quoted in both files. The promise holds only once the page keeps
+    the plate in the browser's storage, which is built with the page; no user sees the
+    sentence before then. To overrule: change the sentences in the guide, the details and
+    `geometry/errors.js` together.
+21. **After review: declined, the hull's "could not be closed" refusal has no test that
+    produces it.** It guards an inconsistency of the horizon that only corners closer than the
+    hull's tolerance could cause, and no input I could construct reaches it (the hull is
+    checked on random spheres and every real part without meeting it). A test would have to
+    reach into the hull's internals. The two other refusals the reviewer named ("no size",
+    "one line") now have a test each that tells them from the flat refusal. To overrule: find
+    an input that reaches it and add it as a test.
 18. **When the trial fails.** The details give its passing conditions. `run.py` exits 1 when a
     time is missed or a real part's flat face has no hull patch, naming each, after writing the
     results. A flat face is a hull face of at least 25 mm² of which at least half is the part's
@@ -143,6 +172,10 @@ None.
   past 250 ms: it needs the page (items 7 and 10 of "By phase"); the worker's error report for
   it is built and tested.
 - The Layout step itself (the view, the gestures, the messages): item 10, a later batch.
+- After review, the trial was not run again: the fixes change the worker's cache (which only
+  makes a fresh footprint where a stale one was used) and the trial page's constants (the same
+  values by name), not what the trial measures. `summary.json`'s note was brought into line by
+  hand with the note `run.py` now writes, its figures left as recorded.
 
 ## For the owner to look at
 
