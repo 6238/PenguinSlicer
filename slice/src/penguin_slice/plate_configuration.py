@@ -90,7 +90,8 @@ ONE_INSTANCE_TIMEOUT_REMEDY = "Try again; if it is too slow again, simplify the 
 PART_REASONS = ("slice.no_layers", "slice.print_empty")
 REST_AREA_MM2 = 0.01          # an instance whose faces on the plate add up to less rests on no face
 FIRST_LAYER_MM, FIRST_LINE_MM = 0.3, 0.62        # the default process's first layer: height, line width
-# A warning of Orca's debug log, as slicer.orca_failure puts it into SliceError.details.
+# A warning of Orca's debug log, as slicer.orca_failure puts it into SliceError.details. The
+# lazy match is whole for every label: a label (plate.instance_labels) has no space before its " #n".
 LOGGED_OBJECT_RE = re.compile(r"orca debug log warning: It seems object (.+?) has ")
 REST_MESSAGE = ("{label} touches the plate only along an edge or at a point, so the slicer can give it no first "
                 "layer.")

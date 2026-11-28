@@ -263,8 +263,9 @@ Built: see "Going on without its page" under
 **10. Slice jobs remembered for two hours; the sliced file deleted once stored.** Built:
 see "Remembered for two hours; the sliced file deleted once stored" under
 [Progress, cancellation and cleanup](#progress-cancellation-and-cleanup). What it leaves to
-later items: nothing; the stop of item 14 (built) waits for the running slice job's sliced
-file to be deleted by it. [D90, D100, D298, D299]
+later items: nothing; the stop of item 14 (built) waits until no done slice job holds a
+sliced file the front server has not collected, the running one's and those done before
+the stop alike, or until each such file's record expires. [D90, D100, D298, D299]
 
 **11. A route lists the slice jobs.** Built: see "The list of slice jobs" under
 [Progress, cancellation and cleanup](#progress-cancellation-and-cleanup). What it leaves to
@@ -853,7 +854,12 @@ across there and a box on an edge 0.30 mm. A part that cannot be read again leav
 name instances none of which is so named: Orca's evidence then points elsewhere, and the
 general sentence keeps its warnings. The fast suite holds both conditions
 (`tests/test_errors.py`, `TestRestsOnAnEdge`; `tests/test_mesh.py`,
-`TestFirstLayerSection`). The upstream check pins it
+`TestFirstLayerSection`), and the rule's figures with cases near its threshold through the
+fake Orca's general failure: the box on its edge is named under a 0.4 mm line and under a
+0.4 mm first layer and not under a 0.25 mm line; a process file of its own, with no
+overrides, decides by its own first layer (0.25 mm line or 0.8 mm first layer: not named;
+0.9 mm line under 0.8 mm: named); and the contract example's bracket on its hull face is
+named under the default process. The upstream check pins it
 (`test_a_part_resting_on_an_edge_has_no_first_layer_unless_supported_on_a_raft`). The
 upstream check slices a bracket laid by a `rotation` on a face of the part itself
 (`test_a_rotation_and_a_part_in_inches_slice_where_the_checks_place_them`): Orca's first

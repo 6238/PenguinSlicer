@@ -1277,6 +1277,29 @@ class TestAskedToStop:
         assert [e["state"] for e in logs if e["job"] == running] == ["queued", "running", "done", "file_deleted"]
         executor.shutdown(wait=True)
 
+    def test_every_waiting_slice_job_ends_with_shutdown_and_none_runs_after_the_running_one(self):
+        blocking = Blocking(cancellable=True)
+        started = []
+
+        def worker(job_id, payload, context):
+            started.append(job_id)
+            return blocking(job_id, payload, context)
+        pool, _logs, executor = threaded_pool(worker)
+        running = pool.submit(user_key="a")
+        assert blocking.started.wait(FAILSAFE_S)
+        waiting = [pool.submit(user_key=f"w{n}") for n in range(jobs.MAX_QUEUED)]
+        assert len(waiting) >= 2
+        assert pool.stop() == waiting
+        for job_id in waiting:
+            report = pool.get(job_id)
+            assert (report["state"], report["cancel_reason"]) == ("cancelled", "shutdown")
+        blocking.release.set()
+        assert wait_final(pool, running)["state"] == "done"
+        assert pool.delete_file(running)[0] == "deleted"
+        assert pool.drained()
+        executor.shutdown(wait=True)
+        assert started == [running]
+
     def test_a_submission_after_the_stop_is_refused_stopping_and_a_repeat_is_answered(self):
         pool, _logs = make_pool(executor=HeldExecutor())
         first = pool.submit(user_key="a", plate_id="p1", submission_id="s1")
@@ -1332,6 +1355,14 @@ class TestAskedToStop:
         clock.now += jobs.RECORD_TTL_S
         pool.sweep()                     # nothing collected it: it goes with its record
         assert pool.drained()
+
+    def test_a_done_slice_job_with_no_result_holds_no_file_and_never_holds_the_stop(self):
+        pool, _logs = make_pool(lambda job_id, payload, context: None)
+        job_id = pool.submit()
+        assert pool.get(job_id)["state"] == "done"
+        pool.stop()
+        assert pool.drained()
+        assert pool.delete_file(job_id) == ("deleted", None)
 
     def test_an_empty_pool_is_drained_at_once(self):
         pool, _logs = make_pool()

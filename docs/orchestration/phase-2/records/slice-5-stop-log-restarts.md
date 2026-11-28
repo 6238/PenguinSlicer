@@ -192,6 +192,41 @@ and in [the guide](../../../../slice/README.md).
     not of this batch. Minor 7 (not every test seen to fail first): nothing to change; Targets
     missed 2 discloses it, and every test of the review's fixes was seen to fail first.
 
+### After the second review
+
+24. **A stop ends every waiting slice job (blocking finding 1).** The documents say a stop
+    "ends each waiting slice job early"; no test held more than one. Added
+    `test_every_waiting_slice_job_ends_with_shutdown_and_none_runs_after_the_running_one`:
+    `MAX_QUEUED` (2) waiting slice jobs behind the running one, `stop()` returns both, both
+    end `cancelled` with `shutdown`, and the worker is started for the running one only.
+    Seen to fail under the reviewer's mutation (`[...][:1]`); the code was right, so only the
+    test changed.
+25. **The first-layer rule's figures (blocking finding 2).** Added to `TestRestsOnAnEdge`,
+    through the fake Orca's general failure: the box on its edge with a 0.4 mm line and with
+    a 0.4 mm first layer, named; a process file of the test's own, with no overrides, whose
+    first layer is 0.25 mm line (not named), 0.8 mm high (not named) or 0.9 mm line under
+    0.8 mm (named); the contract example's bracket on its hull face under the default
+    process, named. The process file is swapped into the read plate configuration with
+    `dataclasses.replace`, since the catalog holds no process whose first layer differs from
+    the default this way. Each of the reviewer's three mutations, made alone, fails 4, 4 and
+    2 of these tests; the code was right, so only the tests changed. The details file's
+    sentence on the fast suite now lists them.
+26. **Item 10's paragraph (minor finding 1).** Now says what decision 2 and "Asked to stop"
+    say: the stop waits until no done slice job holds an uncollected sliced file, the running
+    one's and those done before the stop alike, or until each such record expires.
+27. **The `_drained` term `r["result"] is None` (minor finding 3).** Kept, and a test added
+    (`test_a_done_slice_job_with_no_result_holds_no_file_and_never_holds_the_stop`), seen to
+    fail with the term removed: `delete_file` answers such a job "deleted" without marking
+    it, so without the term a done slice job with no result would hold the stop until its
+    record expired.
+28. **Finding declined: minor finding 2 (`LOGGED_OBJECT_RE` and a name holding " has ").** The
+    case cannot arise. The names in Orca's warnings are the instances' labels, which
+    `plate.instance_labels` builds from `plate.sanitize_part_name`: letters, digits, `-` and
+    `_`, every other character `_`, then " #n". A part named "Arm has holes" is labelled
+    `Arm_has_holes #1`, so the lazy match stops at the one " has " after the label. A test
+    pins it (`test_orcas_debug_log_naming_an_instance_whose_name_holds_has_is_explained`,
+    which names `Arm_has_holes #1`), and a comment by the expression says why it is whole.
+
 ## Targets missed
 
 1. **"An instance laid on any face of its part's convex hull" does not always slice.** A hull
@@ -261,5 +296,5 @@ plates by the service's own rotation) was done by slice-1; slice-1's (items 7, 5
   prints the three error reports and the slice with supports and a raft; `-k ball_that_prints`
   prints the ball alone (done) and beside the block on a stem (`slice.orca_failed`, the
   block's warning, the ball named nowhere).
-- The fast suite and its branch coverage: `make -C slice test` (1,660 tests) and
+- The fast suite and its branch coverage: `make -C slice test` (1,669 tests) and
   `make -C slice coverage` (100%).
