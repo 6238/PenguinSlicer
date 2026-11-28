@@ -1,0 +1,110 @@
+{
+ "answer": {
+  "ok": true,
+  "layers": 344
+ },
+ "fetch_ms": 24.099999964237213,
+ "load_hold_ms": 149,
+ "full_look_ms": 2772.399999976158,
+ "summary": {
+  "view": "preview",
+  "fps_typical": null,
+  "fps_worst": null,
+  "first_layer_ms": 908.1999999880791,
+  "longest_hold_ms": 149,
+  "instances": 16,
+  "sliced_file_bytes": 8826407,
+  "sliced_file_lines": 1063371
+ },
+ "decimate": 4,
+ "groups": [
+  310044,
+  330040,
+  18106,
+  340091
+ ],
+ "view_px": [
+  652,
+  489
+ ],
+ "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "plate": "four-each-b-supports",
+ "browser": "Chromium 159.0.8154.6",
+ "load_longest_task_ms": 138,
+ "load_average_before": [
+  3.33154296875,
+  2.1494140625,
+  1.32958984375
+ ],
+ "turn": {
+  "frames": 60,
+  "fps_typical": 15.015015015014933,
+  "fps_worst": 8.568980291345277,
+  "frame_ms_worst": 116.70000000000073,
+  "rest_ms": 611.5999999642372,
+  "longest_hold_ms": 179,
+  "longest_task_ms": 108
+ },
+ "layers": {
+  "frames": 60,
+  "fps_typical": 20,
+  "fps_worst": 12.004801920768282,
+  "frame_ms_worst": 83.30000000000018,
+  "rest_ms": 611.5,
+  "longest_hold_ms": 145,
+  "longest_task_ms": 77
+ },
+ "load_average_after": [
+  3.62548828125,
+  2.22998046875,
+  1.3603515625
+ ],
+ "memory": {
+  "browser": 107.953125,
+  "renderer": 417.5546875,
+  "gpu": 275.92578125,
+  "network.mojom.networkservice": 73.26171875,
+  "page_peak_mb": 693.48046875
+ },
+ "look": {
+  "covered": 0.3369609856262834,
+  "groups_top": [
+   0.11384615384615385,
+   0.00078976465013426,
+   0.09139788343073764,
+   0.03906491865424103
+  ],
+  "groups_mid_layer": [
+   0.10875691044068868,
+   0.0034433738745853737,
+   0.09282261885957985,
+   0.039791502132364556
+  ],
+  "groups_present": 4,
+  "groups_seen": 4,
+  "changes_with_layer": 0.020742378771126203,
+  "ghost_mid_layer": 0.023560259042805246,
+  "covered_after_context_lost": 0.3369609856262834,
+  "ghost_after_context_lost": 0.023560259042805246,
+  "passes": true
+ },
+ "renders": [
+  "default.png",
+  "top.png",
+  "edge-on.png",
+  "edge-on-side.png",
+  "zoom.png",
+  "zoom-edge-on.png",
+  "zoom-top.png",
+  "default-layer-172.png",
+  "zoom-layer-172.png",
+  "default-moving.png"
+ ],
+ "problems": [],
+ "machine": {
+  "cpus": 8.0,
+  "memory_gb": 12.0,
+  "arch": "aarch64",
+  "system": "Linux"
+ }
+}

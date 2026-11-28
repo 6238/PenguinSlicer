@@ -1,0 +1,110 @@
+{
+ "answer": {
+  "ok": true,
+  "layers": 132
+ },
+ "fetch_ms": 8.100000023841858,
+ "load_hold_ms": 148,
+ "full_look_ms": 1013.9000000357628,
+ "summary": {
+  "view": "preview",
+  "fps_typical": null,
+  "fps_worst": null,
+  "first_layer_ms": 515.8999999761581,
+  "longest_hold_ms": 220,
+  "instances": 2,
+  "sliced_file_bytes": 2025890,
+  "sliced_file_lines": 224880
+ },
+ "decimate": 1,
+ "groups": [
+  86059,
+  77910,
+  3693,
+  59581
+ ],
+ "view_px": [
+  652,
+  489
+ ],
+ "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "plate": "pair-supports",
+ "browser": "Chromium 159.0.8154.6",
+ "load_longest_task_ms": 140,
+ "load_average_before": [
+  4.76318359375,
+  2.9306640625,
+  1.67431640625
+ ],
+ "turn": {
+  "frames": 60,
+  "fps_typical": 15.015015015015036,
+  "fps_worst": 12.004801920768347,
+  "frame_ms_worst": 83.29999999999973,
+  "rest_ms": 211.5,
+  "longest_hold_ms": 153,
+  "longest_task_ms": 84
+ },
+ "layers": {
+  "frames": 60,
+  "fps_typical": 29.94011976047937,
+  "fps_worst": 14.992503748125774,
+  "frame_ms_worst": 66.70000000000073,
+  "rest_ms": 200,
+  "longest_hold_ms": 150,
+  "longest_task_ms": 76
+ },
+ "load_average_after": [
+  5.1025390625,
+  3.03173828125,
+  1.7138671875
+ ],
+ "memory": {
+  "browser": 99.59375,
+  "renderer": 234.34375,
+  "gpu": 184.0546875,
+  "network.mojom.networkservice": 73.3671875,
+  "page_peak_mb": 418.3984375
+ },
+ "look": {
+  "covered": 0.7435918496288106,
+  "groups_top": [
+   0.06668140894013584,
+   0,
+   0.03961143579213394,
+   0.04334860211656926
+  ],
+  "groups_mid_layer": [
+   0.044842836834623284,
+   0.04088137734954984,
+   0.002694676986258095,
+   0.046757226346548726
+  ],
+  "groups_present": 4,
+  "groups_seen": 4,
+  "changes_with_layer": 0.07893539725161902,
+  "ghost_mid_layer": 0.08071078818512084,
+  "covered_after_context_lost": 0.7435918496288106,
+  "ghost_after_context_lost": 0.08071078818512084,
+  "passes": true
+ },
+ "renders": [
+  "default.png",
+  "top.png",
+  "edge-on.png",
+  "edge-on-side.png",
+  "zoom.png",
+  "zoom-edge-on.png",
+  "zoom-top.png",
+  "default-layer-66.png",
+  "zoom-layer-66.png",
+  "default-moving.png"
+ ],
+ "problems": [],
+ "machine": {
+  "cpus": 8.0,
+  "memory_gb": 12.0,
+  "arch": "aarch64",
+  "system": "Linux"
+ }
+}

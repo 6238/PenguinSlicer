@@ -1,0 +1,36 @@
+{
+ "plate_id": "0e2eb989-3821-56db-80e2-b7ca1945e564",
+ "submission_id": "f359ab1f-b8b4-5e98-be41-d78747bef682",
+ "parts": {
+  "elevator-block-top": {
+   "name": "Elevator Block Top",
+   "sha256": "6a25d7cb3bc9059207c8be4abfbf172dc877c1d5cd263dfcf289284f9980a629",
+   "units": "mm"
+  },
+  "elevator-block-carriage": {
+   "name": "Elevator Block Carriage",
+   "sha256": "d49c63d0cb761a9ce6f0658ace43428c376f1af1fc09ae397dd1fe884c10532b",
+   "units": "mm"
+  }
+ },
+ "instances": [
+  {
+   "ref": "elevator-block-top",
+   "orientation": "+y",
+   "angle": 0,
+   "x": 110.0,
+   "y": 160.0
+  },
+  {
+   "ref": "elevator-block-carriage",
+   "orientation": "+y",
+   "angle": 0,
+   "x": 230.0,
+   "y": 160.0
+  }
+ ],
+ "overrides": {
+  "enable_support": "1",
+  "support_type": "tree(auto)"
+ }
+}

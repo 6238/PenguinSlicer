@@ -500,7 +500,7 @@ Settings). The page acts on a report's `code` and `retryable`, never on the stat
 | Printer delivery's, from phase 5: a send refused, a print that failed or waits for a person, a wrong pairing code, a limit passed | `delivery.*` | Printer delivery | Shows them as they are |
 | The front server's own: a sign-in that could not be made, a group the user is not in, a sliced file that has expired or would be too large | `front.*` ([its list](../contracts/wizard-front-server.md#the-front-servers-error-reports)) | The front server | Shows them as they are |
 | The Onshape integration's, from phase 4: a part Onshape cannot export | Named in phase 4 | The Onshape integration | Shows them as they are |
-| In the browser: no answer from the front server, an answer of the front server the page cannot read, the page's own checks before sending (a file over the size limit, a twenty-sixth part, a plate over 150 instances, a setting's value that does not fit), every placement problem on the Layout step, a file the page itself cannot read, a 3D view that is lost, storage that fails | `wizard.*` (`wizard.bad_answer`, `wizard.layout_failed`, `wizard.part_not_drawable`, `wizard.part_over_size`, `wizard.file_unreadable`, `wizard.too_many_parts`, `wizard.too_many_instances`, `wizard.setting_refused`, `wizard.plate_not_ready`, `wizard.plate_configuration_over_size`, …): the wizard's own, gathered in `wizard/src/sentences.js`, for the Preview step's checks before sending (`wizard.plate_not_ready`, `wizard.plate_configuration_over_size`) in `wizard/src/slicing-sentences.js`, and, for the geometry, `wizard/src/geometry/errors.js` (not `messages.js`, a name the worker's module has) | The wizard | Writes them |
+| In the browser: no answer from the front server, an answer of the front server the page cannot read, the page's own checks before sending (a file over the size limit, a twenty-sixth part, a plate over 150 instances, a setting's value that does not fit), every placement problem on the Layout step, a file the page itself cannot read, a 3D view that is lost, storage that fails | `wizard.*` (`wizard.bad_answer`, `wizard.layout_failed`, `wizard.part_not_drawable`, `wizard.part_over_size`, `wizard.file_unreadable`, `wizard.too_many_parts`, `wizard.too_many_instances`, `wizard.setting_refused`, `wizard.plate_not_ready`, `wizard.plate_configuration_over_size`, `wizard.preview_unreadable`, `wizard.preview_failed`, `wizard.preview_not_drawable`, …): the wizard's own, gathered in `wizard/src/sentences.js`, for the Preview step's checks before sending (`wizard.plate_not_ready`, `wizard.plate_configuration_over_size`) in `wizard/src/slicing-sentences.js`, for the geometry, `wizard/src/geometry/errors.js` (not `messages.js`, a name the worker's module has), and for the layer preview `wizard/src/preview/preview-errors.js` ([The layer preview](#the-layer-preview)) | The wizard | Writes them |
 
 States that are not failures are the wizard's to put into words, from the figures it is
 sent: a slice waiting behind others or waiting while the slicer restarts, a busy printer, a
@@ -2174,6 +2174,87 @@ shows the four colours, changes when the layer bar or the view moves, and draws 
 context is lost, any comparison with a kept picture with a wide tolerance; the same for the Layout
 view.
 
+**As built, the view.** The layer preview is the page's own view, `createLayerPreview(element,
+options)` in `wizard/src/panel/layer-preview.js`, which the Preview step's result places in the
+mockup's `#viewer-container` (a `.gl-view`); the result's card, the readout and its two buttons,
+**Reset view**, the "?" and the colour key are the Preview step's, around it. The view puts its
+canvas (`.gl-canvas`) first in the element and the mockup's layer bar (`#layer-slider.layer-slider`
+with its `.ls-track`, `#ls-fill.ls-fill` and `#ls-thumb.ls-thumb` holding `#ls-label`,
+`role="slider"`; the mockup's ids, so the page holds one view) after it, hidden until a file is
+drawn and again after a failure.
+Its options: `frames` (the frame seam), `clock` (the clock seam, for its own heartbeat of
+`hold-meter.js`), `startWorker` (`startPreviewWorker` of `wizard/src/seams/preview-worker.js`),
+`printer` (`{min: [x, y], max: [x, y]}`, the plate drawn under the toolpaths; 0 to 340 by 0 to 320
+when left out), `software` (whether the browser draws 3D in software: then a pixel ratio of 1, else
+the screen's up to 2), `report(what, {detail})` (the page's reports about itself:
+`drawing_context_lost` at each lost context, `page_failed` once for a file that cannot be read or
+drawn), `onFailure(error)` (a failure after `show` has resolved to `{ok: true}`, as an error
+report: the drawing failing on a later frame, or when built again after a lost context; the view
+then draws nothing more and hides its bar until the next `show`), `onProgress({stage, fraction})` (`unpacking`, `reading` with how far through the G-code,
+`preparing`; `fraction` `null` where it cannot be known) and `onLayer({index, layers, z})` (each
+change of layer, for the readout: `readout(index, layers, z)` of `wizard/src/preview/layer-bar.js`
+gives "134 / 134 · 40.2 mm"). Its methods: `show(bytes, plate, {since})` draws the sliced file
+`bytes` (an `ArrayBuffer`, kept by the caller, never stored), with the ghost of `plate`
+(`{instances, meshes}`: the plate configuration's instances and each part's corners for drawing
+under the key its instances name, as `geometry.mesh(key).positions` gives them; `null` for no
+ghost), the first layer timed from `since` (the moment the Preview step opened, on the frame seam's
+clock; the call itself when left out); it resolves once the first layer is drawn, to `{ok: true,
+layers}`, or to `{ok: false, error}` with an error report, or to `{ok: false, stopped: true}` when a
+later `show` or `destroy` came first, which also stops the worker. `layer()` gives `{index, layers,
+z}`; `setLayer(index)` and `stepLayer(±1)` move the bar (the two small buttons); `resetView()` puts
+the camera back on the instances; `summary()` gives the fields of the drawing summary the view
+knows (`view`, `fps_typical`, `fps_worst`, `first_layer_ms`, `longest_hold_ms`, `instances`,
+`sliced_file_bytes`, `sliced_file_lines`), to which the caller adds the machine's and sends with item
+18 (`fps_typical` and `fps_worst` are `null` while the view has not moved, and the front server
+refuses a summary without them, so item 18 sends none for such a use); `destroy()` stops everything and removes the canvas and the bar. For the tests, the renders and
+the measurements it also has `look({ghost})` (the pixels of the full look, read on the frame that
+puts it on the screen), `untilRest()`, `setView(name)` with the fixed angles of `views`,
+`showMoving()` and `stillAgain()`, `drive(kind, steps)` (the first trial's paths, `turn` and
+`layers`, a step a frame), `state()`, `decimate()` and `groups()`.
+
+**As built, the reading.** A worker of its own for each sliced file (`wizard/src/preview.worker.js`,
+started through the seam and stopped once it has answered, which gives back its memory; its one
+message is `prepare` of `wizard/src/preview/reading.js`, run in the tests' own thread by
+`tests/fakes/preview-worker.js`) reads the archive (`preview/gcode.js`, inflated by the browser's
+own `DecompressionStream`), reads the G-code twice (the full reading, arcs within 0.02 mm and runs
+merged within 0.01 mm, and the coarser one for the look while moving, 0.1 and 0.05 mm), makes the
+boxes (`preview/boxes.js`, `MOVING_BUDGET` 200,000, `MAX_BOX_MM` 5.1) and places the ghost
+(`preview/ghost.js`, by the plate configuration's one transform, `orientation` or `rotation` alike),
+and transfers every buffer to the page. An arc of a damaged file is cut into at most 4,096 chords.
+The bytes and the parts' corners are copied to the worker, never transferred. The drawing is
+`preview/drawing.js` on WebGL 2 directly, three.js giving only the camera and its controls
+(`PIECE` 100,000 boxes, `UPLOAD_BYTES` 8 MB); the frame rate of the summary is
+`preview/frame-stats.js`. A lost drawing context draws again from the prepared data the view keeps,
+the ghost included. A drawing gives back every buffer, vertex array, framebuffer, renderbuffer,
+program, shader and fence it made at once (`dispose()`), when a new `show` starts, on a failure, on
+`destroy` and when it fails while being built, so that a second show never holds two drawings'
+graphics memory until garbage collection.
+
+**The preview's failures,** the wizard's own, in `wizard/src/preview/preview-errors.js`:
+
+| Code | When | Message | Remedy | Retryable |
+|---|---|---|---|---|
+| `wizard.preview_unreadable` | The sliced file is not a zip archive, has no `Metadata/plate_1.gcode`, cannot be inflated, has no layers, has layers but no extrusion to draw, has a layer taller than a box can be, or has a `; Z_HEIGHT:` that is not a number of millimetres from 0 up or a `; LAYER_HEIGHT:` that is not one above 0 (the detail names the line) | PenguinSlicer could not read this plate's sliced file to draw its preview. | Slice the plate again; the sliced file can still be downloaded on the Send step. | no |
+| `wizard.preview_failed` | The preview's worker fails as a whole, or the drawing code fails, or the page gives an instance no part's corners: a fault of the page's own | PenguinSlicer could not draw the layer preview of this plate. | Reload the page; your parts, layout and settings are kept in this browser. | yes |
+| `wizard.preview_not_drawable` | The browser gives no WebGL 2 context | This browser cannot draw the layer preview: its 3D drawing is turned off or missing. | Turn on hardware acceleration in the browser's settings, or use a current Chrome; the sliced file can still be downloaded on the Send step. | no |
+
+Each is also reported once as `page_failed`, with its code and detail. Tests: on Node, the reading
+on the two small real sliced files of `wizard/tests/sliced/` (made by Orca 2.4.2 through the slice
+service, with their plate configurations, listed with their hashes in
+[their README](tests/sliced/README.md)) and on G-code made in the test, every code above produced
+on purpose, the progress, the worker stopped once it has answered or when no longer wanted; in
+Chromium (`tests_browser/test_layer_preview.py`), the coarse checks of the first trial on those
+files, the show answered on a frame that drew toolpaths, the ghost and its absence at the top
+layer, two lost contexts in one page each reported, the bar by keys and by a drag (the look while
+moving from the press until the release), the summary, the first layer timed from the caller's
+`since`, a file that is not a sliced file (reported once), the drawing made to fail on purpose
+while it is built, after the first layer and when built again after a lost context (one
+`page_failed`, no bar, the last two told through `onFailure`), a later `show` and `destroy`
+stopping the earlier one and its worker at once, every graphics object of a drawing given back by
+a new `show` and by `destroy`, and the walls' sides only ever darker than their blue. Two rules of
+the look are guarded by the test renders alone: the current layer at least two pixels wide and
+unshaded.
+
 ## The Send step
 
 One decision: send this sliced plate to the printer now, or download it. Its look is `#send-live`,
@@ -2761,7 +2842,7 @@ or is not yet in a contract:
 | Tooltip delay; printer details close | 150 ms; 300 ms | The mockup | Fake clock |
 | Quiet retrying; retrying in all | 20 s; 300 s, waits doubling 1 to 30 s | The guide | Fake clock |
 | A progress stream counted as failed | 20 s failing to reopen, 45 s open and silent | The guide | Fake clock, fake front server |
-| The main thread held | Never over 250 ms, any step, any plate up to the limits, on the machine without a graphics card | Set; measured for reading a part and drawing its picture: at most 12 ms in Chromium on that machine, `hub-150k.stl` included; for a malformed file of the largest size, under 250 ms; while dragging at 150 instances (missed), 0.39 to 0.49 s for the real mix, 0.22 to 0.46 s for 150 spacers and 0.10 to 0.28 s for 150 of `hub-150k.stl` drawn coarse (`make -C wizard measure-layout`, six runs) | Measured by the page in tests and real use |
+| The main thread held | Never over 250 ms, any step, any plate up to the limits, on the machine without a graphics card | Set; measured for reading a part and drawing its picture: at most 12 ms in Chromium on that machine, `hub-150k.stl` included; for a malformed file of the largest size, under 250 ms; while dragging at 150 instances (missed), 0.39 to 0.49 s for the real mix, 0.22 to 0.46 s for 150 spacers and 0.10 to 0.28 s for 150 of `hub-150k.stl` drawn coarse (`make -C wizard measure-layout`, six runs); the layer preview on `blocks-12-supports` (`make -C wizard measure-preview`, five runs on Sat 2026-11-28), the longest hold by the heartbeat over loading, turning and dragging the bar was 205, 251 (loading), 340 (turning), 235 (loading) and 155 ms (loading), so missed in two runs of five | Measured by the page in tests and real use |
 | A part's row says it is slow | 4 s | The mockup | Fake clock |
 | One part; different parts; instances | 7.5 MB (150,000 triangles); 25; 150 | The slice service's | One over each |
 | Storage in the browser | 25 parts of 7.5 MB for each tab's plate | Met for one tab in headless Chromium on the machine without a graphics card: stored and read back after a refresh, none refused; several tabs' full plates, and Chrome on the Mac, unmeasured | A full plate stored and reloaded |
@@ -2771,9 +2852,9 @@ or is not yet in a contract:
 | Arrange | Under 2 s for 150 instances | Met: at most 30 ms for 150 of `hex-spacer.stl` (all placed) and 44 ms for a mix of 150 real parts (104 placed, the rest beside the plate) | The same |
 | The placement check | Keeps up with a drag at 150 instances | Met: at most 4.1 ms for each check of a drag at 150 instances, against one frame of 100 ms at 10 frames a second | The same |
 | The Layout view | 30 frames a second with a graphics card, 10 without, while dragging or turning, at 150 instances of parts up to 150,000 triangles | Met without a graphics card, with the coarse copies while moving: 150 instances of the real mix dragged at 16 to 19 and turned at 17 to 20, 150 of `hub-150k.stl` dragged at 14 to 42, 150 of `hex-spacer.stl` at 34 to 47, over seven runs on a shared machine; the main thread held 0.39 to 0.49 s during a drag on the real mix, 0.22 to 0.46 s on the spacers and 0.10 to 0.28 s on `hub-150k.stl` (missed). With a graphics card, unmeasured | `make -C wizard measure-layout`, in Chromium; on the Mac, Chrome; reported in real use |
-| The layer preview | 30 with a graphics card, 10 without, while turning or dragging the layer bar, on a 14.1 MB sliced file and at 150 instances; a simpler look while moving | Without a graphics card, method C of the first trial: 10 to 20 typical on the three plates (10.0 turning at `blocks-12-supports`); with one, unmeasured | Timed in Chrome on both machines; reported in real use; test renders |
-| The first layer drawn | Within 5 s, print time and filament at once | The first trial, method C: 1.5 to 2.7 s from fetching the sliced file to the first frame with toolpaths (the look while moving; the full look 2.4 to 8.5 s) | The same |
-| The page's memory | Under 1 GB at the largest plate with the preview of a 14.1 MB sliced file | The first trial, method C: 839 MB at that plate (the page's and the graphics process's peaks) | Measured in Chrome at that plate |
+| The layer preview | 30 with a graphics card, 10 without, while turning or dragging the layer bar, on a 14.1 MB sliced file and at 150 instances; a simpler look while moving | Without a graphics card, method C of the first trial: 10 to 20 typical on the three plates (10.0 turning at `blocks-12-supports`); the view as built, in the page (`make -C wizard measure-preview`): 15 to 20 typical turning and dragging the bar on the three plates, 8.6 to 12 worst, the main thread held at most 205 ms (heartbeat) and 197 ms (longest task) in the first run, and on `blocks-12-supports` up to 340 ms by the heartbeat over five runs (The main thread held, above); with one, unmeasured | Timed in Chrome on both machines; reported in real use; test renders |
+| The first layer drawn | Within 5 s, print time and filament at once | The first trial, method C: 1.5 to 2.7 s from fetching the sliced file to the first frame with toolpaths (the look while moving; the full look 2.4 to 8.5 s); the view as built: 0.8 to 1.7 s (the full look 1.5 to 6.5 s) | The same |
+| The page's memory | Under 1 GB at the largest plate with the preview of a 14.1 MB sliced file | The first trial, method C: 839 MiB at that plate (the page's and the graphics process's peaks, `VmHWM` in KiB divided by 1,024); the view as built, in the wizard's page: 992 to 1,016 MiB over five runs on Sat 2026-11-28, under `PAGE_MEMORY_MB`'s 1,024 MiB by 8 to 32 MiB, so met with almost no margin; counted in decimal megabytes the same runs are 1,040 to 1,065 MB, over a decimal gigabyte | Measured in Chrome at that plate |
 | Before a self-reload | 120 s since the user last interacted, or a step change | Set | Fake clock |
 | Reports about itself | A few a minute from one page | Set; the front server has its own limit | Fake clock |
 | A sliced file | At most 50 MB; 8.8 to 14.1 MB on the plates measured | The slice service's and the front server's | A slice whose file would be larger ends with the slice service's sentence |
@@ -2792,8 +2873,8 @@ the other components are: `wizard/` is a `uv` project of its own, with its own
 
 | Folder | What it holds |
 |---|---|
-| `wizard/src/` | The page: `index.html`, its modules, the workers' modules, the style sheets taken over from the mockup's `css/panel.css`, fonts and pictures. As built, `index.html` (the panel's markup), `favicon.svg`, `css/panel.css` and `css/wizard.css`, `main.js` (reads the version from the page's `<meta>`, joins the seams to `api.js`, the storage module, the worker and the panel, exports the running wizard, marks the document started, opens the wizard and marks it opened), `api.js`, `retry.js`, `sentences.js`, `state.js`, `page-constants.js`, `opening.js` and `configuration.js` ([The current group](#the-current-group)), `storage.js` ([What the browser keeps](#what-the-browser-keeps)), `reports.js` and `environment.js` ([What the wizard reports about itself](#what-the-wizard-reports-about-itself)), `geometry-client.js`, `part-picture.js` and `hold-meter.js`, `parts.js` ([The Parts step](#the-parts-step)), `layout.js` and `layout-sentences.js` ([The Layout step](#the-layout-step)), `following.js` ([Progress streams](#progress-streams)), `plate-configuration.js`, `slicing.js` and `slicing-sentences.js` ([Submitting, following and failing, as built](#submitting-following-and-failing-as-built)), the panel in `panel/` ([The panel as a whole](#the-panel-as-a-whole), with each step's drawing), and the worker `geometry.worker.js` with the geometry in `geometry/` ([The geometry, in a worker](#the-geometry-in-a-worker)). The build puts every file flat in `assets/`, so no two files may share a name and an extension |
-| `wizard/src/seams/` | The seams: the only modules that may read the time or reach the network, or touch what a test replaces with a fake. `clock.js` (`now`, `after`, `cancel`), `transport.js` (`send`), `browser-storage.js` (IndexedDB's records and the tab's `sessionStorage`), `locks.js` (the Web Locks), `worker.js` (the worker's port) and `frames.js` (animation frames, for the 3D views) |
+| `wizard/src/` | The page: `index.html`, its modules, the workers' modules, the style sheets taken over from the mockup's `css/panel.css`, fonts and pictures. As built, `index.html` (the panel's markup), `favicon.svg`, `css/panel.css` and `css/wizard.css`, `main.js` (reads the version from the page's `<meta>`, joins the seams to `api.js`, the storage module, the worker and the panel, exports the running wizard, marks the document started, opens the wizard and marks it opened), `api.js`, `retry.js`, `sentences.js`, `state.js`, `page-constants.js`, `opening.js` and `configuration.js` ([The current group](#the-current-group)), `storage.js` ([What the browser keeps](#what-the-browser-keeps)), `reports.js` and `environment.js` ([What the wizard reports about itself](#what-the-wizard-reports-about-itself)), `geometry-client.js`, `part-picture.js` and `hold-meter.js`, `parts.js` ([The Parts step](#the-parts-step)), `layout.js` and `layout-sentences.js` ([The Layout step](#the-layout-step)), `following.js` ([Progress streams](#progress-streams)), `plate-configuration.js`, `slicing.js` and `slicing-sentences.js` ([Submitting, following and failing, as built](#submitting-following-and-failing-as-built)), the panel in `panel/` ([The panel as a whole](#the-panel-as-a-whole), with each step's drawing, the layer preview's view `panel/layer-preview.js` among them), the worker `geometry.worker.js` with the geometry in `geometry/` ([The geometry, in a worker](#the-geometry-in-a-worker)), and the layer preview's worker `preview.worker.js` with its reading and drawing in `preview/` ([The layer preview](#the-layer-preview)). The build puts every file flat in `assets/`, so no two files may share a name and an extension |
+| `wizard/src/seams/` | The seams: the only modules that may read the time or reach the network, or touch what a test replaces with a fake. `clock.js` (`now`, `after`, `cancel`), `transport.js` (`send`), `browser-storage.js` (IndexedDB's records and the tab's `sessionStorage`), `locks.js` (the Web Locks), `worker.js` (the worker's port), `preview-worker.js` (a layer preview worker of its own for each sliced file) and `frames.js` (animation frames, for the 3D views) |
 | `wizard/vendor/` | Third-party code kept as files, each with its release, licence and SHA-256 in [wizard/vendor/README.md](vendor/README.md) |
 | `wizard/tests/` | The tests without a browser window on Node's runner (`*.test.js`), with their fakes in `wizard/tests/fakes/`: `clock.js`, the fake clock (`advance(ms)` fires each timer at its moment and lets the page's promises settle between); `front_server.js`, the fake front server (each request answered, held, dropped or answered without the version, in the order the test sets; its default answers the contract's examples, whole, which `tests/fake_front_server.test.js` checks); `storage.js`, the fakes of the browser's storage, a tab's `sessionStorage` and the browser's locks; and `worker.js`, the worker run in the test's own thread |
 | `wizard/tests/python/` | The tools' tests, on pytest: the build, Node's version check, the trials' server and made parts, the first trial's plates, slicing client and verdicts, the vendored files' hashes and the real parts' hashes. Not `tests/tools/`: the repository's `.gitignore` ignores every folder named `tools/` |
@@ -2914,6 +2995,7 @@ rewritten nor refused, and the content security policy is what stops it loading.
 | `look-parts` | After `build`: the picture of each kept part as its row will show it, at 88 pixels, drawn by the page's own worker in Chromium, into `docs/orchestration/phase-2/look/wizard-3/` (`wizard/tests_browser/look_parts.py`), printing the main thread's longest hold for each part |
 | `look-parts-step` | After `build`: the mockup's Parts step beside the built one, the whole panel, at 320, 480, 520 and 680 px, in each state the mockup shows and in the screens it never drew, into `docs/orchestration/phase-2/look/wizard-4/` with an `index.html` of the pairs (`wizard/tests_browser/look_parts_step.py`) |
 | `look-layout-step` | After `build`: the mockup's Layout step beside the built one at 320, 480, 520 and 680 px, in each state the mockup shows, into `docs/orchestration/phase-2/look/wizard-5b/` with an `index.html` of the pairs (`wizard/tests_browser/look_layout_step.py`) |
+| `measure-preview` | After `build`: the layer preview measured in the page, in Chromium on this machine, on the first trial's three plates (their sliced files in `wizard/trials/sliced/`) and on `wizard/tests/sliced/pair-supports.gcode.3mf` (frames a second typical and worst while turning and dragging the bar, the main thread's longest hold by the page's heartbeat and by the browser's long tasks, the first layer, the full look, memory, the coarse checks of the look), with its test renders at the fixed angles, into `docs/orchestration/phase-2/look/wizard-7/` with an `index.html` (`wizard/tests_browser/measure_preview.py`) |
 | `measure-layout` | After `build`: the Layout view's frame rate while dragging and turning at 150 instances, in Chromium on this machine, into `docs/orchestration/phase-2/look/wizard-5b/frame-rate.json` (`wizard/tests_browser/measure_layout.py`) |
 | `look-preview-step` | After `build`: the mockup's slicing card and failures beside the built ones, the whole panel, at 320, 480, 520 and 680 px, in each state the mockup shows and in those it never drew (waiting behind others, the slicer restarting, the slicer restarted, no room to wait, resting on an edge), into `docs/orchestration/phase-2/look/wizard-6/` with an `index.html` of the pairs (`wizard/tests_browser/look_preview_step.py`) |
 | `look-settings-step` | After `build`: the mockup's Settings step and advanced mode beside the built ones, the whole panel, at 320, 480, 520 and 680 px, in each state the mockup shows, the built page given a configuration and table of settings made from the mockup's own sample, into `docs/orchestration/phase-2/look/wizard-5a/` with an `index.html` of the pairs (`wizard/tests_browser/look_settings_step.py`) |
@@ -3139,7 +3221,12 @@ The page opened directly in a browser, with the development identity and no sign
     [the error report](../contracts/error-report.md)), `slice.rests_on_an_edge` among them.
 13. **The result and the layer preview,** by the method the first trial chose
     ([The result](README.md#the-result);
-    [The sliced file](../contracts/wizard-front-server.md#the-sliced-file)).
+    [The sliced file](../contracts/wizard-front-server.md#the-sliced-file)). The layer preview's
+    view, its drawing and its reading of the sliced file are built on method C, with the layer bar
+    ([The layer preview](#the-layer-preview), "As built, the view"); still to be built is the result
+    around it: the print time and filament, the quiet line, the warnings, the readout with its two
+    buttons, Reset view, the "?" and the colour key, placing the view in the step, and fetching the
+    sliced file for it.
 14. **A sliced plate that expires**
     ([A sliced plate that expires](README.md#a-sliced-plate-that-expires);
     [The sliced file's details](../contracts/wizard-front-server.md#the-sliced-files-details)).
@@ -3255,8 +3342,9 @@ above. Build what each line says is safe; do not build past it.
 
 - **The layer preview's speed without a graphics card**, the first trial of phase 2
   ([The risks to try first in phase 2](README.md#the-risks-to-try-first-in-phase-2)). Measured: method C
-  meets the builder's part. Safe: everything, on method C; open is only the owner's part, the renders
-  and the frame rate on the Mac.
+  meets the builder's part, and the view built on it meets it again in the page
+  ([The layer preview](#the-layer-preview)). Safe: everything, on method C; open is only the owner's
+  part, the renders and the frame rate on the Mac.
 - **Laying on a face, auto-orient and Arrange on real exported parts**, the second trial
   ([The risks to try first in phase 2](README.md#the-risks-to-try-first-in-phase-2)). The builder's
   part passed; open is the owner's look at each part's pictures and the round parts exported from
