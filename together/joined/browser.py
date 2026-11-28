@@ -155,10 +155,18 @@ class Wizard:
     def stage_line(self):
         return self.page.locator("#slice-stage").inner_text()
 
-    def sliced(self):
-        """Wait until the Preview step shows the result; gives the sliced file's details."""
-        self.until("const m = wizard.slicing.model(); return (m.kind === 'done' && m.details) "
-                   "|| ['failed', 'busy', 'expired'].includes(m.kind);", what="the slice's end")
+    def sliced(self, other_than=None):
+        """Wait until the Preview step shows the result; gives the sliced file's details.
+        After an action that slices again, `other_than` names the slice job the page showed
+        before it, whose result or failure may still be on the page for a moment: then only
+        the result of another slice job ends the wait."""
+        if other_than is None:
+            self.until("const m = wizard.slicing.model(); return (m.kind === 'done' && m.details) "
+                       "|| ['failed', 'busy', 'expired'].includes(m.kind);", what="the slice's end")
+        else:
+            self.until("const m = wizard.slicing.model(); "
+                       "return m.kind === 'done' && Boolean(m.details) && m.details.slice !== arg;",
+                       arg=other_than, what=f"the result of a slice job other than {other_than}")
         assert self.kind() == "done", self.state()
         return self.run("return wizard.slicing.model().details;")
 

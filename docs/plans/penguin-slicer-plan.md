@@ -155,9 +155,9 @@ contracts.
   set. Signing in is not part of it; that is the front server's.
 - **The joined suite**, in `together/`, is not a component: it runs the real front server
   and the real slice service together on one machine, through their start commands and
-  interfaces alone. Its first half, which drives the front server's requests as the wizard
-  makes them, and one walk with the real Orca are built; its browser half waits for the
-  wizard's steps ([its README](../../together/README.md)).
+  interfaces alone. Both halves are built: the first drives the front server's requests as
+  the wizard makes them; the second drives the real wizard in a browser over the two
+  servers; each has one walk with the real Orca ([its README](../../together/README.md)).
 
 ```mermaid
 flowchart TB
@@ -325,8 +325,9 @@ As of Fri 2026-11-27:
   so that the phase's whole path can be walked against a fake front server; coming back to
   running work; reloading for a new version; and its reports about itself. Its state is in
   [its guide](../../wizard/README.md).
-- **The front server** is being built in phase 2 (its guide says how far), and **the Onshape
-  integration** has no code.
+- **The front server** is built for phase 2 but for the tests of a previous release (its
+  guide says so), the joined suite runs the wizard in a browser over it and the slice service
+  (Sat 2026-11-28), and **the Onshape integration** has no code.
 
 **What is undecided.** The last part of each of the four guides, "What is undecided or
 unmeasured", holds what remains open in its component: what only a trial, the real host,
@@ -418,11 +419,13 @@ in the wizard; the rest of it waits for phase 5.
   - The joined suite, which runs the front server and the slice service together on one
     machine and drives the wizard in a browser, through the phase's "Done when" and each
     row of the table "The slice container restarts"
-    ([Keeping it true](../architecture.md#keeping-it-true)). Its first half is built: the
-    two servers run together and driven over HTTP as the wizard drives them, through the
-    same walk and every row that needs no page, and one walk with the real Orca; what the
-    joining found is in [the record of the seam](../orchestration/phase-2/seam-front-slice.md).
-    The browser half is written last.
+    ([Keeping it true](../architecture.md#keeping-it-true)). It is built: the two servers
+    run together and driven over HTTP as the wizard drives them, through the same walk and
+    every row that needs no page; the real wizard driven in Chromium over them, through the
+    "Done when", every row that needs a page and four scenarios of common use; and a walk of
+    each with the real Orca. What the joining found is in the records of the two seams,
+    [the front server and the slice service](../orchestration/phase-2/seam-front-slice.md)
+    and [the wizard and the front server](../orchestration/phase-2/seam-wizard-front.md).
 - **Run on one machine** as
   [Running phase 2 on one machine](../../front/README-details.md#running-phase-2-on-one-machine)
   says: the start commands, each setting's default and the development identity's values.

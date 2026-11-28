@@ -47,7 +47,7 @@ def test_a_failed_slice_shows_the_slice_services_own_sentences_and_its_action_sl
     # with the setting in Orca's form.
     slice_service.orca_mode("ok")
     box.locator(".acts button", has_text="Turn on Supports and slice again").click()
-    details_of_slice = w.sliced()
+    details_of_slice = w.sliced(other_than=failed["job"])
     [queued] = [line for line in slice_job_lines(slice_service, "queued")
                 if line["job"] == details_of_slice["slice"]]
     assert queued["overrides"]["enable_support"] == "1"
@@ -104,7 +104,7 @@ def test_a_plate_changed_while_slicing_and_after_replaces_its_slice_and_shows_th
     w.go("layout")
     move_first_instance(w, 10.0)
     w.go("preview")
-    third = w.sliced()
+    third = w.sliced(other_than=second["slice"])
     assert third["slice"] not in (first["job"], second["slice"])
     assert w.run("return wizard.slicing.model().slice;") == third["slice"]
     moved = {i["ref"]: i["x"] for i in queued[second["slice"]]["instances"]}

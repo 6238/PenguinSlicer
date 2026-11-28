@@ -18,7 +18,7 @@ TIMED = env MALLOC_ARENA_MAX=2 timeout --kill-after=10 $(RUN_LIMIT_S)
 # slice service sets Orca's own.
 SERVER_LIMIT = JOINED_SERVER_AS_BYTES=$$(numfmt --from=iec $(RUN_MEMORY))
 PYTEST_ARGS = -m pytest -c $(CURDIR)/pyproject.toml --rootdir=$(CURDIR)
-PYTEST = $(TIMED) $(SERVER_LIMIT) $(PYTHON) $(PYTEST_ARGS)
+PYTEST = $(TIMED) env $(SERVER_LIMIT) $(PYTHON) $(PYTEST_ARGS)
 # Playwright's Chromium, where the wizard's install puts it (wizard/Makefile, BROWSERS): the
 # folder PLAYWRIGHT_BROWSERS_PATH names when it can be written, else ~/.cache/ms-playwright.
 BROWSERS := $(shell d="$${PLAYWRIGHT_BROWSERS_PATH:-$$HOME/.cache/ms-playwright}"; \

@@ -1,8 +1,8 @@
 # The front server
 
-The front server is being built in phase 2. Its foundations exist: the project with its
-tests and the stand-ins they use, the folder that stands for each bucket, the rules every
-request and answer follows, and the log's writer. It offers no request of the wizard's yet.
+The front server is built for phase 2, but for the tests that run a previous release
+against it, which wait for a second release: it serves the real wizard on one machine,
+beside the slice service, and the joined suite drives the two together in a browser.
 Every other sentence of this guide describes the design, and the section
 [What is built in which phase](#what-is-built-in-which-phase) says which phase of
 [the plan](../docs/plans/penguin-slicer-plan.md) builds each piece of it and what is built
@@ -1362,10 +1362,20 @@ unchanged; a part the part store has forgotten; the same plate sliced again; a s
 twice; the slice service's lines in the gathered log; a quiet slice whose streams stay
 open; and the slice container's restart rows that need no page, with two of the front
 server's own. Beside it, one walk from upload to download runs with the real Orca, apart
-from the everyday tests and under the machine's one-Orca-at-a-time lock. Its second half,
-driving the wizard in a browser over the same two servers, is written once the wizard's
-steps exist. What the joining found, where the two sides read their contract differently,
-is in the [record of the seam](../docs/orchestration/phase-2/seam-front-slice.md).
+from the everyday tests and under the machine's one-Orca-at-a-time lock. Its second half
+is built too: the real wizard, as the front server serves it, driven in a browser with no
+graphics card over the same two servers. It walks the phase from adding real parts to the
+download, the downloaded bytes being the ones the slicer made and the layer preview drawing
+them; goes through each row of the slice container's restart table that needs a page, the
+slice service restarted at that row's moment; and adds four scenarios of common use: a slice
+that fails, shown with the slice service's own sentences and the right buttons; a plate
+changed while it slices and after; settings changed in advanced mode, with every setting of
+the real table tried at its limits on both sides; and an open page signing in again after
+the front server restarts on one machine with a new key. The same browser walk runs once
+with the real Orca, so that a plate the page made is sliced by Orca itself. What the joining
+found, where two sides read their contract differently, is in the records of the two seams:
+[the front server and the slice service](../docs/orchestration/phase-2/seam-front-slice.md)
+and [the wizard and the front server](../docs/orchestration/phase-2/seam-wizard-front.md).
 
 What only the real thing can prove: how Railway behaves at a deploy; that Cloudflare
 and Railway pass progress on as it is sent; that a 7.5 MB upload and a 50 MB download
@@ -1495,13 +1505,8 @@ is what the two hours count from.
 
 **Phase 2: one machine, no Onshape, no printer.** The front server runs beside one
 slice service on one machine, with the development identity and a folder for each
-bucket. Built here, beyond what is listed above as built so far:
-
-- the joined suite's second half, which drives the wizard in a browser over the two
-  servers the first half already runs together, once the wizard's steps exist
-  ([How it is tested](#how-it-is-tested)).
-
-The tests that run the previous version's page and the previous slice service against the
+bucket. Everything of this phase is built, the joined suite's two halves included
+([How it is tested](#how-it-is-tested)), but for one kind of test: the tests that run the previous version's page and the previous slice service against the
 new front server start with the second release, since before it there is no previous
 version to run.
 
