@@ -921,3 +921,14 @@ test('a worker that has failed as a whole ends in its notification, never a froz
   assert.equal(notice.what, 'PenguinSlicer could not work out the layout of this plate.');
   assert.equal(notice.todo, 'Reload the page; your parts, layout and settings are kept in this browser.');
 });
+
+test('the Preview step\'s line that the plate was not sliced shows above the usual messages, grey, until the user leaves the step', async () => {
+  const page = await openPage();
+  await addParts(page, [['a.stl', boxPart('a', [20, 10, 5])]]);
+  await enterLayout(page);
+  page.layout.notSliced('Not sliced: with Supports on, instances need 12 mm between them.');
+  assert.deepEqual(page.layout.model().notes.map((n) => [n.kind, n.what]), [['info', 'Not sliced: with Supports on, instances need 12 mm between them.']]);
+  page.store.set({ step: 'parts' });
+  await settleAll(page);
+  assert.deepEqual(page.layout.model().notes, []);
+});

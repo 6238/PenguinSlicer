@@ -318,8 +318,9 @@ As of Fri 2026-11-27:
   six ways of telling, tooltips), matched to the mockup at each width; who the user is and
   the configuration, the browser's storage with a plate for each tab, and the worker's
   reading of a part and its picture; the Parts step; the Layout step; the Settings step
-  with advanced mode; and the layer preview's view, on the first trial's method; none of the
-  other two steps' contents yet. Its state is in
+  with advanced mode; the Preview step's submitting, following and every slice failure,
+  with progress streams; and the layer preview's view, on the first trial's method; not yet
+  the result around the view or the Send step. Its state is in
   [its guide](../../wizard/README.md).
 - **The front server** is being built in phase 2 (its guide says how far), and **the Onshape
   integration** has no code.

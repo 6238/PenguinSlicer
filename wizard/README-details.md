@@ -14,7 +14,10 @@ who the user is and the configuration, as phase 2 has them ([The current group](
 [What the browser keeps](#what-the-browser-keeps), but for what the later items put in it; the
 worker's reading of a part and its picture ([The geometry, in a worker](#the-geometry-in-a-worker));
 the failure reports of [What the wizard reports about itself](#what-the-wizard-reports-about-itself);
-[The Parts step](#the-parts-step); and [The Layout step](#the-layout-step).
+[The Parts step](#the-parts-step); [The Layout step](#the-layout-step); [Progress streams](#progress-streams);
+and of [The Preview step](#the-preview-step), submitting a plate, the slicing card, the slice
+service stopping, no room to wait and every slice failure, up to its sections
+[The result](#the-result) and [A sliced plate that expires](#a-sliced-plate-that-expires).
 Everything else here is the design to build: every screen, state and message of the guide, in
 the builder's terms, with the names the guide leaves out (requests, fields, error codes,
 constants, stored records, tests), the figures, the tests each part needs, and an order in
@@ -151,8 +154,10 @@ Every figure the page's code uses, in one place, read through the fake clock whe
 time. The names are the builder's (*proposed*) except those the plate configuration's
 contract fixes (`MAX_*`, `MARGIN_MM`, `SPACING_*`). As built, the figures of the panel, of
 retrying and of a part's picture (`PANEL_MIN_PX` to `PANEL_LINE_PASSING_S`, `ROW_SLOW_S` to
-`ATTEMPT_TIMEOUT_S`, `PICTURE_CSS_PX`, `PART_COLOURS`, `MAIN_THREAD_HOLD_MS`) are in
-`wizard/src/page-constants.js`; `MAX_PART_BYTES`, `MAX_PART_TRIANGLES`, `MAX_PARTS` and
+`ATTEMPT_TIMEOUT_S`, `PICTURE_CSS_PX`, `PART_COLOURS`, `MAIN_THREAD_HOLD_MS`), of progress
+streams (`STREAM_REOPEN_FAIL_S`, `STREAM_SILENT_S`, `POLL_S`) and of submitting a plate
+(`MAX_PLATE_CONFIGURATION_BYTES`, `PART_MISSING_TRIES`, `SLICED_FILE_KEEP_S`,
+`RECONNECTED_LINE_S`) are in `wizard/src/page-constants.js`; `MAX_PART_BYTES`, `MAX_PART_TRIANGLES`, `MAX_PARTS` and
 `MAX_INSTANCES` in `wizard/src/geometry/constants.js`; `PLATE_UNUSED_H` is in `wizard/src/storage.js`, `REPORTS_PER_MIN`
 in `wizard/src/reports.js`, `HEARTBEAT_MS` in `wizard/src/hold-meter.js`; and the geometry's in
 `wizard/src/geometry/constants.js` and, for the picture, `wizard/src/geometry/picture.js`.
@@ -173,7 +178,9 @@ in `wizard/src/reports.js`, `HEARTBEAT_MS` in `wizard/src/hold-meter.js`; and th
 | `ATTEMPT_TIMEOUT_S`, `UPLOAD_ATTEMPT_TIMEOUT_S` | 15, 60 | An attempt whose headers do not arrive in this time from sending, or whose body then brings no bytes for this time, counts as failed ("the time the builder sets" in the contract) | This file |
 | `STREAM_REOPEN_FAIL_S` | 20 | A progress stream failing to reopen this long counts as a failed request | The guide |
 | `STREAM_SILENT_S` | 45 | An open progress stream carrying nothing, not even a comment line, this long counts as failed | The guide; three times the front server's 15 seconds |
-| `POLL_S` | *proposed* 2 | Asking for the latest progress report in place of a stream ("every second or two") | The guide |
+| `POLL_S` | 2 | Asking for the latest progress report in place of a stream ("every second or two") | The guide |
+| `PART_MISSING_TRIES` | 2 | The times one submission's missing parts are uploaded again; a third `slice.part_missing` is shown as a failure | This file |
+| `RECONNECTED_LINE_S` | 5 | The slicing card's line "Reconnected at …" stays this long | The mockup's |
 | `PRINTER_POLL_S` | *proposed* 10 | Asking for the printer's status (phase 5), within the user's limit on status requests | The contract leaves it to the builder |
 | `RELOAD_IDLE_S` | 120 | Time since the user last interacted before a reload for a new version | The guide; the contract |
 | `PLATE_UNUSED_H` | 12 | A stored plate no tab holds, unused this long, is dropped; a new tab takes up only a plate used more recently | The guide |
@@ -493,7 +500,7 @@ Settings). The page acts on a report's `code` and `retryable`, never on the stat
 | Printer delivery's, from phase 5: a send refused, a print that failed or waits for a person, a wrong pairing code, a limit passed | `delivery.*` | Printer delivery | Shows them as they are |
 | The front server's own: a sign-in that could not be made, a group the user is not in, a sliced file that has expired or would be too large | `front.*` ([its list](../contracts/wizard-front-server.md#the-front-servers-error-reports)) | The front server | Shows them as they are |
 | The Onshape integration's, from phase 4: a part Onshape cannot export | Named in phase 4 | The Onshape integration | Shows them as they are |
-| In the browser: no answer from the front server, an answer of the front server the page cannot read, the page's own checks before sending (a file over the size limit, a twenty-sixth part, a plate over 150 instances, a setting's value that does not fit), every placement problem on the Layout step, a file the page itself cannot read, a 3D view that is lost, storage that fails | `wizard.*` (`wizard.bad_answer`, `wizard.layout_failed`, `wizard.part_not_drawable`, `wizard.part_over_size`, `wizard.file_unreadable`, `wizard.too_many_parts`, `wizard.too_many_instances`, `wizard.setting_refused`, `wizard.preview_unreadable`, `wizard.preview_failed`, `wizard.preview_not_drawable`, …): the wizard's own, gathered in `wizard/src/sentences.js` and, for the geometry, `wizard/src/geometry/errors.js` (not `messages.js`, a name the worker's module has), and for the layer preview `wizard/src/preview/preview-errors.js` ([The layer preview](#the-layer-preview)) | The wizard | Writes them |
+| In the browser: no answer from the front server, an answer of the front server the page cannot read, the page's own checks before sending (a file over the size limit, a twenty-sixth part, a plate over 150 instances, a setting's value that does not fit), every placement problem on the Layout step, a file the page itself cannot read, a 3D view that is lost, storage that fails | `wizard.*` (`wizard.bad_answer`, `wizard.layout_failed`, `wizard.part_not_drawable`, `wizard.part_over_size`, `wizard.file_unreadable`, `wizard.too_many_parts`, `wizard.too_many_instances`, `wizard.setting_refused`, `wizard.plate_not_ready`, `wizard.plate_configuration_over_size`, `wizard.preview_unreadable`, `wizard.preview_failed`, `wizard.preview_not_drawable`, …): the wizard's own, gathered in `wizard/src/sentences.js`, for the Preview step's checks before sending (`wizard.plate_not_ready`, `wizard.plate_configuration_over_size`) in `wizard/src/slicing-sentences.js`, for the geometry, `wizard/src/geometry/errors.js` (not `messages.js`, a name the worker's module has), and for the layer preview `wizard/src/preview/preview-errors.js` ([The layer preview](#the-layer-preview)) | The wizard | Writes them |
 
 States that are not failures are the wizard's to put into words, from the figures it is
 sent: a slice waiting behind others or waiting while the slicer restarts, a busy printer, a
@@ -635,9 +642,9 @@ Tests (fake clock; the fake front server dropping, holding or refusing answers),
 `tests/retry.test.js` and `tests/api.test.js`, and the line's look in
 `tests_browser/test_panel.py`; the row's text at 4 s, the part kept after 300 s and Try again
 adding it, and a repeated upload's one row in `tests/parts.test.js` and
-`tests_browser/test_parts_step.py`; all built except what needs the Layout step and slice jobs
-(the layout and settings unchanged after 300 s, the Layout step working throughout, a repeated
-submission's one slice job). A request its caller stops (`signal`) ends at once as
+`tests_browser/test_parts_step.py`; a repeated submission's one slice job in
+`tests/slicing.test.js`; all built except what needs the Layout step (the layout and settings
+unchanged after 300 s, the Layout step working throughout). A request its caller stops (`signal`) ends at once as
 `{ok: false, stopped: true}` wherever it stands, between attempts, during one or waiting for Try
 again, and leaves the panel line (`board.stop`); tested in `tests/retry.test.js`:
 
@@ -704,6 +711,24 @@ that it carries the same headers as any request and a refusal arrives as an erro
   ([Open items of the other guides](README.md#open-items-of-the-other-guides-that-would-change-the-panel));
   until it is settled, the page follows that job by asking every `POLL_S` and shows nothing
   of the refusal, which needs nothing new of the front server.
+
+**As built.** `followJob` in `wizard/src/following.js` is the one interface, with its `mode`
+`stream` (used) or `ask`, its `onReport` told each report once and in order, and its `onRefused`
+told the error report when the job cannot be followed. A stream is opened by the module that
+makes every request, `api.get(path, {expect: 'stream'})`, which hands it over once its headers
+arrive, its attempt time covering only those; its body is read piece by piece through the
+transport seam's `chunks(onChunk)` (`readChunks` in `wizard/src/seams/transport.js`) and parsed
+by `createEventParser`. Reopening is that request's retrying, so failing to reopen shows the
+panel line at `RETRY_QUIET_S`, which is `STREAM_REOPEN_FAIL_S`; a stream silent for
+`STREAM_SILENT_S` is aborted and reopened with the request's `failingSince` set
+`RETRY_QUIET_S` back, so that the panel line shows from that moment and the 300 seconds count
+from 20 seconds before it. A stream that closes having carried no event at all is reopened
+after the waits of retrying rather than at once, so that a front server closing every stream
+straight away is not asked again with no pause. The `version` event is told through
+`api.heard`. A `progress` event whose data is not a progress report is left aside. An answer to
+asking that holds no progress report is `wizard.bad_answer`. An opened stream is not counted
+in `api.pending()`; a stream still being reopened is. Tests: `tests/following.test.js`,
+`tests/api-stream.test.js`, and the slicing card's no news in `tests/slicing.test.js`.
 
 Tests (the fake front server closing, silencing and refusing streams at chosen moments): a
 stream closed mid-slice is reopened and the page shows the latest report at once; a repeated
@@ -1946,6 +1971,86 @@ Supports on a plate arranged at 5 mm goes to the Layout step with the line and s
 and on a plate at 12 mm submits with `enable_support` `"1"`; `orca_sentence` shows under Details on
 both empty-layers codes and is absent elsewhere even when the fake sends one.
 
+### Submitting, following and failing, as built
+
+`wizard/src/slicing.js` (`createSlicing`) is the behaviour of everything above, from
+[Submitting a plate](#submitting-a-plate) to here; `wizard/src/panel/preview-step.js` draws it
+into the mockup's `#slice-card` (without `#btn-cancel`), `#preview-errors` and
+`#preview-result`; its sentences are in `wizard/src/slicing-sentences.js`.
+
+- **The plate configuration** is `plateConfiguration` in `wizard/src/plate-configuration.js`,
+  made from the stored plate (`storage.plate()`: its parts, its instances as the Layout step
+  keeps them, its settings with their changes) and the configuration in the store. Its fields
+  are in the contract's order; the parts are keyed `p1`, `p2`… in the order of the plate's
+  parts, and only those an instance names are sent; a part's name is cut to 200 characters; an
+  instance's turn is `instanceTurn`'s, `orientation` when the lay is one of the six, else
+  `rotation`. `description` is not sent: the contract lists no such field, and the slice service
+  refuses a field it does not list. `tests/plate-configuration.test.js` makes the contract's
+  example field for field and gives back the instances of the thirteen shared plates; the
+  page's plate configurations of those thirteen plates and of the example were read by the real
+  slice service, each as its `expected` says.
+- **The fingerprint** (`fingerprint`) is 53 bits of cyrb53 over the plate configuration's JSON
+  less `plate_id`, `submission_id` and `local_time` (the time moves each minute); kept with the
+  slice in the stored plate's `slice` as `{id, submission_id, fingerprint, submitted_ms}`.
+  Entering the step with the fingerprint of the slice in hand changes nothing on the step
+  while that slice is slicing or sliced; a plate that failed or found no room to wait is not
+  sliced, so entering the step submits it again with a new `submission_id`. With the
+  fingerprint of the stored slice on a page that has none in hand, the stored slice is
+  followed and nothing is submitted; a stored slice of another fingerprint is never followed.
+  Otherwise a new submission. The store's `sliced` follows the fingerprint after every change of the plate
+  (`plateChanged`, told by the Layout step, the Settings step, the Parts step and the store).
+- **Before sending,** a plate whose filament or profile the configuration does not hold is the
+  wizard's `wizard.plate_not_ready` ("This plate cannot be sliced: its filament or profile is
+  not one the configuration offers.", Back to Settings), and a body over
+  `MAX_PLATE_CONFIGURATION_BYTES` is `wizard.plate_configuration_over_size` (Back to Parts);
+  neither is sent.
+- **Before any answer** the card shows the first stage, "Waiting for the slicer", with the time
+  waited. A running report with no `stage` (the slice service's first after a slice starts)
+  marks no stage current and shows no stage line. While waiting (behind others or while the
+  slice service stops) the time line reads "0:12 waited", with no time left; while slicing
+  "0:31 elapsed · about 0:44 left", "finishing" in the last second, and past 1.3 times the
+  time expected "taking longer than the expected 1:15" in amber (the mockup's). The no-news
+  line names the card's time at the last report, the stage line adds " (last heard)", the ring
+  and the bar stay where they were and the ring's layers go out; the time taken goes on
+  counting. "Reconnected at …" shows for `RECONNECTED_LINE_S`. The line that the slicer
+  restarted stays while the card shows.
+- **The stopping answer** is sent again at the waits of retrying until accepted; at
+  `RETRY_TOTAL_S` the request is parked on the retry board as failing since the first stopping
+  answer, which gives the red line with Try again; Try again, or any other request's answer,
+  sends it again and starts the 300 seconds afresh.
+- **Parts missing** are uploaded again from `storage.partBytes`; a listed part the browser no
+  longer holds, or one listed in another form, ends with the `slice.part_missing` report itself
+  shown; an upload refused ends with that refusal. A third `slice.part_missing`, and one with
+  no `missing_parts`, also send a `page_failed` report.
+- **A slice job unknown** (`404` `front.slice_unknown`, on the stream or on asking) submitted
+  less than `SLICED_FILE_KEEP_S` ago by the page's clock is the slice service restarted; one
+  submitted longer ago has expired, and the page does not slice again by itself: the refusal's
+  own sentences are shown as a failure with Slice again and Back to Layout, and entering the
+  step again slices, as for any plate not yet sliced (the expired message of item 14 is to take
+  the refusal's place).
+- **A running report without a number in `elapsed_s`** (which the contract requires) counts the
+  time taken from the card's start. A report naming another slice job than the one followed is
+  ignored.
+- **A part uploaded again** after `slice.part_missing` must be answered with a record naming
+  the `sha256` and `units` asked for, as for a first upload: once more when it names others,
+  and the second time `wizard.bad_answer`, shown, with a `page_failed` report.
+- **The buttons** are `failureButtons(report)`: the action's button (`enable_supports`,
+  `slice_again`), then the code's row, the first primary. Turn on Supports and slice again sets
+  the Supports quick change to On, waits for the Layout step's check, and with a problem calls
+  `layout.notSliced`, whose grey line shows above the Layout step's messages until the user
+  leaves that step.
+- **Once sliced** (`done`), the step shows one plain line in `#preview-result`, "The plate is
+  sliced. Its print time, filament and layer preview will show here.", until the result and the
+  layer preview (item 13) take its place.
+
+Tests: `tests/slicing.test.js` reaches every row of the Preview step's tables above, every
+code of [When a slice fails](#when-a-slice-fails) with its buttons, Details only on the two
+empty-layers codes, the two hours split at 7,199.9 and 7,200 s, the stopping answer's waits and
+its red line at 300 s; `tests_browser/test_preview_step.py` draws the card, no room to wait and
+a failure in Chromium at 320 px, the sentences as text and the detail never shown;
+`make -C wizard look-preview-step` puts each state beside the mockup's at four widths
+([the pictures](../docs/orchestration/phase-2/look/wizard-6/index.html)).
+
 ### The result
 
 When the progress report is `done`, it carries `sliced_file`, the sliced file's details; a page
@@ -2760,7 +2865,7 @@ the other components are: `wizard/` is a `uv` project of its own, with its own
 
 | Folder | What it holds |
 |---|---|
-| `wizard/src/` | The page: `index.html`, its modules, the workers' modules, the style sheets taken over from the mockup's `css/panel.css`, fonts and pictures. As built, `index.html` (the panel's markup), `favicon.svg`, `css/panel.css` and `css/wizard.css`, `main.js` (reads the version from the page's `<meta>`, joins the seams to `api.js`, the storage module, the worker and the panel, exports the running wizard, marks the document started, opens the wizard and marks it opened), `api.js`, `retry.js`, `sentences.js`, `state.js`, `page-constants.js`, `opening.js` and `configuration.js` ([The current group](#the-current-group)), `storage.js` ([What the browser keeps](#what-the-browser-keeps)), `reports.js` and `environment.js` ([What the wizard reports about itself](#what-the-wizard-reports-about-itself)), `geometry-client.js`, `part-picture.js` and `hold-meter.js`, `parts.js` ([The Parts step](#the-parts-step)), `layout.js` and `layout-sentences.js` ([The Layout step](#the-layout-step)), the panel in `panel/` ([The panel as a whole](#the-panel-as-a-whole), with each step's drawing, the layer preview's view `panel/layer-preview.js` among them), the worker `geometry.worker.js` with the geometry in `geometry/` ([The geometry, in a worker](#the-geometry-in-a-worker)), and the layer preview's worker `preview.worker.js` with its reading and drawing in `preview/` ([The layer preview](#the-layer-preview)). The build puts every file flat in `assets/`, so no two files may share a name and an extension |
+| `wizard/src/` | The page: `index.html`, its modules, the workers' modules, the style sheets taken over from the mockup's `css/panel.css`, fonts and pictures. As built, `index.html` (the panel's markup), `favicon.svg`, `css/panel.css` and `css/wizard.css`, `main.js` (reads the version from the page's `<meta>`, joins the seams to `api.js`, the storage module, the worker and the panel, exports the running wizard, marks the document started, opens the wizard and marks it opened), `api.js`, `retry.js`, `sentences.js`, `state.js`, `page-constants.js`, `opening.js` and `configuration.js` ([The current group](#the-current-group)), `storage.js` ([What the browser keeps](#what-the-browser-keeps)), `reports.js` and `environment.js` ([What the wizard reports about itself](#what-the-wizard-reports-about-itself)), `geometry-client.js`, `part-picture.js` and `hold-meter.js`, `parts.js` ([The Parts step](#the-parts-step)), `layout.js` and `layout-sentences.js` ([The Layout step](#the-layout-step)), `following.js` ([Progress streams](#progress-streams)), `plate-configuration.js`, `slicing.js` and `slicing-sentences.js` ([Submitting, following and failing, as built](#submitting-following-and-failing-as-built)), the panel in `panel/` ([The panel as a whole](#the-panel-as-a-whole), with each step's drawing, the layer preview's view `panel/layer-preview.js` among them), the worker `geometry.worker.js` with the geometry in `geometry/` ([The geometry, in a worker](#the-geometry-in-a-worker)), and the layer preview's worker `preview.worker.js` with its reading and drawing in `preview/` ([The layer preview](#the-layer-preview)). The build puts every file flat in `assets/`, so no two files may share a name and an extension |
 | `wizard/src/seams/` | The seams: the only modules that may read the time or reach the network, or touch what a test replaces with a fake. `clock.js` (`now`, `after`, `cancel`), `transport.js` (`send`), `browser-storage.js` (IndexedDB's records and the tab's `sessionStorage`), `locks.js` (the Web Locks), `worker.js` (the worker's port), `preview-worker.js` (a layer preview worker of its own for each sliced file) and `frames.js` (animation frames, for the 3D views) |
 | `wizard/vendor/` | Third-party code kept as files, each with its release, licence and SHA-256 in [wizard/vendor/README.md](vendor/README.md) |
 | `wizard/tests/` | The tests without a browser window on Node's runner (`*.test.js`), with their fakes in `wizard/tests/fakes/`: `clock.js`, the fake clock (`advance(ms)` fires each timer at its moment and lets the page's promises settle between); `front_server.js`, the fake front server (each request answered, held, dropped or answered without the version, in the order the test sets; its default answers the contract's examples, whole, which `tests/fake_front_server.test.js` checks); `storage.js`, the fakes of the browser's storage, a tab's `sessionStorage` and the browser's locks; and `worker.js`, the worker run in the test's own thread |
@@ -2793,8 +2898,8 @@ searches every `.js` and `.mjs` file under `wizard/src/` outside `wizard/src/sea
 global object (`globalThis.fetch`, `self['fetch']`, `Date['now']`), skipping comments but not
 strings or regular expression literals, and names each file and line. A date made from a
 figure (`new Date(ms)`, `Date.parse`, `Date.UTC`) reads no clock and is allowed. It does not
-see a name built from pieces (`'set' + 'Timeout'`, `Date[n]`); review catches that. A later
-item that needs a frame clock or a progress stream adds it to the seams. So the suite needs
+see a name built from pieces (`'set' + 'Timeout'`, `Date[n]`); review catches that. The frame
+clock is the frames seam; a progress stream is read through the transport seam's `chunks`. So the suite needs
 no network and never waits. `tests/page.test.js` holds `index.html` to the contract's rules
 (one version placeholder, no inline script, no `style` element or attribute, nothing loaded
 from another site), `css/panel.css` to the mockup's byte for byte, and the page's ids to the
@@ -2884,6 +2989,7 @@ rewritten nor refused, and the content security policy is what stops it loading.
 | `look-layout-step` | After `build`: the mockup's Layout step beside the built one at 320, 480, 520 and 680 px, in each state the mockup shows, into `docs/orchestration/phase-2/look/wizard-5b/` with an `index.html` of the pairs (`wizard/tests_browser/look_layout_step.py`) |
 | `measure-preview` | After `build`: the layer preview measured in the page, in Chromium on this machine, on the first trial's three plates (their sliced files in `wizard/trials/sliced/`) and on `wizard/tests/sliced/pair-supports.gcode.3mf` (frames a second typical and worst while turning and dragging the bar, the main thread's longest hold by the page's heartbeat and by the browser's long tasks, the first layer, the full look, memory, the coarse checks of the look), with its test renders at the fixed angles, into `docs/orchestration/phase-2/look/wizard-7/` with an `index.html` (`wizard/tests_browser/measure_preview.py`) |
 | `measure-layout` | After `build`: the Layout view's frame rate while dragging and turning at 150 instances, in Chromium on this machine, into `docs/orchestration/phase-2/look/wizard-5b/frame-rate.json` (`wizard/tests_browser/measure_layout.py`) |
+| `look-preview-step` | After `build`: the mockup's slicing card and failures beside the built ones, the whole panel, at 320, 480, 520 and 680 px, in each state the mockup shows and in those it never drew (waiting behind others, the slicer restarting, the slicer restarted, no room to wait, resting on an edge), into `docs/orchestration/phase-2/look/wizard-6/` with an `index.html` of the pairs (`wizard/tests_browser/look_preview_step.py`) |
 | `look-settings-step` | After `build`: the mockup's Settings step and advanced mode beside the built ones, the whole panel, at 320, 480, 520 and 680 px, in each state the mockup shows, the built page given a configuration and table of settings made from the mockup's own sample, into `docs/orchestration/phase-2/look/wizard-5a/` with an `index.html` of the pairs (`wizard/tests_browser/look_settings_step.py`) |
 | `offered-faces` | Writes the pose of every face offered on the real parts into `contracts/examples/placement/offered-faces/real-parts.json` ([The faces offered, against the real Orca](#the-faces-offered-against-the-real-orca)) |
 | `trials` | Both opening trials' measurements, as [How the trials and measurements are run](#how-the-trials-and-measurements-are-run) says: runs `trials-preview` and `trials-geometry`, the second even when the first fails, and fails when either does |
@@ -3096,12 +3202,15 @@ The page opened directly in a browser, with the development identity and no sign
 11. **Submitting and following:** the plate configuration with `plate_id` and `submission_id`,
     `POST /api/slices` and each answer, parts missing, the slicing card and its states, the stopping
     answer, no room to wait, the progress streams with their 20 and 45 seconds and the asking behind
-    the same interface ([Slicing](README.md#slicing);
+    the same interface. Built ([Submitting, following and failing, as built](#submitting-following-and-failing-as-built),
+    [Progress streams](#progress-streams); [Slicing](README.md#slicing);
     [Slice jobs](../contracts/wizard-front-server.md#slice-jobs),
     [the plate configuration](../contracts/plate-configuration.md#to-be-built),
-    [the progress report](../contracts/progress-report.md)).
-12. **Every slice failure,** with Orca's sentence under Details
-    ([When a slice fails](README.md#when-a-slice-fails); [the error report](../contracts/error-report.md)).
+    [the progress report](../contracts/progress-report.md)), a sliced plate showing a plain line
+    where item 13 goes.
+12. **Every slice failure,** with Orca's sentence under Details. Built
+    ([When a slice fails](#when-a-slice-fails); [When a slice fails](README.md#when-a-slice-fails);
+    [the error report](../contracts/error-report.md)), `slice.rests_on_an_edge` among them.
 13. **The result and the layer preview,** by the method the first trial chose
     ([The result](README.md#the-result);
     [The sliced file](../contracts/wizard-front-server.md#the-sliced-file)). The layer preview's

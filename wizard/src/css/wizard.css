@@ -48,6 +48,9 @@ body { background: #f6f8fa; }
 #wizard .adv-row .ctl input.num-text { width: 78px; padding: 4px 6px; font-size: 13px; text-align: right; }
 #wizard .adv-row .ctl input.text-value { width: 150px; padding: 4px 6px; font-size: 13px; }
 #wizard .adv-rail button .n[hidden] { display: none; }
+/* The slicing card's line that the slicer restarted (designed in the guide), boxed as the mockup's
+   connection lines are, in the panel's grey. */
+#wizard .conn.restart { background: var(--panel-2); border: 1px solid var(--line); color: var(--ink); }
 /* Reset all's confirmation sits over advanced mode. */
 .advanced .confirm-pop { z-index: 60; }
 

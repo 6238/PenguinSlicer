@@ -111,6 +111,33 @@
     </section>
     <section class="step" data-step="preview" hidden>
       <h2>Preview</h2>
+      <!-- the mockup's slicing card, filled by panel/preview-step.js, without its Cancel slice (a
+           slice is not cancelled by hand); the time line says "waited" while the slice waits -->
+      <div id="slice-card" class="slice-card" hidden>
+        <div class="slice-top">
+          <svg id="slice-gauge" viewBox="0 0 64 64" width="64" height="64" aria-hidden="true">
+            <circle cx="32" cy="32" r="27" class="g-track"/>
+            <circle cx="32" cy="32" r="27" class="g-fill" id="g-fill"/>
+            <g class="g-layers" id="g-layers">
+              <rect x="20" y="38" width="24" height="3" rx="1"/>
+              <rect x="20" y="33" width="24" height="3" rx="1"/>
+              <rect x="20" y="28" width="24" height="3" rx="1"/>
+              <rect x="20" y="23" width="24" height="3" rx="1"/>
+            </g>
+          </svg>
+          <div class="slice-text">
+            <div class="slice-title"><span id="slice-pct"></span> <span id="slice-stage"></span></div>
+            <div class="slice-times"><span id="slice-elapsed">0:00</span> <span class="slice-word"></span><span class="slice-sep"> &middot; </span><span id="slice-expected"></span></div>
+            <div class="slice-bar"><div id="slice-bar-fill"></div></div>
+          </div>
+        </div>
+        <ol id="slice-stages" class="slice-stages"></ol>
+        <div id="slice-conn" class="conn" hidden></div>
+        <div class="slice-actions"><span class="hint"></span></div>
+      </div>
+      <div id="preview-errors" aria-live="polite"></div>
+      <!-- the result and the layer preview take this place once the plate is sliced -->
+      <div id="preview-result" hidden></div>
     </section>
     <section class="step" data-step="send" hidden>
       <h2>Send</h2>

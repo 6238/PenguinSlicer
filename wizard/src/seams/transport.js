@@ -3,10 +3,11 @@
 // server (tests/fakes/front_server.js), which answers, holds, drops or repeats each request in
 // the order a test sets.
 //   send({method, path, headers, body, signal}) resolves to an answer
-//     {status, header(name), json(), text(onProgress), bytes(onProgress)} once the answer's
-//     headers arrive, and rejects when the connection fails or `signal` aborts it. text and
-//     bytes read the whole body, calling onProgress(byteCount) each time bytes arrive, so that
-//     the caller can tell a body that is arriving slowly from one that has stalled.
+//     {status, header(name), json(), text(onProgress), bytes(onProgress), chunks(onChunk)} once
+//     the answer's headers arrive, and rejects when the connection fails or `signal` aborts it.
+//     text and bytes read the whole body, calling onProgress(byteCount) each time bytes arrive,
+//     so that the caller can tell a body that is arriving slowly from one that has stalled;
+//     chunks reads a progress stream's body, calling onChunk(text) with each piece of it.
 // Requests go to the page's own address only: `path` is a path such as "/api/me", and the
 // browser attaches the cookie, which the page never reads.
 // Reads a response's whole body into one ArrayBuffer, telling onProgress of each part. When the
@@ -40,6 +41,25 @@ export async function readBody(response, onProgress) {
   return whole.buffer;
 }
 
+// Reads a response's body as text piece by piece, telling onChunk(text) of each piece as it
+// arrives (a progress stream, which lasts as long as its slice job); a character split between
+// two pieces is joined. Resolves when the body ends, and rejects when it is cut off or aborted.
+export async function readChunks(response, onChunk) {
+  if (!response.body) return;
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) {
+      const rest = decoder.decode();
+      if (rest) onChunk(rest);
+      return;
+    }
+    const text = decoder.decode(value, { stream: true });
+    if (text) onChunk(text);
+  }
+}
+
 // A body of bytes (a part's file, up to 7.5 MB) is sent as a Blob of those bytes, unchanged.
 // Sent as an ArrayBuffer, Chromium held the main thread 350 to 560 ms for a 7.5 MB part in the
 // browser tests (where the DevTools protocol watches every request), against about 11 ms as a
@@ -57,6 +77,7 @@ export const fetchTransport = {
       json: () => response.json(),
       text: async (onProgress) => new TextDecoder().decode(await readBody(response, onProgress)),
       bytes: (onProgress) => readBody(response, onProgress),
+      chunks: (onChunk) => readChunks(response, onChunk),
     };
   },
 };

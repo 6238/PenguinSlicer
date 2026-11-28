@@ -1,5 +1,5 @@
 .PHONY: install check-node sync install-browser test test-page test-tools test-browser build look look-parts look-parts-step \
-	look-layout-step measure-layout look-settings-step measure-preview \
+	look-layout-step measure-layout look-settings-step look-preview-step measure-preview \
 	offered-faces trials trials-preview trials-geometry trials-parts trials-serve
 
 UV ?= uv
@@ -91,6 +91,12 @@ measure-preview: build
 # docs/orchestration/phase-2/look/wizard-5b/frame-rate.json.
 measure-layout: build
 	$(PY) $(CURDIR)/tests_browser/measure_layout.py
+
+# Pictures of the Preview step's slicing card and failures beside the mockup's, in each state the
+# mockup shows and in the states it never drew, at 320, 480, 520 and 680 px, into
+# docs/orchestration/phase-2/look/wizard-6/.
+look-preview-step: build
+	$(PY) $(CURDIR)/tests_browser/look_preview_step.py
 
 # Pictures of the Settings step and advanced mode beside the mockup's, in each state the mockup
 # shows, at 320, 480, 520 and 680 px, into docs/orchestration/phase-2/look/wizard-5a/.

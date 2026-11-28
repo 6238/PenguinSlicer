@@ -1,6 +1,7 @@
 // The page's entry point: it reads the page's version from its <meta>, which the front server
 // fills in, joins the seams to the module that makes every request, the storage module, the
-// worker, the panel, the Parts step, the Layout step and the Settings step, marks the document as started, and
+// worker, the panel, the Parts step, the Layout step, the Settings step and the Preview step's
+// submitting, following and failures, marks the document as started, and
 // opens the wizard (opening.js): who the user is, the tab's plate, the configuration and the table
 // of settings, then the stored plate's changes (settings.js) and parts (parts.js), after which it marks the
 // document as opened, or as failed with a page_failed report when the opening throws (endOpening). The running wizard is this module's export, so the browser tests reach it
@@ -16,6 +17,8 @@ import { realFrames } from './seams/frames.js';
 import { endOpening, openWizard } from './opening.js';
 import { createPanel } from './panel/panel.js';
 import { createPartsStep } from './panel/parts-step.js';
+import { createPreviewStep } from './panel/preview-step.js';
+import { createSlicing } from './slicing.js';
 import { createSettingsStep } from './panel/settings-step.js';
 import { createParts } from './parts.js';
 import { createSettings } from './settings.js';
@@ -68,12 +71,23 @@ const opened = openWizard({ api, store, panel, storage }).then(async (outcome) =
   }
   return outcome;
 });
+// The Preview step: submitting and following a plate, and every slice failure; the plate is
+// read as it stands once the page has opened and the Layout step's work is done.
+const slicing = createSlicing({
+  api, clock: realClock, storage, store, settings, layout, panel, newId: () => randomId(),
+  report: (what, fields) => reports.failure(what, fields),
+  ready: () => opened.then(() => layout.idle()),
+});
+const previewStep = createPreviewStep(document.querySelector('section.step[data-step="preview"]'), { slicing, store, clock: realClock });
+// a change to the plate makes a sliced plate unsliced, until it is the sliced plate again
+for (const source of [layout, settings, parts, store]) source.subscribe(() => slicing.plateChanged());
+
 const opening = endOpening(opened, {
   report: (what, fields) => reports.failure(what, fields),
   mark: (how) => { document.documentElement.dataset.opened = how; },
 });
 
-export const wizard = { version, store, api, panel, storage, reports, geometry, holdMeter, parts, partsStep, layout, layoutStep, settings, settingsStep, opening };
+export const wizard = { version, store, api, panel, storage, reports, geometry, holdMeter, parts, partsStep, layout, layoutStep, settings, settingsStep, slicing, previewStep, opening };
 
 document.documentElement.dataset.version = version;
 document.documentElement.dataset.started = 'true';
