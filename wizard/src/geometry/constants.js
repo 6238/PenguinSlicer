@@ -35,6 +35,19 @@ export const FLAT_TURN_DEG = 1;
 // out as several hull triangles, which joining into faces puts back together.
 export const HULL_EPS_MM = 1e-6;
 
+// A hull face is not offered when the part laid on it would rest on no face of its own: the slice
+// service's rule for slice.rests_on_an_edge (slice/README-details.md, "Error codes"), with its
+// figures, so that the wizard offers no hull face the slice service would refuse for it with the
+// default first layer (bounding-box patches are not tested; wizard/README-details.md). The
+// part's own faces on the plate (triangles with every corner within ON_THE_PLATE_MM of it) add
+// up to less than REST_AREA_MM2, and its section half a first layer above the plate holds no
+// line of the first layer (no disc FIRST_LINE_MM across fits in it); the first layer is the
+// default process's, FIRST_LAYER_MM tall.
+export const REST_AREA_MM2 = 0.01;
+export const ON_THE_PLATE_MM = 1e-3;
+export const FIRST_LAYER_MM = 0.3;
+export const FIRST_LINE_MM = 0.62;
+
 // Auto-orient.
 export const MIN_CONTACT_MM2 = 25;      // a resting candidate counts only with this much touching
 export const CONTACT_GAP_MM = 0.1;      // a triangle this close to the plate touches it
