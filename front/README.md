@@ -1385,25 +1385,49 @@ The phases are the plan's.
   served in place of an invalid one with a line in the log saying which rule it breaks and
   where, and the conditional write, which recognises its own repeat;
 - passing the list of settings and the profile catalog's names from the slice service to
-  the wizard, compressed when the browser accepts it.
+  the wizard, compressed when the browser accepts it;
+- the user key, taken from the cookie alone and sent with every request about a part or a
+  slice job, so that nothing the browser sends can name another user;
+- uploading a part: passed to the slice service as it arrives, in small pieces and never
+  held whole, with its units label and without a byte changed; one over 7.5 MB refused with
+  the slice service's own sentence before anything is sent on; and at most 120 uploads a
+  minute for each user, past which the page is told to try again a little later;
+- submitting a plate configuration: passed unchanged, with each plate's id and each
+  submission's value, and every refusal of the slice service passed back as it came, the
+  answer that the slicer is restarting among them and never turned into "busy"; one over
+  1 MB refused before it is read; at most 30 submissions a minute for each user; the
+  current group noted beside the slice job, in the state bucket;
+- following every slice job to its end, page or no page, on one connection to the slice
+  service however many pages watch it: each progress report passed on once, a connection
+  that closes opened again after waits growing from one second to thirty, and, when the
+  slice is done, the sliced file and its summary fetched, stored in the state bucket (the
+  file first, its record last), the slice service told it may delete its copy, and only then
+  the page told the slice is finished; a step that fails is tried again from where it
+  failed, and the page meanwhile sees the slice as still running; a sliced file over 50 MB
+  is not stored and the page is told the slice failed, with a sentence of the front
+  server's own. Each following runs on a thread of its own, counted among the 100, the web
+  server serving with one fewer while it lasts.
 
 Measured while building: the cookie of a user in sixty groups with long names is about ten
 kilobytes, more than a browser keeps, so such a user could not sign in; whether real
 accounts come near that is still the open question
 [Whether the cookie fits](#whether-the-cookie-fits).
 
+Two things learned while building the upload: the web server underneath receives a whole
+request before the front server's code sees it, keeping a large one in a temporary file
+rather than in memory, so a part over the limit is refused before the front server reads
+it and before anything reaches the slice service, but not before it has crossed the
+network; and when the slice ended is taken as the moment the front server heard that it
+was done, which is a moment after the slice service's own end (up to half a minute after,
+when the front server's connection to the slice service had just to be opened again), and
+is what the two hours count from.
+
 **Phase 2: one machine, no Onshape, no printer.** The front server runs beside one
 slice service on one machine, with the development identity and a folder for each
 bucket. Built here, beyond what is listed above as built so far:
 
-- the user key;
-- limits on how fast one user may upload parts and submit plate configurations, whose
-  figures the builder settles;
-- passing parts and plate configurations to the slice service, with each plate's id and
-  each submission's value, answering a page that comes back, and the progress streams,
-  four at most for one user;
-- following every slice job, storing the sliced file and its summary, refusing one over
-  50 MB, collecting at start;
+- answering a page that comes back, and the progress streams, four at most for one user;
+- collecting at start the slice jobs that ended while the front server was down;
 - the two-hour rule: refusing, deleting, the sweep, and telling the page the moment a
   sliced file expires;
 - the log, with the page's reports about itself and the slice service's lines, gathered

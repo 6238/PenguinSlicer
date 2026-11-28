@@ -74,3 +74,14 @@ def _guards(monkeypatch):
 @pytest.fixture
 def clock():
     return FakeClock()
+
+
+@pytest.fixture
+def standin(clock):
+    """The stand-in for the slice service on a port the system chooses, on the test's clock."""
+    from slice_standin import SliceStandIn
+
+    standin = SliceStandIn(clock)
+    standin.start()
+    yield standin
+    standin.stop()

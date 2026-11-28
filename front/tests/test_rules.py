@@ -24,7 +24,7 @@ REQUIRED = {"code": str, "message": str, "remedy": str, "retryable": bool, "deta
 #: phase 2 this is every phase 2 row of the contract's table.
 BUILT = {("GET", "/signin"), ("GET", "/api/me"), ("GET", "/"), ("GET", "/assets/<file>"),
          ("GET", "/api/configuration"), ("PUT", "/api/configuration"),
-         ("GET", "/api/settings-table")}
+         ("GET", "/api/settings-table"), ("POST", "/api/parts"), ("POST", "/api/slices")}
 #: The requests whose answers are page files, marked to be kept, not `no-store`.
 PAGE_FILES = {("GET", "/"), ("GET", "/assets/<file>")}
 
@@ -232,10 +232,11 @@ def test_every_report_of_the_front_server_has_its_fields_and_its_contract_status
     report = error_report(code, "a detail")
     assert set(report) >= set(REQUIRED) and report["detail"] == "a detail"
     contract = CONTRACT.read_text().split("## The front server's error reports", 1)[1]
-    row = re.search(rf"^\| `{re.escape(code)}` \| `(\d+)` \| [^|]+ \| (true|false) \|",
-                    contract, re.M)
+    row = re.search(rf"^\| `{re.escape(code)}` \| (`\d+`|\(in a report\)) \| [^|]+ \| "
+                    r"(true|false) \|", contract, re.M)
     assert row, f"{code} is not in the contract"
-    assert FRONT_REPORTS[code]["status"] == int(row[1])
+    status = None if row[1] == "(in a report)" else int(row[1].strip("`"))
+    assert FRONT_REPORTS[code]["status"] == status
     assert report["retryable"] is (row[2] == "true")
 
 

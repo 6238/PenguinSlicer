@@ -10,15 +10,14 @@ service that does not answer is `503` `front.slice_unreachable`; one that answer
 own error report has it passed byte for byte with its status.
 """
 
-import json
 import re
 
 from flask import Response, request
 
 from .context import context
-from .errors import FrontError, PassedReport
+from .errors import FrontError
 from .identity import signed_in
-from .slice_client import SliceUnreachable
+from .slice_client import SliceUnreachable, refusal
 
 PATH = "/settings-table"
 _WEIGHT = re.compile(r"[0-9.]+")
@@ -80,20 +79,4 @@ def settings_table():
             response.headers["Content-Encoding"] = encoding
         response.headers["Vary"] = "Accept-Encoding"
         return response
-    report = _report(raw.body) if encoding is None else None
-    if report is None:
-        raise RuntimeError(f"GET {PATH}: the slice service answered {raw.status} with neither "
-                           f"the table nor its own error report: {raw.body[:200]!r}")
-    raise PassedReport(raw.status, raw.body, report)
-
-
-def _report(body):
-    """The slice service's error report in `body`, or None."""
-    try:
-        report = json.loads(body)
-    except ValueError:
-        return None
-    if isinstance(report, dict) and isinstance(report.get("code"), str) \
-            and report["code"].startswith("slice."):
-        return report
-    return None
+    raise refusal(raw, f"GET {PATH}")
