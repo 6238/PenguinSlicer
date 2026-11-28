@@ -72,6 +72,19 @@ def test_a_slice_job_ended_whose_file_is_not_yet_stored_is_running(app, client, 
     assert "j1" in context(app)["follower"].followed()
 
 
+def test_a_following_started_by_asking_carries_the_records_group(app, client, standin,
+                                                                 bucket, log):
+    # A front server restarted since the submission; the page now has another current group.
+    write_submitted(bucket, "j1", "2026-11-27T22:14:05Z", group="earlier-group")
+    standin.add_job("j1", USER, "p", "s", queued("j1"), file=b"sliced")
+    assert ask(client, "j1").get_json() == {"progress": queued("j1")}
+    standin.report("j1", done("j1", 2))
+    standin.changes.wait_for(lambda: requests_to(standin, "DELETE", "/slices/j1/file"),
+                             "the delete of j1's file")
+    record = sliced.read(bucket, USER, "j1", log)
+    assert record["state"] == "stored" and record["group"] == "earlier-group"
+
+
 def test_a_slice_job_followed_already_is_answered_with_the_followings_latest(app, client,
                                                                             standin):
     standin.add_job("j1", USER, "p", "s", queued("j1"))
@@ -185,6 +198,9 @@ def test_another_users_slice_job_is_unknown(client, standin, bucket, log):
     assert_report(ask(client, "j1"), "front.slice_unknown", 404)
     assert_report(ask(client, "j2"), "front.slice_unknown", 404)
     assert [r.user_key for r in requests_to(standin, "GET", "/slices/j1")] == [USER]
+    assert [(line["reason"], line["slice"], line["user_key"])
+            for line in log.events("refused")] == [("slice_unknown", "j1", USER),
+                                                   ("slice_unknown", "j2", USER)]
 
 
 def test_another_users_slice_job_followed_here_is_logged_as_another_users(app, client,
@@ -206,6 +222,9 @@ def test_a_submitted_record_whose_slice_job_the_slice_service_forgot_is_unknown(
 def test_an_id_of_another_form_is_unknown_before_anyone_is_asked(client, standin, job, log):
     assert_report(ask(client, job), "front.slice_unknown", 404)
     assert [r for r in standin.requests if r.path.startswith("/slices")] == []
+    [line] = log.events("refused")
+    assert line["reason"] == "slice_unknown" and line["why"] == "an id of another form"
+    assert line["user_key"] == USER and line["group"] == GROUP
 
 
 def test_an_id_of_64_characters_is_asked_about(client, standin):

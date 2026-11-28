@@ -101,6 +101,22 @@ def test_a_submitted_record_never_to_be_stored_is_deleted_after_four_hours(app, 
     assert names(bucket) == []
 
 
+def test_a_sliced_file_beside_an_old_submitted_record_is_deleted_with_it(app, bucket, clock,
+                                                                         log):
+    # A front server stopped between storing the file and writing its `stored` record
+    # leaves the file beside the `submitted` record written at submission.
+    write_submitted(bucket, "j1", sliced.utc(START))
+    bucket.put(sliced.file_name(USER, "j1"), FILE)
+    at(clock, START + 4 * 3600 - 1)
+    assert sweeper(app).sweep()["records_deleted"] == 0
+    assert len(names(bucket)) == 2
+    at(clock, START + 4 * 3600)
+    assert sweeper(app).sweep()["records_deleted"] == 1
+    assert names(bucket) == []
+    [line] = log.events("sliced_record_deleted")
+    assert line["state"] == "submitted" and line["slice"] == "j1"
+
+
 def test_a_submitted_record_of_a_slice_job_followed_is_kept(app, bucket, clock, standin):
     standin.add_job("j1", USER, "p", "s", queued("j1"))
     context(app)["follower"].follow(USER, "j1", GROUP)
@@ -171,6 +187,17 @@ def test_a_file_that_cannot_be_deleted_is_counted_failed_and_tried_at_the_next_s
     assert line["slice"] == JOB and line["user_key"] == USER and "refuses" in line["why"]
     bucket.refuse_writes = False
     assert sweeper(app).sweep()["files_expired"] == 1
+
+
+def test_a_record_is_never_expired_beside_a_file_still_there(app, bucket, clock):
+    # The file is deleted first, then the record turned `expired`: a delete that fails
+    # leaves the record `stored`, for the next sweep.
+    write_stored(bucket)
+    at(clock, ENDED + 7200)
+    bucket.refuse_deletes = True
+    assert sweeper(app).sweep()["failed"] == 1
+    assert read_state(bucket) == "stored"
+    assert sliced.file_name(USER, JOB) in names(bucket)
 
 
 # The sweep's loop.

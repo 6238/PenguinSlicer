@@ -1284,7 +1284,10 @@ seconds; so that a page reconnecting at once is not refused on account of its ow
 stream, a user **at the limit** who opens a stream on a job they already follow has their
 oldest stream on that job closed before the new one is counted. Below the limit nothing is
 closed, so that several tabs on one slice job (the guide's three tabs on one connection)
-each keep their stream rather than closing each other's in turn.
+each keep their stream rather than closing each other's in turn. At the limit that turn
+remains: a user with five tabs on one slice job not yet finished has each tab that reopens
+close another's stream, which reopens in its turn, until the slice job ends; no tab is
+refused, and each sees its reports, with a reconnection between them.
 
 **As built** (`penguin_front.streams`): `Streams` holds the count (`open`, `close`, `held`,
 `count`, `stop`), and each accepted stream is fed by `Follower.subscribe`.
@@ -1418,9 +1421,14 @@ The front server enforces it itself, in three ways:
   the records; it also deletes records `expired` for longer than `EXPIRED_RECORD_KEPT_S`
   (a day), `submitted` records older than `SUBMITTED_RECORD_KEPT_S` (four hours), `failed`
   records older than `FAILED_RECORD_KEPT_S` from their slice's end (a day and two hours,
-  *proposed*: as long as a stored file and its `expired` record together), and a sliced file
-  with no record two hours after it was stored (a front server stopped between the file and
-  its record).
+  *proposed*: as long as a stored file and its `expired` record together), each with any
+  sliced file beside it, and a sliced file with no record two hours after it was stored. A
+  front server stopped between storing a sliced file and writing its `stored` record leaves
+  the file beside the `submitted` record its submission wrote, and the sweep deletes the
+  two together four hours after the submission. A file with no record at all arises only
+  when the `submitted` record was never written (`slice_record_unwritten`), or when a
+  following started by asking or by a stream ([Asking about a slice
+  job](#asking-about-a-slice-job)) found no record.
 - **From phase 5, a sliced file whose print is under way is kept.** A delivery job's record
   names the sliced file it used, by the user key and slice job id it is stored under, and
   records when the delivery job ended; the front server learns from the relay when a

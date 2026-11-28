@@ -51,12 +51,14 @@ def done(job, sequence):
 
 class Failing(FolderBucket):
     """The folder form, refusing reads while `refuse_reads` is set and writes while
-    `refuse_writes` is set, as a state bucket that does not answer."""
+    `refuse_writes` is set, as a state bucket that does not answer; `refuse_deletes` refuses
+    deletes alone."""
 
     def __init__(self, root, clock):
         super().__init__(root, clock)
         self.refuse_reads = False
         self.refuse_writes = False
+        self.refuse_deletes = False
 
     def open(self, name):
         if self.refuse_reads:
@@ -74,7 +76,7 @@ class Failing(FolderBucket):
         return super().put(name, data, **condition)
 
     def delete(self, name):
-        if self.refuse_writes:
+        if self.refuse_writes or self.refuse_deletes:
             raise BucketUnavailable("the state bucket refuses writes, by the test")
         return super().delete(name)
 
@@ -101,8 +103,8 @@ def write_failed(bucket, job=JOB, *, user=USER, ended_at=ENDED_AT):
     return record
 
 
-def write_submitted(bucket, job, submitted_at, *, user=USER):
-    record = {"slice": job, "group": GROUP, "state": "submitted", "submitted_at": submitted_at}
+def write_submitted(bucket, job, submitted_at, *, user=USER, group=GROUP):
+    record = {"slice": job, "group": group, "state": "submitted", "submitted_at": submitted_at}
     write_record(bucket, sliced.record_name(user, job), sliced.KIND, record)
     return record
 

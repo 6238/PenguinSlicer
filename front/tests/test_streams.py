@@ -163,6 +163,8 @@ def test_a_stream_with_nothing_to_report_sends_a_comment_line_every_fifteen_seco
     reader = open_stream(client, "j1")
     reader.wait(lambda r: len(r.events()) == 2, "two events")
     clock.wait_for_sleepers(1)
+    # "None before fifteen seconds" is held by the wait asked for: seeing that nothing came
+    # after 14 s would mean waiting a duration.
     assert clock.waits[-1] == streaming.PROGRESS_KEEPALIVE_S == 15
     clock.advance(14)
     clock.advance(1)

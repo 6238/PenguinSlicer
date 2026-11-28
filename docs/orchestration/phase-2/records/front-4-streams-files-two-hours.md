@@ -26,7 +26,9 @@ on how full the server is. Written Fri 2026-11-27, Pacific time.
 3. **Asking, or opening a stream, starts a following.** The documents are silent. Chosen: a
    report not yet final, of a slice job the front server does not follow, starts its
    following, with its record's group or else the current group, after the answer is
-   reckoned. Reason: without it, until item 17 collects slice jobs at start, a page that
+   reckoned. The record's group is held by
+   `test_a_following_started_by_asking_carries_the_records_group`, which asks under another
+   current group and finds the `stored` record carrying the submission's. Reason: without it, until item 17 collects slice jobs at start, a page that
    comes back after a restart of the front server would have a stream that never moves and
    a sliced file nobody stores. To overrule: the last lines of `asking.reckon`.
 4. **A stored record whose file has gone** (removed by hand, or by anything else) is treated
@@ -37,16 +39,25 @@ on how full the server is. Written Fri 2026-11-27, Pacific time.
    turned `expired`, so a record never says `expired` beside a file still there; a delete or
    a write that fails leaves the record `stored` for the sweep, and the request is answered
    "expired" all the same (line `sliced_file_expire_failed`). Reason: the refusal must be on
-   time whatever the state bucket does.
+   time whatever the state bucket does. The order is held by
+   `test_a_record_is_never_expired_beside_a_file_still_there`, whose state bucket refuses
+   deletes alone.
 6. **The figures for keeping records.** `EXPIRED_RECORD_KEPT_S` 86,400 and
    `SUBMITTED_RECORD_KEPT_S` 14,400 (two hours plus the slice service's two hours) are the
    details file's proposals, taken as they are. Silent on `failed` records (a sliced file
    over 50 MB): chosen `FAILED_RECORD_KEPT_S`, a day and two hours from the slice's end, as
    long as a stored file and its `expired` record together. To overrule: the constants in
    `penguin_front.sliced`.
-7. **A sliced file with no record.** Silent; it is left by a front server stopped between
-   writing the file and its record. Chosen: the sweep deletes it two hours after it was
-   stored (line `sliced_file_deleted`), unless its slice job is followed.
+7. **A sliced file beside an old record, and one with no record.** Silent. A submission
+   writes the `submitted` record first, and the following writes the file and only then the
+   `stored` record, so a front server stopped between the two leaves the file beside its
+   `submitted` record: the sweep deletes the two together four hours after the submission
+   (line `sliced_record_deleted`, `state` `submitted`;
+   `test_a_sliced_file_beside_an_old_submitted_record_is_deleted_with_it`). A file with no
+   record at all arises only when the `submitted` record was never written
+   (`slice_record_unwritten`), or when a following started by asking (decision 3) found no
+   record; the sweep deletes it two hours after it was stored (line `sliced_file_deleted`),
+   unless its slice job is followed.
 8. **What the sweep leaves alone:** any slice job the front server follows (its storing may
    be under way), a record it cannot read (a newer format, which a newer front server
    wrote), and any name it does not make. The sweep runs once at start, so a file that fell
@@ -74,7 +85,14 @@ on how full the server is. Written Fri 2026-11-27, Pacific time.
     a refusal can only happen at the limit. The details file and its test now say so. To
     overrule: `Streams.open`, and the tests
     `test_at_the_limit_a_new_stream_on_a_job_closes_the_users_oldest_on_that_job` and
-    `test_below_the_limit_several_streams_on_one_job_stay_open`.
+    `test_below_the_limit_several_streams_on_one_job_stay_open`. What it costs: at the
+    limit the turn remains. A user with five tabs on one slice job not yet finished has each
+    tab that reopens close another's stream, which reopens in its turn, until the slice job
+    ends; under the proposal as first written the fifth tab was refused `429`. No tab is
+    refused now, and each sees its reports with a reconnection between them. Telling a new
+    tab from a reconnecting page would need the page's help (`Last-Event-ID` is sent by
+    both a page that dropped its stream and one whose stream was closed), so it is left
+    as it is; the details file and the guide say so.
 13. **A stream whose first report is final** (a slice job stored, failed, cancelled or
     expired) sends it, closes at once and is never counted against the four. Reason: it holds
     no thread, and a fifth tab on a finished slice job should see the result.
@@ -121,6 +139,26 @@ on how full the server is. Written Fri 2026-11-27, Pacific time.
     a run of forty); and a test of the table of settings, from an earlier batch, named a
     parameter by gzip bytes carrying the time, so two workers that collected a second apart
     collected different tests (found the same way). The bytes now carry no time.
+22. **The review's findings, Sat 2026-11-28.** Each new test below was first seen to fail
+    under the reviewer's mutation, then the code restored:
+    - the sweep's deletion of a sliced file beside an old `submitted` record (decision 7,
+      corrected) is tested, and the details file and the sweep's own description now say
+      when such a file arises;
+    - the record's group on a following started by asking (decision 3) is tested;
+    - the `refused` line for an id of another form, and for another user's slice job, is
+      asserted;
+    - the order of expiring (decision 5) is tested;
+    - the turn of five tabs on one slice job is written down (decision 12, the details file
+      and the guide), and not changed.
+    Declined: tightening the keep-alive test's "none before fifteen seconds" past its check
+    that the wait asked for is 15 s. Any check of the stream after moving the clock 14 s
+    would have to wait some time to see that nothing came, which the quality bar forbids;
+    the wait asked for is the deterministic form of the same check. Noted, not changed:
+    every ask on a `stored` record lists the state bucket to see the file is there
+    (`sliced.file_present`), which at R2, with the page asking every one to two seconds
+    when its stream fails, is one list call per ask; phase 3 may replace it with a cheaper
+    check or drop it, at the cost of a file removed by hand being found only when it is
+    fetched. Item 15 not written test first stays under "Targets missed".
 
 ## Targets missed
 

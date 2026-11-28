@@ -1419,7 +1419,9 @@ The phases are the plan's.
   starts. A user at the four who opens a stream on a slice they already follow has their
   oldest stream on that slice closed to make room, so a page reconnecting at once is not
   refused on account of its own dropped stream; below the four nothing is closed, so
-  several tabs can follow one slice. A stream whose page has gone leaves the count as soon
+  several tabs can follow one slice. Five tabs on one slice still running close each
+  other's streams in turn, each reopening its own, until the slice ends: none is refused,
+  and each sees the slice's progress, with a reconnection now and then. A stream whose page has gone leaves the count as soon
   as a write to it fails;
 - the sliced file's details, with the moment it expires and the seconds to it, and the
   sliced file itself, passed from the state bucket in pieces and never held whole, also to

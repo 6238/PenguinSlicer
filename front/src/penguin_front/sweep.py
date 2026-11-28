@@ -10,9 +10,12 @@ Once at start and then every `SWEEP_INTERVAL_S` on the front server's clock, the
 - deletes a record `expired` for longer than `EXPIRED_RECORD_KEPT_S`, a `submitted` one
   older than `SUBMITTED_RECORD_KEPT_S` (its slice job never ended `done` and can no longer
   be known), and a `failed` one older than `FAILED_RECORD_KEPT_S` from its slice's end, each
-  with the line `sliced_record_deleted` (`state`, `age_s`);
-- deletes a sliced file that has no record two hours after it was stored (a front server
-  stopped between writing the file and its record), with the line `sliced_file_deleted`.
+  with any sliced file beside it (a front server stopped between storing the file and
+  writing its `stored` record leaves the file beside the `submitted` record), with the line
+  `sliced_record_deleted` (`state`, `age_s`);
+- deletes a sliced file that has no record two hours after it was stored (its `submitted`
+  record was never written, or a following started by asking found none), with the line
+  `sliced_file_deleted`.
 
 A slice job the front server follows is left alone: its storing may be under way. A record
 this front server cannot read (a newer format) is left alone, as is any name the front server
