@@ -11,6 +11,7 @@ import { SLICED_FILE_KEEP_S } from '../src/page-constants.js';
 import { createSlicing } from '../src/slicing.js';
 import * as T from '../src/slicing-sentences.js';
 import { createStore } from '../src/state.js';
+import { settle } from './fakes/clock.js';
 import { errorReport, events, steps } from './fakes/front_server.js';
 import { EVENTS, JOB, S, accepted, doneReport, failedReport, feedStream, openPage, progress } from './fakes/preview-page.js';
 
@@ -204,6 +205,36 @@ test('an answer that is not a progress report: the Preview step with the wizard\
   assert.equal(back.view().report.code, 'wizard.bad_answer');
 });
 
+test('a progress report of another slice job: the wizard\'s own failure, never that job\'s result shown as this plate\'s', async () => {
+  const page = await sliced();
+  const back = await comeBack(page, { answer: progressAnswer({ ...doneReport(), job: 'another-job-0000' }) });
+  assert.equal(back.store.get().step, 'preview');
+  assert.equal(back.view().kind, 'failed');
+  assert.equal(back.view().report.code, 'wizard.bad_answer');
+  assert.equal(back.store.get().sliced, false);
+  assert.deepEqual(back.notices, []);
+});
+
+test('a progress report without the contract\'s required job or elapsed_s: the wizard\'s own failure', async () => {
+  for (const drop of ['job', 'elapsed_s']) {
+    const page = await sliced();
+    const report = { ...doneReport() };
+    delete report[drop];
+    const back = await comeBack(page, { answer: progressAnswer(report) });
+    assert.equal(back.view().kind, 'failed', drop);
+    assert.equal(back.view().report.code, 'wizard.bad_answer', drop);
+  }
+});
+
+test('the page\'s own reload on the Send step with no slice of the plate as it stands opens the Preview step, which slices', async () => {
+  const page = await openPage();
+  feedStream(page);
+  const back = await comeBack(page, { step: 'send', quiet: true });
+  assert.equal(back.store.get().step, 'preview', 'the Send step has nothing to send');
+  assert.equal(submitted(page), 1);
+  assert.deepEqual(back.notices, []);
+});
+
 test('parts and no slice job: the stored step with the plate as it was, nothing asked and nothing said', async () => {
   const page = await openPage();
   for (const step of ['parts', 'settings', 'layout']) {
@@ -258,6 +289,26 @@ test('the page\'s own reload on the Preview step of a failed slice keeps the fai
   assert.equal(back.store.get().step, 'preview');
   assert.equal(back.view().kind, 'failed');
   assert.equal(submitted(page), 1);
+});
+
+test('an opening that throws leaves coming back with no rejected promise of its own: the opening\'s failure is reported once, by the opening', async () => {
+  const page = await openPage();
+  const unhandled = [];
+  const listener = (reason) => unhandled.push(reason);
+  process.on('unhandledRejection', listener);
+  try {
+    const failed = Promise.reject(new Error('the opening threw'));
+    failed.catch(() => {});                       // the opening's own end (endOpening) handles it
+    createSlicing({
+      api: page.api, clock: page.clock, storage: page.storage, store: createStore(), settings: {}, layout: page.layout,
+      panel: { goTo() {}, notify() {}, dropNotice() {} }, report() {}, newId: () => 'x', random: () => 0.5,
+      back: () => failed, ready: () => failed,
+    });
+    await settle();
+  } finally {
+    process.off('unhandledRejection', listener);
+  }
+  assert.deepEqual(unhandled, []);
 });
 
 test('the asking is retried quietly like any request, and the page opens once it is answered', async () => {

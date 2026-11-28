@@ -27,6 +27,11 @@ def drawing_reports(server):
     return [(json.loads(body), body.decode("utf-8")) for (method, path, body) in server.bodies if path == "/api/reports/drawing"]
 
 
+def page_failed(response):
+    request = response.request
+    return request.url.endswith("/api/reports/failure") and '"page_failed"' in (request.post_data or "")
+
+
 def notices(w):
     return w.page.locator("#notices .n-what").all_inner_texts()
 
@@ -90,13 +95,11 @@ def test_a_page_loaded_before_a_deploy_draws_the_layer_preview_when_its_files_ar
 def test_an_uncaught_error_and_an_unhandled_rejection_are_each_sent_as_page_failed(page, front_server):
     # on the real clock: Playwright's fake clock throws a timer's error to the test, not to the page
     w = Wizard(page, front_server, fake_clock=False)
-    w.page.evaluate("() => { window.__thrown = new Promise((r) => { setTimeout(() => { r(); throw new TypeError('a fault of the page made on purpose'); }, 0); }); }")
-    w.run("await window.__thrown; await new Promise((r) => setTimeout(r, 0));")
-    w.page.evaluate("() => { Promise.reject(new RangeError('a promise rejected on purpose')); }")
-    for _ in range(500):
-        if len([r for r in failure_reports(front_server) if r["what"] == "page_failed"]) >= 2:
-            break
-        w.run("return true;")
+    # each wait is for the front server's answer to the report, so the fake server holds its body
+    with w.page.expect_response(page_failed):
+        w.page.evaluate("() => { setTimeout(() => { throw new TypeError('a fault of the page made on purpose'); }, 0); }")
+    with w.page.expect_response(page_failed):
+        w.page.evaluate("() => { Promise.reject(new RangeError('a promise rejected on purpose')); }")
     sent = [r for r in failure_reports(front_server) if r["what"] == "page_failed"]
     assert [r["detail"].split("\n")[0] for r in sent] == [
         "uncaught: TypeError: a fault of the page made on purpose",
@@ -112,12 +115,9 @@ def test_leaving_the_layout_step_after_a_drag_sends_one_drawing_summary_with_no_
     end = w.run("return wizard.layoutStep.view().plateAt(arg[0], arg[1]);", [a["x"] + 30, a["y"]])
     drag(w, start, end, steps=12)
     settle(w)
-    w.page.click("#stepbar li[data-step=parts]")
+    with w.page.expect_response(lambda r: r.url.endswith("/api/reports/drawing")):
+        w.page.click("#stepbar li[data-step=parts]")
     w.until("return wizard.store.get().step === 'parts';")
-    for _ in range(500):
-        if drawing_reports(front_server):
-            break
-        w.run("return true;")
     [(summary, text)] = drawing_reports(front_server)
     assert summary["view"] == "layout"
     assert summary["instances"] == 2

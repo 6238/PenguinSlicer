@@ -87,7 +87,10 @@ export function createStorage({ openRecords, locks, tab, clock, newId, report })
   let release = null;
   let writing = Promise.resolve();
   let plateRefusalReported = false;
+  let plateStored = false;     // whether the plate's last write was stored
   const unsaved = new Map();   // the bytes of parts the browser refused to store, by sha256.units
+
+  const keepsWork = () => records !== null && plateStored && unsaved.size === 0;
 
   // Writes in the order asked, each after the one before it, so the last change is the one kept.
   // A write the browser refuses resolves to false.
@@ -100,6 +103,7 @@ export function createStorage({ openRecords, locks, tab, clock, newId, report })
   async function writePlate() {
     const copy = structuredClone(plate);
     const outcome = await queue((r) => r.put(plateKey(copy.plate_id), copy));
+    plateStored = outcome === true;
     if (outcome !== true && outcome !== false && !plateRefusalReported) {
       plateRefusalReported = true;
       report('storage_refused', { detail: `writing the plate: ${failure(outcome)}` });
@@ -230,12 +234,21 @@ export function createStorage({ openRecords, locks, tab, clock, newId, report })
       return { plate: structuredClone(plate), group, selfReload };
     },
 
-    // Notes in the tab that the page is about to reload itself, and resolves once every write
-    // asked for so far is done, so that the reloaded page finds the plate as this one left it.
+    // Waits for every write asked for so far, so that the reloaded page finds the plate as this one
+    // left it; then, when a reload would keep the tab's work (reloadKeepsWork), notes in the tab
+    // that the page is about to reload itself and resolves to true. Otherwise it notes nothing and
+    // resolves to false: the page does not reload.
     async markSelfReload() {
-      tab.set(TAB_SELF_RELOAD, '1');
       await writing;
+      if (!keepsWork()) return false;
+      tab.set(TAB_SELF_RELOAD, '1');
+      return true;
     },
+
+    // Whether a reload would find the tab's work as it stands: the storage open, the plate's last
+    // write stored, and no part whose bytes the browser refused (those live only in this page's
+    // memory). The page's own reload for a new version waits while it would not.
+    reloadKeepsWork: () => keepsWork(),
 
     // The tab's plate as it stands, in memory.
     plate: () => structuredClone(plate),

@@ -468,11 +468,72 @@ test('a reload marked as the page\'s own is told to the next load of that tab al
   assert.equal(again.selfReload, false, 'the next load clears it: a refresh after is the user\'s');
 });
 
-test('a reload marked while the browser will not open the storage is still told to the next load', async () => {
+test('marking the page\'s own reload waits for a write still being made before it resolves', async () => {
+  const b = browser();
+  const a = await openTab(b, 'A');
+  const release = b.records.holdPuts();
+  a.storage.update({ step: 'settings' });
+  let marked = false;
+  const marking = a.storage.markSelfReload().then(() => { marked = true; });
+  for (let i = 0; i < 20; i += 1) await Promise.resolve();
+  assert.equal(marked, false, 'the write of the step is still held');
+  assert.notEqual(b.records.value(`plates/${a.plate.plate_id}`).step, 'settings');
+  release();
+  await marking;
+  assert.equal(b.records.value(`plates/${a.plate.plate_id}`).step, 'settings');
+});
+
+test('a reload keeps the tab\'s work only while every part and the plate itself are stored', async () => {
+  const b = browser();
+  const a = await openTab(b, 'A');
+  assert.equal(a.storage.reloadKeepsWork(), true);
+  await a.storage.addPart({ sha256: 'aa', units: 'mm', name: 'Bracket' }, bytes(84, 1));
+  assert.equal(a.storage.reloadKeepsWork(), true);
+  b.records.refuse('part-bytes/');
+  await a.storage.addPart({ sha256: 'bb', units: 'mm', name: 'Big part' }, bytes(84, 3));
+  assert.equal(a.storage.reloadKeepsWork(), false, 'a part whose bytes were refused');
+  await a.storage.removePart('bb', 'mm');
+  assert.equal(a.storage.reloadKeepsWork(), true, 'the unsaved part removed');
+  b.records.allow();
+  b.records.refuse('plates/');
+  await a.storage.update({ step: 'layout' });
+  assert.equal(a.storage.reloadKeepsWork(), false, 'the plate\'s last write was refused');
+  b.records.allow();
+  await a.storage.update({ step: 'settings' });
+  assert.equal(a.storage.reloadKeepsWork(), true, 'a later write of the plate stored it');
+});
+
+test('a reload never keeps the tab\'s work when the browser will not open the storage', async () => {
   const b = browser();
   b.records.unavailable = true;
   const a = await openTab(b, 'A');
-  await a.storage.markSelfReload();
-  const reloaded = await refresh(b, a);
-  assert.equal(reloaded.selfReload, true);
+  assert.equal(a.storage.reloadKeepsWork(), false);
+});
+
+test('the page\'s own reload is refused, and nothing marked, while a reload would lose the tab\'s work', async () => {
+  const b = browser();
+  b.records.unavailable = true;
+  const a = await openTab(b, 'A');
+  assert.equal(await a.storage.markSelfReload(), false, 'the storage refused: the plate lives only in memory');
+  const loaded = await refresh(b, a);
+  assert.equal(loaded.selfReload, false, 'nothing was marked');
+
+  const c = browser();
+  const t = await openTab(c, 'A');
+  c.records.refuse('part-bytes/');
+  await t.storage.addPart({ sha256: 'bb', units: 'mm', name: 'Big part' }, bytes(84, 3));
+  assert.equal(await t.storage.markSelfReload(), false, 'a part the browser refused');
+  await t.storage.removePart('bb', 'mm');
+  assert.equal(await t.storage.markSelfReload(), true);
+});
+
+test('whether a reload keeps the work is read after the writes still being made, not before', async () => {
+  const b = browser();
+  const a = await openTab(b, 'A');
+  const release = b.records.holdPuts();
+  b.records.refuse('plates/');
+  a.storage.update({ step: 'settings' });
+  const marking = a.storage.markSelfReload();
+  release();
+  assert.equal(await marking, false, 'the held write was refused once it ran');
 });

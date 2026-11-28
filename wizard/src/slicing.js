@@ -499,7 +499,9 @@ export function createSlicing({
   let backRun = null;
   let coming = null;
 
-  const isProgress = (r) => r !== null && typeof r === 'object' && typeof r.state === 'string' && Number.isInteger(r.sequence);
+  // A progress report with the contract's required fields (contracts/progress-report.md).
+  const isProgress = (r) => r !== null && typeof r === 'object' && typeof r.job === 'string' && typeof r.state === 'string'
+    && Number.isFinite(r.elapsed_s) && Number.isInteger(r.sequence);
 
   // The page has opened on a stored plate: it asks about the plate's slice job, when the plate has
   // one of the plate as it stands, and opens where the user will want to be. The rows of the
@@ -547,7 +549,7 @@ export function createSlicing({
       return;
     }
     const r = answer.body && answer.body.progress;
-    if (!isProgress(r) || (typeof r.job === 'string' && r.job !== current.id)) {
+    if (!isProgress(r) || r.job !== current.id) {
       toPreview();
       fail(badAnswer(path, answer.status, JSON.stringify(answer.body)));
       took();
@@ -584,9 +586,14 @@ export function createSlicing({
   function cameBack() {
     if (!coming) {
       coming = (async () => {
-        const how = await back();
+        let how;
+        try {
+          how = await back();
+          if (how) await ready();
+        } catch {
+          return;          // the opening threw: its own end (endOpening) marks the page failed and reports it
+        }
         if (!how) return;
-        await ready();
         await comeBack(how);
       })();
     }

@@ -2700,16 +2700,23 @@ slice job to follow), with no line about a restart; and the parts are uploaded a
 slice service restarted, through `slice.part_missing` as for any submission
 ([Submitting a plate](#submitting-a-plate)), never ahead of it, so that a slice service that kept
 its part store is sent nothing twice. The page's own reload (`quiet`) says nothing and stays on the
-step it was on, whatever the row; the slice is followed, shown or found expired there as above.
+step it was on, whatever the row of a slice job; the slice is followed, shown or found expired there
+as above. The Send step with no slice of the plate as it stands opens the Preview step, the page's
+own reload included, since the Send step has nothing to send. An answer is a progress report of
+this slice job only when it holds the contract's required `job`, `state`, `elapsed_s` and
+`sequence`, and its `job` is the stored slice's id: a report of another slice job is never shown
+as this plate's.
 
 Tests: `tests/coming-back.test.js`, a first page submitting the plate and a second opening on the
 same stored plate as a refresh does, reaches each row of phase 2: still running and waiting behind
 others, finished (from the Parts and from the Send step), failed, expired from an earlier step (and
 entering the Preview step slicing) and on the Preview and Send steps, unknown at 1 ms under two
 hours and at exactly two hours, asked to stop, replaced, another refusal, an answer that is not a
-progress report, no slice job on each of the first three steps, a plate changed since its slice,
-the Send step without a slice, the page's own reload on the Layout, Send and Preview steps, and the
-asking retried quietly. Mutating the first entering's check (the Preview step submitting what
+progress report, a progress report of another slice job, one without `job` or `elapsed_s`, no slice
+job on each of the first three steps, a plate changed since its slice, the Send step without a
+slice (also on the page's own reload), the page's own reload on the Layout, Send and Preview steps,
+the asking retried quietly, and an opening that throws leaving no rejected promise of coming back's
+own (the opening's failure is reported once, by `endOpening`). Mutating the first entering's check (the Preview step submitting what
 coming back left) fails six of them. `tests_browser/test_coming_back.py` refreshes a sliced tab in
 Chromium and sees the Preview step with "Back where you were". The printer's row and the last-print
 note come with phase 5.
@@ -2731,10 +2738,19 @@ older version does nothing. Until it reloads, the older page goes on working aga
 front server, which the contract requires of every change; the page fetches every file of its own
 code when it loads and nothing later by name.
 
+**Never when the reload would lose work.** The page does not reload while the tab's plate holds a
+part whose bytes the browser refused to store (`saved: false`, kept only in the page's memory; the
+next load's `storage.begin` drops it), while the browser's storage is refused altogether, or while
+the plate's last write was refused. It stays on its version and asks again at the next moment (the
+next move between steps, or 120 s after the next input), and reloads at the first one at which the
+work is stored: the unsaved part removed, or New plate pressed. The check is made after every write
+asked for so far is done, so a write refused at the last moment counts. Nothing is said: the part's
+amber line already says a refresh will lose it.
+
 **What the user sees:** nothing. No message and no "Back where you were", because before reloading
 the page notes in the tab's own storage that the reload is its own (`penguinslicer.self_reload` in
 the tab's `sessionStorage`, through the tab seam: in the tab and not in the shared records, so that
-another tab opening at that moment never takes it as its own), and the next load clears it. The page reopens on the step it was on, in advanced mode if advanced
+another tab opening at that moment never takes it as its own), and the next load clears it. The page reopens on the step it was on (but for the Send step with no slice of the plate as it stands, which opens the Preview step, as for any load), in advanced mode if advanced
 mode was open, with the parts, the layout, every change, a running slice's progress and a print's
 progress. What starts afresh is only what lived in memory: advanced mode's sections and setting
 groups all open again, the 3D views at their starting camera, the Layout step's selection cleared,
@@ -2743,8 +2759,9 @@ the layer bar at the top layer, open joined boxes and notifications closed. Keep
 Tests (fake clock; the fake front server announcing a newer version): no reload while a request is
 pending, and a reload once it is answered; with no input, a reload at exactly 120 s and not at
 119.9 s; a step change reloads at once; an open progress stream does not hold the reload; an older
-version does nothing; after the reload, the stored step and advanced mode reopen and no notification
-shows; a page loaded from the previous release's code runs against the new fake front server (from
+version does nothing; no reload while a part is unsaved or the storage refused, and a reload at the
+first moment after; the mark waits for a write still being made; after the reload, the stored step
+and advanced mode reopen and no notification shows; a page loaded from the previous release's code runs against the new fake front server (from
 the second release on: item 19 of [By phase](#by-phase)).
 
 **As built.** `createReloader` in `wizard/src/reloading.js`, joined in `main.js` to every answer's
@@ -2759,18 +2776,25 @@ included, is never newer, so a page that does not know its own version never rel
 pending reloads when the last request ends, unless the user has interacted since the move (then the
 next moment does: 120 s without input, or the next move). The reload waits until every listener of
 the move has run, so that the step moved to is among the writes `markSelfReload` (the storage
-module, which sets the tab's mark and resolves once every write asked for is done) waits for; then
-the location seam (`reloadPage` in `wizard/src/seams/location.js`) reloads. The next load's
+module) waits for. Once every write asked for is done, `markSelfReload` reads `reloadKeepsWork()`
+(the storage open, the plate's last write stored, no part kept only in memory): when it holds, it
+sets the tab's mark and resolves to `true`, and the location seam (`reloadPage` in
+`wizard/src/seams/location.js`) reloads; otherwise it sets nothing and resolves to `false`, and the
+reloader makes no reload and waits for the next moment. The next load's
 `storage.begin` reads and clears the mark, and the opening passes it to coming back as `quiet`.
 The preview's worker is started when the page loads and kept until a sliced plate is shown, each
 worker taken starting the next (`warmPreviewWorker` in `wizard/src/seams/preview-worker.js`), so that
 its code is fetched while this release's files are served: without it, a page loaded before a
 deploy could not draw its first preview, the new front server answering `404` for the old file.
-Tests: `tests/reloading.test.js` (each of the tests above but the last, a request retried past the
+Tests: `tests/reloading.test.js` (the moments of the tests above, a request retried past the
 120 s, a step change answered after the user moves again, a stream's `version` event, the reload made
-once, and the order of the writes), `tests/storage.test.js` (the mark told to that tab's next load
-alone, once, and with the browser's storage refused), `tests/coming-back.test.js` (the quiet
-reopening), and `tests_browser/test_coming_back.py` in Chromium: a newer version reloads the page at
+once, the order of the writes, and a reload held while it would lose work, made at the next moment
+after), `tests/storage.test.js` (the mark told to that tab's next load alone, once; the mark waiting
+for a write held open; `reloadKeepsWork` with a part refused and removed, the plate's write refused
+and stored again, and the storage refused; no mark while the work would be lost, read after the
+writes), `tests/coming-back.test.js` (the quiet reopening on the stored step, the Send step with no
+slice included), `tests/settings.test.js` (advanced mode reopening on any load of a plate stored on
+the Settings step with it open, the page's own reload included), and `tests_browser/test_coming_back.py` in Chromium: a newer version reloads the page at
 a move between steps, on the step it moved to, with nothing said; and a page whose files the front
 server no longer serves still draws the layer preview.
 
@@ -3023,7 +3047,7 @@ on a part) or `page_failed` (the page's own code failing, caught by a handler fo
 rejected promises). A `wizard.layout_failed` answer from the worker is reported as `layout_failed`
 only when the geometry's code failed on a part; when the page asked for something wrong (a message
 the worker does not know, a part never read, a malformed instance), it is reported as `page_failed`,
-so the worker tells the two apart in its answer when the reports are built; `step` (`parts`, `settings`, `advanced`, `layout`, `preview`, `send` or `none`);
+and the worker tells the two apart by the `fault` its failed answer carries beside the error report; `step` (`parts`, `settings`, `advanced`, `layout`, `preview`, `send` or `none`);
 `browser`, `browser_version`; `software_3d`; `part_sha256` when a part is concerned; `detail`, the
 error's message and where it arose, at most 1,000 characters, never a part's name, bytes or geometry,
 or anything from the storage.
@@ -3068,7 +3092,11 @@ be sent dropped; the page that is not signed in sending nothing; an uncaught err
 promise and a storm of them), `tests/environment.test.js` (the operating system, the graphics card,
 the machine's figures), `tests/geometry-client.test.js` (a question asked wrongly as `page_failed`
 with the part's hash, the geometry's own error as `layout_failed` with the worker still answering,
-an unreadable part not reported by the client), and `tests_browser/test_coming_back.py` in Chromium
+an unreadable part not reported by the client), `tests/drawing-summaries.test.js` (the Layout step
+and the Preview step on a fake document, `tests/fakes/dom.js`, with a fake view: one summary for
+each use, sent on leaving the step, a second use begun afresh, the layer preview's second use timed
+from its own opening, and nothing sent on a move between two other steps), and
+`tests_browser/test_coming_back.py` in Chromium
 (an uncaught error and an unhandled rejection each sent as `page_failed`; leaving the Layout step
 after a drag, and the Preview step after the layer preview drew, each sending one summary with no
 part name).

@@ -167,6 +167,53 @@ test('an older version, or the page\'s own, does nothing', async () => {
   }
 });
 
+test('a reload that would lose the tab\'s work is not made, and the next moment after the work is safe makes it', async () => {
+  const clock = new FakeClock();
+  const server = new FakeFrontServer({ version: NEWER });
+  const store = createStore();
+  const api = createApi({ transport: server.transport, clock, version: OWN, random: () => 0.5 });
+  const inputs = new Set();
+  let keeps = false;
+  const reloads = [];
+  createReloader({
+    api, clock, store, version: OWN, onInput: (l) => inputs.add(l),
+    beforeReload: async () => keeps,
+    reload: () => reloads.push(clock.elapsed),
+  });
+  await api.get('/api/me');
+  store.set({ step: 'layout' });
+  await clock.advance(RELOAD_IDLE_S * 1000 * 3);
+  assert.deepEqual(reloads, [], 'neither the move nor 360 s idle reloads a page holding unsaved work');
+  keeps = true;                                   // the unsaved part removed
+  for (const listener of inputs) listener();
+  await clock.advance(RELOAD_IDLE_S * 1000 - 1);
+  assert.deepEqual(reloads, []);
+  await clock.advance(1);
+  assert.deepEqual(reloads, [RELOAD_IDLE_S * 1000 * 4], 'then 120 s after the last input');
+  store.set({ step: 'settings' });
+  await clock.advance(RELOAD_IDLE_S * 1000);
+  assert.equal(reloads.length, 1, 'once');
+});
+
+test('a move between steps, once the work is safe, reloads after a reload was held', async () => {
+  const p = page();
+  let keeps = false;
+  const reloads = [];
+  const store = createStore();
+  createReloader({
+    api: p.api, clock: p.clock, store, version: OWN, onInput: () => {},
+    beforeReload: async () => keeps, reload: () => reloads.push(p.clock.elapsed),
+  });
+  await p.api.get('/api/me');
+  store.set({ step: 'layout' });
+  await p.clock.advance(1000);
+  assert.deepEqual(reloads, []);
+  keeps = true;
+  store.set({ step: 'settings' });
+  await p.clock.advance(0);
+  assert.deepEqual(reloads, [1000]);
+});
+
 test('the page reloads once, however many moments come while the reload is being made', async () => {
   const p = page();
   let finish;

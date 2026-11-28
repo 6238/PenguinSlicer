@@ -1488,6 +1488,14 @@ pending. An open progress stream does not count as a pending request, since the 
 page reconnects and is told the latest progress at once. Until it reloads, the older
 page goes on working against the newer front server.
 
+The page never reloads itself when the reload would lose work. A part whose bytes the
+browser refused to store lives only in the page's memory, as its amber line says, and when
+the browser refuses its storage altogether the whole plate lives there. While either is
+so, the page stays on its version, however many moments come. It reloads at the first
+moment after the work is stored again, for example once the unsaved part is removed or a
+new plate is begun. A refresh by the user's own hand still loses that work, as the amber
+line warns.
+
 The page says nothing afterwards: no message, and no "Back where you
 were", because the page notes in the tab's own storage that the reload was its own. The
 reason for saying nothing is that the project is deployed many times a day, so a message
@@ -1495,6 +1503,8 @@ at each reload would be noise about something the user can do nothing with, and 
 standing requirement is that a deploy interrupts no user. The page
 reopens on the step it was on, in advanced mode if advanced mode was open, with the parts,
 the layout, every change, a running slice's progress and a print's progress as they were.
+One step is the exception: a page on the Send step with no sliced plate of the plate as it
+stands has nothing to send, so it reopens on the Preview step, which slices it.
 What starts afresh is only what lived in the page's memory: advanced mode's sections and
 setting groups are all open again, the 3D views return to their starting camera, the
 selection on the Layout step is cleared, the layer bar is back at the top layer, and open

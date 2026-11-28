@@ -77,8 +77,11 @@ server after the page has loaded.
    with "ready to send"; chosen as written, though it moves a user who refreshed on the Send step
    back a step. To overrule: the `done` branch of `comeBack`.
 6. **The page's own reload, whatever the row.** The details say it reopens "on the step it was
-   on". Chosen: every row keeps the stored step when the reload is the page's own, the slice
-   followed, shown or found expired there. To overrule: `toPreview` in `comeBack`.
+   on". Chosen: every row of a slice job keeps the stored step when the reload is the page's own,
+   the slice followed, shown or found expired there. The one exception, settled at the review: a
+   plate stored on the Send step with no slice of the plate as it stands opens the Preview step
+   even after the page's own reload (decision 3), since the Send step has nothing to send; the
+   guide and the details now say so. To overrule: `toPreview` and the first branch of `comeBack`.
 7. **Any other refusal of the asking** (a `403`, an unknown code) or an answer that is not a
    progress report of this slice job. Silent. Chosen: the Preview step with that error report,
    or the wizard's `wizard.bad_answer`, with the failure's buttons. Reason: every failure a caller
@@ -141,6 +144,71 @@ server after the page has loaded.
 21. **The "Back where you were" notifications.** Chosen: kind `info` (the mockup's), one key for
     both, and they stay until the user closes them or leaves the step, like any notification; the
     guide says only the print's notification goes when the print ends.
+
+22. **The page's own reload when it would lose work** (settled at the review, finding 1). A part
+    whose bytes the browser refused lives only in the page's memory, and with the storage refused
+    the whole plate does; the next load drops them. The guide says the reload reopens "with the
+    parts, the layout, every change" and the plan's standing requirement says a deploy interrupts
+    no user; no document decides this case. Chosen: no reload while a reload would lose work
+    (`reloadKeepsWork()` in `wizard/src/storage.js`: the storage open, the plate's last write
+    stored, no part kept only in memory). `markSelfReload` reads it after every write asked for is
+    done and resolves to `false` without setting the mark; the reloader then makes no reload and
+    asks again at the next moment (the next move between steps, or 120 s after the next input).
+    Nothing is said, since the part's amber line already says a refresh will lose it. Reason: a
+    reload the user did not ask for must never lose work; the cost is an older page staying open
+    against a newer front server for as long as the work is unsaved, which the contract already
+    requires to work. To overrule: `markSelfReload` and `reloadKeepsWork` in `wizard/src/storage.js`
+    and `go` in `wizard/src/reloading.js`.
+23. **What counts as a progress report when coming back** (review, minor finding 3). Chosen: the
+    contract's required `job`, `state`, `elapsed_s` and `sequence`, and `job` equal to the stored
+    slice's id; anything else is `wizard.bad_answer`. Before the review a report with no `job`
+    passed. To overrule: `isProgress` in `comeBack`.
+24. **Coming back when the opening throws** (review, minor finding 2). Chosen: coming back catches
+    the rejection of the opening (and of the Layout step's readiness) and does nothing, so the
+    opening's failure is reported once, by `endOpening`, and never a second time as an unhandled
+    rejection. A failure of coming back's own code still rejects, and is reported as `page_failed`.
+    To overrule: `cameBack` in `wizard/src/slicing.js`.
+25. **The Layout view's lost context reported each time** (review, minor finding 7): the view
+    reports `drawing_context_lost` at every loss, held only by `REPORTS_PER_MIN` (4 in any 60 s
+    for all of a page's reports together); the browser test loses the context twice and sees two
+    reports.
+
+### The review's findings (pull request #47)
+
+Every finding was checked against the code before anything changed.
+
+- Blocking 1, the reload losing unsaved work: real; decision 22, tested in `tests/storage.test.js`
+  and `tests/reloading.test.js` on the fake clock.
+- Blocking 2, `markSelfReload`'s wait untested: real. The fake records can now hold every write
+  (`holdPuts` in `tests/fakes/storage.js`); a test holds the step's write open and sees the mark
+  unresolved until it is released. Removing `await writing` fails it (checked by hand).
+- Blocking 3, one drawing summary for each use untested: real. `tests/drawing-summaries.test.js`
+  builds the Layout step and the Preview step on a small fake document (`tests/fakes/dom.js`) with
+  a fake view and a spy on `reportDrawing`, two uses each. Deleting the Preview step's `beginUse`
+  line, or the Layout step's `view?.beginUse()` on entering the step, fails them (checked by hand).
+- Blocking 4, the check that the answer is about this slice job untested: real; a test in
+  `tests/coming-back.test.js` answers with another job's `done` report and fails under the
+  reviewer's mutation (checked by hand).
+- Minor 1, the future tense at the worker's `fault`: fixed.
+- Minor 2, a second `page_failed` when the opening throws: real; decision 24, with a test that
+  listens for unhandled rejections.
+- Minor 3, `isProgress` not requiring `job` or `elapsed_s`: fixed, decision 23, tested.
+- Minor 4, decision 6 and the Send step: the code is right (the Send step has nothing to send) and
+  the decision's words were wrong; decision 6, the guide and the details now state the exception,
+  with a test of the page's own reload on the Send step with no slice.
+- Minor 5, advanced mode after a quiet reload: half right. Advanced mode does reopen after any load
+  of a plate stored on the Settings step with it open, the page's own reload included
+  (`settings.resume`, tested in `tests/settings.test.js`, "the changes survive a reload ... and
+  advanced mode reopens when it was open"), so no code changed; the details credited the wrong file,
+  and now name `tests/settings.test.js` and `tests/coming-back.test.js`.
+- Minor 6, polling loops in `tests_browser/test_coming_back.py`: the two loops that ran
+  `return true;` until a report arrived now wait on the front server's answer to the report
+  (`expect_response`). Kept: the loop in the Preview step's summary test, which moves Playwright's
+  fake clock by 50 ms until the page's own event (`window.__driven`) has happened; it waits on that
+  event and is bounded, as the quality bar allows.
+- Minor 7: decision 25.
+
+Declined: none.
 
 ## Targets missed
 

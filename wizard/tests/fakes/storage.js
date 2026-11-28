@@ -8,6 +8,7 @@
 //                          the test made the storage unavailable
 //   refuse(match)          the next writes whose key `match` accepts (a string prefix or a
 //                          function) fail as a full allowance fails (QuotaExceededError)
+//   holdPuts()             holds every write until the function it returns is called
 //   clearAll()             the browser clears the site's storage
 // FakeTab: one tab's sessionStorage, kept across a refresh of that tab and dying with it.
 // FakeLocks: the browser's locks, shared by every tab; forTab(name) gives one tab's seam, and
@@ -26,6 +27,7 @@ export class FakeRecords {
     this.refusals = [];
     this.unavailable = false;
     this.puts = [];
+    this.gate = null;
   }
 
   async open() {
@@ -34,6 +36,7 @@ export class FakeRecords {
     return {
       async get(key) { return records.map.has(key) ? structuredClone(records.map.get(key)) : undefined; },
       async put(key, value) {
+        if (records.gate) await records.gate;
         const refusal = records.refusals.find((r) => r(key));
         if (refusal) throw quotaError();
         records.puts.push(key);
@@ -49,6 +52,13 @@ export class FakeRecords {
   }
 
   allow() { this.refusals = []; }
+
+  // Holds every write from now on until the function returned is called, as a slow disk would.
+  holdPuts() {
+    let release;
+    this.gate = new Promise((resolve) => { release = resolve; });
+    return () => { this.gate = null; release(); };
+  }
 
   clearAll() { this.map.clear(); }
 
