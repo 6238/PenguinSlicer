@@ -1975,9 +1975,9 @@ card are confirmed.
 | Arrange | Under 2 seconds for 150 instances | A button that feels like a button; anything longer would need progress and a way to cancel | Set here. Met: at most 0.06 s for 150 instances | The same |
 | The placement check | Keeps up with a drag, with 150 instances on the plate | The status line telling the truth while the user moves things | Set here. Met: at most 5 ms for each check, against a frame's 100 ms at 10 frames a second | The same |
 | The Layout view | At least 30 frames a second while an instance is dragged or the view turned, on the machine with a graphics card, and at least 10 on the one without, at the largest plate allowed: 150 instances of parts of up to 150,000 triangles | Dragging an instance feeling joined to the hand | Set here, the same figures as the layer preview, since the same hand does the dragging; a coarser look is allowed while the view moves. Measured without a graphics card, in Chromium: 150 instances of the robot's real parts dragged at 16 to 19 frames a second and turned at 17 to 20, and 150 of the largest part allowed dragged at 14 to 42; with a graphics card, unmeasured | Timed in Chrome on both machines, and reported by the page in real use |
-| The layer preview | In Chrome, at least 30 frames a second on the machine with a graphics card and at least 10 on the one without, while the view is turned or the layer bar dragged, on a 14.1 MB sliced file and on a plate at the 150-instance limit; a simpler look allowed while moving | Inspecting a plate being possible at all on a machine that draws in software | Set here. Measured: the mockup's method took many seconds a frame without a graphics card; the method chosen in the first trial of phase 2 kept 10 to 20 there, with a thin margin on a busy machine ([The risks to try first](#the-risks-to-try-first-in-phase-2)); with a graphics card, unmeasured | Timed in Chrome on both machines, reported by the page in real use, and test renders |
-| The first layer drawn | Within 5 seconds of opening the Preview step on a sliced plate, with the print time and filament shown at once | The numbers a user plans around not waiting for the picture | Set here. Measured in the first trial without a graphics card: 1.5 to 2.7 seconds from fetching the sliced file to the first layers on the screen, the full look 2.4 to 8.5 seconds | The same |
-| The page's memory | Under 1 GB for the page at the largest plate, with the layer preview of a 14.1 MB sliced file open | A laptop with 8 GB of memory, of which the browser has a share, not closing the page | Set here. Measured in the first trial: 839 MB at the heaviest plate. Twenty-five parts of 7.5 MB are about 190 MB before anything is drawn | Measured in Chrome at that plate |
+| The layer preview | In Chrome, at least 30 frames a second on the machine with a graphics card and at least 10 on the one without, while the view is turned or the layer bar dragged, on a 14.1 MB sliced file and on a plate at the 150-instance limit; a simpler look allowed while moving | Inspecting a plate being possible at all on a machine that draws in software | Set here. Measured: the mockup's method took many seconds a frame without a graphics card; the method chosen in the first trial of phase 2 kept 10 to 20 there, with a thin margin on a busy machine ([The risks to try first](#the-risks-to-try-first-in-phase-2)), and the view built on it kept 15 to 20 in the wizard's own page, never holding the page for more than about a fifth of a second; with a graphics card, unmeasured | Timed in Chrome on both machines, reported by the page in real use, and test renders |
+| The first layer drawn | Within 5 seconds of opening the Preview step on a sliced plate, with the print time and filament shown at once | The numbers a user plans around not waiting for the picture | Set here. Measured in the first trial without a graphics card: 1.5 to 2.7 seconds from fetching the sliced file to the first layers on the screen, the full look 2.4 to 8.5 seconds; the view as built, 0.8 to 1.7 seconds, the full look 1.5 to 6.5 | The same |
+| The page's memory | Under 1 GB for the page at the largest plate, with the layer preview of a 14.1 MB sliced file open | A laptop with 8 GB of memory, of which the browser has a share, not closing the page | Set here. Measured in the first trial: 839 MB at the heaviest plate; with the view as built, in the wizard's own page, 994 MB, under the target by only 6 MB. Twenty-five parts of 7.5 MB are about 190 MB before anything is drawn | Measured in Chrome at that plate |
 | Time since the user last interacted before a self-reload | 120 seconds, unless the user moves between steps | The page never refreshing under a person who is looking at it or touching it | Set here | A test with a clock the test moves |
 | The wizard's reports about itself | At most a few a minute from one page | The log not filling from one broken page | Set here at four a minute; the front server sets its own limit as well. Met for the reports of failures; the drawing summaries are not built yet | A test that makes failures faster than the limit |
 | A sliced file | At most 50 MB; 8.8 to 14.1 MB on the plates measured | The time to the first picture, and the download | Someone else's: the limit is the slice service's and the front server's; the range is measured by the slice service | A slice whose file would be larger ends with the slice service's sentence |
@@ -2283,8 +2283,8 @@ The screens designed here follow the decisions recorded in the body.
 
 ## What is to be built, by phase
 
-Of what a user sees, the panel as a whole, the Parts step and the Layout step are built, and
-none of the other steps' contents. The
+Of what a user sees, the panel as a whole, the Parts step, the Settings step, the Layout step
+and the layer preview's view are built, and none of the other steps' contents. The
 mockup is kept in the repository as the reference for the look, and its style sheet for the
 panel is taken over whole, unchanged, as the cheap way to match it; its scripts were faked,
 and the wizard's behaviour is built from this guide
@@ -2382,6 +2382,21 @@ speed, keeps its pages, figures and test renders with the trials. After the seco
 geometry of the Layout step (finding the faces a part can lie on, auto-orient, Arrange and
 the placement check) is built in the worker as the wizard's own code, and the Layout step
 uses it.
+
+The layer preview's view is built on the way the first trial chose, as a piece the Preview
+step's result will hold: given a sliced file, a second thread of its own reads it and prepares
+what is drawn while the page keeps answering, saying how far it has got; the view then draws the
+toolpaths in the four colours with the ghost of what is still to print, the layer bar at its
+right moved by dragging or by the keys and telling a screen reader its layer, the simpler look
+while the view turns or the bar is dragged and the full look when it comes to rest, and draws
+again by itself after the browser loses its 3D drawing. A file it cannot read, a browser without
+3D drawing and a failure of its own each end in the wizard's own sentences, never a blank view,
+and reach the server's log. The result around it (the print time and filament, the readout under
+the view and its buttons, Reset view, the "?" and the colour key) is still to be built. Measured
+in the page on the three plates of the first trial, on the machine without a graphics card, it
+meets the targets the trial met, with a faster first layer and a smaller margin of memory (under
+[How well it must do it](#how-well-it-must-do-it)); its test renders at the fixed angles, looked
+at one by one, are kept with the build records.
 
 | Phase | What of the wizard is built |
 |---|---|

@@ -197,6 +197,27 @@ def test_the_layer_bar_moves_by_keys_and_tells_a_screen_reader_its_layer(page, f
     page.keyboard.press("End")
     assert bar.get_attribute("aria-valuenow") == "13"
     assert w.run("return window.__seen.layers;")[-3:] == [11, 0, 12]
+    # the two small buttons under the view step one layer, never past the ends
+    w.run("window.__preview.stepLayer(-1); window.__preview.stepLayer(-1);")
+    assert bar.get_attribute("aria-valuenow") == "11"
+    w.run("window.__preview.stepLayer(1); window.__preview.stepLayer(1); window.__preview.stepLayer(1);")
+    assert bar.get_attribute("aria-valuenow") == "13"
+
+
+def test_reset_view_puts_the_camera_back_after_a_turn(page, front_server):
+    w, opened = open_view(page, front_server, "spacer-1")
+    assert opened["answer"]["ok"] is True
+    look(w, "first")
+    box = page.locator("#test-preview canvas").bounding_box()
+    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(box["x"] + box["width"] / 2 + 120, box["y"] + box["height"] / 2 + 40, steps=6)
+    page.mouse.up()
+    look(w, "turned")
+    assert changed(w, "first", "turned") >= CHANGED, "a left-drag turns the view"
+    w.run("window.__preview.resetView();")
+    look(w, "reset")
+    assert changed(w, "first", "reset") == 0
 
 
 def test_dragging_the_bar_goes_through_the_layers_with_the_look_while_moving(page, front_server):
@@ -229,6 +250,23 @@ def test_the_sliced_file_is_read_off_the_main_thread_with_progress_and_a_drawing
     assert moved["frames"] >= 12
     after = w.run("return window.__preview.summary();")
     assert after["fps_typical"] > 0 and after["fps_worst"] > 0
+
+
+def test_a_browser_without_3d_drawing_ends_in_the_wizards_report_and_one_report_to_the_server(page, front_server):
+    """A browser whose WebGL 2 is turned off gives no context: the view says so, never a blank."""
+    front_server.files["/test-files/spacer-1.gcode.3mf"] = (SLICED / "spacer-1.gcode.3mf").read_bytes()
+    page.add_init_script("""
+        const get = HTMLCanvasElement.prototype.getContext;
+        HTMLCanvasElement.prototype.getContext = function (kind, ...rest) { return kind === 'webgl2' && this.closest('#test-preview') ? null : get.call(this, kind, ...rest); };
+    """)
+    w = Wizard(page, front_server, width=680, height=900, fake_clock=False)
+    with page.expect_request(lambda r: r.url.endswith("/api/reports/failure")) as sent:
+        opened = w.run(OPEN, {"modules": modules(), "sliced": "spacer-1.gcode.3mf", "plate": None})
+    error = opened["answer"]["error"]
+    assert error["code"] == "wizard.preview_not_drawable"
+    assert error["message"] == "This browser cannot draw the layer preview: its 3D drawing is turned off or missing."
+    assert json.loads(sent.value.post_data)["what"] == "page_failed"
+    assert w.problems == []
 
 
 def test_a_file_that_is_not_a_sliced_file_ends_in_the_wizards_report_and_one_report_to_the_server(page, front_server):

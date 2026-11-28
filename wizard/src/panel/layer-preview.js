@@ -116,7 +116,7 @@ export function createLayerPreview(element, {
     complete = r.complete;
     more = Boolean(r.again);
     for (const w of [...watchers]) w(now, r);
-    if (more || driver) frame = frames.next(loop);
+    if ((more || driver) && frame === null && !destroyed) frame = frames.next(loop);
   }
   function frameState() {
     camera.updateMatrixWorld();
@@ -417,6 +417,8 @@ export function createLayerPreview(element, {
       });
     },
     decimate: () => (drawing ? drawing.decimate : null),
+    // What the frame loop is doing, for a test that finds it stuck.
+    state: () => ({ complete, moving, dirty, more, scheduled: frame !== null, lost, drawing: Boolean(drawing), driving: Boolean(driver), watchers: watchers.size }),
     groups: () => (data ? [...data.groups] : null),
   };
 }

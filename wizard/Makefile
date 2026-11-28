@@ -1,5 +1,5 @@
 .PHONY: install check-node sync install-browser test test-page test-tools test-browser build look look-parts look-parts-step \
-	look-layout-step measure-layout look-settings-step \
+	look-layout-step measure-layout look-settings-step measure-preview \
 	offered-faces trials trials-preview trials-geometry trials-parts trials-serve
 
 UV ?= uv
@@ -79,6 +79,13 @@ look-parts-step: build
 # and 680 px, into docs/orchestration/phase-2/look/wizard-5b/.
 look-layout-step: build
 	$(PY) $(CURDIR)/tests_browser/look_layout_step.py
+
+# The layer preview measured in the page on the first trial's three plates and a committed one
+# (frames a second, the main thread's longest hold, the first layer, memory, the coarse checks of
+# the look) with its test renders at the fixed angles, into docs/orchestration/phase-2/look/wizard-7/.
+# The trial's sliced files must be in wizard/trials/sliced/ (wizard/trials/preview/README.md).
+measure-preview: build
+	$(PY) $(CURDIR)/tests_browser/measure_preview.py
 
 # The Layout view's frame rate while dragging and turning at 150 instances, on this machine, into
 # docs/orchestration/phase-2/look/wizard-5b/frame-rate.json.
