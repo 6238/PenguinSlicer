@@ -17,13 +17,14 @@ def page_file(response, cache_control):
     return response
 
 
-def json_body():
-    """The request's body read as JSON, whatever its Content-Type says; a body that is not
+def json_body(raw=None):
+    """The request's body (or `raw`, its bytes as already read) read as JSON, whatever its
+    Content-Type says; a body that is not
     JSON (empty, cut short, not UTF-8, or using NaN or Infinity) is `front.bad_request`, as is
     one nested too deeply for the reader, whether or not it is whole, and one holding a number
     too large for a float (`1e999`), which would be read as an infinity no answer could
     hold."""
-    raw = request.get_data(cache=True)
+    raw = request.get_data(cache=True) if raw is None else raw
 
     def no_constants(name):
         raise ValueError(f"{name} is not JSON")

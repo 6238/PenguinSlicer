@@ -67,6 +67,8 @@ def serve(args, *, environ=None, stdout, stderr, clock=None, on_listening=None):
     load = Load(follower=follower, streams=ctx["streams"], threads=settings.threads,
                 busy=lambda: dispatcher.active_count, log=log)
     ctx["load_loop"] = Every(clock, LOAD_LINE_S, load.write, log, "load")
+    ctx["collector"].start()
+    ctx["gatherer"].start()
     ctx["sweeper"].start()
     ctx["load_loop"].start()
     (on_listening or _nothing)(server)
@@ -80,9 +82,11 @@ def serve(args, *, environ=None, stdout, stderr, clock=None, on_listening=None):
         # end, and each page opens its stream again on the front server started next; they
         # end first, so that each is closed as `stopping`, not as its following's end.
         follower.on_count = None
+        ctx["collector"].stop()
         ctx["streams"].stop()
         follower.stop()
         ctx["sweeper"].stop()
+        ctx["gatherer"].stop()
         ctx["load_loop"].stop()
         server.task_dispatcher.shutdown()
         log.write("stop")

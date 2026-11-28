@@ -924,6 +924,8 @@ One summary for each use of the Layout view and of the Preview step, never frame
 | `panel_width_px`, `pixel_ratio` | yes | The panel's width and the screen's pixel density |
 | `in_onshape` | yes | Whether the wizard is inside Onshape's panel |
 
+See [examples/wizard-front/report-drawing-request.json](examples/wizard-front/report-drawing-request.json).
+
 ## The printer, from phase 5
 
 Everything here is built in phase 5. The front server passes each request to the relay of

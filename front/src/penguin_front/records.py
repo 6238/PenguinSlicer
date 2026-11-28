@@ -20,6 +20,9 @@ FORMATS = {
     # A sliced file's record, beside the sliced file (README-details.md, "The records of a
     # sliced file").
     "sliced_file": 1,
+    # Where the gathering of the slice service's log lines stopped (README-details.md, "The
+    # log"): the slice service process and the last line's number.
+    "log_cursor": 1,
 }
 
 

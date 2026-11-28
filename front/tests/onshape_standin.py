@@ -15,6 +15,7 @@ from urllib.parse import urlencode
 
 from flask import Flask, jsonify, redirect, request
 
+import secret_watch
 from front_fakes import LoopbackServer
 
 
@@ -50,6 +51,8 @@ class OnshapeStandIn:
 
     def _tokens(self):
         access, refresh = secrets.token_urlsafe(16), secrets.token_urlsafe(16)
+        secret_watch.current.secret(access)
+        secret_watch.current.secret(refresh)
         self._access.add(access)
         self._refresh.add(refresh)
         return jsonify(access_token=access, refresh_token=refresh, expires_in=3600,
