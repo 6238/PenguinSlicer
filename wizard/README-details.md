@@ -11,14 +11,16 @@ geometry the second tried ([The geometry, in a worker](#the-geometry-in-a-worker
 [Every request: headers, answers and retrying](#every-request-headers-answers-and-retrying);
 who the user is and the configuration, as phase 2 has them ([The current group](#the-current-group),
 [The configuration and the table of settings](#the-configuration-and-the-table-of-settings));
-[What the browser keeps](#what-the-browser-keeps), but for what the later items put in it; the
+[What the browser keeps](#what-the-browser-keeps), but for `signInTrip` (phase 3); the
 worker's reading of a part and its picture ([The geometry, in a worker](#the-geometry-in-a-worker));
-the failure reports of [What the wizard reports about itself](#what-the-wizard-reports-about-itself);
-[The Parts step](#the-parts-step); [The Layout step](#the-layout-step); [Progress streams](#progress-streams);
-and of [The Preview step](#the-preview-step), submitting a plate, the slicing card, the slice
-service stopping, no room to wait and every slice failure, up to its sections
-[The result](#the-result) and [A sliced plate that expires](#a-sliced-plate-that-expires).
-Everything else here is the design to build: every screen, state and message of the guide, in
+[What the wizard reports about itself](#what-the-wizard-reports-about-itself);
+[The Parts step](#the-parts-step); [The Settings step](#the-settings-step) with advanced mode;
+[The Layout step](#the-layout-step); [Progress streams](#progress-streams);
+[The Preview step](#the-preview-step) with [the layer preview](#the-layer-preview);
+[The Send step](#the-send-step) in its phase 2 form; [When a user comes back](#when-a-user-comes-back)
+but for the printer's row; and [Reloading for a new version](#reloading-for-a-new-version):
+every item of phase 2 in [By phase](#by-phase) but item 19, which needs a second release.
+Everything else here is the design to build in later phases: every screen, state and message of the guide, in
 the builder's terms, with the names the guide leaves out (requests, fields, error codes,
 constants, stored records, tests), the figures, the tests each part needs, and an order in
 which to build phase 2.
@@ -157,7 +159,7 @@ retrying and of a part's picture (`PANEL_MIN_PX` to `PANEL_LINE_PASSING_S`, `ROW
 `ATTEMPT_TIMEOUT_S`, `PICTURE_CSS_PX`, `PART_COLOURS`, `MAIN_THREAD_HOLD_MS`), of progress
 streams (`STREAM_REOPEN_FAIL_S`, `STREAM_SILENT_S`, `POLL_S`) and of submitting a plate
 (`MAX_PLATE_CONFIGURATION_BYTES`, `PART_MISSING_TRIES`, `SLICED_FILE_KEEP_S`,
-`RECONNECTED_LINE_S`) are in `wizard/src/page-constants.js`; `MAX_PART_BYTES`, `MAX_PART_TRIANGLES`, `MAX_PARTS` and
+`RECONNECTED_LINE_S`) and of reloading (`RELOAD_IDLE_S`) are in `wizard/src/page-constants.js`; `MAX_PART_BYTES`, `MAX_PART_TRIANGLES`, `MAX_PARTS` and
 `MAX_INSTANCES` in `wizard/src/geometry/constants.js`; `PLATE_UNUSED_H` is in `wizard/src/storage.js`, `REPORTS_PER_MIN`
 in `wizard/src/reports.js`, `HEARTBEAT_MS` in `wizard/src/hold-meter.js`; and the geometry's in
 `wizard/src/geometry/constants.js` and, for the picture, `wizard/src/geometry/picture.js`.
@@ -1499,11 +1501,17 @@ something changed; a press on the handle, a patch, an instance (or the box of it
 through a hole), or empty plate is taken in that order; a double-click on a triangle within 1
 degree of a hull patch's direction lays the instance on that patch. While the view moves (a
 drag, a turn, the camera turned) on a plate of more than 250,000 triangles, and at rest on one of
-more than 500,000, each instance is drawn as its part's coarse copy (the worker's `coarse`,
+more than 250,000 too (`MOVING_TRIANGLES`, `REST_TRIANGLES`: a press on an instance draws two frames
+at rest back to back, the selection and then its patches, and at 500,000 at rest those two frames
+held the main thread 0.39 to 0.47 s at the start of a drag on the real mix), each instance is drawn as its part's coarse copy (the worker's `coarse`,
 `geometry/coarse.js`: the corners gathered into a grid over the part's box, at most the
 instance's share of the figure, in powers of two), the selected instances whole at rest; an
 instance whose coarse copy has not come at rest waits for it rather than hold the page. Without a
-graphics card the view is drawn without antialiasing (`softwareDrawing`). A part's bytes are sent
+graphics card the view is drawn without antialiasing (`softwareDrawing`). A lost drawing context
+is reported as `drawing_context_lost` and the view draws again when the browser gives it back
+(three.js's renderer keeps the context restorable and sets itself up again). Each use of the view,
+from showing the step to leaving it, is measured for its drawing summary (`beginUse`, `endUse`;
+[What the wizard reports about itself](#what-the-wizard-reports-about-itself)). A part's bytes are sent
 as a `Blob` by the transport seam: sent as an `ArrayBuffer`, a 7.5 MB upload held the main thread
 350 to 560 ms in the browser tests.
 
@@ -1784,8 +1792,9 @@ instance where it stands, and the first of a quarter, an eighth and three eighth
 makes it fit the plate, `{fits, angle}`; `settleInstance`, `placeNear` and `turnToFit` in
 `geometry/arrange.js`) and `coarse` (`key`, `maxTriangles`; a coarse copy for drawing, its corners
 a transferred `Float32Array`). `check` also answers each instance's footprint `bounds` and
-`heights`. Each answer is `{id, ok: true, result}` or `{id, ok: false, error}`,
-the error an error report of the wizard's own:
+`heights`. Each answer is `{id, ok: true, result}` or `{id, ok: false, error, fault}`,
+the error an error report of the wizard's own and `fault` whose it is (`part`, `page` or `layout`,
+by which the worker's client reports it: [What the wizard reports about itself](#what-the-wizard-reports-about-itself)):
 
 | Code | When | `message`; `remedy` |
 |---|---|---|
@@ -2294,9 +2303,11 @@ later `show` or `destroy` came first, which also stops the worker. `layer()` giv
 z}`; `setLayer(index)` and `stepLayer(±1)` move the bar (the two small buttons); `resetView()` puts
 the camera back on the instances; `summary()` gives the fields of the drawing summary the view
 knows (`view`, `fps_typical`, `fps_worst`, `first_layer_ms`, `longest_hold_ms`, `instances`,
-`sliced_file_bytes`, `sliced_file_lines`), to which the caller adds the machine's and sends with item
-18 (`fps_typical` and `fps_worst` are `null` while the view has not moved, and the front server
-refuses a summary without them, so item 18 sends none for such a use); `destroy()` stops everything and removes the canvas and the bar. For the tests, the renders and
+`sliced_file_bytes`, `sliced_file_lines`), to which the reports module adds the machine's
+([What the wizard reports about itself](#what-the-wizard-reports-about-itself); `fps_typical` and
+`fps_worst` are `null` while the view has not moved, and the front server refuses a summary without
+them, so none is sent for such a use); `beginUse(opened)` begins a new use of a view already drawn,
+its figures measured afresh; `destroy()` stops everything and removes the canvas and the bar. For the tests, the renders and
 the measurements it also has `look({ghost})` (the pixels of the full look, read on the frame that
 puts it on the screen), `untilRest()`, `setView(name)` with the fixed angles of `views`,
 `showMoving()` and `stillAgain()`, `drive(kind, steps)` (the first trial's paths, `turn` and
@@ -3090,7 +3101,7 @@ or is not yet in a contract:
 | Tooltip delay; printer details close | 150 ms; 300 ms | The mockup | Fake clock |
 | Quiet retrying; retrying in all | 20 s; 300 s, waits doubling 1 to 30 s | The guide | Fake clock |
 | A progress stream counted as failed | 20 s failing to reopen, 45 s open and silent | The guide | Fake clock, fake front server |
-| The main thread held | Never over 250 ms, any step, any plate up to the limits, on the machine without a graphics card | Set; measured for reading a part and drawing its picture: at most 12 ms in Chromium on that machine, `hub-150k.stl` included; for a malformed file of the largest size, under 250 ms; while dragging at 150 instances (missed), 0.39 to 0.49 s for the real mix, 0.22 to 0.46 s for 150 spacers and 0.10 to 0.28 s for 150 of `hub-150k.stl` drawn coarse (`make -C wizard measure-layout`, six runs); the layer preview on `blocks-12-supports` (`make -C wizard measure-preview`, five runs on Sat 2026-11-28), the longest hold by the heartbeat over loading, turning and dragging the bar was 205, 251 (loading), 340 (turning), 235 (loading) and 155 ms (loading), so missed in two runs of five | Measured by the page in tests and real use |
+| The main thread held | Never over 250 ms, any step, any plate up to the limits, on the machine without a graphics card | Set; measured for reading a part and drawing its picture: at most 12 ms in Chromium on that machine, `hub-150k.stl` included; for a malformed file of the largest size, under 250 ms; while dragging at 150 instances (missed), 0.28 to 0.29 s for the real mix, 0.21 to 0.23 s for 150 spacers and 0.07 to 0.09 s for 150 of `hub-150k.stl` drawn coarse (`make -C wizard measure-layout`, three runs on Sat 2026-11-28 with coarse copies at rest from 250,000 triangles, the machine's load average 1.5 to 4.4; the hold is the two frames at rest a press draws back to back, before the drag moves; with coarse copies at rest from 500,000 it was 0.39 to 0.49 s); the layer preview on `blocks-12-supports` (`make -C wizard measure-preview`, five runs on Sat 2026-11-28), the longest hold by the heartbeat over loading, turning and dragging the bar was 205, 251 (loading), 340 (turning), 235 (loading) and 155 ms (loading), so missed in two runs of five | Measured by the page in tests and real use |
 | A part's row says it is slow | 4 s | The mockup | Fake clock |
 | One part; different parts; instances | 7.5 MB (150,000 triangles); 25; 150 | The slice service's | One over each |
 | Storage in the browser | 25 parts of 7.5 MB for each tab's plate | Met for one tab in headless Chromium on the machine without a graphics card: stored and read back after a refresh, none refused; several tabs' full plates, and Chrome on the Mac, unmeasured | A full plate stored and reloaded |
@@ -3099,12 +3110,12 @@ or is not yet in a contract:
 | Auto-orient | Best way within 1 s of arriving | Met: at most 236 ms for `hub-150k.stl` from the file to its best way, faces included; at most 170 ms for a real part. Not measured in Chromium for a part as large on which step 5 drops faces, which reads the whole part once for each. On Node, from the mesh to its best way, on a machine shared with other builders (Sat 2026-11-28): a twelve-pointed star prism (radii 50 and 30 mm, 100 mm long) with its sides cut into 3,000 strips along its length (144,048 triangles, 12 faces dropped) 311 to 390 ms, into 600 strips (28,848) 59 to 113 ms; the L of `first-layer.test.js` 100 mm long cut into 12,000 strips (144,008, one face dropped) 204 to 299 ms; `hub-150k.stl` 248 to 330 ms | The same; the L cut into 600 strips in `first-layer.test.js` bounds the work of step 5's even-odd search |
 | Arrange | Under 2 s for 150 instances | Met: at most 30 ms for 150 of `hex-spacer.stl` (all placed) and 44 ms for a mix of 150 real parts (104 placed, the rest beside the plate) | The same |
 | The placement check | Keeps up with a drag at 150 instances | Met: at most 4.1 ms for each check of a drag at 150 instances, against one frame of 100 ms at 10 frames a second | The same |
-| The Layout view | 30 frames a second with a graphics card, 10 without, while dragging or turning, at 150 instances of parts up to 150,000 triangles | Met without a graphics card, with the coarse copies while moving: 150 instances of the real mix dragged at 16 to 19 and turned at 17 to 20, 150 of `hub-150k.stl` dragged at 14 to 42, 150 of `hex-spacer.stl` at 34 to 47, over seven runs on a shared machine; the main thread held 0.39 to 0.49 s during a drag on the real mix, 0.22 to 0.46 s on the spacers and 0.10 to 0.28 s on `hub-150k.stl` (missed). With a graphics card, unmeasured | `make -C wizard measure-layout`, in Chromium; on the Mac, Chrome; reported in real use |
+| The Layout view | 30 frames a second with a graphics card, 10 without, while dragging or turning, at 150 instances of parts up to 150,000 triangles | Met without a graphics card, with the coarse copies while moving: 150 instances of the real mix dragged at 16 to 19 and turned at 17 to 20, 150 of `hub-150k.stl` dragged at 14 to 42, 150 of `hex-spacer.stl` at 34 to 47, over seven runs on a shared machine (19 to 20, 41 to 42 and 46 to 47 in the three runs of Sat 2026-11-28); the main thread held 0.28 to 0.29 s at the start of a drag on the real mix, 0.21 to 0.23 s on the spacers and 0.07 to 0.09 s on `hub-150k.stl` (missed on the real mix; The main thread held, above). With a graphics card, unmeasured | `make -C wizard measure-layout`, in Chromium; on the Mac, Chrome; reported in real use |
 | The layer preview | 30 with a graphics card, 10 without, while turning or dragging the layer bar, on a 14.1 MB sliced file and at 150 instances; a simpler look while moving | Without a graphics card, method C of the first trial: 10 to 20 typical on the three plates (10.0 turning at `blocks-12-supports`); the view as built, in the page (`make -C wizard measure-preview`): 15 to 20 typical turning and dragging the bar on the three plates, 8.6 to 12 worst, the main thread held at most 205 ms (heartbeat) and 197 ms (longest task) in the first run, and on `blocks-12-supports` up to 340 ms by the heartbeat over five runs (The main thread held, above); with one, unmeasured | Timed in Chrome on both machines; reported in real use; test renders |
 | The first layer drawn | Within 5 s, print time and filament at once | The first trial, method C: 1.5 to 2.7 s from fetching the sliced file to the first frame with toolpaths (the look while moving; the full look 2.4 to 8.5 s); the view as built: 0.8 to 1.7 s (the full look 1.5 to 6.5 s) | The same |
 | The page's memory | Under 1 GB at the largest plate with the preview of a 14.1 MB sliced file | The first trial, method C: 839 MiB at that plate (the page's and the graphics process's peaks, `VmHWM` in KiB divided by 1,024); the view as built, in the wizard's page: 992 to 1,016 MiB over five runs on Sat 2026-11-28, under `PAGE_MEMORY_MB`'s 1,024 MiB by 8 to 32 MiB, so met with almost no margin; counted in decimal megabytes the same runs are 1,040 to 1,065 MB, over a decimal gigabyte | Measured in Chrome at that plate |
-| Before a self-reload | 120 s since the user last interacted, or a step change | Set | Fake clock |
-| Reports about itself | A few a minute from one page | Set; the front server has its own limit | Fake clock |
+| Before a self-reload | 120 s since the user last interacted, or a step change | Met | Fake clock (`tests/reloading.test.js`) |
+| Reports about itself | A few a minute from one page | Met: 4 in any 60 s, failures and drawing summaries together; the front server holds a page to 6 | Fake clock (`tests/reports.test.js`) |
 | A sliced file | At most 50 MB; 8.8 to 14.1 MB on the plates measured | The slice service's and the front server's | A slice whose file would be larger ends with the slice service's sentence |
 
 The **machine without a graphics card** is the container the project's agents work in, an aarch64
@@ -3285,7 +3296,9 @@ renders and report. A trial's script starts the trials' server itself with
   [The layer preview](#the-layer-preview) says; whether they look right is a person's judgement of the
   test renders.
 - **The page measures itself in the tests as in real use.**
-- **The previous release's page runs against the new fake front server.**
+- **The previous release's page runs against the new fake front server,** from the second release
+  on (item 19 of [By phase](#by-phase)); until then, a page whose files the front server no longer
+  serves is shown to draw its layer preview (`tests_browser/test_coming_back.py`).
 - The suites use no real front server, no real network and no fixed ports, and pass in any order, any
   number of times.
 
@@ -3479,20 +3492,27 @@ The page opened directly in a browser, with the development identity and no sign
     ([A sliced plate that expires](README.md#a-sliced-plate-that-expires);
     [The sliced file's details](../contracts/wizard-front-server.md#the-sliced-files-details)).
     Built ([A sliced plate that expires](#a-sliced-plate-that-expires), "As built"); a page that
-    comes back to an expired slice is item 16.
+    comes back to an expired slice is item 16, built.
 15. **The Send step with Download as its one button** ([The Send step](README.md#the-send-step)).
     Built ([The Send step](#the-send-step), "As built, phase 2").
 16. **Coming back:** every row of the returning page's table that phase 2 can meet
     ([Coming back to running work](README.md#coming-back-to-running-work);
     [Asking about a slice job](../contracts/wizard-front-server.md#asking-about-a-slice-job)).
+    Built ([When a user comes back](#when-a-user-comes-back), "As built, phase 2"); the printer's row
+    and the last-print note are phase 5's.
 17. **Reloading for a new version**
     ([The page reloading itself](README.md#the-page-reloading-itself-for-a-new-version);
     [The version on every answer](../contracts/wizard-front-server.md#the-version-on-every-answer)).
+    Built ([Reloading for a new version](#reloading-for-a-new-version), "As built"), with the preview's
+    worker started when the page loads.
 18. **The reports about itself,** failures and drawing summaries
     ([What the wizard reports about itself](README.md#what-the-wizard-reports-about-itself);
     [The page's reports about itself](../contracts/wizard-front-server.md#the-pages-reports-about-itself)).
+    Built ([What the wizard reports about itself](#what-the-wizard-reports-about-itself)): every
+    failure the contract lists, the handler for uncaught errors and rejected promises, and the
+    drawing summaries of the Layout view and the layer preview.
 19. **The previous release's page against the new front server,** in the tests from the second
-    release on.
+    release on. Not built: there is no previous release yet.
 
 ### Phase 3, hosted
 
