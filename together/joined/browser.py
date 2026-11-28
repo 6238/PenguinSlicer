@@ -39,7 +39,10 @@ class Wizard:
         self.page.set_viewport_size({"width": width, "height": height})
         #: What the page's own code threw or wrote as an error: a test ends asserting none.
         self.problems = []
-        self.page.on("console", lambda m: self.problems.append(m.text) if m.type == "error" else None)
+        # Chromium itself writes an error for every answer of status 400 or more ("Failed to load
+        # resource"); those are answers the page reads (a refusal, a restart), not its faults.
+        self.page.on("console", lambda m: self.problems.append(m.text) if m.type == "error"
+                     and not m.text.startswith("Failed to load resource:") else None)
         self.page.on("pageerror", lambda e: self.problems.append(str(e)))
         #: Every answer the page received from the front server, (method, path, status).
         self.answers = []
@@ -134,6 +137,23 @@ class Wizard:
                    "&& wizard.layout.model().instances.every((i) => i.bounds) "
                    "&& wizard.layout.model().status.ok;", what=f"{instances} instances laid out")
         self.run("await wizard.layout.idle();")
+
+    def to_preview(self, paths, instances=None):
+        """Add `paths`, go through Settings and Layout, and enter the Preview step, which
+        submits the plate."""
+        self.add_parts(paths)
+        self.next("settings")
+        self.next("layout")
+        self.layout_settled(len(paths) if instances is None else instances)
+        self.next("preview")
+
+    def card_stage(self, words):
+        """Wait until the slicing card's stage line says `words`."""
+        self.until("const m = wizard.slicing.model(); return m.kind === 'card' && m.card.stage === arg;",
+                   arg=words, what=f"the slicing card saying {words!r}")
+
+    def stage_line(self):
+        return self.page.locator("#slice-stage").inner_text()
 
     def sliced(self):
         """Wait until the Preview step shows the result; gives the sliced file's details."""
