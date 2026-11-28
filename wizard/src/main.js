@@ -1,7 +1,8 @@
 // The page's entry point: it reads the page's version from its <meta>, which the front server
 // fills in, joins the seams to the module that makes every request, the storage module, the
-// worker and the panel, marks the document as started, and opens the wizard (opening.js): who the
-// user is, the tab's plate, the configuration and the table of settings, after which it marks the
+// worker, the panel and the Parts step, marks the document as started, and opens the wizard
+// (opening.js): who the user is, the tab's plate, the configuration and the table of settings,
+// then the stored plate's parts (parts.js), after which it marks the
 // document as opened, or as failed with a page_failed report when the opening throws (endOpening). The running wizard is this module's export, so the browser tests reach it
 // by importing this module, never through a global.
 import { createApi } from './api.js';
@@ -10,6 +11,8 @@ import { createGeometryClient } from './geometry-client.js';
 import { createHoldMeter } from './hold-meter.js';
 import { endOpening, openWizard } from './opening.js';
 import { createPanel } from './panel/panel.js';
+import { createPartsStep } from './panel/parts-step.js';
+import { createParts } from './parts.js';
 import { createReports } from './reports.js';
 import { realClock } from './seams/clock.js';
 import { webLocks } from './seams/locks.js';
@@ -33,12 +36,21 @@ const storage = createStorage({
 const geometry = createGeometryClient(geometryWorker(), { report: (what, fields) => reports.failure(what, fields) });
 const holdMeter = createHoldMeter(realClock);
 
-const opening = endOpening(openWizard({ api, store, panel, storage }), {
+const parts = createParts({ api, storage, geometry, store, panel, report: (what, fields) => reports.failure(what, fields) });
+const partsStep = createPartsStep(document.querySelector('section.step[data-step="parts"]'), { parts, geometry, panel, window });
+
+// The opening, then the stored plate's parts taken up: their rows, and an upload again for each
+// part whose upload had not been answered.
+const opened = openWizard({ api, store, panel, storage }).then(async (outcome) => {
+  if (outcome.opened) await parts.resume();
+  return outcome;
+});
+const opening = endOpening(opened, {
   report: (what, fields) => reports.failure(what, fields),
   mark: (how) => { document.documentElement.dataset.opened = how; },
 });
 
-export const wizard = { version, store, api, panel, storage, reports, geometry, holdMeter, opening };
+export const wizard = { version, store, api, panel, storage, reports, geometry, holdMeter, parts, partsStep, opening };
 
 document.documentElement.dataset.version = version;
 document.documentElement.dataset.started = 'true';

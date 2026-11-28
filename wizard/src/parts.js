@@ -90,6 +90,11 @@ export function createParts({ api, storage, geometry, store, panel, report, hash
   const work = new Set();
   const listeners = new Set();
 
+  // The switch follows the configuration until the user chooses.
+  store.subscribe((state, before) => {
+    if (state.configuration !== before.configuration && !chosenUnits) for (const listener of listeners) listener(rows);
+  });
+
   const live = (row) => rows.includes(row);
   const track = (promise) => {
     work.add(promise);
