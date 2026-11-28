@@ -99,8 +99,9 @@ const isErrorReport = (r) => r !== null && typeof r === 'object' && typeof r.cod
   && typeof r.message === 'string' && typeof r.remedy === 'string';
 
 // The sliced file's details (contracts/wizard-front-server.md, "The sliced file's details"), as
-// far as the page relies on them: the name a download is offered under, and the summary.
-export const isDetails = (d) => d !== null && typeof d === 'object' && typeof d.file === 'string'
+// far as the page relies on them: the name a download is offered under, never empty, and the
+// summary.
+export const isDetails = (d) => d !== null && typeof d === 'object' && typeof d.file === 'string' && d.file !== ''
   && d.summary !== null && typeof d.summary === 'object';
 
 // The front server's refusal of a sliced file that has expired or gone.

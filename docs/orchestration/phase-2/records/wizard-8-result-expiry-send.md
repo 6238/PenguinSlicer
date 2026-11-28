@@ -213,6 +213,40 @@ steps. One of its checks found the readout wrapping at 320 px (decision 12).
 
 No finding of the second review was declined.
 
+### Decisions made in answer to the third review
+
+36. **A followed stored slice keeps its plate configuration, held by a test** (blocking finding
+    1). The review was right: no test failed with `resume(kept)` in place of
+    `resume(kept, built.configuration)`, and without the body the Send step's card was empty and
+    Download saved the file, then threw before it notified. A test in `tests/result.test.js` opens
+    a second page on the same stored plate, follows the stored slice to done, and checks the Send
+    step's card and one Download that saves and notifies once; it was seen to fail with the body
+    dropped. As the review suggested, `download()` now works out the notification's text before it
+    saves, and a sliced plate without its plate configuration counts as no sliced plate
+    (`{ok: false}`, nothing asked, nothing saved, nothing thrown), as `send()` already returns
+    `null` for it; a test holds that. The documents are silent on a sliced plate without its body,
+    which the code no longer makes. To overrule it, change the guard at the top of `download()`.
+37. **The summary asked after a bare done report is set aside once a new slice has begun,
+    held by a test** (blocking finding 2). A test in `tests/result.test.js` holds the summary of a
+    bare done report, slices a changed plate to done with its own slice id and file, then releases
+    the old summary three ways: details with `expires_in_s: 5`, a refusal, and a refusal as
+    expired. In each the new view keeps its file, stays done 5 s later, and the plate stays sliced.
+    It was seen to fail with `mine !== run ||` removed from `askDetails`.
+38. **The Send step's card leaving out a part without an instance is tested** (minor finding 1)
+    with a stub sliced plate whose configuration lists an unplaced part. The page's own
+    `plateConfiguration` never lists one, so the check is defensive; the test is cheap and keeps
+    `byPart` true on its own. Seen to fail with the filter removed.
+39. **`#layer-readout` is not busy after the preview's own failure** (minor finding 2): the browser
+    test of a sliced file the preview cannot read now checks `aria-busy="false"`; seen to fail
+    with `reading(false)` removed from `viewFailed`.
+40. **Details whose `file` is empty are a bad answer** (minor finding 3). The contract's `file` is
+    the sliced file's name, never empty; `isDetails` now refuses `""`, so Download shows
+    `wizard.bad_answer` rather than letting the browser pick a name. The test of answers without
+    valid details now includes one.
+41. **Running `tests_browser` outside `make` without `PLAYWRIGHT_BROWSERS_PATH`** (minor finding
+    4) is declined: the review itself says it is not this batch's, and the documented way to run
+    the browser tests is `make -C wizard test-browser`, which sets it.
+
 ## Targets missed
 
 1. **Download's notification is not where the mockup puts it.** The mockup draws a grey box
@@ -234,6 +268,9 @@ No finding of the second review was declined.
 6. **Elsewhere on the panel, as before this batch:**
    - there is no printer-status icon (it comes in phase 5);
    - the configuration's name is plain text, a departure of the guide.
+7. **The fixes of the third review were merged without a further review.** They are decisions
+   36 to 41: the tests of a followed stored slice and of a late summary, Download's guard and
+   its notification worked out before saving, and the minor findings.
 
 ## Not done
 

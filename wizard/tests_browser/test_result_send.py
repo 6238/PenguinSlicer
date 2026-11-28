@@ -171,6 +171,7 @@ def test_a_sliced_file_the_preview_cannot_read_is_an_amber_message_in_place_of_t
     assert box.locator(".what").inner_text() == "PenguinSlicer could not read this plate's sliced file to draw its preview."
     assert box.locator("button").all_inner_texts() == ["Slice again"]
     assert not w.page.locator(".preview-view-box").is_visible()
+    assert w.page.locator("#layer-readout").get_attribute("aria-busy") == "false"
     assert w.page.locator("#preview-stats .stat strong").all_inner_texts() == ["36 min", "16 g PETG"]
     assert not w.page.locator("#btn-next").is_disabled()
 

@@ -125,7 +125,9 @@ export function createResult({ api, slicing, store, panel, geometry, save }) {
     // the Send step), or {ok: false} with no sliced plate.
     async download() {
       const m = done();
-      if (!m) return { ok: false };
+      // the notification counts the sliced plate configuration's instances: without it, as without
+      // a sliced plate, there is nothing to download
+      if (!m || !m.body) return { ok: false };
       const summary = path(m.slice, 'summary');
       const answer = await api.get(summary);
       // details that arrive after the plate expired or was sliced again are another plate's: nothing
@@ -140,11 +142,12 @@ export function createResult({ api, slicing, store, panel, geometry, save }) {
       }
       const details = answer.body && answer.body.sliced_file;
       if (!isDetails(details)) return { ok: false, report: badAnswer(summary, answer.status, JSON.stringify(answer.body)) };
-      slicing.takeDetails(details);
-      save(api.link(path(m.slice, 'file')), details.file);
-      // the plate in words by what it holds, as the Send step's card counts it
+      // the plate in words by what it holds, as the Send step's card counts it, worked out before
+      // anything is saved
       const instances = m.body.instances.length;
       const what = isNumber(details.size_bytes) && details.size_bytes >= 0 ? R.DOWNLOADED(instances, sizeText(details.size_bytes)) : R.DOWNLOADED_NO_SIZE(instances);
+      slicing.takeDetails(details);
+      save(api.link(path(m.slice, 'file')), details.file);
       panel.notify({ kind: 'info', what, key: 'downloaded' });
       return { ok: true };
     },

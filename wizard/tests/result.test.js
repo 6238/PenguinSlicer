@@ -6,7 +6,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { STILL_HERE_NOTICE, hoursMinutes, sizeText } from '../src/result.js';
+import { STILL_HERE_NOTICE, createResult, hoursMinutes, sizeText } from '../src/result.js';
+import { createSlicing } from '../src/slicing.js';
+import { createStore } from '../src/state.js';
 import { offersSliceAgain } from '../src/panel/preview-step.js';
 import * as R from '../src/result-sentences.js';
 import * as T from '../src/slicing-sentences.js';
@@ -350,7 +352,7 @@ test('Download refused otherwise is that refusal, for the Send step to show, and
 });
 
 test('Download answered 200 without valid details: wizard.bad_answer for the Send step to show, nothing saved and no notification', async () => {
-  for (const body of [{}, { sliced_file: null }, { sliced_file: { summary: {} } }]) {
+  for (const body of [{}, { sliced_file: null }, { sliced_file: { summary: {} } }, { sliced_file: details({ file: '' }) }]) {
     const page = await sliced();
     await page.leave('send');
     page.server.script('GET', SUMMARY, steps.answer(200, body));
@@ -428,6 +430,85 @@ test('the sliced file for the preview arriving after the plate has expired is no
   request.held.release({ kind: 'answer', status: 200, body: 'PK-sliced', headers: { 'Content-Type': 'application/octet-stream' } });
   assert.deepEqual(await fetching, { ok: false, stopped: true });
   assert.equal(page.view().kind, 'expired');
+});
+
+test('a summary asked after a bare done report and arriving after a new slice has ended is set aside: the new slice keeps its details and its expiry', async () => {
+  const NEW = 'b7e10d44';
+  for (const late of [
+    steps.answer(200, { sliced_file: details({ file: 'old.gcode.3mf', expires_in_s: 5 }) }),
+    steps.report(errorReport('front.slice_unknown')),
+    steps.report(errorReport('front.sliced_file_expired')),
+  ]) {
+    const page = await openPage();
+    const { sliced_file: _gone, ...bare } = doneReport();
+    page.server.script('GET', SUMMARY, steps.hold());
+    feedStream(page, events.progress(bare));
+    await page.enter();
+    assert.equal(page.view().kind, 'done');
+    const [asked] = page.server.made('GET', SUMMARY);
+    assert.ok(asked.held);
+    // the plate changes and is sliced again while the old slice's summary is on its way
+    await page.leave('layout');
+    const plate = page.storage.plate();
+    await page.storage.update({ instances: plate.instances.map((i, n) => (n === 0 ? { ...i, x: 90 } : i)) });
+    page.server.script('POST', '/api/slices', steps.answer(202, { slice: { ...accepted().slice, id: NEW } }));
+    feedStream(page, events.progress({ ...doneReport(41, { file: 'new.gcode.3mf' }), job: NEW }));
+    await page.enter();
+    assert.equal(page.view().slice, NEW);
+    asked.held.release(late);
+    await page.clock.advance(0);
+    assert.equal(page.view().kind, 'done');
+    assert.equal(page.view().slice, NEW);
+    assert.equal(page.view().details.file, 'new.gcode.3mf');
+    await page.clock.advance(5 * S);
+    assert.equal(page.view().kind, 'done');           // the old summary's expiry was not taken
+    assert.equal(page.store.get().sliced, true);
+  }
+});
+
+test('a page that follows the plate\'s stored slice to done has the Send step\'s card, and Download saves and notifies once', async () => {
+  const page = await openPage();
+  feedStream(page, events.progress(progress()));
+  await page.enter();
+  // a second page on the same stored plate follows the stored slice to its end
+  const store = createStore();
+  store.set({ ...page.store.get(), step: 'layout', sliced: false });
+  const notices = [];
+  const saved = [];
+  const panel = { goTo: (s) => store.set({ step: s }), notify: (n) => notices.push(n), dropNotice() {} };
+  const slicing = createSlicing({ api: page.api, clock: page.clock, storage: page.storage, store, settings: {}, layout: page.layout, panel, report() {}, newId: () => 'other', random: () => 0.5 });
+  const result = createResult({ api: page.api, slicing, store, panel, geometry: { mesh: () => null }, save: (href, name) => saved.push({ href, name }) });
+  feedStream(page, events.progress(doneReport(42)));
+  store.set({ step: 'preview' });
+  await page.clock.advance(0);
+  assert.equal(page.submissions().length, 1);
+  assert.equal(slicing.model().kind, 'done');
+  store.set({ step: 'send' });
+  assert.deepEqual(result.send(), { count: R.ON_ONE_PLATE(3), parts: ['2 × Bracket', 'Spacer'], printTime: '36 min', grams: '16 g', filament: R.OF_FILAMENT('PETG') });
+  page.server.script('GET', SUMMARY, steps.answer(200, { sliced_file: details({ size_bytes: 3_984_588 }) }));
+  assert.deepEqual(await result.download(), { ok: true });
+  assert.equal(saved.length, 1);
+  assert.deepEqual(notices.map((n) => n.what), [R.DOWNLOADED(3, '3.8 MB')]);
+});
+
+test('the Send step\'s card names no part without an instance', () => {
+  const body = {
+    parts: { p1: { name: 'Bracket' }, p2: { name: 'Unplaced' }, p3: { name: 'Spacer' } },
+    instances: [{ ref: 'p1' }, { ref: 'p3' }],
+  };
+  const slicing = { model: () => ({ kind: 'done', slice: JOB, body, details: details(), report: doneReport() }) };
+  const result = createResult({ api: null, slicing, store: createStore(), panel: {}, geometry: { mesh: () => null }, save() {} });
+  assert.deepEqual(result.send().parts, ['Bracket', 'Spacer']);
+});
+
+test('a Download whose sliced plate has no plate configuration at hand is no sliced plate: nothing asked, saved or thrown', async () => {
+  const slicing = { model: () => ({ kind: 'done', slice: JOB, body: undefined, details: details(), report: doneReport() }), takeDetails() {}, expire() {} };
+  const saved = [];
+  const page = await openPage();
+  const result = createResult({ api: page.api, slicing, store: page.store, panel: { notify() {} }, geometry: { mesh: () => null }, save: (h, n) => saved.push({ h, n }) });
+  assert.deepEqual(await result.download(), { ok: false });
+  assert.equal(page.server.made('GET', /summary/).length, 0);
+  assert.deepEqual(saved, []);
 });
 
 test('a refusal as expired naming another sliced plate leaves this one sliced', async () => {
