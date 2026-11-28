@@ -165,6 +165,49 @@ def test_a_changed_process_starts_again_from_zero(clock, client, state, log, sta
         (first, standin.process, 3)
 
 
+def test_a_changed_process_before_any_line_takes_the_answer_as_it_is(clock, client, state,
+                                                                     log, standin):
+    found = gatherer(clock, client, state, log)
+    found.gather_once()
+    standin.restart()
+    standin.log_line("start", version="new")
+    found.gather_once()
+    assert asked(standin) == ["after=0", "after=0"]
+    assert [line["n"] for line in log.gathered] == [1]
+    assert log.own("slice_log_process_changed")[0]["after"] == 0
+
+
+def test_a_slice_job_with_no_record_is_looked_for_once_in_a_gathering(clock, client, log,
+                                                                      standin, tmp_path):
+    class Counting(Failing):
+        def __init__(self, root, clock):
+            super().__init__(root, clock)
+            self.opened = []
+
+        def open(self, name):
+            self.opened.append(name)
+            return super().open(name)
+
+    state = Counting(tmp_path / "counted", clock)
+    for state_name in ("queued", "running", "done"):
+        standin.log_line("slice_job", state=state_name, job="jnone", user_key=USER)
+    gatherer(clock, client, state, log).gather_once()
+    assert [line.get("group") for line in log.gathered] == [None] * 3
+    assert state.opened.count("sliced/dev-user/jnone.json") == 1
+
+
+def test_the_groups_remembered_are_bounded_the_oldest_forgotten(clock, client, state, log,
+                                                                 standin, monkeypatch):
+    monkeypatch.setattr(gathering, "GROUPS_KEPT", 1)
+    write_submitted(state, "ja", "2026-11-27T22:00:00Z", group="group-a")
+    write_submitted(state, "jb", "2026-11-27T22:00:00Z", group="group-b")
+    found = gatherer(clock, client, state, log)
+    standin.log_line("slice_job", job="ja", user_key=USER)
+    standin.log_line("slice_job", job="jb", user_key=USER)
+    found.gather_once()
+    assert list(found._groups) == [(USER, "jb")]
+
+
 def test_a_dropped_count_is_written_as_a_line(clock, client, state, log, standin):
     standin.log_capacity = 2
     for n in range(5):

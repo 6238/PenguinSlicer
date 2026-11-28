@@ -32,6 +32,10 @@ class Lines:
     def write(self, event, **fields):
         self.lines.append({"event": event, **fields})
 
+    def write_as(self, component, event, **fields):
+        """A line written for another component, as for the page's reports."""
+        self.lines.append({"event": event, "component": component, **fields})
+
     def events(self, event):
         return [line for line in self.lines if line["event"] == event]
 

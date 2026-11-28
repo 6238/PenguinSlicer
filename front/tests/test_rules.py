@@ -27,7 +27,8 @@ BUILT = {("GET", "/signin"), ("GET", "/api/me"), ("GET", "/"), ("GET", "/assets/
          ("GET", "/api/settings-table"), ("POST", "/api/parts"), ("POST", "/api/slices"),
          ("GET", "/api/slices/<slice>"), ("GET", "/api/slices/<slice>/events"),
          ("GET", "/api/slices/<slice>/summary"),
-         ("GET", "/api/slices/<slice>/file")}
+         ("GET", "/api/slices/<slice>/file"), ("POST", "/api/reports/failure"),
+         ("POST", "/api/reports/drawing")}
 #: The requests whose answers are page files, marked to be kept, not `no-store`.
 PAGE_FILES = {("GET", "/"), ("GET", "/assets/<file>")}
 

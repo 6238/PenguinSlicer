@@ -25,7 +25,8 @@ import traceback
 from flask import Flask, Response, g, request
 from werkzeug.exceptions import HTTPException, MethodNotAllowed, NotFound
 
-from . import asking, configuration, identity, pages, parts, settings_table, slices, streams
+from . import (asking, configuration, identity, pages, parts, reports, settings_table, slices,
+               streams)
 from .streams import Streams
 from .sweep import Sweeper
 from .answers import json_body, page_file, target_path as _path  # noqa: F401 - used by tests
@@ -89,7 +90,7 @@ def create_app(settings, *, clock, log, version=None, state_bucket=None, slice_c
     ctx["gatherer"] = Gatherer(clock=clock, slice_client=ctx["slice"],
                                bucket=ctx["state_bucket"], follower=ctx["follower"], log=log)
     for part in (pages, identity, configuration, settings_table, parts, slices, asking,
-                 streams):
+                 streams, reports):
         part.register(app)
 
     @app.before_request
