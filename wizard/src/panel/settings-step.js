@@ -76,7 +76,8 @@ export function createSettingsStep({ root, settings, store, window: win = global
   const resetAll = $('#adv-reset-all');
 
   // ---- the Filament menu's colour: beside the chosen filament's name, inside the menu's box
-  const pick = el('span', 'filament-pick');
+  // not a span: the mockup's `.field > span` is the field's own name
+  const pick = el('div', 'filament-pick');
   const swatch = el('span', 'filament-swatch');
   swatch.setAttribute('aria-hidden', 'true');
   filamentMenu.replaceWith(pick);

@@ -117,7 +117,8 @@ export function readInput(entry, text, current) {
   const above = 'max' in entry && n > entry.max;
   if (below || above) {
     const detail = `${t} outside ${entry.min ?? '-'}..${entry.max ?? '-'}`;
-    if ('min' in entry && 'max' in entry) return refuse(`must be between ${bound(entry, entry.min)} and ${bound(entry, entry.max)}`, detail);
+    // the unit once, after the second figure, as the mockup has it ("between 0.08 and 0.42 mm")
+    if ('min' in entry && 'max' in entry) return refuse(`must be between ${entry.min} and ${bound(entry, entry.max)}`, detail);
     return below ? refuse(`must be at least ${bound(entry, entry.min)}`, detail) : refuse(`must be at most ${bound(entry, entry.max)}`, detail);
   }
   return { ok: true, value: `${shortest(figure)}${percent ? '%' : ''}` };
