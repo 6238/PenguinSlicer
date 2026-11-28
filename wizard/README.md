@@ -2208,7 +2208,9 @@ the view comes to rest it draws the full look a piece at a time, over about a se
 heaviest plate, without holding the page, and shows it when it is whole. It kept 15 to 20
 frames a second while turning and dragging on all three plates, never held the page for more
 than about a sixth of a second, drew the first layer within about two seconds and stayed
-under 1 GB at the heaviest plate. The look while moving is visibly coarser (some infill shows
+under 1 GB at the heaviest plate. The margin at the heaviest plate is thin on a machine busy
+with other work: one of three runs there fell to 8.6 frames a second and held the page for
+0.3 seconds. The look while moving is visibly coarser (some infill shows
 on the sides of round parts); the full look is the one the requirements describe. The
 figures, the renders and the reasons are in the trial's
 [record](../docs/orchestration/phase-2/records/wizard-1a-trial-preview.md). Still the
