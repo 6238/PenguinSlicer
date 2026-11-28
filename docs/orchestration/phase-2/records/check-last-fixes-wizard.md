@@ -8,6 +8,8 @@ For each finding: the fix was found on `main`, the fix was undone by hand, the s
 and seen to fail, and the fix was restored (the working tree checked clean with `git status` after
 each). "Fixed and tested as found" means the code was right and a test fails without it. The
 browser tests were run in Chromium 159 with `wizard/tests_browser`, after `make -C wizard build`.
+At the end the fast suite passed twice in random order (921 and 184 tests, seeds 706388085 and
+229716422 for Node) and the whole browser suite once (191 passed in 102 s).
 
 ## The findings
 
