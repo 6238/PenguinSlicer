@@ -15,7 +15,7 @@ from pathlib import Path
 from xml.sax.saxutils import quoteattr
 
 from .mesh import read_binary_stl
-from .plate import instance_labels, instance_matrix, sanitize_part_name
+from .plate import instance_labels, instance_matrix, sanitize_part_name, turn_of
 from .slicer import ARCHIVE_SUFFIX, SliceCancelled, SliceError
 
 MODEL_ENTRY = "3D/3dmodel.model"
@@ -39,15 +39,16 @@ MODEL_HEAD = ('<?xml version="1.0" encoding="UTF-8"?>\n'
               'xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">\n<resources>\n')
 
 
-def _mesh_xml(stl_path, name):
-    """The part's <mesh> element as bytes: de-duplicated vertices (%.4f) and faces. A file
-    that went away after the plate configuration was checked is a SliceError (slice.part_missing)."""
+def _mesh_xml(stl_path, name, scale=1.0):
+    """The part's <mesh> element as bytes: de-duplicated vertices (%.4f), in millimetres
+    after the part's scale (mesh.read_binary_stl), and faces. A file that went away after the
+    plate configuration was checked is a SliceError (slice.part_missing)."""
     try:
         data = Path(stl_path).read_bytes()
     except OSError as exc:
         raise SliceError(PART_GONE_MESSAGE.format(name=name), f"{stl_path}: {exc}", error_code="slice.part_missing",
                          where={"part": name}) from None
-    mesh = read_binary_stl(data, name, source=str(stl_path))
+    mesh = read_binary_stl(data, name, source=str(stl_path), scale=scale)
     vertices = "".join('<vertex x="%.4f" y="%.4f" z="%.4f"/>' % tuple(v) for v in mesh.vertices.tolist())
     triangles = "".join('<triangle v1="%d" v2="%d" v3="%d"/>' % tuple(f) for f in mesh.faces.tolist())
     return f"<mesh><vertices>{vertices}</vertices><triangles>{triangles}</triangles></mesh>".encode("ascii")
@@ -55,8 +56,7 @@ def _mesh_xml(stl_path, name):
 
 def _transform(instance, footprint):
     """instance_matrix as 3MF's twelve numbers: M's columns, then the translation."""
-    m = instance_matrix(instance['orientation'], instance['angle'], footprint['offset'], instance['x'],
-                        instance['y'])
+    m = instance_matrix(turn_of(instance), instance['angle'], footprint['offset'], instance['x'], instance['y'])
     order = [m[r][c] for c in range(3) for r in range(3)] + [m[0][3], m[1][3], m[2][3]]
     return " ".join("%.9g" % (value + 0.0) for value in order)
 
@@ -72,8 +72,9 @@ def _check_stop(stop):
 def write_plate_3mf(path, instances, parts, stop=None):
     """Write the plate's 3MF to `path` and return its object names, one per instance.
 
-    `instances` are {'ref', 'orientation', 'angle', 'x', 'y'}; `parts[ref]` carries `name`,
-    `stl_path` and `footprints`. Each part's STL is read once. The objects are written part
+    `instances` are {'ref', 'orientation' or 'rotation', 'angle', 'x', 'y'}; `parts[ref]`
+    carries `name`, `stl_path`, `footprints` (under each instance's plate.turn_of) and,
+    for a part in inches, `scale` (25.4; 1 when left out). Each part's STL is read once. The objects are written part
     by part, every instance of a part after its mesh is built, so only one part's mesh text
     is held at a time; object ids and build items keep the instances' order. `stop` (a
     slicer.Stop) is looked at before each part's mesh and each object: once it is set the
@@ -90,7 +91,7 @@ def write_plate_3mf(path, instances, parts, stop=None):
             model.write(MODEL_HEAD.encode("ascii"))
             for ref, ids in object_ids.items():
                 _check_stop(stop)
-                mesh = _mesh_xml(parts[ref]['stl_path'], parts[ref]['name'])
+                mesh = _mesh_xml(parts[ref]['stl_path'], parts[ref]['name'], parts[ref].get('scale', 1.0))
                 for object_id in ids:
                     _check_stop(stop)
                     model.write(f'<object id="{object_id}" name={quoteattr(names[object_id - 1])} type="model">'
@@ -100,7 +101,7 @@ def write_plate_3mf(path, instances, parts, stop=None):
                 del mesh                  # freed before the next part's mesh text is built
             model.write(b"</resources>\n<build>\n")
             for object_id, instance in enumerate(instances, start=1):
-                footprint = parts[instance['ref']]['footprints'][instance['orientation']]
+                footprint = parts[instance['ref']]['footprints'][turn_of(instance)]
                 model.write(f'<item objectid="{object_id}" transform={quoteattr(_transform(instance, footprint))}/>\n'
                             .encode("ascii"))
             model.write(b"</build>\n</model>\n")

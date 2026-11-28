@@ -35,7 +35,7 @@ def test_module_entry_point_runs_serve(tmp_path, monkeypatch):
     from penguin_slice.jobs import JobPool
     ran = []
     monkeypatch.setattr(Flask, "run", lambda self, **kwargs: ran.append(kwargs))
-    monkeypatch.setattr(JobPool, "start_sweeper", lambda self, *a: None)
+    monkeypatch.setattr(JobPool, "start_sweeper", lambda self, *a, **k: None)
     monkeypatch.setattr(sys, "argv", ["penguin_slice", "serve", "--work", str(tmp_path / "work"), "--port", "0"])
     monkeypatch.delitem(sys.modules, "penguin_slice.__main__", raising=False)   # run it fresh, as -m does
     with pytest.raises(SystemExit) as caught:
@@ -48,7 +48,7 @@ def test_serve_runs_the_http_interface_and_shuts_its_pool_down(tmp_path, monkeyp
     from penguin_slice.jobs import JobPool
     ran, shut = [], []
     monkeypatch.setattr(Flask, "run", lambda self, **kwargs: ran.append(kwargs))
-    monkeypatch.setattr(JobPool, "start_sweeper", lambda self, *a: None)
+    monkeypatch.setattr(JobPool, "start_sweeper", lambda self, *a, **k: None)
     monkeypatch.setattr(JobPool, "shutdown", lambda self: shut.append(self))
     code, _err = run(["serve", "--work", str(tmp_path / "work"), "--port", "0"])
     assert code == 0
@@ -69,6 +69,17 @@ def test_serve_refuses_a_bad_memory_ceiling_at_start(tmp_path, monkeypatch, raw)
     assert not (tmp_path / "work").exists()                       # refused before anything else
 
 
+def test_serve_refuses_a_bad_part_store_limit_at_start(tmp_path, monkeypatch):
+    from flask import Flask
+    ran = []
+    monkeypatch.setattr(Flask, "run", lambda self, **kwargs: ran.append(kwargs))
+    monkeypatch.setenv("PENGUIN_SLICE_PART_STORE_MAX_MB", "4")
+    code, err = run(["serve", "--work", str(tmp_path / "work")])
+    assert (code, ran) == (2, [])
+    assert err.startswith("penguin_slice serve: The setting PENGUIN_SLICE_PART_STORE_MAX_MB is '4'")
+    assert not (tmp_path / "work").exists()
+
+
 @pytest.mark.parametrize("sig", [signal.SIGTERM, signal.SIGINT])
 def test_serve_stopped_by_a_signal_shuts_its_pool_down(tmp_path, monkeypatch, sig):
     # SIGTERM, what a container host sends, once ended serve at once with no shutdown.
@@ -81,7 +92,7 @@ def test_serve_stopped_by_a_signal_shuts_its_pool_down(tmp_path, monkeypatch, si
         threading.Event().wait(FAILSAFE_S)         # the signal ends this wait at once
         raise AssertionError(f"{sig.name} did not stop the server")
     monkeypatch.setattr(Flask, "run", run_until_signalled)
-    monkeypatch.setattr(JobPool, "start_sweeper", lambda self, *a: None)
+    monkeypatch.setattr(JobPool, "start_sweeper", lambda self, *a, **k: None)
     monkeypatch.setattr(JobPool, "shutdown", lambda self: shut.append(self))
     before = signal.getsignal(signal.SIGTERM)
     code, _err = run(["serve", "--work", str(tmp_path / "work")])
@@ -130,7 +141,7 @@ class TestMallocArenas:
         order = []
         monkeypatch.setattr(cli, "cap_malloc_arenas", lambda: order.append("cap"))
         monkeypatch.setattr(Flask, "run", lambda self, **kwargs: order.append("listen"))
-        monkeypatch.setattr(JobPool, "start_sweeper", lambda self, *a: None)
+        monkeypatch.setattr(JobPool, "start_sweeper", lambda self, *a, **k: None)
         assert run(["serve", "--work", str(tmp_path / "work"), "--port", "0"])[0] == 0
         assert order == ["cap", "listen"]
 
@@ -147,7 +158,7 @@ def test_serve_logs_one_json_line_per_transition(tmp_path, monkeypatch):
         return real_create(*args, **kwargs)
     monkeypatch.setattr("penguin_slice.web.create_app", keep)
     monkeypatch.setattr(Flask, "run", lambda self, **kwargs: None)
-    monkeypatch.setattr(JobPool, "start_sweeper", lambda self, *a: None)
+    monkeypatch.setattr(JobPool, "start_sweeper", lambda self, *a, **k: None)
     err = io.StringIO()
     main(["serve", "--work", str(tmp_path / "work")], stderr=err)
     captured["log"]({"event": "slice_job", "state": "failed", "path": tmp_path})

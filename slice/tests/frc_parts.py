@@ -6,6 +6,7 @@ Every figure here was measured once from the files with the slice service's own 
 (mesh.read_binary_stl, mesh.analyse, mesh.orientation_footprints) and written in by hand,
 so a change in what the slice service reports about a real part fails a test.
 """
+import hashlib
 from pathlib import Path
 
 FRC_PARTS_DIR = Path(__file__).resolve().parent / "fixtures" / "frc-parts"
@@ -48,15 +49,18 @@ def instance(ref, x, y, angle=0):
 
 
 def plate_configuration(instances):
-    """The plate configuration of `instances` at the default profiles, each part's stl the
-    file name the HTTP interface receives."""
+    """The phase 2 plate configuration of `instances` at the default profiles, each part named
+    by the hash of its file, in millimetres."""
     refs = list(dict.fromkeys(i["ref"] for i in instances))
-    return {"parts": {ref: {"name": PARTS[ref][1], "stl": PARTS[ref][0]} for ref in refs}, "instances": instances}
+    return {"plate_id": "frc-plate", "submission_id": "frc-submission",
+            "parts": {ref: {"name": PARTS[ref][1], "sha256": hashlib.sha256(stl_bytes(ref)).hexdigest(),
+                            "units": "mm"} for ref in refs},
+            "instances": instances}
 
 
 def files_for(configuration):
-    """{file name: bytes} for the HTTP interface's upload."""
-    return {part["stl"]: stl_bytes(ref) for ref, part in configuration["parts"].items()}
+    """[bytes] of each part of the plate configuration, to upload before it is submitted."""
+    return [stl_bytes(ref) for ref in configuration["parts"]]
 
 
 # Each part alone, in the middle of the H2S plate (340 x 320 mm).

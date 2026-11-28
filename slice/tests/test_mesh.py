@@ -5,7 +5,8 @@ import pytest
 
 from helpers import box_stl, cylinder_stl
 from penguin_slice import limits
-from penguin_slice.mesh import MeshError, _hull, analyse, orientation_footprints, part_size_mm, part_warnings, read_binary_stl
+from penguin_slice.mesh import (MeshError, _hull, analyse, orientation_footprints, part_size_mm, part_warnings,
+                                read_binary_stl, turned_footprint)
 from penguin_slice.plate import ORIENTATION_MATRICES, ORIENTATIONS
 
 UNREADABLE = "The file for Box could not be read as a part."
@@ -202,6 +203,45 @@ def test_tiny_part_refused_at_the_limit_and_accepted_above_it():
     assert (caught.value.error_code, caught.value.details) == (
         "slice.part_too_small", "shim.stl: 10.0 x 20.0 x 0.1 mm, every side must be over 0.1 mm")
     read_binary_stl(box_stl(10, 20, 0.11), "Shim")
+
+
+class TestUnits:
+    """A part in inches is scaled by 25.4 about the STL's own origin before any check."""
+
+    def test_a_part_in_inches_is_measured_25_4_times_larger(self):
+        mesh = read_binary_stl(box_stl(1, 2, 0.5, origin=(1, 0, 0)), "Box", scale=25.4)
+        assert mesh.health["size_mm"] == [25.4, 50.8, 12.7]
+        assert mesh.vertices.min(axis=0).tolist() == pytest.approx([25.4, 0, 0])        # about the origin
+        assert mesh.health["volume_mm3"] == pytest.approx(1 * 2 * 0.5 * 25.4 ** 3, abs=0.1)
+
+    def test_too_small_is_judged_on_the_scaled_part(self):
+        with pytest.raises(MeshError) as caught:
+            read_binary_stl(box_stl(0.05, 0.05, 0.05), "Box")
+        assert caught.value.error_code == "slice.part_too_small"
+        read_binary_stl(box_stl(0.05, 0.05, 0.05), "Box", scale=25.4)       # 1.27 mm a side
+
+    def test_a_small_part_in_inches_does_not_warn_of_inches(self):
+        mesh = read_binary_stl(box_stl(0.15, 0.1, 0.1), "Box", scale=25.4)  # 3.81 mm: under 5 mm
+        assert part_warnings(mesh, "Box", units="in") == []
+        assert [w["code"] for w in part_warnings(mesh, "Box", units="mm")] == ["slice.part_maybe_inches"]
+
+
+class TestTurnedFootprint:
+    def test_a_turn_of_an_orientation_gives_its_footprint(self):
+        mesh = read_binary_stl(box_stl(), "Box")
+        for name, matrix in ORIENTATION_MATRICES.items():
+            turned, oriented = turned_footprint(mesh, matrix), orientation_footprints(mesh)[name]
+            assert (turned["height"], turned["offset"]) == (oriented["height"], oriented["offset"]), name
+            assert sorted(map(tuple, turned["hull"])) == sorted(map(tuple, oriented["hull"])), name
+            assert signed_area(turned["hull"]) > 0, name
+
+    def test_a_turn_about_the_vertical_turns_the_footprint(self):
+        mesh = read_binary_stl(box_stl(10, 20, 30), "Box")
+        quarter = ((0, -1, 0), (1, 0, 0), (0, 0, 1))
+        footprint = turned_footprint(mesh, quarter)
+        x0, x1, y0, y1 = hull_box(footprint["hull"])
+        assert (x1 - x0, y1 - y0, footprint["height"]) == pytest.approx((20, 10, 30))
+        assert footprint["offset"] == [-10.0, 5.0, 0.0]
 
 
 @pytest.mark.parametrize("name", ORIENTATIONS)

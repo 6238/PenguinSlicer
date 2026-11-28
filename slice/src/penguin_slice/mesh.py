@@ -20,9 +20,10 @@ _MIRRORS = {'-z': ('+z', 1), '-x': ('+x', 0), '-y': ('+y', 1)}
 
 
 class MeshError(Exception):
-    """A part refused when it is read. `message` is one sentence for the student, `details`
+    """A part refused when it is read. `message` is one sentence for the user, `details`
     the measured value and the file for the log, `error_code` the error report's code and
-    `where` the part."""
+    `where` the part. `remedy`, when set, replaces the code's remedy and `no_action` drops
+    its action (service.check_part sets both for a part being added)."""
 
     def __init__(self, message, details="", error_code="slice.part_unreadable", where=None):
         super().__init__(message)
@@ -30,6 +31,8 @@ class MeshError(Exception):
         self.details = details
         self.error_code = error_code
         self.where = where or {}
+        self.remedy = None
+        self.no_action = False
 
 
 @dataclass
@@ -110,9 +113,11 @@ def _not_binary(data, name, source):
     return refuse(limits.PART_EXTRA_DATA_MESSAGE, detail)
 
 
-def read_binary_stl(data, name, source="the STL"):
-    """The mesh of a binary STL, refused with a MeshError the student can read. `source`
-    (the file's path) leads the details."""
+def read_binary_stl(data, name, source="the STL", scale=1.0):
+    """The mesh of a binary STL, refused with a MeshError the user can read. `source`
+    (the file's path) leads the details. `scale` multiplies every coordinate about the STL's
+    own origin before anything is measured (25.4 for a part in inches), so every check and
+    every figure after it is in millimetres."""
     where = {"part": name}
     count = _binary_triangle_count(data)
     if not count:
@@ -123,7 +128,7 @@ def read_binary_stl(data, name, source="the STL"):
                         where)
     records = np.frombuffer(data, dtype=_TRIANGLE, count=count, offset=84)
     corners = np.stack((records['v0'], records['v1'], records['v2']), axis=1).reshape(-1, 3)
-    corners = corners.astype(np.float64)
+    corners = corners.astype(np.float64) * scale
     finite = np.isfinite(corners)
     if not finite.all():
         raise MeshError(limits.NOT_FINITE_MESSAGE.format(name=name),
@@ -241,10 +246,16 @@ def analyse(mesh):
             "size_mm": [round(float(e), 3) for e in extent]}
 
 
-def part_warnings(mesh, name):
+def part_warnings(mesh, name, units="mm"):
     """The warnings a part that passed every check still carries: [{code, message, where,
-    detail}], in the order of WARNINGS."""
-    health = mesh.health or analyse(mesh)
+    detail}], in the order of WARNINGS. A part labelled in inches is never said to be maybe
+    in inches: the warning exists for a file in inches read as millimetres."""
+    return health_warnings(mesh.health or analyse(mesh), name, units)
+
+
+def health_warnings(health, name, units="mm"):
+    """part_warnings from a part's analyse() alone: a part kept in the part store is named
+    only when a plate configuration names it."""
     x, y, z = health["size_mm"]
     found = []
     if not health["watertight"]:
@@ -255,7 +266,7 @@ def part_warnings(mesh, name):
                                                                   shells=health["shells"])))
     if health["inside_out"]:
         found.append(("slice.part_inside_out", WARNINGS["slice.part_inside_out"], {}))
-    if max(x, y, z) < MAYBE_INCHES_MM:
+    if max(x, y, z) < MAYBE_INCHES_MM and units != "in":
         found.append(("slice.part_maybe_inches", WARNINGS["slice.part_maybe_inches"], dict(x=x, y=y, z=z)))
     detail = (f"{health['open_edges']:,} open edges, {health['overused_edges']:,} edges used by three or more "
               f"triangles, {health['shells']:,} shells, {x} x {y} x {z} mm")
@@ -285,6 +296,14 @@ def _footprint(hull, low, high):
     centred = np.round(hull - (cx, cy), 3) + 0.0      # + 0.0 turns -0.0 into 0.0
     return {'hull': centred.tolist(), 'height': round(float(high[2] - low[2]), 3),
             'offset': [round(float(cx), 3) + 0.0, round(float(cy), 3) + 0.0, round(float(low[2]), 3) + 0.0]}
+
+
+def turned_footprint(mesh, matrix):
+    """The footprint of the part turned by a 3 x 3 row-major `matrix` (v' = M v), in the form
+    of orientation_footprints' entries: for an instance laid by a general rotation."""
+    rotated = mesh.vertices @ np.asarray(matrix, dtype=np.float64).T
+    low, high = rotated.min(axis=0), rotated.max(axis=0)
+    return _footprint(_hull(rotated[:, :2]), low, high)
 
 
 def orientation_footprints(mesh):
