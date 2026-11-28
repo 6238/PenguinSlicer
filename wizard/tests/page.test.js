@@ -77,6 +77,23 @@ test('index.html loads nothing from another site', () => {
   assert.deepEqual(otherSites(html), []);
 });
 
+const MOCKUP = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'docs', 'mockups', 'print-wizard');
+
+test('the panel\'s style sheet is the mockup\'s, byte for byte', () => {
+  const ours = readFileSync(join(dirname(INDEX), 'css', 'panel.css'));
+  const mockup = readFileSync(join(MOCKUP, 'css', 'panel.css'));
+  assert.ok(ours.equals(mockup), 'src/css/panel.css differs from docs/mockups/print-wizard/css/panel.css');
+});
+
+test('every id of the page is one of the mockup\'s, in the mockup\'s order', () => {
+  const ids = (text) => [...text.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]);
+  const mockup = ids(readFileSync(join(MOCKUP, 'index.html'), 'utf8'));
+  const ours = ids(html);
+  assert.deepEqual(ours.filter((id) => !mockup.includes(id)), ['config-status', 'config-name', 'config-refresh']);
+  const shared = ours.filter((id) => mockup.includes(id));
+  assert.deepEqual(shared, mockup.filter((id) => shared.includes(id)));
+});
+
 test('a reference to another site is caught in double quotes, single quotes or none', () => {
   assert.deepEqual(otherSites('<script src="https://cdn.example/a.js">'), ['https://cdn.example/a.js']);
   assert.deepEqual(otherSites("<script src='https://cdn.example/b.js'>"), ['https://cdn.example/b.js']);

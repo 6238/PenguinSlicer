@@ -73,12 +73,14 @@ async function attemptOnce({ transport, clock, method, path, headers, body, time
 //   get, post, put: request with that method.
 //   link(path): a plain link's address, naming the current group in its query.
 //   pending(): the requests sent and not yet answered.
+//   waiting(): of those, the ones waiting between attempts or for Try again.
 //   onVersion(listener): told every answer's X-PenguinSlicer-Version.
 //   board: the retry board, for the panel line.
 export function createApi({ transport, clock, version, currentGroup = () => null, random = Math.random }) {
   const board = createRetryBoard(clock);
   const versionListeners = new Set();
   let pending = 0;
+  let waiting = 0;
 
   function headersFor(method, path, options) {
     const headers = { 'X-PenguinSlicer-Page': version };
@@ -125,12 +127,17 @@ export function createApi({ transport, clock, version, currentGroup = () => null
           entry = board.failed(entry);
           const wait = Math.max(retryWaitS(index, random), outcome.retryAfterS ?? 0) * 1000;
           index += 1;
-          if (now + wait > entry.firstFailedAt + RETRY_TOTAL_S * 1000) {
-            await board.park(entry);
-            entry = null;
-            index = 0;
-          } else {
-            await board.waitUntil(entry, now + wait);
+          waiting += 1;
+          try {
+            if (now + wait > entry.firstFailedAt + RETRY_TOTAL_S * 1000) {
+              await board.park(entry);
+              entry = null;
+              index = 0;
+            } else {
+              await board.waitUntil(entry, now + wait);
+            }
+          } finally {
+            waiting -= 1;
           }
         }
       } finally {
@@ -152,6 +159,7 @@ export function createApi({ transport, clock, version, currentGroup = () => null
       return `${path}${path.includes('?') ? '&' : '?'}group=${encodeURIComponent(group)}`;
     },
     pending: () => pending,
+    waiting: () => waiting,
     onVersion(listener) { versionListeners.add(listener); return () => versionListeners.delete(listener); },
     board,
   };
