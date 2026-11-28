@@ -19,7 +19,7 @@ from flatten_orca_profiles import CATALOG_OUT, bbl_profile_dir, build_catalog, l
     write_profiles
 from helpers import (CONTRACTS, FIXTURES, PLATE_ID, SUBMISSION_ID, USER_KEY, box_stl, l_prism_stl, make_part,
                      part_from_stl, phase_2, pinned_orca_version, sha256, submit, upload)
-from measure_plate import hub_stl, plate_layout
+from measure_plate import SUPPORTS_OFF, SUPPORTS_ON, hub_stl, plate_layout
 from penguin_slice.errors import error_report
 from penguin_slice.mesh import read_binary_stl
 from penguin_slice.plate import instance_hull, instance_matrix
@@ -50,7 +50,8 @@ def one_instance_plate(work, stl_bytes, name, x=150.0, y=150.0):
 
 
 def profiles_with(work, supports):
-    process = write_process_with_overrides(DEFAULT_PROFILES.process, validate_overrides({"supports": supports}),
+    process = write_process_with_overrides(DEFAULT_PROFILES.process,
+                                           validate_overrides(SUPPORTS_ON if supports == "on" else SUPPORTS_OFF),
                                            work / "process.json")
     return SliceProfiles(DEFAULT_PROFILES.printer, DEFAULT_PROFILES.filament, process)
 
@@ -75,10 +76,12 @@ def test_installed_orca_runs_and_is_the_pinned_release(tmp_path):
 
 def phase_2_example():
     """The contract's example plate configuration in its phase 2 form: its parts named by the
-    hashes of their files, in millimetres, with a plate id and a submission."""
+    hashes of their files, in millimetres, with a plate id and a submission, and its overrides
+    under Orca's own names (those of the phase 2 example, the same four settings)."""
     data = json.loads(EXAMPLE.read_text())
     for part in data["parts"].values():
         part.update(sha256=sha256((EXAMPLE_PARTS / part.pop("stl")).read_bytes()), units="mm")
+    data["overrides"] = json.loads((CONTRACTS / "examples" / "plate-configuration-phase-2.json").read_text())["overrides"]
     return {"plate_id": PLATE_ID, "submission_id": SUBMISSION_ID, **data}
 
 
@@ -159,7 +162,6 @@ def test_a_rotation_and_a_part_in_inches_slice_where_the_checks_place_them(tmp_p
     from penguin_slice.mesh import turned_footprint, orientation_footprints
     from penguin_slice.plate import quaternion_matrix
     example = json.loads((CONTRACTS / "examples" / "plate-configuration-phase-2.json").read_text())
-    example["overrides"] = {"infill": 20, "walls": 3, "supports": "off", "brim": "auto"}    # until item 6
     half, c15, s15 = 0.5 ** 0.5, math.cos(math.radians(15)), math.sin(math.radians(15))
     # qz(30 degrees) times the quaternion of '+x' (half, 0, -half, 0): the '+x' turn, then 30 degrees about z.
     example["instances"][3]["rotation"] = [c15 * half, s15 * half, -c15 * half, s15 * half]

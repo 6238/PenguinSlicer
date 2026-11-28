@@ -40,7 +40,11 @@ are items 1 to 4: the user key on every request, one part uploaded by itself int
 store, its units beside it, and the plate configuration in its phase 2 form, parts named by
 hash and an instance turned by a rotation (see
 [The user key, the part store, units and the plate configuration](#the-user-key-the-part-store-units-and-the-plate-configuration));
-the shared plates now go through `POST /slices` after their parts are uploaded.
+the shared plates now go through `POST /slices` after their parts are uploaded. Items 5 and
+6 are built too: the table of settings, generated from Orca 2.4.2's source with every
+process setting classified and served by `GET /settings-table`, and every setting of it
+accepted in `overrides` under Orca's own name (see
+[The table of settings](#the-table-of-settings)).
 
 **Not built or not known:**
 
@@ -195,99 +199,19 @@ The front server and one slice service process run on the one machine
 The items are in the order to build them; each rests on those before it, except item 17,
 the shared plates, which was written first of all, before item 1, since the wizard's builder
 runs it from the start and it needs only the placement check as built; it is built. Items 1
-to 4, which replace the way parts arrive, are built too; 5 and 6 replace the settings, 7 to
-13 the life of a slice job, and 14 to 18 finish the phase.
+to 4, which replace the way parts arrive, are built too, and so are 5 and 6, which replace
+the settings; 7 to 13 replace the life of a slice job, and 14 to 18 finish the phase.
 
 **1 to 4. The user key, the part store, units and the plate configuration.** Built: see
 [The user key, the part store, units and the plate configuration](#the-user-key-the-part-store-units-and-the-plate-configuration).
 What they leave to later items: a plate's id and a submission's value are carried and
 logged, and compared among the slice jobs of one user key only from item 7; the three
 routes that answer for the whole slice service and are not scoped to a user key (the table
-of settings, item 5; the list of slice jobs, item 11; the log, item 16) ignore the header
-when they are built; the `overrides` keep the four as built until item 6; the first
-progress report has no `ahead` until item 8.
+of settings, item 5, built; the list of slice jobs, item 11; the log, item 16) ignore the
+header; the first progress report has no `ahead` until item 8.
 
-**5. The table of settings**
-([How the list of accepted settings is made](README.md#how-the-list-of-accepted-settings-is-made),
-[Where the wizard gets the list of settings and the profile catalog's names](README.md#where-the-wizard-gets-the-list-of-settings-and-the-profile-catalogs-names),
-[Taking a new Orca version](README.md#taking-a-new-orca-version);
-[the table of settings](../contracts/settings-table.md), passed on by the front server's
-[request for it](../contracts/wizard-front-server.md#the-table-of-settings)). The table is
-generated, never written by hand, and checked in:
-
-- **The source.** `make upgrade-orca` also downloads the pinned version's source archive
-  and verifies it against a checksum pinned beside `ORCA_VERSION` in
-  `scripts/install-orca.sh` (*proposed*). Taking a new Orca version therefore needs its
-  source as well as its release.
-- **The generator** (`scripts/make_settings_table.py`, *proposed*) reads Orca's option
-  definitions in that source for each process setting's name, kind, permitted values
-  (`choices`, `number_form`, `min`, `max`), label, page (`section`), group, explanation,
-  unit and whether it is kept for each extruder variant (`per_variant`), in Orca's order;
-  takes `process_values` from the profile catalog's process profiles (the profile's own
-  value or Orca's default, and for a `per_variant` setting the variant of the profile's
-  printer); and takes `catalog` (`printers` with `printable_area` and `printable_height`,
-  `filaments`, `processes`) from `profiles/catalog/index.json` and the printer profiles. A
-  text setting's `max_length` is the length of its longest value in the profile catalog,
-  and never less than 1. It writes `src/penguin_slice/settings/table.json` (*proposed*),
-  `format` 1, with `orca_version`. `make upgrade-orca` runs it after it regenerates the
-  profile catalog. The generator reads Orca's source as data; no code of Orca's is copied
-  into PenguinSlicer (Orca is AGPL, PenguinSlicer MIT). Reading Orca's definitions this way
-  has not been tried.
-- **The classification.** Every process setting of the pinned Orca is classified, as a
-  parameter or as programmatic, in `src/penguin_slice/settings/classification.json`
-  (*proposed*), each programmatic one with its reason. Programmatic: a setting that runs a
-  program (the post-processing scripts, `post_process`), one that names a file on the
-  server, and custom G-code (the `*_gcode` settings, such as `machine_start_gcode` and
-  `before_layer_change_gcode`). Only parameters enter the table, and no setting of the
-  filament or printer profile does. The agent taking a new Orca version classifies every
-  new setting before the work is finished.
-- **The route.** [`GET /settings-table`](../contracts/slice-http-interface.md#get-settings-table)
-  answers the table whole, gzip-encoded when the request accepts it; the front server passes it to the wizard unchanged and
-  keeps no copy from one start to the next. About 295 settings, a few hundred kilobytes.
-
-Open: who notices a configuration that names a profile the catalog has lost
-([the item](README.md#who-notices-a-configuration-that-names-a-profile-the-catalog-has-lost));
-nothing is built for it, since no configuration can lose a profile until the first upgrade
-of Orca, and as built a name the catalog lacks is refused with `slice.unknown_printer` or
-`slice.profiles_not_offered`. Tests: the checked-in table has its contract's shape (each
-entry's fields for its kind, every process profile of `catalog.processes` in
-`process_values` with every setting); it holds no setting classified programmatic and no
-filament or printer setting; the route answers it whole and compressed; the generator,
-run on a small fixture of option definitions (*proposed*), gives the expected entries, and
-fails naming a setting the fixture's classification lacks; in the upstream check, a test
-(`test_every_setting_of_the_pinned_orca_is_classified`, *proposed*) fails when a setting of
-the installed Orca is classified nowhere, and another when the checked-in table differs
-from what the generator makes from the installed version.
-
-**6. Every setting that is a parameter** ([Accept settings](README.md#accept-settings);
-[Settings in phase 2](../contracts/plate-configuration.md#settings-in-phase-2)).
-`overrides` holds settings under Orca's own names, each value a string as Orca writes it,
-and every setting of the table may appear. Each value is checked against its entry before
-Orca runs: a choice must be one of `choices`' values (`"0"` or `"1"` for an on-and-off
-setting); a number must be of its `number_form` and within `min` and `max` where the entry
-has them; a text no longer than `max_length`. A `per_variant` setting takes one value,
-which the slice service writes for every extruder variant. Only the process profile's
-values are replaced. A setting the table does not hold (programmatic, a filament or
-printer setting, a misspelling) or a value that does not fit refuses the plate
-configuration with `slice.bad_overrides`, whose sentence and `detail` name the setting and
-say why (a value shown is cut to 120 characters, as built). Supports are on when
-`overrides` sets `enable_support` to `"1"`, or does not set it and the process profile's
-own value is `"1"`: that one question still decides `SPACING_SUPPORTS_MM` and the supports
-factor of both estimates. Other settings that make an instance need more room (a wide
-brim, a raft, printing one object at a time) are not known to the placement check, and
-Orca refuses such a plate with `slice.orca_too_close`, as built. The four quick changes of
-the wizard's Settings step are ordinary settings (`sparse_infill_density`, `wall_loops`,
-`enable_support` with `support_type` `tree(auto)`, `brim_type`). Replaces:
-`print_config.OVERRIDE_CHOICES`, `print_config.validate_overrides` and the four keys, and
-the sentence "These print settings could not be read; choose them from the lists.", which
-names no setting. Tests: a setting of each kind and each number form accepted and
-reaching Orca's process file; a `per_variant` setting written for every variant; an
-unknown setting, a value off its list, a number out of range or of the wrong form, a text
-one character over its `max_length`, a programmatic setting and a filament setting each
-refused with the setting named; supports turned on through `overrides`, and through the
-process profile, give the 12 mm spacing and the supports factor; a plate with a wide brim
-whose instances are 5 mm apart passes the placement check and, with a fake Orca returning
--101, ends `slice.orca_too_close`.
+**5 and 6. The table of settings, and every setting that is a parameter.** Built: see
+[The table of settings](#the-table-of-settings). What they leave to later items: nothing.
 
 **7. A plate's later slice replaces its earlier one, and a repeat is recognised**
 ([Run one slice at a time, and let a few wait](README.md#run-one-slice-at-a-time-and-let-a-few-wait),
@@ -470,9 +394,8 @@ component, and the user key of the request it concerns; a new process answers a 
 
 **17. One shared set of plates for the two placement checks.** Built: see
 [Shared plates for the placement checks](#shared-plates-for-the-placement-checks), each
-plate now through `POST /slices` after its parts are uploaded. What remains falls to item 6:
-once the overrides take Orca's own names, `tests/test_placement_plates.py` sends each
-plate's `enable_support` as it is, in place of the `supports` override as built.
+plate now through `POST /slices` after its parts are uploaded, exactly as it is, its
+`enable_support` under Orca's own name.
 
 **18. The slice service's half of each row of the restart table**
 ([What a restart does](README.md#what-a-restart-does),
@@ -686,9 +609,7 @@ curl -s -OJ -H "$K" http://127.0.0.1:8640/slices/<job>/file        # the sliced 
 ```
 
 `plate.json` is [the phase 2 example](../contracts/examples/plate-configuration-phase-2.json)
-with its `overrides` in the four as built (`{"infill": 20, "walls": 3, "supports": "off",
-"brim": "auto"}`) until every setting under Orca's own name is built (item 6 of
-[Phase 2](#phase-2-one-machine)), and without its fourth instance. That instance lays the
+without its fourth instance. That instance lays the
 bracket by a `rotation` on a face of its convex hull that is no face of the part, so the
 bracket touches the plate along two edges only: the checks accept it, and the pinned Orca
 fails the slice (`slice.orca_failed`, "floating regions" in its log). With the first three
@@ -712,8 +633,8 @@ worker gets `slice.unknown_job`. `serve` runs Flask's own threaded server in one
 
 `penguin_slice.web.create_app(work_dir)` is a Flask app factory, built to
 [the contract](../contracts/slice-http-interface.md) for the routes below; the contract's
-other routes (`GET /slices`, `DELETE /slices/<job>/file`, `GET /settings-table`, `GET /log`)
-are still [to be built](#phase-2-one-machine):
+other routes (`GET /slices`, `DELETE /slices/<job>/file`, `GET /log`) are still
+[to be built](#phase-2-one-machine):
 
 | Request | Answer |
 |---|---|
@@ -724,8 +645,9 @@ are still [to be built](#phase-2-one-machine):
 | `DELETE /slices/<job>` | Cancel: `{"cancel": "cancelled" \| "cancelling" \| "finished"}` |
 | `GET /slices/<job>/file` | The sliced file of a done slice job, and nothing else |
 | `GET /slices/<job>/summary` | The sliced file's summary ([sliced-file.md](../contracts/sliced-file.md), "Summary") as a JSON body |
+| `GET /settings-table` | The table of settings whole, `gzip`-encoded when the request accepts it; the user key is not looked at (see [The table of settings](#the-table-of-settings)) |
 
-**The user key.** Every one of these requests carries the user key in the header
+**The user key.** Every one of these requests but `GET /settings-table` carries the user key in the header
 `X-Penguin-User-Key` (`web.USER_KEY_HEADER`). One without it, or with an empty one, is
 refused with `slice.no_user_key` (HTTP 400; [the contract's example](../contracts/examples/slice-http/no-user-key.json)),
 whose detail names the method, the path and whether the header was missing or empty. The
@@ -920,9 +842,9 @@ uploads nothing.
   ([Submitting a plate configuration](../contracts/wizard-front-server.md#submitting-a-plate-configuration)).
   The progress report has no `ahead` until item 8.
 
-The `overrides` keep the four as built (`print_config.OVERRIDE_CHOICES`) until item 6 of
-[Phase 2](#phase-2-one-machine) gives them Orca's own names, so the contract's phase 2
-example is accepted only with its `overrides` written in those four.
+The `overrides` are checked against the table of settings in step 3
+([Settings a plate configuration may replace](#settings-a-plate-configuration-may-replace)),
+so the contract's phase 2 example is accepted as it is.
 
 **Found with the real Orca.** The contract example's `rotation` lays the bracket on the face
 of its convex hull across the L's open corner, which is no face of the part: the bracket then
@@ -1114,6 +1036,200 @@ uv run --project slice python slice/scripts/flatten_orca_profiles.py
 uv run --project slice python slice/scripts/flatten_orca_profiles.py --audit-only   # resolved values and their sources
 ```
 
+## The table of settings
+
+Items 5 and 6 of [Phase 2](#phase-2-one-machine), built
+([How the list of accepted settings is made](README.md#how-the-list-of-accepted-settings-is-made),
+[Where the wizard gets the list of settings and the profile catalog's names](README.md#where-the-wizard-gets-the-list-of-settings-and-the-profile-catalogs-names),
+[Accept settings](README.md#accept-settings),
+[Taking a new Orca version](README.md#taking-a-new-orca-version);
+[the table of settings](../contracts/settings-table.md),
+[Settings in phase 2](../contracts/plate-configuration.md#settings-in-phase-2), passed on by
+the front server's [request for it](../contracts/wizard-front-server.md#the-table-of-settings)).
+The table, `src/penguin_slice/settings/table.json`, is generated, never written by hand, and
+checked in: `format` 1, `orca_version` `2.4.2`, 338 settings, the values of the 16 process
+profiles of the catalog and the catalog's names (4 printers, 136 filaments, 16 processes);
+378,740 bytes, 34,716 compressed.
+
+**The source.** `SHA_SOURCE` in `scripts/install-orca.sh`, beside `ORCA_VERSION`, pins the
+SHA-256 of GitHub's archive of the version's tag
+(`https://github.com/OrcaSlicer/OrcaSlicer/archive/refs/tags/v<version>.tar.gz`, 131 MB for
+2.4.2); `install-orca.sh` itself does not download it. `scripts/fetch_orca_source.py`
+(`make orca-source`) downloads the archive, verifies it, and keeps only the three files the
+generator reads (`make_settings_table.SOURCE_FILES`: `src/libslic3r/Preset.cpp`,
+`src/libslic3r/PrintConfig.cpp`, `src/slic3r/GUI/Tab.cpp`, 1.2 MB) in `tools/orca-source/`
+with a `VERSION` stamp of the version and the checksum. It is idempotent: a stamp that
+records the pin, its version and its checksum both, downloads nothing; a stamp of the same
+version with another checksum is fetched and verified again. A wrong checksum, an archive
+that is not a `.tar.gz` or that lacks one of the three files keeps nothing new and leaves an
+earlier source as it was; the earlier source is moved aside and removed only once the new
+one is in place, so a failed move leaves it as it was too;
+the members are read by name and written by the script, never extracted, so no path in the
+archive is followed. `PENGUIN_SLICE_ORCA_CACHE` keeps each verified archive as
+`OrcaSlicer-<version>.tar.gz` and reuses it, verified against the pin like a download: a
+cached archive that has changed is refused by name, nothing is kept, and it stays in the
+cache until removed (`test_a_changed_archive_in_the_cache_is_refused_and_named`); an
+archive that fails its checksum is never cached. `make test-upstream` runs `make orca-source`
+first. GitHub publishes no checksum of a tag's archive, so `make upgrade-orca` fetches the
+new version's archive trusting the download and pins the checksum of what it received
+([Taking a new upstream version](#taking-a-new-upstream-version)); every later fetch is
+verified against that pin.
+
+**The generator.** `scripts/make_settings_table.py` (`make settings-table`; `--check`
+compares with the checked-in table instead of writing it, and exits 1 when they differ)
+reads Orca's source as data, with regular expressions over the C++ text with its comments
+removed; no code of Orca's is copied into PenguinSlicer (Orca is AGPL, PenguinSlicer MIT).
+From `Preset.cpp` it takes the process settings, in Orca's order, from
+`s_Preset_print_options` (355 at 2.4.2). From `PrintConfig.cpp` it takes each setting's
+definition, the lines from its `def = this->add("<name>", <type>)` to the next assignment
+of `def`: `label` (or `full_label` when there is no `label`), `tooltip` (the
+`explanation`), `sidetext` (the `unit`), `min` and `max` (a literal or a named constant of
+the file, `max_temp`), the `enum_values` and `enum_labels` of a choice (pushed one by one,
+given as a braced list, or taken over from another definition through its variable,
+`def_top_fill_pattern->enum_values`), and the default given to `set_default_value`, an
+enum's default turned into its key through the file's `s_keys_map_<Type>` tables. A
+setting without a `min` or `max` line has no bound in the table. Which settings Orca
+keeps for each extruder variant comes from `print_options_with_variant`. From `Tab.cpp`
+it takes the page (`section`) and setting group of each setting from `TabPrint::build`, in
+the order Orca shows them, which is the table's order. Orca's type gives the kind:
+`coFloat` a number in `decimal` form, `coInt` `integer`, `coPercent` `percent`,
+`coFloatOrPercent` `decimal_or_percent`, `coBool` a choice of `"0"` and `"1"` labelled
+"Off" and "On", `coEnum` a choice, `coString` a text; a list type is the same kind for a
+setting kept for each variant and is refused otherwise. `process_values` holds, for each
+process profile of the catalog, each setting's own value in the profile, or Orca's default
+written as Orca writes it (a number as an ostream writes it, six significant digits; a
+percentage with its `%`; on and off as `"0"` and `"1"`) when the profile holds none. A
+profile's list for a setting Orca keeps once gives its first value: Orca reads only that
+(see "Found with the real Orca" below). For a `per_variant` setting it would give the value
+of the profile's printer's variant (`extruder_type` and `nozzle_volume_type`, "Direct Drive
+High Flow", found in the profile's `print_extruder_variant`). A text setting's
+`max_length` is the length of its longest value among the process values, and never less
+than 1. `catalog` is `profiles/catalog/index.json`'s three lists in its order, each
+printer with its `printable_area` (its corners, from the profile's `"<x>x<y>"` strings) and
+`printable_height`. The generator stops with a message naming the setting or the file
+(`TableError`) when the source is missing, when a process setting is classified nowhere,
+classified twice, or classified but not one of this Orca's, when a programmatic or not
+offered setting has no reason, and when a parameter has no definition, is on no page, has
+choices whose labels do not pair up, a default or a line it cannot read, or a type the
+table cannot hold. A line it cannot read in a definition no parameter needs is no error.
+
+**The classification.** `src/penguin_slice/settings/classification.json` classifies every
+process setting of the pinned Orca by hand, in one of three lists: `parameters` (338, the
+table's settings), `programmatic` (3) and `not_offered` (14), each of the last two with its
+reason, written to complete the sentence "The setting `<name>` cannot be changed: ...",
+which the refusal shows. Programmatic: `post_process` (runs a program), `filename_format`
+(names a file on the server: the sliced file's name, which the slice service sets) and
+`process_change_extrusion_role_gcode` (custom G-code). The other custom G-code
+(`machine_start_gcode`, `before_layer_change_gcode` and the rest) and every other setting
+of the filament and printer profiles are no process setting, so they are in no list and
+refused as such. Not offered: the 13 process settings Orca shows on no page of its process
+settings (`travel_speed_z`, `enforce_support_layers`, `raft_expansion`,
+`support_interface_loop_pattern`, `prime_tower_flat_ironing`, `wiping_volumes_extruders`,
+`calib_flowrate_topinfill_special_order`, `ironing_expansion`, and the profile's own
+bookkeeping: `print_extruder_id`, `print_extruder_variant`, `compatible_printers`,
+`compatible_printers_condition`, `inherits`), which have no page or group to be shown
+under, and `small_area_infill_flow_compensation_model`, a list of figures no kind of entry
+can describe. The agent taking a new Orca version classifies every new setting before the
+work is finished.
+
+**The route.** [`GET /settings-table`](../contracts/slice-http-interface.md#get-settings-table)
+answers the checked-in file's bytes whole as `application/json`, with `Content-Encoding:
+gzip` (compressed once per process, `settings_table.Table.gzipped`) when the request's
+`Accept-Encoding` allows `gzip` with a quality above 0 (or `*`), and `Vary:
+Accept-Encoding`. It answers for the whole slice service, so the user key is not looked at.
+The table is read once per process (`settings_table.load`); one that is missing or not a
+table answers 500 with `slice.profile_unreadable` ("The slicer could not read its table of
+settings."), logged. The front server passes it to the wizard unchanged and keeps no copy
+from one start to the next.
+
+### Settings a plate configuration may replace
+
+`overrides` holds settings under Orca's own names, each value a string as Orca writes it,
+and every setting of the table may appear (`settings_table.validate_overrides`, step 3 of
+the checks). Each value is checked against its entry before Orca runs:
+
+- a value that is not a string is refused;
+- a choice must be one of its `choices`' values (`"0"` or `"1"` for an on-and-off setting);
+- a number must be of its `number_form`, written as Orca writes it, in the digits 0 to 9
+  only (another script's digits are refused): `integer` `-?[0-9]+`, and within a C++ int;
+  `decimal` `-?[0-9]+(\.[0-9]+)?`, no sign `+`, no space, no exponent, no `nan`, no `.5`;
+  `percent` a decimal with `%`; `decimal_or_percent` either; at most 40 characters
+  (`MAX_NUMBER_CHARS`); then
+  within `min` and `max` where the entry has them, a percentage's figure in percent;
+- a text must be no longer than its `max_length`, hold no control character (`\x00` to
+  `\x1f`, `\x7f`) and no lone surrogate (U+D800 to U+DFFF, which a JSON `\ud800` escape
+  can carry and UTF-8 cannot write): "Insert solid layers (Strength, Advanced) cannot hold
+  a character that is not valid text."
+
+Every process profile's own value of every setting passes these checks. A setting the
+table does not hold, or a value that does not fit, refuses the plate configuration with
+`slice.bad_overrides` (HTTP 422, action `choose_profiles`), whose sentence names the
+first problem and whose `detail` lists every one (at most 20, `DETAIL_PROBLEMS`, then how
+many more); a value shown is cut to 120 characters (`SHOWN_CHARS`). The setting is named
+by its label, page and group, "Wall loops (Strength, Walls) must be at most 1000, not
+1001."; one the table does not hold by its name: "The setting post_process cannot be
+changed: it runs a program (the post-processing scripts Orca runs on the finished file).",
+"The setting nozzle_temperature belongs to the filament or printer profile, which a plate
+cannot change." (the names of the default set's filament and printer profiles), "The
+setting wall_lops is not a print setting the slicer knows."; a name longer than 120
+characters, or holding a character that does not print (a line break, `\x85`, ` `),
+is shown as its quoted, escaped form. The remedy: "Change that
+setting to a value it takes, or back to the profile's, and slice again."
+
+The checks hold a value to the bounds Orca's definitions give and no further. Orca checks
+some values against others only while it slices, so a value inside the table's bounds can
+still fail there: with the pinned Orca, `layer_height` `"50"` ends as `slice.orca_failed`,
+with Orca's own reason in the `detail`. Repeating Orca's checks of one setting against
+another is not part of the table.
+
+Only the process profile's values are replaced
+(`print_config.write_process_with_overrides`): each value is written as it was sent, and a
+`per_variant` setting's one value once for each variant of the profile's
+`print_extruder_variant` (once when it lists none). No setting of the pinned Orca is
+`per_variant`. Supports are on when `overrides` sets `enable_support` to `"1"`, or does not
+set it and the process profile's own value is `"1"`: that one question decides
+`SPACING_SUPPORTS_MM` and the supports factor of both estimates. Other settings that make an
+instance need more room (a wide brim, a raft, printing one object at a time) are not known
+to the placement check, and Orca refuses such a plate with `slice.orca_too_close`. The four
+quick changes of the wizard's Settings step are ordinary settings (`sparse_infill_density`,
+`wall_loops`, `enable_support` with `support_type` `tree(auto)`, `brim_type`).
+
+**Found with the real Orca.** Bambu Lab's process profiles hold some speeds as a list of
+two values, one for each extruder variant (the 0.30 mm Standard profile for the 0.6 mm
+nozzle has `outer_wall_speed` `["120", "500"]`), but Orca 2.4.2 keeps those settings once
+(`coFloat`) and reads the first value of the list, the standard nozzle's: sliced on the
+default printer, whose nozzle is the High Flow one, that profile prints its outer wall at
+120 mm/s, not 500. The table gives 120, what Orca slices with. Five of the 16 process
+profiles hold such lists with different values (the five "Standard" profiles of 0.16, 0.20,
+0.24, 0.30 and 0.40 mm). The upstream check slices two profiles
+and finds every one of the 338 process values, and ten overrides of every kind, in the
+settings Orca writes into the sliced file (`Metadata/project_settings.config`).
+
+**Tests.** `tests/test_make_settings_table.py` runs the generator on
+`tests/fixtures/orca_source/` (three short files written by hand in the form of Orca's,
+with a classification) and `tests/fixtures/settings_catalog/`: every reader, every kind and
+form, the order, the process values (own, default, a list's first, a variant's), the
+catalog, and each refusal named. `tests/test_fetch_orca_source.py` fetches a made-up
+archive: verified, idempotent, a stamp with another checksum fetched again, cached, a wrong
+checksum, a missing file or a failed move keeping nothing new, no member outside its folder
+written. `tests/test_settings_table.py` holds the checked-in
+table to its contract (each entry's fields for its kind, every process profile in
+`process_values` with every setting, each profile's own value accepted, nothing
+programmatic and no filament or printer setting, the catalog's names, the contract's
+example of the same shape) and produces every acceptance and refusal, with `per_variant`
+on a table that says a setting is. `tests/test_web.py` (`TestSettingsTable`: whole, gzip
+or not by `Accept-Encoding`, no user key needed, what it answers is what is accepted),
+`tests/test_plate_configuration.py` (one setting of each kind and form reaching the
+process file Orca is given), `tests/test_service.py` (supports through the overrides and
+through the process profile), `tests/test_errors.py` (`slice.bad_overrides`, the table
+unreadable, a wide brim 5 mm apart ending `slice.orca_too_close` with the fake Orca), and
+`tests/test_contracts.py` (the contract's settings example accepted). In the upstream check,
+`tests_orca/test_settings_table.py`: the source is the pinned version's;
+`test_every_setting_of_the_pinned_orca_is_classified` fails naming each process setting
+classified nowhere; `test_the_checked_in_table_is_what_the_generator_makes` fails when the
+table differs from what the generator makes; and Orca slices with the table's values and
+the overrides as above.
+
 ## Sample part
 
 `src/penguin_slice/sample_part.stl`, an L bracket 40 x 30 x 12 mm (binary STL, 20
@@ -1179,8 +1295,7 @@ and runs every plate through the slice service's front door: it uploads every pa
 comparing the error report's `code`, `instance` and `other_instance` with `expected`; an
 instance with a `rotation` goes through the code's own placement of a rotation, and the
 code's `plate.quaternion_matrix` is held to the test's own copy of the contract's matrix.
-One thing is turned on the way in: until item 6 of [Phase 2](#phase-2-one-machine) gives
-the overrides Orca's own names, `enable_support` becomes the `supports` override. It also
+Each plate is sent as it is, its `enable_support` under Orca's own name. It also
 measures, from the footprints the code makes, that each plate's
 deciding distance is its figure plus or minus 0.01 mm. The footprints keep their points to
 0.001 mm (`mesh._footprint`), so the slice service's own distances are within about
@@ -1728,7 +1843,8 @@ caller or environment variable is logged.
 | `mesh.py` | Reading a binary STL, the checks on its surface, the warnings, and a part's footprints |
 | `plate_3mf.py` | The plate written as a 3MF for Orca, the sliced file's name, the name guard |
 | `plate_configuration.py` | One checked plate configuration and its description for the log; the slice job's work on it (the plate 3MF, the Orca run, the name guard) |
-| `print_config.py` | The profile catalog, the profile choice, the overrides and whether supports are on |
+| `print_config.py` | The profile catalog, the profile choice, the overrides written over the process profile and whether supports are on |
+| `settings_table.py` | The table of settings (`settings/table.json`, with `settings/classification.json`) and the check of the overrides against it |
 | `slicer.py` | Everything that runs Orca or reads what it writes |
 | `jobs.py` | The job queue: progress reports, cancellation, abandonment, expiry, the log |
 | `limits.py` | Every cap, the memory and time models, the memory ceiling setting, and the sentences that refuse them |
@@ -1747,8 +1863,8 @@ sentence, remedy, action, retryable flag and evidence its report must carry.
 | `slice.too_many_parts` | checking | The instances use more than `MAX_PARTS` different parts. |
 | `slice.unknown_printer` | checking | The printer is not in the catalog. |
 | `slice.profiles_not_offered` | checking | The filament or process is not in the catalog, does not fit the printer, or is not the default set's. |
-| `slice.bad_overrides` | checking | An override is not one of the four, or its value is not listed. |
-| `slice.profile_unreadable` | checking | A profile file of the server's own (the catalog, a printer or process profile) is missing or not a profile. |
+| `slice.bad_overrides` | checking | `overrides` is not an object, or names a setting the table of settings does not hold (programmatic, not offered, a filament or printer setting, a misspelling), or gives a value that does not fit its entry (see [Settings a plate configuration may replace](#settings-a-plate-configuration-may-replace)); the sentence names the first, the detail every one. |
+| `slice.profile_unreadable` | checking | A profile file of the server's own (the catalog, a printer or process profile) is missing or not a profile; or its table of settings is ("The slicer could not read its table of settings.", HTTP 500 at `GET /settings-table`). |
 | `slice.part_missing` | checking | Parts the plate configuration names are not in the part store under the request's user key, their `sha256` and their `units` (HTTP 422): one report lists every one in `where.missing_parts` (`key`, `sha256`, `units`, in the order of `parts`), with `action` `refresh_parts`, the remedy "Add the parts again and slice again." and the hashes and units in the detail. Also, without `missing_parts`: an instance names a part the plate configuration does not list; or a part's file goes away after the checks, before the plate is written. |
 | `slice.bad_units` | checking | An upload whose `units` is missing or is neither `mm` nor `in` (HTTP 400). |
 | `slice.part_unreadable` | checking | An uploaded part is empty, is not an STL (an image, a zip or 3MF, a gzip, text such as an HTML or JSON error page), is cut off or padded, has no triangles, or has coordinates that are not finite (HTTP 422). |
@@ -1825,19 +1941,29 @@ make -C slice upgrade-orca VERSION=2.5.1
 ```
 
 It reads the release from GitHub, takes GitHub's SHA-256 digest of each of the three
-assets, and stops if `patches/orca/` holds a patch. It then installs the release beside
-the installed one, in `tools/orca.next` (a staged copy of `scripts/install-orca.sh`
-holding the new pin verifies the download), so a failed download or checksum changes
-nothing. Only then does it rewrite the pin in `scripts/install-orca.sh`, move `tools/orca`
-to `tools/orca.previous` and the new release into `tools/orca`, regenerate `profiles/`
-and `profiles/catalog/` from the new Orca's own profiles, and run the upstream check,
-`make test-upstream` (`tests_orca/`: every test's docstring starts with "Protects:" and
-names the behaviour it pins). When the check passes, `tools/orca.previous` is removed.
-When it fails, the command stops with a message that says to read the failing test's
-"Protects:" line and message for what to fix, and how to go back. Nothing is committed.
+assets, and stops if `patches/orca/` holds a patch. It then fetches the release's source
+into `tools/orca-source.next` (`scripts/fetch_orca_source.py`, trusting the download, whose
+checksum becomes the new `SHA_SOURCE`: GitHub publishes none for a tag's archive) and
+installs the release beside the installed one, in `tools/orca.next` (a staged copy of
+`scripts/install-orca.sh` holding the new pin verifies the download), so a failed download
+or checksum changes nothing. Only then does it rewrite the pin in `scripts/install-orca.sh`
+(`ORCA_VERSION` and the four `SHA_` lines), move `tools/orca` to `tools/orca.previous` and
+the new release into `tools/orca`, and the new source into `tools/orca-source`, regenerate
+`profiles/` and `profiles/catalog/` from the new Orca's own profiles and the table of
+settings from its source (`scripts/make_settings_table.py`, which stops naming every new
+process setting nobody has classified: classify each in
+`src/penguin_slice/settings/classification.json` and run `make settings-table`), and run the
+upstream check, `make test-upstream` (`tests_orca/`: every test's docstring starts with
+"Protects:" and names the behaviour it pins). When the check passes, `tools/orca.previous`
+is removed. When it fails, the command stops with a message that says to read the failing
+test's "Protects:" line and message for what to fix, and how to go back. Nothing is
+committed.
 
 Then look at:
 
+- `git diff -- slice/src/penguin_slice/settings/`: settings that appeared in or left the
+  table, and changed labels, ranges, choices and process values. A setting a new Orca adds
+  is classified by the agent taking the version before the work is finished.
 - `git diff -- slice/src/penguin_slice/profiles/`: values that changed in the default set
   (temperatures, speeds, `nozzle_volume`), profiles that appeared or went from the
   catalog, and `index.json`'s `skipped` list. A changed default set changes every slice.
@@ -1900,7 +2026,9 @@ only, and the reviewers read them without running them):
 | `make test-parallel` | The fast suite on `WORKERS` worker processes (default 2). |
 | `make test-flakes` | The fast suite `RUNS` times (default 10) on `WORKERS` workers, each run with a new random seed, which it prints first. |
 | `make coverage` | Branch coverage of the package under the fast suite; fails under 100%. |
-| `make test-upstream` | The upstream check: the tests that run the real Orca (`tests_orca/`), one at a time, with each test's time. `make test-orca` is the same. |
+| `make test-upstream` | The upstream check: the tests that run the real Orca (`tests_orca/`), one at a time, with each test's time, after `make orca-source`. `make test-orca` is the same. |
+| `make orca-source` | Fetches and verifies the pinned Orca's source into `tools/orca-source/` (see [The table of settings](#the-table-of-settings)). |
+| `make settings-table` | Regenerates `src/penguin_slice/settings/table.json` from that source and the profile catalog. |
 
 In the fast suite `PENGUIN_SLICE_ORCA` always points at a placeholder that cannot run, so
 no test can start the real Orca by accident, and no real timer runs (`slicer.TIMER` is

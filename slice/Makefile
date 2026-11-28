@@ -1,4 +1,4 @@
-.PHONY: install sync install-orca test test-parallel test-flakes coverage test-orca test-upstream upgrade-orca
+.PHONY: install sync install-orca orca-source settings-table test test-parallel test-flakes coverage test-orca test-upstream upgrade-orca
 
 UV ?= uv
 PYTEST = $(UV) run --project $(CURDIR) pytest
@@ -14,6 +14,15 @@ sync:
 
 install-orca:
 	$(CURDIR)/scripts/install-orca.sh
+
+# The pinned Orca's source (the three files the table of settings is read from), fetched and
+# verified against SHA_SOURCE in scripts/install-orca.sh into slice/tools/orca-source.
+orca-source:
+	$(UV) run --project $(CURDIR) python $(CURDIR)/scripts/fetch_orca_source.py
+
+# Regenerate src/penguin_slice/settings/table.json from that source and the profile catalog.
+settings-table: orca-source
+	$(UV) run --project $(CURDIR) python $(CURDIR)/scripts/make_settings_table.py
 
 # The fast suite: no Orca, no network, no waiting. Random order on every run
 # (pytest-randomly prints the seed; rerun one order with `--randomly-seed=<seed>`).
@@ -43,7 +52,7 @@ coverage:
 
 # The upstream check: the tests that run the real Orca Slicer, one at a time, each pinning
 # one behaviour of the pinned Orca the slice service relies on. Install Orca first.
-test-upstream:
+test-upstream: orca-source
 	$(PYTEST) -v -p no:randomly --durations=0 $(CURDIR)/tests_orca
 
 test-orca: test-upstream

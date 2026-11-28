@@ -1,0 +1,4 @@
+{
+    "compatible_printers": ["Test Printer 0.6 nozzle"],
+    "name": "Test PLA"
+}
