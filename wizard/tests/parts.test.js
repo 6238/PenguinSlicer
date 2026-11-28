@@ -325,6 +325,44 @@ test('an answer that is not a part\'s record is the wizard\'s bad_answer, and th
   assert.equal(page.panel.notices[0].what, 'odd: The server gave an answer this page cannot read.');
 });
 
+const BAD_RECORDS = [
+  ['not an object', () => 'a part'],
+  ['a hash of the wrong form', (r) => ({ ...r, sha256: r.sha256.toUpperCase() })],
+  ['units neither in nor mm', (r) => ({ ...r, units: 'cm' })],
+  ['no measurements', (r) => ({ ...r, measurements: null })],
+  ['a size of two figures', (r) => ({ ...r, measurements: { ...r.measurements, size_mm: [1, 2] } })],
+  ['a size that is not a number', (r) => ({ ...r, measurements: { ...r.measurements, size_mm: [1, 2, 'x'] } })],
+  ['warnings that are not a list', (r) => ({ ...r, warnings: {} })],
+  ['a warning without its sentence', (r) => ({ ...r, warnings: [{ code: 'slice.part_inside_out' }] })],
+];
+
+for (const [what, spoil] of BAD_RECORDS) {
+  test(`a record with ${what} is the wizard's bad_answer, and the part is not added`, async () => {
+    const page = await openPage();
+    const bytes = boxFile(what);
+    page.server.script('POST', '/api/parts', steps.answer(201, spoil(partRecordOf('/api/parts?units=in', bytes))));
+    await page.parts.addFiles([file('odd.stl', bytes)]);
+    await page.parts.idle();
+    assert.deepEqual(page.parts.rows(), []);
+    assert.equal(page.panel.notices[0].what, 'odd: The server gave an answer this page cannot read.');
+  });
+}
+
+test('a stored part whose bytes are gone is dropped from the plate when the page opens again', async () => {
+  const b = browser();
+  const first = await openPage(b);
+  await first.parts.addFiles([file('kept.stl'), file('lost.stl')]);
+  await first.parts.idle();
+  const lost = first.parts.rows()[1];
+  await first.storage.written();
+  b.records.map.delete(`part-bytes/${first.store.get().plateId}/${lost.sha256}.in`);
+  b.locks.closeTab('A');
+  const again = await openPage(b);
+  assert.deepEqual(again.parts.rows().map((r) => r.name), ['kept']);
+  await again.storage.written();
+  assert.deepEqual(again.storage.plate().parts.map((p) => p.name), ['kept']);
+});
+
 // ---- the hash
 
 test('a record naming another hash is uploaded once more; a second difference is a page_failed report and the part is not added', async () => {
