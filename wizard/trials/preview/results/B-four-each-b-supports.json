@@ -1,7 +1,7 @@
 {
- "first_layer_ms": 3157.699999988079,
- "full_look_ms": 7063.600000023842,
- "data_ms": 2978.600000023842,
+ "first_layer_ms": 1271.9000000357628,
+ "full_look_ms": 4855.600000023842,
+ "data_ms": 1140.300000011921,
  "stats": {
   "sliced_file_bytes": 8830158,
   "sliced_file_lines": 1063346,
@@ -15,91 +15,91 @@
    340091
   ],
   "worker_ms": {
-   "fetch": 84.30000001192093,
-   "unzip": 136,
-   "parse": 566.8000000119209,
-   "prepare": 2036.0999999642372,
-   "ghost": 111
+   "fetch": 49.10000002384186,
+   "unzip": 98.39999997615814,
+   "parse": 249,
+   "prepare": 644.6000000238419,
+   "ghost": 77.09999996423721
   }
  },
  "layer_count": 344,
  "decimate": 4,
  "load": {
-  "longest_hold_ms": 3202
+  "longest_hold_ms": 2924
  },
  "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
  "method": "B",
  "plate": "four-each-b-supports",
  "browser": "Chromium 159.0.8154.6",
  "load_average_before": [
-  7.72314453125,
-  6.5068359375,
-  4.9541015625
+  7.505859375,
+  6.2158203125,
+  5.2763671875
  ],
  "turn": {
   "frames": 60,
-  "fps_typical": 12.004801920768411,
-  "fps_worst": 7.501875468867258,
-  "frame_ms_median": 83.29999999999927,
-  "frame_ms_worst": 133.29999999999927,
-  "longest_hold_ms": 491,
-  "longest_hold_moving_ms": 145,
-  "rest_ms": 511.30000001192093,
+  "fps_typical": 14.992503748125978,
+  "fps_worst": 7.5018754688672065,
+  "frame_ms_median": 66.69999999999982,
+  "frame_ms_worst": 133.30000000000018,
+  "longest_hold_ms": 425,
+  "longest_hold_moving_ms": 124,
+  "rest_ms": 440.10000002384186,
   "rest_frames": 1,
-  "rest_frame_ms_worst": 10.199999988079071,
+  "rest_frame_ms_worst": 4.3000000238425855,
   "segments_drawn_moving": 156997
  },
  "layers": {
   "frames": 60,
-  "fps_typical": 15.015015015014933,
-  "fps_worst": 6.671114076050635,
-  "frame_ms_median": 66.60000000000036,
-  "frame_ms_worst": 149.90000000000146,
-  "longest_hold_ms": 444,
-  "longest_hold_moving_ms": 148,
-  "rest_ms": 451.39999997615814,
+  "fps_typical": 15.015015015015344,
+  "fps_worst": 11.990407673860963,
+  "frame_ms_median": 66.59999999999854,
+  "frame_ms_worst": 83.39999999999964,
+  "longest_hold_ms": 380,
+  "longest_hold_moving_ms": 87,
+  "rest_ms": 414.5,
   "rest_frames": 1,
-  "rest_frame_ms_worst": 1.0999999642372131,
+  "rest_frame_ms_worst": 7.700000011920565,
   "segments_drawn_moving": 156997
  },
  "load_average_after": [
-  7.83984375,
-  6.57275390625,
-  4.99267578125
+  7.736328125,
+  6.30810546875,
+  5.31640625
  ],
  "memory": {
   "browser": {
-   "rss_mb": 95.78515625,
-   "peak_mb": 105.84765625
+   "rss_mb": 95.6640625,
+   "peak_mb": 105.8671875
   },
   "renderer": {
-   "rss_mb": 242.4609375,
-   "peak_mb": 349.77734375
+   "rss_mb": 239.39453125,
+   "peak_mb": 344.0078125
   },
   "gpu": {
-   "rss_mb": 271.1953125,
-   "peak_mb": 882.75
+   "rss_mb": 271.15625,
+   "peak_mb": 882.83984375
   },
   "network.mojom.networkservice": {
-   "rss_mb": 70.21484375,
-   "peak_mb": 71.37890625
+   "rss_mb": 70.125,
+   "peak_mb": 71.41015625
   },
   "js_heap_mb": 98.22845458984375,
-  "page_peak_mb": 1232.52734375
+  "page_peak_mb": 1226.84765625
  },
  "look": {
   "covered": 0.33740234375,
   "groups_top": [
-   0.10638346354166667,
-   0.0016276041666666667,
-   0.09823567708333333,
-   0.03919596354166666
+   0.11435221354166666,
+   0.0007454427083333333,
+   0.091201171875,
+   0.03917317708333334
   ],
   "groups_mid_layer": [
-   0.10091471354166667,
-   0.005081380208333333,
-   0.09918619791666666,
-   0.0399609375
+   0.10908528645833333,
+   0.0034505208333333332,
+   0.0926953125,
+   0.03994140625
   ],
   "groups_present": 4,
   "groups_seen": 4,

@@ -1713,10 +1713,11 @@ wizard allows 150 instances on a plate.
 
 **What is known about the cost.** Drawing every toolpath as a flat strip, the one method
 tried, took many seconds a frame on a machine without a graphics card and showed the
-combs and show-through of requirement 3 on a machine with one. Whether any method meets
-the frame rate without a graphics card at the largest plate is not known, and is the
-first thing phase 2 must learn
-([The risks to try first in phase 2](#the-risks-to-try-first-in-phase-2)).
+combs and show-through of requirement 3 on a machine with one. The first trial of phase 2
+found a way that meets the frame rate without a graphics card on the heaviest real plates,
+with the required look at rest and a coarser one while moving
+([The risks to try first in phase 2](#the-risks-to-try-first-in-phase-2)); the Preview step
+is built on it.
 
 ## What the wizard asks of the front server
 
@@ -2164,7 +2165,8 @@ published in the form the page loads as it is. For the two trials, the eight rea
 of the Popcorn Penguins' robot are kept beside the contracts, and two made parts beside
 the trials: a round hub at the largest size a part may have (150,000 triangles) and the
 slice service's reference spacer. Each trial has its own place and its own command, so
-that both can be built at once; neither is run yet.
+that both can be built at once. The first trial, the layer preview's speed, has been run;
+its pages, figures and test renders are kept with the trials.
 
 | Phase | What of the wizard is built |
 |---|---|
@@ -2191,6 +2193,26 @@ requirement. The decision that depends on it, if no method gets there: the large
 that can be previewed is made smaller than the largest that can be sliced, and the step
 says so; or a machine without a graphics card is declared unsupported for the Preview
 step; or the target is lowered, at which the step is usable but sticky.
+
+*Tried on Fri 2026-11-27, and the target is met there.* Three ways of drawing were tried on
+three real sliced plates (two of each of the robot's eight parts with supports, 8.8 MB;
+twelve of its largest block with supports, 14.1 MB; 150 spacers, 2.7 MB), on the agents'
+machine (8 processors and 12 GB, shared with other work at the time), in the Chromium the
+wizard's tests use. All three draw every line as a small box as wide as the line and as tall
+as its layer, so that stacked layers close into surfaces: that is how the look has no combs
+and no show-through. Drawing every box in every frame managed one to seven frames a second
+and held the page for up to six seconds. The way the Preview step is built on draws, while
+the view is turned or the layer bar dragged, only every fourth or eighth layer, each of those
+boxes as tall as the layers it stands for, which keeps the four colours and the shape; when
+the view comes to rest it draws the full look a piece at a time, over about a second at the
+heaviest plate, without holding the page, and shows it when it is whole. It kept 15 to 20
+frames a second while turning and dragging on all three plates, never held the page for more
+than about a sixth of a second, drew the first layer within about two seconds and stayed
+under 1 GB at the heaviest plate. The look while moving is visibly coarser (some infill shows
+on the sides of round parts); the full look is the one the requirements describe. The
+figures, the renders and the reasons are in the trial's
+[record](../docs/orchestration/phase-2/records/wizard-1a-trial-preview.md). Still the
+owner's: the renders, looked at one by one, and the frame rate in Chrome on the Mac.
 
 **Laying on a face, auto-orient and Arrange on real exported parts.** To be learned:
 whether the rules for round sides sort the unequal facets of a part exported from

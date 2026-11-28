@@ -63,7 +63,11 @@ function scenery(gl, ghostCorners) {
   for (let x = 0; x <= px; x += 10) grid.push(x, 0, -0.01, x, py, -0.01);
   for (let y = 0; y <= py; y += 10) grid.push(0, y, -0.01, px, y, -0.01);
   const gridBuf = buffer(gl, new Float32Array(grid));
-  const ghostBuf = buffer(gl, ghostCorners);
+  // The ghost goes to the graphics side 8 MB a frame behind a fence, as the boxes do: twelve
+  // blocks' ghost alone is 17 MB.
+  const ghostBuf = gl.createBuffer();
+  let ghostSent = -1, ghostFence = null;
+  const ghostBytes = new Uint8Array(ghostCorners.buffer, ghostCorners.byteOffset, ghostCorners.byteLength);
   const vao = gl.createVertexArray();
   const draw = (prog, buf, mode, count) => {
     gl.bindVertexArray(vao);
@@ -73,12 +77,32 @@ function scenery(gl, ghostCorners) {
     gl.drawArrays(mode, 0, count);
   };
   return {
+    // One more piece of the ghost's upload; true once it is all on the graphics side.
+    upload() {
+      if (ghostFence) {
+        if (gl.getSyncParameter(ghostFence, gl.SYNC_STATUS) !== gl.SIGNALED) return false;
+        gl.deleteSync(ghostFence); ghostFence = null;
+      }
+      if (ghostSent >= ghostBytes.length) return true;
+      gl.bindBuffer(gl.ARRAY_BUFFER, ghostBuf);
+      if (ghostSent < 0) { gl.bufferData(gl.ARRAY_BUFFER, Math.max(4, ghostBytes.length), gl.STATIC_DRAW); ghostSent = 0; }
+      else {
+        const n = Math.min(8 * 1024 * 1024, ghostBytes.length - ghostSent);
+        gl.bufferSubData(gl.ARRAY_BUFFER, ghostSent, ghostBytes, ghostSent, n);
+        ghostSent += n;
+      }
+      ghostFence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+      gl.flush();
+      return false;
+    },
+    ghostReady: () => ghostSent >= ghostBytes.length && !ghostFence,
     plate(viewProj) {
       gl.useProgram(flat.p); gl.uniformMatrix4fv(flat.u.viewProj, false, viewProj);
       gl.uniform4f(flat.u.colour, ...PLATE, 1); draw(flat, plate, gl.TRIANGLES, 6);
       gl.uniform4f(flat.u.colour, ...GRID, 1); draw(flat, gridBuf, gl.LINES, grid.length / 3);
     },
     ghost(viewProj, cut) {
+      if (ghostSent < ghostBytes.length) return;
       gl.useProgram(ghost.p); gl.uniformMatrix4fv(ghost.u.viewProj, false, viewProj);
       gl.uniform4f(ghost.u.colour, ...GHOST); gl.uniform1f(ghost.u.cut, cut);
       gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
@@ -206,11 +230,19 @@ export async function start(method) {
       pxPerUnit: camera.projectionMatrix.elements[5] * height / 2, k, moving,
       layerZ: data.layerZ, layers };
   }
-  let drawnLast = 0;
+  let drawnLast = 0, ghostDone = false;
   function render(fresh) {
     if (lost) return { segments: 0, complete: false };
     gl.viewport(0, 0, width, height);
     const r = drawer.draw(frameState(), scene, fresh);
+    // The ghost uploads behind the toolpaths; once it has arrived, the view is drawn again
+    // with it, and until then the full look is not counted as on the screen.
+    if (!ghostDone) {
+      ghostDone = scene.upload() && scene.ghostReady();
+      if (ghostDone) dirty = true;
+      r.complete = false;
+      r.again = true;
+    }
     drawnLast = r.segments;
     complete = r.complete;
     more = !!r.again;
