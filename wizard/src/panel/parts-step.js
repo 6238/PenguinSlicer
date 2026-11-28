@@ -9,7 +9,7 @@
 //     trying…" once its upload is slow; under it, each warning in amber, and the amber line of a
 //     part the browser could not save.
 //   - Under the list, the line counting the plate, and the red message past 150 instances.
-//   - New plate, which asks first when the plate holds parts.
+//   - New plate, shown while the plate holds parts, which asks first.
 import { MAX_INSTANCES } from '../geometry/constants.js';
 import { partColour, partPicture } from '../part-picture.js';
 import {
@@ -84,12 +84,10 @@ export function createPartsStep(section, { parts, geometry, panel, window: win =
     if (event.dataTransfer && event.dataTransfer.files.length) add(event.dataTransfer.files);
   });
 
+  // Shown only while the plate holds parts, so it always asks first.
   newPlate.addEventListener('click', async () => {
-    if (parts.rows().length) {
-      const go = await panel.tell.confirm(newPlate, { question: NEW_PLATE_QUESTION, go: NEW_PLATE, keep: KEEP_PLATE });
-      if (!go) return;
-    }
-    await parts.newPlate();
+    const go = await panel.tell.confirm(newPlate, { question: NEW_PLATE_QUESTION, go: NEW_PLATE, keep: KEEP_PLATE });
+    if (go) await parts.newPlate();
   });
 
   // ---- a row
@@ -189,6 +187,8 @@ export function createPartsStep(section, { parts, geometry, panel, window: win =
     const problem = parts.instanceProblem();
     if (problem) total.append(message({ kind: 'error', what: problem.message, todo: problem.remedy }));
     for (const [value, radio] of Object.entries(radios)) radio.checked = parts.units() === value;
+    // New plate empties a plate that holds parts; an empty plate has nothing to empty
+    newPlate.parentElement.hidden = rows.length === 0;
   }
 
   parts.subscribe(draw);

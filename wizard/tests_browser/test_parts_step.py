@@ -73,7 +73,6 @@ def test_an_empty_parts_step_has_the_upload_area_its_switch_and_no_parts(wizard)
     assert w.page.locator("#upload-units input[value=in]").is_checked()
     assert w.page.locator("#parts-total").inner_text() == "No parts yet."
     assert w.page.locator("#btn-next").is_disabled()
-    assert w.page.locator(f"{PARTS} .new-plate .btn").inner_text() == "New plate"
 
 
 def test_a_chosen_file_becomes_a_row_with_its_picture_name_size_and_quantity_and_is_uploaded_byte_for_byte(wizard):
@@ -265,12 +264,27 @@ def test_new_plate_with_parts_asks_first_and_keeping_changes_nothing(wizard):
     w = wizard(320)
     choose(w, ("a.stl", box_stl(b"a")))
     rows_settled(w, 1)
+    assert w.page.locator(f"{PARTS} .new-plate .btn").inner_text() == "New plate"
     w.page.click(f"{PARTS} .new-plate .btn")
     assert w.page.locator(".confirm-pop p").inner_text() == "Start a new plate? The parts and layout of this one are cleared."
     assert w.page.locator(".confirm-pop .btn").all_inner_texts() == ["Keep this plate", "New plate"]
     w.page.keyboard.press("Escape")
     assert w.page.locator(".confirm-pop").count() == 0
     assert w.page.locator("#parts-list .part-item").count() == 1
+
+
+def test_new_plate_under_a_long_list_asks_above_itself_inside_the_panel(wizard):
+    w = wizard(320, 600)
+    choose(w, *[(f"p{i}.stl", box_stl(f"p{i}".encode())) for i in range(6)])
+    rows_settled(w, 6)
+    w.page.evaluate("() => { const b = document.getElementById('wiz-body'); b.scrollTop = b.scrollHeight; }")
+    w.page.click(f"{PARTS} .new-plate .btn")
+    box = w.page.locator(".confirm-pop").bounding_box()
+    button = w.page.locator(f"{PARTS} .new-plate .btn").bounding_box()
+    panel = w.page.locator("#wizard").bounding_box()
+    assert box["y"] + box["height"] <= button["y"]
+    assert box["y"] >= panel["y"] and box["y"] + box["height"] <= panel["y"] + panel["height"]
+    assert w.page.evaluate("document.documentElement.scrollTop") == 0
 
 
 def test_new_plate_confirmed_empties_the_plate_with_a_new_plate_id_and_keeps_the_filament_and_profile(wizard):
@@ -286,12 +300,13 @@ def test_new_plate_confirmed_empties_the_plate_with_a_new_plate_id_and_keeps_the
     assert w.page.locator("#btn-next").is_disabled()
 
 
-def test_new_plate_on_an_empty_plate_asks_nothing(wizard):
+def test_new_plate_shows_only_while_the_plate_holds_parts(wizard):
     w = wizard(320)
-    before = w.run("return wizard.store.get().plateId;")
-    w.page.click(f"{PARTS} .new-plate .btn")
-    w.until("return wizard.store.get().plateId !== arg;", before)
-    assert w.page.locator(".confirm-pop").count() == 0
+    assert not w.page.locator(f"{PARTS} .new-plate .btn").is_visible()
+    choose(w, ("a.stl", box_stl(b"a")))
+    w.page.wait_for_selector(f"{PARTS} .new-plate .btn", state="visible")
+    w.page.click("#parts-list .remove")
+    w.page.wait_for_selector(f"{PARTS} .new-plate .btn", state="hidden")
 
 
 # ---- hostile names and the widths

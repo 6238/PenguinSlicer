@@ -1,4 +1,4 @@
-.PHONY: install check-node sync install-browser test test-page test-tools test-browser build look look-parts \
+.PHONY: install check-node sync install-browser test test-page test-tools test-browser build look look-parts look-parts-step \
 	trials trials-preview trials-geometry trials-parts trials-serve
 
 UV ?= uv
@@ -61,6 +61,11 @@ look: build
 # longest hold for each part.
 look-parts: build
 	$(PY) $(CURDIR)/tests_browser/look_parts.py
+
+# Pictures of the Parts step beside the mockup's, in each state the mockup shows and in the
+# screens it never drew, at 320, 480, 520 and 680 px, into docs/orchestration/phase-2/look/wizard-4/.
+look-parts-step: build
+	$(PY) $(CURDIR)/tests_browser/look_parts_step.py
 
 # The two opening trials of phase 2, each its own entry point: both run, even when the
 # first fails, and the target fails when either does.
