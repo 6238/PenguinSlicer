@@ -5,17 +5,22 @@
                                   part store; 201 with the part's record
     POST   /slices                a plate configuration as a JSON body, its parts named by
                                   hash and units: 202 with the slice job
+    GET    /slices                every slice job this process remembers, of every user key:
+                                  {"slices": [...]}, for a front server that has just started
     GET    /slices/<job>          the slice job's latest progress report
     GET    /slices/<job>/events   the slice job's progress reports as a stream
                                   (text/event-stream), the latest first, ending with the final one
     DELETE /slices/<job>          cancel the slice job: {"cancel": cancelled|cancelling|finished}
     GET    /slices/<job>/file     the sliced file of a done slice job, and nothing else
     GET    /slices/<job>/summary  the sliced file's summary (contracts/sliced-file.md), as JSON
-    GET    /settings-table        the table of settings (contracts/settings-table.md) whole,
+    DELETE /slices/<job>/file     the front server has stored the sliced file: this copy is
+                                  deleted at once, the record kept until it expires; then the
+                                  file and the summary answer slice.file_gone
+    GET    /settings-table       the table of settings (contracts/settings-table.md) whole,
                                   gzip-encoded when the request accepts it
 
-Every one of these requests but the table of settings, which answers for the whole slice
-service, carries the user key in the header X-Penguin-User-Key: the
+Every one of these requests but the list of slice jobs and the table of settings, which
+answer for the whole slice service, carries the user key in the header X-Penguin-User-Key: the
 front server's word for whose part or slice job it is. A request without it, or with an
 empty one, is refused (slice.no_user_key). A part is kept, and a slice job held, under the
 user key that sent it; a request about another user key's slice job is answered exactly as
@@ -37,9 +42,10 @@ is answered 202 with that slice job and starts nothing (a repeat, logged as
 `slice_repeat`). One that passes its checks ends the same user key's earlier unfinished
 slice job of the same plate_id (jobs.JobPool, the replacement); a refused one ends nothing.
 A slice job, once accepted, runs to its end whether or not anything follows its progress. A slice job's files live under
-`work_dir/<job folder>/`: its hold on each of its parts' files (`parts/`), the scratch folder
-of the slice, and the sliced file, all removed when the slice job ends without a file or
-when its record expires. The part store is a folder of its own under `work_dir`, new in each
+`work_dir/<job folder>/`: its hold on each of its parts' files (`parts/`), given up once the
+plate is sliced, the scratch folder of the slice, and the sliced file, deleted once the
+front server has stored it; the folder is removed when the slice job ends without a file or
+when its record expires, two hours after the slice job ended. The part store is a folder of its own under `work_dir`, new in each
 process. At start the app refuses a bad setting (limits.SettingError), removes the scratch
 and the part store left by a process that died (service.clean_stale_scratch) and starts the
 job pool's sweeper, which sweeps the part store too.
@@ -122,9 +128,12 @@ def _logged(user_key):
 
 
 def slice_worker(job_id, configuration, context):
-    """The pool's worker: slice a checked PlateConfiguration into its slice job's folder."""
+    """The pool's worker: slice a checked PlateConfiguration into its slice job's folder. A
+    sliced plate's job gives up its hold on its parts at once (contracts/sliced-file.md): only
+    its sliced file stays, and the part store keeps each part by its own rule."""
     out = configuration.work_dir / "out"
     sliced = slice_plate_configuration(configuration, out, stop=context.stop, on_progress=context.progress)
+    shutil.rmtree(configuration.work_dir / JOB_PARTS, ignore_errors=True)
     result = {"path": str(sliced.path), "summary": sliced.summary, "file": sliced.path.name,
               "peak_rss_kb": sliced.peak_rss_kb, "orca_wall_s": sliced.wall_s,
               "work_dir": str(configuration.work_dir)}
@@ -424,6 +433,9 @@ def create_app(work_dir=None, pool=None, *, log=None, start_sweeper=True, enviro
         result = pool.result(job_id)
         if report["state"] not in FINAL or result is None:
             return None, _report("slice.not_ready", NOT_READY_MESSAGE, f"job {job_id} is {report['state']}", 409)
+        if pool.file_deleted(job_id):
+            return None, _report("slice.file_gone", FILE_GONE_MESSAGE,
+                                 f"job {job_id}: the sliced file was deleted once the front server had stored it", 410)
         return result, None
 
     def gone(job_id, exc):
@@ -447,6 +459,13 @@ def create_app(work_dir=None, pool=None, *, log=None, start_sweeper=True, enviro
             answer = Response(table.raw, mimetype="application/json")
         answer.headers["Vary"] = "Accept-Encoding"
         return answer
+
+    @app.get("/slices")
+    def every_slice_job():
+        """Every slice job this slice service process remembers, of every user key, for a
+        front server that has just started. It answers for the whole slice service, so the
+        user key is not looked at."""
+        return jsonify({"slices": pool.listing()})
 
     @app.get("/slices/<job_id>")
     def progress(job_id):
@@ -490,6 +509,27 @@ def create_app(work_dir=None, pool=None, *, log=None, start_sweeper=True, enviro
                              download_name=result["file"])
         except OSError as exc:
             return gone(job_id, exc)
+
+    @app.delete("/slices/<job_id>/file")
+    def delete_sliced_file(job_id):
+        """The front server has stored the sliced file: the slice service deletes its own copy
+        at once and keeps the slice job's record until it expires."""
+        refusal = not_theirs(job_id)
+        if refusal:
+            return refusal
+        answer, result = pool.delete_file(job_id)
+        if answer == "unknown":
+            return unknown(job_id)
+        if answer == "not_ready":
+            return _report("slice.not_ready", NOT_READY_MESSAGE,
+                           f"DELETE of the sliced file of job {job_id}, which has not ended", 409)
+        if result is not None:
+            try:
+                Path(result["path"]).unlink(missing_ok=True)
+            except OSError as exc:      # it goes with the slice job's folder when the record expires
+                log({"event": "slice_file_delete_error", "job": job_id, "user_key": _logged(asked_key()),
+                     "error": exception_text(exc)})
+        return jsonify({"job": job_id, "file": "deleted"})
 
     @app.get("/slices/<job_id>/summary")
     def summary(job_id):

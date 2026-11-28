@@ -50,7 +50,12 @@ first attempt's slice job (see
 [A plate's slice jobs: repeats, replacement and the places](#a-plates-slice-jobs-repeats-replacement-and-the-places)),
 every waiting slice job's report says how many are ahead and every slice job ended early
 says why, and a slice job goes on without its page (see
-[Progress, cancellation and cleanup](#progress-cancellation-and-cleanup)).
+[Progress, cancellation and cleanup](#progress-cancellation-and-cleanup)). Items 10 to 13
+are built: a slice job remembered for two hours and its sliced file deleted once the front
+server has stored it, and the route that lists the slice jobs (both under
+[Progress, cancellation and cleanup](#progress-cancellation-and-cleanup)); a sliced file of
+at most 50 MB (see [Plate limits](#plate-limits)); and Orca's own sentence on the two
+failures about a gap (see [Orca Slicer](#orca-slicer)).
 
 **Not built or not known:**
 
@@ -62,7 +67,8 @@ says why, and a slice job goes on without its page (see
   only within about a factor of two; the peak in the log can be under Orca's true peak for
   an Orca that fails between two of the watchdog's samples.
 - Not measured: the disk held by the part store and by finished slice jobs, which keep
-  their hold on their parts and their sliced file for an hour; CPU time; how many slices a host can run at once. Every measurement is
+  their sliced file until the front server has stored it, or for two hours when nothing
+  collects it; CPU time; how many slices a host can run at once. Every measurement is
   from aarch64 Linux machines: almost all from one with 4 CPUs, and nine plates of the
   memory model's fit from another.
 
@@ -205,14 +211,14 @@ The items are in the order to build them; each rests on those before it, except 
 the shared plates, which was written first of all, before item 1, since the wizard's builder
 runs it from the start and it needs only the placement check as built; it is built. Items 1
 to 4, which replace the way parts arrive, are built too, and so are 5 and 6, which replace
-the settings; 7 to 13 replace the life of a slice job, of which 7 to 9 are built, and 14 to
-18 finish the phase.
+the settings; 7 to 13 replace the life of a slice job, and are built; 14 to 18 finish the
+phase.
 
 **1 to 4. The user key, the part store, units and the plate configuration.** Built: see
 [The user key, the part store, units and the plate configuration](#the-user-key-the-part-store-units-and-the-plate-configuration).
 What they leave to later items: the three
 routes that answer for the whole slice service and are not scoped to a user key (the table
-of settings, item 5, built; the list of slice jobs, item 11; the log, item 16) ignore the
+of settings, item 5, built; the list of slice jobs, item 11, built; the log, item 16) ignore the
 header. A plate's id and a submission's value are compared among the slice jobs of one user
 key (item 7) and the first progress report carries `ahead` (item 8), both built.
 
@@ -226,7 +232,7 @@ key (item 7) and the first progress report carries `ahead` (item 8), both built.
 Built: see
 [A plate's slice jobs: repeats, replacement and the places](#a-plates-slice-jobs-repeats-replacement-and-the-places).
 What it leaves to later items: a repeat is recognised for as long as the slice job's record
-lasts, an hour after it ends until item 10 makes it two; a stopping slice service still
+lasts, two hours after it ends (item 10, built); a stopping slice service still
 answers `slice.busy` until item 14, which answers `slice.stopping`, the repeat already being
 looked for first. [D97, D98, D295]
 
@@ -245,59 +251,22 @@ Built: see "Going on without its page" under
 `tests/test_jobs.py` `TestGoesOnWithoutItsPage`, `tests/test_web.py`
 `TestGoesOnWithoutItsPage`). What it leaves to later items: nothing. [D95, D96, D297]
 
-**10. Slice jobs remembered for two hours; the sliced file deleted once stored**
-([Go on without the page](README.md#go-on-without-the-page)). The slice service remembers
-a slice job, with its `plate_id` and `submission_id`, for two hours (`jobs.RECORD_TTL_S`,
-7,200 s) after it ends, with the moment it ended (`ended_at`, item 11). Once the front
-server has stored the sliced file, it says so with
-[`DELETE /slices/<job>/file`](../contracts/slice-http-interface.md#delete-slicesjobfile--stored-delete-your-copy)
-and the slice service deletes its own copy at once; the record stays until it expires. A sliced file never collected goes with its
-record. Error reports: the file or summary after the delete is `slice.file_gone`
-(HTTP 410, as built); the delete on a slice job not done is `slice.not_ready` (HTTP 409);
-on an unknown slice job, `slice.unknown_job`; a second delete answers as the first,
-`200` `{"job", "file": "deleted"}`, as does a delete on a slice job that ended without a
-sliced file.
-Replaces: `RECORD_TTL_S` at 3,600 s, and the sliced file kept beside its record for that
-hour. Tests: on a fake clock the record is there at 7,199 s and gone at 7,200 s; after the
-delete, the file and the summary answer `slice.file_gone` and the progress report is still
-served; a second delete answers as the first; a delete before the slice ends is refused.
-[D90, D100, D298, D299]
+**10. Slice jobs remembered for two hours; the sliced file deleted once stored.** Built:
+see "Remembered for two hours; the sliced file deleted once stored" under
+[Progress, cancellation and cleanup](#progress-cancellation-and-cleanup). What it leaves to
+later items: the stop of item 14 waits for the running slice job's sliced file to be
+deleted by it. [D90, D100, D298, D299]
 
-**11. A route lists the slice jobs**
-([Go on without the page](README.md#go-on-without-the-page)).
-[`GET /slices`](../contracts/slice-http-interface.md#get-slices--every-slice-job)
-answers `{"slices": [...]}`, every slice job the slice service process knows, each entry
-`job`, `user_key`, `plate_id`, `submission_id`, `progress` (its latest report),
-`file_on_disk` and `ended_at` (RFC 3339, or `null` while it waits or runs). A restarted
-front server uses it to find the slices it must still follow or collect, and takes
-`ended_at` as the sliced file's `slice_ended_at`. Tests: the list holds a queued, a
-running, a done, a failed and a cancelled slice job with their states and, for the three
-ended, the fake clock's moment of their end; it is empty in a newly started process; a done
-slice job whose file was deleted shows `file_on_disk` false; the shape equals
-[the contract's example](../contracts/examples/slice-http/slices-list.json).
-[D296]
+**11. A route lists the slice jobs.** Built: see "The list of slice jobs" under
+[Progress, cancellation and cleanup](#progress-cancellation-and-cleanup). What it leaves to
+later items: nothing. [D296]
 
-**12. A sliced file is at most 50 MB** ([Reading what Orca says](README.md#reading-what-orca-says),
-[The limits](README.md#the-limits)). After the two guards, a sliced file larger than
-50 MB (52,428,800 bytes, `MAX_SLICED_FILE_BYTES`, *proposed* name; the front server refuses
-a larger one too, as `front.sliced_file_too_large`) fails the slice job with
-`slice.output_too_large` (the contract's code; stage `saving`, retryable false), whose sentence is the slice service's own
-(the sliced file is too large) and whose remedy is fewer instances or a new plate. The
-largest measured is 14.1 MB. Tests: a fake Orca writing a sliced file one byte over the
-limit (which the test may lower) ends with that code, and one at the limit is delivered.
+**12. A sliced file is at most 50 MB.** Built: see "A sliced file is at most 50 MB" under
+[Plate limits](#plate-limits). What it leaves to later items: nothing.
 
-**13. Orca's own sentence on the two failures about a gap**
-([Orca's own sentence in an error report](README.md#orcas-own-sentence-in-an-error-report);
-[the error report's `orca_sentence`](../contracts/error-report.md#fields)). The reports of
-`slice.empty_layers` and `slice.empty_layers_with_supports` carry `orca_sentence`, Orca's
-own sentence exactly as Orca wrote it (*proposed*: the first line of its
-`warning_message`, "Object can't be printed for empty layer between 9.9 and 11.34."), at
-most 300 characters, and only when Orca wrote one. No other code carries it. Tests: each
-of the two codes carries it, from the fake Orca's message; a message without such a
-sentence leaves it out; every other code's report has no `orca_sentence`; the upstream
-check pins the sentence's wording (`test_orcas_empty_layer_sentence_is_pinned`,
-*proposed*); and [the error report's example](../contracts/examples/error-report-orca-sentence.json)
-matches what the code produces.
+**13. Orca's own sentence on the two failures about a gap.** Built: see "Orca's own
+sentence in an error report" under [Orca Slicer](#orca-slicer). What it leaves to later
+items: nothing.
 
 **14. Asked to stop, it finishes the running slice**
 ([What a user sees while the slice service stops](README.md#what-a-user-sees-while-the-slice-service-stops);
@@ -607,21 +576,22 @@ worker gets `slice.unknown_job`. `serve` runs Flask's own threaded server in one
 
 `penguin_slice.web.create_app(work_dir)` is a Flask app factory, built to
 [the contract](../contracts/slice-http-interface.md) for the routes below; the contract's
-other routes (`GET /slices`, `DELETE /slices/<job>/file`, `GET /log`) are still
-[to be built](#phase-2-one-machine):
+other route, `GET /log`, is still [to be built](#phase-2-one-machine):
 
 | Request | Answer |
 |---|---|
 | `POST /parts?units=mm` or `?units=in`, one binary STL as the body | 201 with the part's record (see [The part store](#the-part-store)) |
 | `POST /slices`, a phase 2 plate configuration as a JSON body | 202 with `job`, `plate_id`, `submission_id`, the first progress report (`progress`, `queued` with `ahead`) and the `part_warnings`, each naming its part; for a repeat, the same with the latest report (see [A plate's slice jobs: repeats, replacement and the places](#a-plates-slice-jobs-repeats-replacement-and-the-places)) |
+| `GET /slices` | `{"slices": [...]}`, every slice job this slice service process remembers, of every user key, in the order accepted; the user key is not looked at (see "The list of slice jobs" under [Progress, cancellation and cleanup](#progress-cancellation-and-cleanup)) |
 | `GET /slices/<job>` | The latest progress report |
 | `GET /slices/<job>/events` | The progress reports as `text/event-stream`, the latest first, ending with the final one |
 | `DELETE /slices/<job>` | Cancel: `{"cancel": "cancelled" \| "cancelling" \| "finished"}`, its `cancelled` report with `cancel_reason` `requested`; kept as built and sent by no component of PenguinSlicer |
 | `GET /slices/<job>/file` | The sliced file of a done slice job, and nothing else |
 | `GET /slices/<job>/summary` | The sliced file's summary ([sliced-file.md](../contracts/sliced-file.md), "Summary") as a JSON body |
+| `DELETE /slices/<job>/file` | The front server has stored the sliced file: `{"job", "file": "deleted"}`, the slice service's copy deleted at once and the record kept until it expires (see "Remembered for two hours" under [Progress, cancellation and cleanup](#progress-cancellation-and-cleanup)) |
 | `GET /settings-table` | The table of settings whole, `gzip`-encoded when the request accepts it; the user key is not looked at (see [The table of settings](#the-table-of-settings)) |
 
-**The user key.** Every one of these requests but `GET /settings-table` carries the user key in the header
+**The user key.** Every one of these requests but `GET /slices` and `GET /settings-table` carries the user key in the header
 `X-Penguin-User-Key` (`web.USER_KEY_HEADER`). One without it, or with an empty one, is
 refused with `slice.no_user_key` (HTTP 400; [the contract's example](../contracts/examples/slice-http/no-user-key.json)),
 whose detail names the method, the path and whether the header was missing or empty. The
@@ -638,14 +608,16 @@ without a Content-Length (`slice.bad_request`), or a body that is not a plate co
 404 for an unknown slice job (`slice.unknown_job`) or a path the interface does not offer
 (`slice.bad_request`, also 405 for a method a path does not take); 409 for a sliced file or
 summary that is not there (the slice job's own error report, `slice.cancelled` or
-`slice.not_ready`); 410 for a sliced file gone from the disk (`slice.file_gone`, for the
-summary too); 413 for an upload over `MAX_PART_BYTES` or a plate configuration over
+`slice.not_ready`), and for a delete of the sliced file of a slice job not ended
+(`slice.not_ready`); 410 for a sliced file gone from the disk or deleted once stored
+(`slice.file_gone`, for the summary too); 413 for an upload over `MAX_PART_BYTES` or a plate configuration over
 `MAX_PLATE_CONFIGURATION_BYTES`, each refused from its Content-Length before its body is
 read, and for an upload over `MAX_PART_TRIANGLES`; 422 for a part or plate configuration a
 check refused, and for parts missing from the part store; 500 for the server's own failure
 (`slice.scratch_unwritable` when the work folder or the part store cannot be written, a full
 disk for one, `slice.unexpected` for a bug, logged with its traceback); 503 when the queue is
-full. The file and summary routes answer alike for a slice job that is unknown, failed,
+full; and a `failed` report's `slice.output_too_large` for a sliced file over 50 MB
+(see [Plate limits](#plate-limits)). The file and summary routes answer alike for a slice job that is unknown, failed,
 cancelled or not finished. A part is checked when it is uploaded and a plate configuration
 when it arrives, before a slice job is queued for it, so a refusal comes back at once.
 
@@ -653,8 +625,9 @@ Flask reads no body past `web.MAX_BODY_BYTES` (`MAX_PART_BYTES`): a plate config
 sent without a Content-Length is read that far and refused for its size. Each slice job's
 files live in `<work>/slice-<pid>-<start>-<random>/`: its hold on each of its parts
 (`parts/<sha256>-<units>.stl`, a hard link into the part store, or a copy where hard links
-fail), its scratch and its sliced file; they are removed when the slice job ends failed or
-cancelled, or when its record expires (`RECORD_TTL_S`, an hour after its final report).
+fail), given up as soon as the plate is sliced, its scratch, and its sliced file, deleted
+once the front server has stored it; the folder is removed when the slice job ends failed
+or cancelled, or when its record expires (`RECORD_TTL_S`, two hours after its final report).
 Instances of one part share that part's one file. The part store is its own folder,
 `<work>/slice-<pid>-<start>-parts-<random>/`, new in each process, so the scratch of a
 process that is gone and its part store are removed alike at the next start.
@@ -930,7 +903,30 @@ and in the exit status as a byte (-100 is exit 156). Its general reason is
 `error_string`; the specific one, when it gives one, is `sliced_plates[].warning_message`,
 for example "Object can't be printed for empty layer between 9.9 and 11.34.\nObject: Tower
 #1\nMaybe parts of the object at these height are too thin, or the object has faulty
-mesh". Both are read before the scratch folder is removed and kept in the detail. For a
+mesh". Both are read before the scratch folder is removed and kept in the detail.
+
+**Orca's own sentence in an error report.** Item 13 of [Phase 2](#phase-2-one-machine),
+built ([Orca's own sentence in an error report](README.md#orcas-own-sentence-in-an-error-report);
+[the error report's `orca_sentence`](../contracts/error-report.md#fields)). The reports of
+`slice.empty_layers` and `slice.empty_layers_with_supports` (`errors.ORCA_SENTENCE_CODES`)
+carry `orca_sentence`: the line of Orca's `warning_message` that names the empty layer
+(`slicer._gap_sentence`, the line `EMPTY_LAYER_RE` matched, which is its first line with
+the pinned Orca), exactly as Orca wrote it but for the spaces around it, such as "Object
+can't be printed for empty layer between 9.9 and 11.34.". A line over 300 characters
+(`slicer.ORCA_SENTENCE_MAX_CHARS`) is left out rather than cut, since a cut quotation would
+no longer be Orca's words; so is a sentence Orca did not write. `errors.error_report` adds
+the field on those two codes only, so no other code's report ever carries it, whatever its
+exception holds. With supports on the pinned Orca names other heights for the same part
+(9.9 and 10.62 for the corpus' `slivers_and_lattice` part). Tests: `tests/test_slicer.py`
+(the sentence kept, the line found wherever it is in the warning, 300 characters kept and
+301 left out, no other failure keeping one), `tests/test_errors.py` (each of the two codes
+carries it from the fake Orca's message, every other code's report has none, a gap failure
+without one leaves it out, and
+[the error report's example](../contracts/examples/error-report-orca-sentence.json) equals
+what the code produces), and the upstream check `test_orcas_empty_layer_sentence_is_pinned`,
+which pins the wording with supports off and on.
+
+For a
 plate with nothing to slice Orca returns -100 with only the general `error_string`, and
 says why on stdout: "No layers were detected. You might want to repair your STL file(s) or
 check their size or thickness and retry." (an open 100 mm box, a box with half its
@@ -1321,6 +1317,22 @@ bytes of one part (`MAX_PART_TRIANGLES`, 150,000; `MAX_PART_BYTES`, 7,500,084 by
 7.5 MB), and each part's size against the plate and the printer. Memory refuses
 nothing before slicing, and neither do the triangles of the whole plate: the memory
 watchdog, not the instance count, is what protects the machine.
+
+**A sliced file is at most 50 MB.** Item 12 of [Phase 2](#phase-2-one-machine), built
+([Reading what Orca says](README.md#reading-what-orca-says), [The limits](README.md#the-limits)).
+After the two guards of a good slice (every instance in the sliced file's list of objects,
+every entry passing its checksum), `plate_configuration._check_size` fails a sliced file
+larger than `limits.MAX_SLICED_FILE_BYTES` (50 MB, 52,428,800 bytes) with
+`slice.output_too_large` (stage `saving`, retryable false, no action): the slice service's
+own sentence ("The sliced file of this plate is larger than the 50 MB a sliced file may
+be."), the remedy "Remove some instances, or move some of them to a new plate, and slice
+again." (on a plate of one instance, "Split the part in CAD into smaller pieces, or
+simplify it, and slice again.", since removing instances cannot help), and the file's size
+and the limit in the detail. The file is removed with the scratch folder. The front server
+refuses a larger one too, as `front.sliced_file_too_large`. The largest measured is 14.1 MB
+(twelve Elevator Block Bottom Inner with supports on, below). Tests: `tests/test_service.py`
+lowers the limit to the fake Orca's own file, which is delivered at the limit and refused
+one byte over; `tests/test_errors.py` produces the code.
 
 **The instances.** A user may print as many as 100 small spacers in a 10 by 10 grid. The
 reference plate is that: 100 instances of one hex shaft spacer (for a 3/8 inch hex shaft,
@@ -1801,12 +1813,57 @@ front server follows every unfinished slice job itself and collects its sliced f
 failure, timeout, cancel); at start the HTTP interface removes the scratch of any process
 that is no longer running (`service.clean_stale_scratch`: the folder name carries the
 process id and its start time, so a reused process id is not mistaken for the living one).
-A running slice job's record never expires; a final one goes an hour after its final
-report, with its files. Shutdown (`JobPool.shutdown`, the end of `serve`) cancels every
-slice job and waits for every worker.
+A running slice job's record never expires.
+
+**Remembered for two hours; the sliced file deleted once stored.** Item 10 of
+[Phase 2](#phase-2-one-machine), built ([Go on without the page](README.md#go-on-without-the-page)).
+A final slice job's record, with its `plate_id` and `submission_id`, is kept for two hours
+(`jobs.RECORD_TTL_S`, 7,200 s) after its final report, with the moment it ended on the wall
+clock (`ended_at`, see "The list of slice jobs" below); the sweeper
+(`JobPool.start_sweeper`, every `SWEEP_INTERVAL_S`, 10 s) drops it at 7,200 s with its
+folder, and a repeat of its submission is recognised for as long. A sliced plate's job gives
+up its hold on its parts as soon as the plate is sliced (`web.slice_worker` removes its
+`parts/`), so only its sliced file stays. Once the front server has stored the sliced file it
+says so with
+[`DELETE /slices/<job>/file`](../contracts/slice-http-interface.md#delete-slicesjobfile--stored-delete-your-copy):
+`JobPool.delete_file` marks the record and the route deletes the slice service's copy at
+once, answering `200` `{"job", "file": "deleted"}`
+([the contract's example](../contracts/examples/slice-http/file-deleted.json)); the record
+stays until it expires, its progress report is still served, and the file and the summary
+answer `slice.file_gone` (HTTP 410). A second delete answers as the first, as does a delete
+on a slice job that ended without a sliced file; a delete on a slice job waiting or running
+is `slice.not_ready` (HTTP 409); on an unknown slice job or another user key's,
+`slice.unknown_job`. A file the disk refuses to remove is logged
+(`slice_file_delete_error`) and goes with the folder when the record expires; the delete
+still answers `200`. A sliced file never collected goes with its record. The fake clock of
+the tests moves both the pool's clock and the sweeper's intervals (`helpers.ManualTicks`),
+so no test waits a duration (tests: `tests/test_jobs.py` `TestRememberedForTwoHours`,
+`TestSweeperAndShutdown`; `tests/test_web.py` `TestTheSlicedFileOnceStored`).
+
+Shutdown (`JobPool.shutdown`, the end of `serve`) cancels every slice job and waits for
+every worker.
+
+**The list of slice jobs.** Item 11 of [Phase 2](#phase-2-one-machine), built ([Go on without the page](README.md#go-on-without-the-page)).
+[`GET /slices`](../contracts/slice-http-interface.md#get-slices--every-slice-job) answers
+`200` `{"slices": [...]}` (`JobPool.listing`): every slice job the slice service process
+remembers, waiting, running or ended, of every user key, in the order accepted, each entry
+`job`, `user_key` (as the request carried it), `plate_id`, `submission_id`, `progress` (its
+latest report), `file_on_disk` (`true` while a done slice job's sliced file has not been
+deleted by `DELETE /slices/<job>/file`; `false` before it is done and for one that did not
+end `done`) and `ended_at` (the wall clock's moment of its final report, RFC 3339 in UTC to
+the second, `null` while it waits or runs; the pool's `wall_clock`, `time.time` unless a
+test gives its own). It answers for the whole slice service, so the user key is not looked
+at, and a newly started process answers an empty list. A restarted front server uses it to
+find the slices it must still follow or collect, and takes `ended_at` as the sliced file's
+`slice_ended_at`. Tests: `tests/test_jobs.py` `TestTheList` (a queued, a running, a done, a
+failed and a cancelled slice job, the three ended with the fake clock's moments; an empty
+pool; a deleted file not on disk; an expired slice job gone) and `tests/test_web.py`
+`TestTheListOfSliceJobs` (the shape of
+[the contract's example](../contracts/examples/slice-http/slices-list.json), a new process's
+empty list).
 
 **The log.** One JSON line per slice job transition (`queued`, `running`, `cancelling`,
-`done`, `failed`, `cancelled`, `expired`), `{"event": "slice_job", ...}`, carrying the job
+`done`, `failed`, `cancelled`, `file_deleted`, `expired`), `{"event": "slice_job", ...}`, carrying the job
 id, the user key (cut to 200 characters), the `plate_id` and `submission_id`, the printer,
 filament, process, overrides and whether supports are on, the memory and time estimates,
 every part with its hash, units, triangles, size, volume, watertightness, shells, open
@@ -1955,9 +2012,10 @@ sentence, remedy, action, retryable flag and evidence its report must carry.
 | `slice.no_gcode` | slicing | The sliced file has no `Metadata/plate_1.gcode`. |
 | `slice.left_off_plate` | slicing | Orca left an instance out of the sliced file. |
 | `slice.output_unwritable` | saving | The slice job's folder for its sliced file (`out/` in its folder under the work folder) cannot be made or written, or a folder there already has the sliced file's name. |
+| `slice.output_too_large` | saving | The sliced file is over `limits.MAX_SLICED_FILE_BYTES` (50 MB, 52,428,800 bytes), the third guard after a good slice: a `failed` report, retryable false, no action, the slice service's own sentence ("The sliced file of this plate is larger than the 50 MB a sliced file may be."), the remedy fewer instances or a new plate (on a plate of one instance, to split or simplify the part); the detail holds the file's size and the limit. |
 | `slice.unknown_job` | fetching | The HTTP interface does not know the slice job (never, or expired, or accepted by another slice service process), or it is another user key's (answered exactly alike, and logged as a refusal). |
-| `slice.not_ready` | fetching | The sliced file or summary of a slice job that has not finished. |
-| `slice.file_gone` | fetching | The sliced file of a done slice job is no longer on the disk (HTTP 410), for the file and the summary alike. |
+| `slice.not_ready` | fetching | The sliced file or summary of a slice job that has not finished, or `DELETE /slices/<job>/file` on one (HTTP 409). |
+| `slice.file_gone` | fetching | The sliced file of a done slice job is no longer on the disk, or was deleted by `DELETE /slices/<job>/file` once the front server stored it (HTTP 410), for the file and the summary alike. |
 | `slice.bad_request` | fetching | The HTTP interface does not offer that path (404) or that method on it (405), or an upload has no Content-Length (400), or an upload's body ends before its Content-Length (400, "This part did not arrive whole."). The upload's report has its own sentence (`web.NO_LENGTH_MESSAGE`) and remedy (add the part again, or the server needs fixing), a fault of the front server's. |
 | `slice.unexpected` | slicing | Anything else: a bug in the slice service; the detail keeps the traceback. |
 

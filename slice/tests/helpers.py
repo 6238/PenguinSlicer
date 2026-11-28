@@ -3,6 +3,7 @@ import fcntl
 import hashlib
 import json
 import os
+import queue
 import re
 import signal
 import stat
@@ -195,6 +196,27 @@ class ManualTimer:
 
     def fire(self):
         self.fn()
+
+
+class ManualTicks:
+    """The sweeper's clock for a test (JobPool.start_sweeper(wait=...)): the sweeper waits on
+    it for each interval, and the interval passes only when the test calls tick(); stop()
+    ends the wait as the pool's closing does. `intervals` are the intervals it was asked to
+    wait. Nothing waits a duration: the failsafe is reached only by a failing test."""
+
+    def __init__(self):
+        self.intervals = []
+        self._queue = queue.Queue()
+
+    def __call__(self, interval_s):
+        self.intervals.append(interval_s)
+        return self._queue.get(timeout=FAILSAFE_S)
+
+    def tick(self):
+        self._queue.put(False)
+
+    def stop(self):
+        self._queue.put(True)
 
 
 class ManualTimers:
