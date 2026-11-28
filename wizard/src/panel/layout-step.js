@@ -8,9 +8,10 @@ import * as W from '../layout-sentences.js';
 import { PART_COLOURS } from '../page-constants.js';
 import { el, message } from './telling.js';
 
-// createLayoutStep(section, {layout, parts, geometry, frames, store, createView}): `createView`
-// makes the 3D view (createLayoutView), and is left out where there is no WebGL.
-export function createLayoutStep(section, { layout, parts, geometry, frames, store, createView }) {
+// createLayoutStep(section, {layout, parts, geometry, frames, store, createView, reportDrawing}):
+// `createView` makes the 3D view (createLayoutView), and is left out where there is no WebGL;
+// `reportDrawing(summary)` sends the view's drawing summary when the user leaves the step.
+export function createLayoutStep(section, { layout, parts, geometry, frames, store, createView, reportDrawing = () => {} }) {
   const $ = (selector) => section.querySelector(selector);
   const doc = section.ownerDocument;
   let view = null;
@@ -131,16 +132,22 @@ export function createLayoutStep(section, { layout, parts, geometry, frames, sto
     if (store.get().step !== 'layout' || pending !== null) return;
     pending = frames.next(() => { pending = null; if (store.get().step === 'layout') draw(); });
   });
+  // Each use of the view, from showing the step to leaving it, sends one drawing summary.
   store.subscribe((state, before) => {
     if (state.step === 'layout' && before.step !== 'layout') {
       ensureView();
+      view?.beginUse();
       draw();
       view?.resize();
       view?.sync();
     }
-    if (state.step !== 'layout' && before.step === 'layout') closeHelp();
+    if (state.step !== 'layout' && before.step === 'layout') {
+      closeHelp();
+      const summary = view?.endUse();
+      if (summary) reportDrawing(summary);
+    }
   });
-  if (store.get().step === 'layout') { ensureView(); draw(); }
+  if (store.get().step === 'layout') { ensureView(); view?.beginUse(); draw(); }
 
   return { view: () => view, draw };
 }

@@ -16,24 +16,35 @@ export function createGeometryClient(port, { report = () => {} } = {}) {
   let failed = null;
 
   port.listen((reply) => {
-    const resolve = waiting.get(reply.id);
-    if (!resolve) return;
+    const entry = waiting.get(reply.id);
+    if (!entry) return;
     waiting.delete(reply.id);
-    resolve(reply.ok ? { ok: true, result: reply.result } : { ok: false, error: reply.error });
+    if (!reply.ok) tellFault(reply, entry);
+    entry.resolve(reply.ok ? { ok: true, result: reply.result } : { ok: false, error: reply.error });
   }, (error) => {
     const detail = `the worker failed: ${error && error.message ? error.message : String(error)}`;
     if (!failed) report('layout_failed', { detail });
     failed = failed ?? errorReport(LAYOUT_FAILED, detail);
-    for (const resolve of waiting.values()) resolve({ ok: false, error: failed });
+    for (const entry of waiting.values()) entry.resolve({ ok: false, error: failed });
     waiting.clear();
   });
+
+  // A failed answer whose fault is the page's (it asked for something wrong) or the geometry's own
+  // code is reported once, as page_failed or layout_failed, naming the part by its hash when the
+  // question was about one; a part the geometry cannot read is the Parts step's to report.
+  function tellFault(reply, { op, key }) {
+    if (reply.fault !== 'page' && reply.fault !== 'layout') return;
+    const fields = { detail: `${op}: ${reply.error && reply.error.detail}` };
+    const sha = typeof key === 'string' ? key.match(/^([0-9a-f]{64})\.(mm|in)$/) : null;
+    report(reply.fault === 'page' ? 'page_failed' : 'layout_failed', sha ? { part_sha256: sha[1], ...fields } : fields);
+  }
 
   function ask(op, fields = {}, transfer = []) {
     if (failed) return Promise.resolve({ ok: false, error: failed });
     next += 1;
     const id = next;
     return new Promise((resolve) => {
-      waiting.set(id, resolve);
+      waiting.set(id, { resolve, op, key: fields.key });
       port.post({ id, op, ...fields }, transfer);
     });
   }

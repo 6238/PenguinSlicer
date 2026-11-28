@@ -312,7 +312,8 @@ As of Fri 2026-11-27:
   which the owner has not yet read; it carries the decisions of the other reviews that
   bear on it. With their details files and the contracts they are enough to build
   phase 2.
-- **The wizard** is being built in phase 2: its project and build, both opening trials, the
+- **The wizard** is built for phase 2, but for the test of the previous release's page
+  against the new front server, which needs a second release: its project and build, both opening trials, the
   Layout step's geometry in its worker, the module that makes every request with retrying,
   and the panel as a whole (header, step tabs, panel line, plate summary, Back and Next, the
   six ways of telling, tooltips), matched to the mockup at each width; who the user is and
@@ -320,8 +321,9 @@ As of Fri 2026-11-27:
   reading of a part and its picture; the Parts step; the Layout step; the Settings step
   with advanced mode; the Preview step's submitting, following and every slice failure,
   with progress streams; the layer preview, on the first trial's method, with the result
-  around it; a sliced plate that expires; and the Send step with Download as its one button,
-  so that the phase's whole path can be walked against a fake front server. Its state is in
+  around it; a sliced plate that expires; the Send step with Download as its one button,
+  so that the phase's whole path can be walked against a fake front server; coming back to
+  running work; reloading for a new version; and its reports about itself. Its state is in
   [its guide](../../wizard/README.md).
 - **The front server** is being built in phase 2 (its guide says how far), and **the Onshape
   integration** has no code.

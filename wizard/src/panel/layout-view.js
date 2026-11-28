@@ -16,8 +16,10 @@
 import * as THREE from 'three';
 import { OrbitControls } from '../../vendor/three/examples/jsm/controls/OrbitControls.js';
 
+import { createHoldMeter } from '../hold-meter.js';
 import { PART_COLOURS } from '../page-constants.js';
 import * as W from '../layout-sentences.js';
+import { createFrameStats } from '../preview/frame-stats.js';
 
 // PenguinCAM's light theme, as the mockup's view has it.
 const COL = { background: 0xf2f4f7, accent: 0x2f81f7, danger: 0xd1242f, plate: 0xdde2e8, grid: 0xc7cfd8, grid5: 0xa9b3be, margin: 0x7d8894, volume: 0x9aa5b1, front: 0x8a96a3 };
@@ -33,8 +35,11 @@ const FLAT_DEG = 1;          // a triangle this near a patch's direction lies on
 // is 10 frames a second. At rest every part is drawn whole.
 const MOVING_TRIANGLES = 250000;
 // At rest, a plate of more triangles than this draws coarse copies but for the selected
-// instances, so that no frame holds the main thread past its 250 ms.
-const REST_TRIANGLES = 500000;
+// instances, so that no frame holds the main thread past its 250 ms. A press on an instance draws
+// two frames at rest back to back (the selection, then its patches), with no turn of the main
+// thread between them: at 500,000 the real parts' mix of 150 instances drew about 300,000
+// triangles a frame and held the main thread 0.39 to 0.47 s at the start of each drag.
+const REST_TRIANGLES = 250000;
 const MIN_COARSE_TRIANGLES = 200;
 
 const quat = ([w, x, y, z]) => new THREE.Quaternion(x, y, z, w);
@@ -112,7 +117,10 @@ function lights(scene) {
 //   colourOf(partKey)  the part's colour, by its place on the plate
 //   software   whether the browser draws 3D in software: then without antialiasing, which costs
 //              a software renderer several times the work of each frame
-export function createLayoutView(container, { layout, geometry, frames, colourOf, software = false }) {
+//   clock      the clock seam, for the heartbeat that measures the main thread's longest hold in
+//              each use of the view (its drawing summary)
+//   report(what, {detail})  a report about the page itself: drawing_context_lost
+export function createLayoutView(container, { layout, geometry, frames, colourOf, software = false, clock = null, report = () => {} }) {
   const canvas = document.createElement('canvas');
   canvas.className = 'gl-canvas';
   canvas.tabIndex = 0;
@@ -134,6 +142,13 @@ export function createLayoutView(container, { layout, geometry, frames, colourOf
   overlay.className = 'gl-overlay';
   container.append(overlay);
 
+  // A lost drawing context (the browser reclaiming it, as Chrome does to a page with too many):
+  // reported, and drawn again when the browser gives it back, without a reload. The renderer itself
+  // keeps the page from losing the context for good and sets itself up again on its return.
+  canvas.addEventListener('webglcontextlost', () => {
+    report('drawing_context_lost', { detail: 'the Layout view lost its 3D drawing context' });
+  });
+  canvas.addEventListener('webglcontextrestored', () => { invalidate(); });
   canvas.addEventListener('pointerdown', onDown, true);
   canvas.addEventListener('wheel', onWheel, { capture: true, passive: false });
   const controls = new OrbitControls(camera, canvas);
@@ -192,7 +207,15 @@ export function createLayoutView(container, { layout, geometry, frames, colourOf
     placeOverlays();
     renderer.render(scene, camera);
     drawn += 1;
+    stats.frame(frames.now(), moving);
   }
+
+  // ---- its drawing summary: the frames drawn while the view moves (a drag, a turn, the camera
+  // turning) and the main thread's longest hold, for each use of the view, measured as the layer
+  // preview measures its own (preview/frame-stats.js, hold-meter.js)
+  let stats = createFrameStats();
+  const holds = clock ? createHoldMeter(clock) : null;
+  let using = false;
 
   function resize() {
     const w = container.clientWidth, h = container.clientHeight;
@@ -799,6 +822,25 @@ export function createLayoutView(container, { layout, geometry, frames, colourOf
     viewPlate,
     topView,
     frames: () => drawn,
+    // A use of the view begins (the Layout step shown): its frame rates and longest hold are
+    // measured afresh.
+    beginUse() {
+      stats = createFrameStats();
+      if (holds) holds.start();
+      using = true;
+    },
+    // The use ends (the step left): the drawing summary of it (contracts/wizard-front-server.md,
+    // "POST /api/reports/drawing"), with what the view itself knows; the caller adds the
+    // machine's. Null when no use was begun.
+    endUse() {
+      if (!using) return null;
+      using = false;
+      const s = stats.summary();
+      return {
+        view: 'layout', fps_typical: s.fps_typical, fps_worst: s.fps_worst,
+        longest_hold_ms: holds ? holds.stop() : null, instances: model.instances.length,
+      };
+    },
     // The picture drawn now, read back at once (the drawing buffer is not kept between frames):
     // {width, height, pixels}, RGBA from the bottom row up.
     snapshot() {

@@ -4,9 +4,12 @@ Of the wizard a user sees, the panel as a whole is built (the header with its st
 the line under them that says why a step is held and that the server is slow, the plate
 summary, Back and Next, the six ways the panel tells the user something and its own
 tooltip, with the page retrying every request), and so are the Parts step, the Settings
-step with advanced mode, the Layout step, and the Preview step's slicing with every slice
-failure; the result with the layer preview, and the Send step, are not built yet
-([What is to be built, by phase](#what-is-to-be-built-by-phase)). This guide is its design: what a user sees and does at
+step with advanced mode, the Layout step, the Preview step's slicing with every slice
+failure and its result with the layer preview, a sliced plate that expires, the Send step
+with Download as its one button, coming back to running work, the page reloading itself for
+a new version and the wizard's reports about itself: phase 2 is built, and what waits for
+later phases is listed in [What is to be built, by phase](#what-is-to-be-built-by-phase).
+This guide is its design: what a user sees and does at
 every step, what the code in the browser must do and how well, and what is still undecided.
 It is written for the person who decides whether the wizard is being built correctly.
 [README-details.md](README-details.md) holds what a builder needs beside it: the names in
@@ -1462,7 +1465,9 @@ the first row that applies decides.
 The page tells the two "unknown" rows apart by the time it kept when it submitted, not by
 anything the front server says. A plate with a print is held by the first row for longer
 than two hours from its slice, because a print keeps its sliced file until two hours
-after the print ends.
+after the print ends. The front server's answer can take seconds when the connection is
+poor; a plate the user changes while it is awaited counts as one with no slice yet, so
+an answer that arrives late never shows the changed plate as sliced.
 
 A stored plate therefore outlives its sliced file: the sliced file lasts two hours and
 the plate 12 hours from its last use. The last row departs from the mockup, in which a
@@ -1485,13 +1490,27 @@ pending. An open progress stream does not count as a pending request, since the 
 page reconnects and is told the latest progress at once. Until it reloads, the older
 page goes on working against the newer front server.
 
+The page never reloads itself when the reload would lose work. A part whose bytes the
+browser refused to store lives only in the page's memory, as its amber line says; when
+the browser refuses its storage altogether the whole plate lives there; and when the
+browser refused the last change to the plate, that change lives only there. While any of
+these is so, the page stays on its version, however many moments come; so it does when it
+cannot tell whether the work is stored. It reloads at the
+first moment after the work is stored again, for example once the unsaved part is removed
+or a new plate is begun. A moment is still a move between steps or 120 seconds after the
+user next interacts with the page, so a page that is left untouched once its work is
+stored again waits for the user's next move before it reloads. A refresh by the user's own
+hand still loses that work, as the amber line warns.
+
 The page says nothing afterwards: no message, and no "Back where you
-were", because the page notes in the browser's storage that the reload was its own. The
+were", because the page notes in the tab's own storage that the reload was its own. The
 reason for saying nothing is that the project is deployed many times a day, so a message
 at each reload would be noise about something the user can do nothing with, and the
 standing requirement is that a deploy interrupts no user. The page
 reopens on the step it was on, in advanced mode if advanced mode was open, with the parts,
 the layout, every change, a running slice's progress and a print's progress as they were.
+One step is the exception: a page on the Send step with no sliced plate of the plate as it
+stands has nothing to send, so it reopens on the Preview step, which slices it.
 What starts afresh is only what lived in the page's memory: advanced mode's sections and
 setting groups are all open again, the 3D views return to their starting camera, the
 selection on the Layout step is cleared, the layer bar is back at the top layer, and open
@@ -1957,14 +1976,14 @@ card are confirmed.
 
 | Requirement | Figure | What it protects | From | Checked by |
 |---|---|---|---|---|
-| Narrowest panel | 320 px, with no sideways scrolling and nothing cut off | Use in Onshape's panel at its narrowest | The plan. Met by the panel as a whole on every step, at 320 px and at one pixel either side of each width where the layout changes; the steps' contents are not built yet | Every screen rendered at 320 px and looked at |
+| Narrowest panel | 320 px, with no sideways scrolling and nothing cut off | Use in Onshape's panel at its narrowest | The plan. Met by the panel as a whole on every step, at 320 px and at one pixel either side of each width where the layout changes; each step's contents at 320 px in its pictures beside the mockup's and in its browser tests, with no sideways scroll | Every screen rendered at 320 px and looked at |
 | Tooltip delay | 150 ms; printer details close 300 ms after the pointer leaves | Help that arrives while the user still wants it, without flicker | Accepted in the mockup. Met for the tooltip; the printer details come in phase 5 | A test with a clock the test moves |
 | Quiet retrying | 20 seconds | A deploy's gap passing unseen | The architecture. Met | The same |
 | Retrying in all | 300 seconds, waits doubling from 1 to 30 seconds | A long outage ending in a clear answer rather than a frozen panel | The architecture; the waits set here. Met | The same |
 | One attempt of a request | 15 seconds for the answer to begin (60 for adding a part), and the same for any silence while the rest arrives; an answer that keeps arriving has no limit on its length | A stalled answer being tried again, while a sliced file of up to 50 MB still downloads on a slow connection | Set here. Met | A test with a clock the test moves, the answer arriving in parts |
 | Sending a part | The whole part within 60 seconds: about 1 Mbit/s of upload speed for a part of 7.5 MB | Adding a part not hanging on a lost connection | Set here. Not met below that speed: the largest parts cannot be added, since a browser does not tell the page how much of an upload has gone | Arithmetic from the two figures; unmeasured on a real connection |
 | A progress stream treated as failed | After 20 seconds of failing to reopen, or after 45 seconds open with nothing carried | A card never looking current when the server is lost | Set here; 45 seconds is three times the fifteen at which the front server keeps a stream alive | The same |
-| The main thread held | Never for more than 250 milliseconds, on any step, with any plate up to the limits, on the machine without a graphics card | A panel that never reads as frozen | Set here. Measured in Chrome's engine on the machine without a graphics card: reading a part and drawing its picture, at most 12 milliseconds, the largest part allowed included; a malformed file of the largest size, under 250 milliseconds to its notification; dragging an instance on the Layout step at 150 instances, missed: 0.39 to 0.49 seconds on the robot's real parts, 0.22 to 0.46 on 150 small spacers and 0.10 to 0.28 on 150 of the largest part; the layer preview of the heaviest plate, missed in two runs of five: at most 0.16 to 0.34 seconds a run, over loading the file, turning the view and dragging the layer bar | Measured by the page itself in tests and in real use ([What the wizard reports about itself](#what-the-wizard-reports-about-itself)) |
+| The main thread held | Never for more than 250 milliseconds, on any step, with any plate up to the limits, on the machine without a graphics card | A panel that never reads as frozen | Set here. Measured in Chrome's engine on the machine without a graphics card: reading a part and drawing its picture, at most 12 milliseconds, the largest part allowed included; a malformed file of the largest size, under 250 milliseconds to its notification; dragging an instance on the Layout step at 150 instances, missed: 0.28 to 0.29 seconds on the robot's real parts, at the press that starts the drag, 0.21 to 0.23 on 150 small spacers and under 0.1 on 150 of the largest part; the layer preview of the heaviest plate, missed in two runs of five: at most 0.16 to 0.34 seconds a run, over loading the file, turning the view and dragging the layer bar | Measured by the page itself in tests and in real use ([What the wizard reports about itself](#what-the-wizard-reports-about-itself)) |
 | A part's row says it is slow | After 4 seconds | Knowing the click registered | Accepted in the mockup. The moment is met by the code that makes every request; the row comes with the Parts step | The same |
 | One part | 7.5 MB, 150,000 triangles | The slice service | Someone else's | A file one byte over is refused with the sentence above |
 | Different parts on a plate | 25 | The slice service's disk | Someone else's | A twenty-sixth part |
@@ -1979,8 +1998,8 @@ card are confirmed.
 | The layer preview | In Chrome, at least 30 frames a second on the machine with a graphics card and at least 10 on the one without, while the view is turned or the layer bar dragged, on a 14.1 MB sliced file and on a plate at the 150-instance limit; a simpler look allowed while moving | Inspecting a plate being possible at all on a machine that draws in software | Set here. Measured: the mockup's method took many seconds a frame without a graphics card; the method chosen in the first trial of phase 2 kept 10 to 20 there, with a thin margin on a busy machine ([The risks to try first](#the-risks-to-try-first-in-phase-2)), and the view built on it kept 15 to 20 in the wizard's own page, though on the heaviest plate it held the page for longer than the quarter of a second allowed in two runs of five, 0.25 and 0.34 seconds (the row "The main thread held", above); with a graphics card, unmeasured | Timed in Chrome on both machines, reported by the page in real use, and test renders |
 | The first layer drawn | Within 5 seconds of opening the Preview step on a sliced plate, with the print time and filament shown at once | The numbers a user plans around not waiting for the picture | Set here. Measured in the first trial without a graphics card: 1.5 to 2.7 seconds from fetching the sliced file to the first layers on the screen, the full look 2.4 to 8.5 seconds; the view as built, 0.8 to 1.7 seconds, the full look 1.5 to 6.5 | The same |
 | The page's memory | Under 1 GB for the page at the largest plate, with the layer preview of a 14.1 MB sliced file open | A laptop with 8 GB of memory, of which the browser has a share, not closing the page | Set here. The gigabyte is counted as 1,024 megabytes of 1,048,576 bytes each, as the memory is measured. Measured in the first trial: 839 such megabytes at the heaviest plate; with the view as built, in the wizard's own page, 992 to 1,016 over five runs, under the target by only 8 to 32 (in megabytes of a million bytes, 1,040 to 1,065). Twenty-five parts of 7.5 MB are about 190 MB before anything is drawn | Measured in Chrome at that plate |
-| Time since the user last interacted before a self-reload | 120 seconds, unless the user moves between steps | The page never refreshing under a person who is looking at it or touching it | Set here | A test with a clock the test moves |
-| The wizard's reports about itself | At most a few a minute from one page | The log not filling from one broken page | Set here at four a minute; the front server sets its own limit as well. Met for the reports of failures; the drawing summaries are not built yet | A test that makes failures faster than the limit |
+| Time since the user last interacted before a self-reload | 120 seconds, unless the user moves between steps | The page never refreshing under a person who is looking at it or touching it | Set here. Met | A test with a clock the test moves |
+| The wizard's reports about itself | At most a few a minute from one page | The log not filling from one broken page | Set here at four a minute, failures and drawing summaries together; the front server sets its own limit as well. Met | A test that makes failures faster than the limit |
 | A sliced file | At most 50 MB; 8.8 to 14.1 MB on the plates measured | The time to the first picture, and the download | Someone else's: the limit is the slice service's and the front server's; the range is measured by the slice service | A slice whose file would be larger ends with the slice service's sentence |
 | A silent progress stream | Kept alive at least every fifteen seconds by the front server; reopened by the page whenever it closes | Progress surviving the hosts' time limits (125 seconds without data at Cloudflare, five minutes without data and fifteen minutes in all at Railway) | Someone else's | A test that closes the connection at chosen moments |
 
@@ -2238,7 +2257,9 @@ The rules are the project's, applied to code in a browser.
   reports are tested too: what each holds, that none holds a part's name or geometry,
   the limit of a few a minute, and that a report that cannot be sent is dropped.
 - **A previous version's page is run against the new front server,** as the architecture
-  requires of every change.
+  requires of every change, from the second release on, since the first has no previous
+  version. Until then a test takes the page's files away from the server after the page has
+  loaded, as a deploy does, and checks that the page still draws its layer preview.
 
 What tests of that kind cannot prove, and what proves it instead:
 
@@ -2286,7 +2307,10 @@ The screens designed here follow the decisions recorded in the body.
 
 Of what a user sees, the panel as a whole, the Parts step, the Settings step, the Layout step,
 the Preview step's slicing and its failures, its result with the layer preview, a sliced plate
-that expires, and the Send step with Download as its one button are built. The
+that expires, the Send step with Download as its one button, coming back to running work and the
+page reloading itself for a new version are built, and so are the wizard's reports about itself:
+all of phase 2 but the test of the previous release's page against the new front server, which
+needs a previous release. The
 mockup is kept in the repository as the reference for the look, and its style sheet for the
 panel is taken over whole, unchanged, as the cheap way to match it; its scripts were faked,
 and the wizard's behaviour is built from this guide
@@ -2362,10 +2386,14 @@ supports' spacing follows the settings without moving anything. While the view m
 rest on a plate too heavy to draw whole in time, each part is drawn as a coarse copy of
 itself, the selected instances whole at rest; without a graphics card, 150 instances of the
 robot's real parts were dragged at 16 to 19 frames a second and turned at 17 to 20, and 150
-of the largest part allowed dragged at 14 to 42 (the target is 10). The page was still held
-longer than its quarter of a second during a drag: 0.39 to 0.49 s on the plate of real parts,
-0.22 to 0.46 s on a plate of 150 small spacers and up to 0.28 s on 150 of the largest part,
-which the record of the build lists as missed. Pictures of the built step beside the
+of the largest part allowed dragged at 14 to 42 (the target is 10). The page is still held
+longer than its quarter of a second at the start of a drag on the plate of real parts: a press
+on an instance draws the plate twice at rest, once for the selection and once for its patches,
+with no pause between, and on that plate the two took 0.28 to 0.29 s together; on a plate of 150
+small spacers 0.21 to 0.23 s, and on 150 of the largest part under 0.1 s. Drawing more of each part
+coarsely at rest brought it down from 0.39 to 0.49 s; the records of the builds list it as
+missed. A 3D drawing the browser takes away is drawn again when the browser gives it back, and
+reaches the server's log. Pictures of the built step beside the
 mockup's, at four widths and in each state the mockup shows, are kept with the build records.
 
 The Preview step's slicing is built as [Slicing](#slicing) and
@@ -2463,6 +2491,39 @@ of phase 2, from adding parts through laying out, slicing and inspecting the pre
 downloading, has been walked in Chromium against the fake front server, and is a test. Pictures
 of the result and of the Send step beside the mockup's, at four widths, are kept with the build
 records.
+
+Coming back is built as [Coming back to running work](#coming-back-to-running-work) describes it,
+every row but the printer's, which comes with the printer in phase 5. A page that opens on a stored
+plate whose slice is of the plate as it stands asks the front server once what became of it: still
+slicing, it opens the Preview step with the slicing card and says "Back where you were. Your plate
+was still slicing when you left; see below."; finished, the Preview step with the result and "Back
+where you were. Your plate was sliced and ready to send when you left."; failed, the failure as if
+the page had stayed open; expired, the step the user was on, with the expired message on the
+Preview and Send steps; unknown less than two hours after it was sent, or ended because the slicer
+was asked to stop, the plate is sent again by itself and the card starts from the beginning. A plate
+changed since its slice has no slice to come back to and opens where it was, saying nothing. Two
+cases the table does not name are settled: a slice the slicer says a later slice of the same plate
+replaced, which can only happen when the answer to that later slice was lost in the refresh, sends
+the plate as it stands again; and a page left on the Send step with nothing sliced opens the Preview
+step, which slices it.
+
+The page reloading itself for a new version is built as
+[The page reloading itself](#the-page-reloading-itself-for-a-new-version) describes it: at a move
+between steps, or two minutes after the user last touched the page, never while a request of its
+own is waiting for its answer, and with nothing said afterwards; the note that the reload is the
+page's own is kept in the tab, so that another tab opening at that moment never takes it for its
+own. A move between steps made while a request was waiting reloads when the answer comes, unless
+the user has touched the page since. The page now starts the layer preview's second thread when it
+loads, so that a page loaded before a deploy still draws its first preview after the deploy has
+taken the old files away; before, it would have failed.
+
+The wizard's reports about itself are built as
+[What the wizard reports about itself](#what-the-wizard-reports-about-itself) describes them:
+every failure in the browser, the page's own code failing anywhere included, and one drawing
+summary for each use of the Layout view and of the Preview step, sent when the user leaves the
+step, with the machine's figures and never a part's name. A use in which the view never moved has
+no frame rate to report, and sends no summary. The layout code failing on a part is told apart from
+the page asking the layout code for something wrong, which is reported as the page's own failure.
 
 | Phase | What of the wizard is built |
 |---|---|

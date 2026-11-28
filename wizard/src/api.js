@@ -121,10 +121,12 @@ async function attemptOnce({ transport, clock, method, path, headers, body, time
 //   waiting(): of those, the ones waiting between attempts or for Try again.
 //   onVersion(listener): told every answer's X-PenguinSlicer-Version.
 //   heard(version): a version heard otherwise, as a progress stream's `version` event, told the same way.
+//   onSettled(listener): told each time the last pending request ends.
 //   board: the retry board, for the panel line.
 export function createApi({ transport, clock, version, currentGroup = () => null, random = Math.random }) {
   const board = createRetryBoard(clock);
   const versionListeners = new Set();
+  const settledListeners = new Set();
   let pending = 0;
   let waiting = 0;
 
@@ -205,6 +207,7 @@ export function createApi({ transport, clock, version, currentGroup = () => null
     } finally {
       pending -= 1;
       if (signal) signal.removeEventListener('abort', stopped);
+      if (pending === 0) for (const listener of [...settledListeners]) listener();
     }
   }
 
@@ -222,6 +225,8 @@ export function createApi({ transport, clock, version, currentGroup = () => null
     waiting: () => waiting,
     onVersion(listener) { versionListeners.add(listener); return () => versionListeners.delete(listener); },
     heard(v) { for (const listener of versionListeners) listener(v); },
+    // onSettled(listener): told each time the last pending request ends (reloading waits for it).
+    onSettled(listener) { settledListeners.add(listener); return () => settledListeners.delete(listener); },
     board,
   };
 }

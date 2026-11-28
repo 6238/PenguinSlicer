@@ -42,6 +42,10 @@ export const PART_MISSING_TRIES = 2;
 export const SLICED_FILE_KEEP_S = 7_200;
 export const RECONNECTED_LINE_S = 5;
 
+// Reloading for a new version (the guide, "The page reloading itself for a new version"): the
+// time since the user last interacted before the page reloads itself.
+export const RELOAD_IDLE_S = 120;
+
 // The browser's storage (the guide, "What the browser keeps"): PLATE_UNUSED_H is in storage.js.
 
 // A part's picture on its row (decision 18): the mockup's 44 px, and the mockup's colours for the

@@ -19,6 +19,13 @@ export const LAST_HEARD = (stage) => `${stage} (last heard)`;
 export const RECONNECTED = (time) => `Reconnected at ${time}. The slice kept running; the progress below is up to date.`;
 export const SLICER_RESTARTED = 'The slicer restarted, so this slice began again.';
 
+// Coming back (wizard/README.md, "Coming back to running work"): the notifications of a page that
+// lost its state and finds its plate's slice still going, or finished; the mockup's words.
+export const BACK_SLICING = 'Back where you were. Your plate was still slicing when you left; see below.';
+export const BACK_SLICED = 'Back where you were. Your plate was sliced and ready to send when you left.';
+// The key of those notifications.
+export const BACK_NOTICE = 'back-where-you-were';
+
 // No room to wait: the wizard's own line beside the slice service's sentences.
 export const PLATE_UNCHANGED = 'Your plate is unchanged.';
 

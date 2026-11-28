@@ -69,13 +69,16 @@ DRIVE = """
     });
     const elapsed = performance.now() - t0;
     const held = wizard.holdMeter.stop();
+    // what the last frame drawn while moving drew
+    const { triangles: moving_triangles, calls: moving_calls } = view.renderer.info.render;
     c.dispatchEvent(ev('pointerup', to.x, to.y));
     await wizard.layout.idle();
     const drawn = view.frames() - drawn0;
     times.shift();
+    const first_frames_ms = times.slice(0, 6).map((t) => Math.round(t));
     times.sort((a, b) => a - b);
     return { frames: drawn, ms: elapsed, fps: drawn / (elapsed / 1000), median_frame_ms: times[Math.floor(times.length / 2)],
-             worst_frame_ms: times[times.length - 1], held_ms: held };
+             worst_frame_ms: times[times.length - 1], held_ms: held, moving_triangles, moving_calls, first_frames_ms };
 """
 
 
@@ -131,7 +134,9 @@ def main():
             results["plates"][name] = measure(browser, server, name, parts)
             m = results["plates"][name]
             print(f"{name}: {m['on_plate']} of 150 on the plate, {m['triangles_drawn']:,} triangles; dragging {m['dragging']['fps']:.1f} fps "
-                  f"(median frame {m['dragging']['median_frame_ms']:.0f} ms, worst {m['dragging']['worst_frame_ms']:.0f} ms, held {m['dragging']['held_ms']} ms)"
+                  f"(median frame {m['dragging']['median_frame_ms']:.0f} ms, worst {m['dragging']['worst_frame_ms']:.0f} ms, held {m['dragging']['held_ms']} ms, "
+                  f"{m['dragging']['moving_triangles']:,} triangles in {m['dragging']['moving_calls']} draws a frame, "
+                  f"the first frames {m['dragging']['first_frames_ms']} ms)"
                   + (f"; turning all {m['turning_all']['fps']:.1f} fps" if m["turning_all"] else ""))
         browser.close()
     OUT.parent.mkdir(parents=True, exist_ok=True)

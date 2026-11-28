@@ -27,7 +27,8 @@ export const offersSliceAgain = (code) => code === UNREADABLE;
 //   result      result.js: the result's figures, the sliced file and the ghost
 //   createView(element, {onLayer, onProgress, onFailure})  the layer preview (panel/layer-preview.js)
 //   frames      the frame seam: the moment the step opened, from which the first layer is timed
-export function createPreviewStep(section, { slicing, store, clock, result = null, createView = null, frames = null }) {
+//   reportDrawing(summary)  sends the layer preview's drawing summary when the user leaves the step
+export function createPreviewStep(section, { slicing, store, clock, result = null, createView = null, frames = null, reportDrawing = () => {} }) {
   const $ = (selector) => section.querySelector(selector);
   const cardBox = $('#slice-card');
   const errors = $('#preview-errors');
@@ -215,10 +216,17 @@ export function createPreviewStep(section, { slicing, store, clock, result = nul
   }
 
   slicing.subscribe(draw);
+  // Each use of the step with the layer preview drawn sends one drawing summary when the user
+  // leaves the step; coming back to a view already drawn begins a new use of it.
   store.subscribe((state, before) => {
     if (state.step === before.step) return;
     if (state.step === 'preview' && frames) openedAt = frames.now();
-    if (before.step === 'preview') { setKey(false); setHelp(false); }
+    if (state.step === 'preview' && shown && shown.ready && shown.view.beginUse) shown.view.beginUse(openedAt);
+    if (before.step === 'preview') {
+      setKey(false); setHelp(false);
+      if (shown && shown.ready && shown.view.summary) reportDrawing(shown.view.summary());
+      if (shown && shown.ready && shown.view.endUse) shown.view.endUse();
+    }
     draw();
   });
   draw();

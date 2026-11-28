@@ -34,6 +34,10 @@ const TAB_PLATE = 'penguinslicer.plate_id';
 // Set in the tab once the storage holds `owner`: only then does a missing `owner` mean the
 // storage was cleared, and not that the browser would not open it on an earlier load.
 const TAB_STORED = 'penguinslicer.owner_stored';
+// Set in the tab just before the page reloads itself for a new version, and cleared by the next
+// load, which then says nothing (wizard/README-details.md, "Reloading for a new version"). In the
+// tab and not in the shared records, so that another tab opening at that moment never takes it.
+const TAB_SELF_RELOAD = 'penguinslicer.self_reload';
 const PLATES = 'plates/';
 const BYTES = 'part-bytes/';
 const CHOICES = ['uploadUnits', 'currentGroup'];
@@ -83,7 +87,10 @@ export function createStorage({ openRecords, locks, tab, clock, newId, report })
   let release = null;
   let writing = Promise.resolve();
   let plateRefusalReported = false;
+  let plateStored = false;     // whether the plate's last write was stored
   const unsaved = new Map();   // the bytes of parts the browser refused to store, by sha256.units
+
+  const keepsWork = () => records !== null && plateStored && unsaved.size === 0;
 
   // Writes in the order asked, each after the one before it, so the last change is the one kept.
   // A write the browser refuses resolves to false.
@@ -96,6 +103,7 @@ export function createStorage({ openRecords, locks, tab, clock, newId, report })
   async function writePlate() {
     const copy = structuredClone(plate);
     const outcome = await queue((r) => r.put(plateKey(copy.plate_id), copy));
+    plateStored = outcome === true;
     if (outcome !== true && outcome !== false && !plateRefusalReported) {
       plateRefusalReported = true;
       report('storage_refused', { detail: `writing the plate: ${failure(outcome)}` });
@@ -142,12 +150,15 @@ export function createStorage({ openRecords, locks, tab, clock, newId, report })
 
   return {
     // Opens the storage for `user` and gives the tab its plate and its current group:
-    //   {plate, group}
+    //   {plate, group, selfReload}
+    // selfReload: this load is the page's own reload for a new version (markSelfReload), told once.
     // `groups` is /api/me's list: the tab's own plate keeps its group while the user has it, a new
     // tab starts in the stored current group when the user has it, and otherwise in the first.
     async begin({ user, groups }) {
       const has = (id) => groups.some((g) => g.id === id);
       const now = clock.now();
+      const selfReload = tab.get(TAB_SELF_RELOAD) === '1';
+      if (selfReload) tab.set(TAB_SELF_RELOAD, '');
       try {
         records = await openRecords();
       } catch (err) {
@@ -220,8 +231,24 @@ export function createStorage({ openRecords, locks, tab, clock, newId, report })
       }
       tab.set(TAB_PLATE, plate.plate_id);
       await writePlate();
-      return { plate: structuredClone(plate), group };
+      return { plate: structuredClone(plate), group, selfReload };
     },
+
+    // Waits for every write asked for so far, so that the reloaded page finds the plate as this one
+    // left it; then, when a reload would keep the tab's work (reloadKeepsWork), notes in the tab
+    // that the page is about to reload itself and resolves to true. Otherwise it notes nothing and
+    // resolves to false: the page does not reload.
+    async markSelfReload() {
+      await writing;
+      if (!keepsWork()) return false;
+      tab.set(TAB_SELF_RELOAD, '1');
+      return true;
+    },
+
+    // Whether a reload would find the tab's work as it stands: the storage open, the plate's last
+    // write stored, and no part whose bytes the browser refused (those live only in this page's
+    // memory). The page's own reload for a new version waits while it would not.
+    reloadKeepsWork: () => keepsWork(),
 
     // The tab's plate as it stands, in memory.
     plate: () => structuredClone(plate),

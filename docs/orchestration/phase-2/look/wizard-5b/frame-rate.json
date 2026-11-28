@@ -11,19 +11,39 @@
       "triangles_drawn": 802920,
       "dragging": {
         "frames": 85,
-        "ms": 4557.599999964237,
-        "fps": 18.650166754578503,
+        "ms": 4303.5,
+        "fps": 19.751365167886604,
         "median_frame_ms": 50,
-        "worst_frame_ms": 216.70000000000027,
-        "held_ms": 411
+        "worst_frame_ms": 150,
+        "held_ms": 292,
+        "moving_triangles": 111350,
+        "moving_calls": 153,
+        "first_frames_ms": [
+          150,
+          133,
+          17,
+          17,
+          17,
+          17
+        ]
       },
       "turning_all": {
         "frames": 90,
-        "ms": 5079.800000011921,
-        "fps": 17.717232961886058,
+        "ms": 4743.599999964237,
+        "fps": 18.972931950560444,
         "median_frame_ms": 50,
-        "worst_frame_ms": 100.10000000000036,
-        "held_ms": 163
+        "worst_frame_ms": 66.70000000000073,
+        "held_ms": 119,
+        "moving_triangles": 112394,
+        "moving_calls": 150,
+        "first_frames_ms": [
+          17,
+          50,
+          50,
+          33,
+          50,
+          50
+        ]
       }
     },
     "hub-150k-150": {
@@ -31,20 +51,40 @@
       "on_plate": 45,
       "triangles_drawn": 22500000,
       "dragging": {
-        "frames": 65,
-        "ms": 1801.699999988079,
-        "fps": 36.077038352905625,
+        "frames": 64,
+        "ms": 1540.8999999761581,
+        "fps": 41.53416834381871,
         "median_frame_ms": 16.699999999999818,
-        "worst_frame_ms": 266.6999999999998,
-        "held_ms": 284
+        "worst_frame_ms": 66.69999999999982,
+        "held_ms": 86,
+        "moving_triangles": 13888,
+        "moving_calls": 28,
+        "first_frames_ms": [
+          67,
+          17,
+          17,
+          17,
+          17,
+          17
+        ]
       },
       "turning_all": {
         "frames": 90,
-        "ms": 1810.699999988079,
-        "fps": 49.70453415838765,
+        "ms": 1561.7999999523163,
+        "fps": 57.62581636749124,
         "median_frame_ms": 16.699999999999818,
-        "worst_frame_ms": 166.5,
-        "held_ms": 205
+        "worst_frame_ms": 83.30000000000018,
+        "held_ms": 107,
+        "moving_triangles": 13888,
+        "moving_calls": 28,
+        "first_frames_ms": [
+          17,
+          17,
+          17,
+          17,
+          17,
+          17
+        ]
       }
     },
     "spacers-150": {
@@ -53,19 +93,39 @@
       "triangles_drawn": 32400,
       "dragging": {
         "frames": 90,
-        "ms": 2637,
-        "fps": 34.129692832764505,
-        "median_frame_ms": 33.19999999999982,
-        "worst_frame_ms": 150,
-        "held_ms": 300
+        "ms": 1933.699999988079,
+        "fps": 46.542897037055816,
+        "median_frame_ms": 16.699999999999818,
+        "worst_frame_ms": 116.60000000000002,
+        "held_ms": 227,
+        "moving_triangles": 32500,
+        "moving_calls": 159,
+        "first_frames_ms": [
+          117,
+          100,
+          17,
+          17,
+          17,
+          17
+        ]
       },
       "turning_all": {
         "frames": 89,
-        "ms": 2222.199999988079,
-        "fps": 40.05040050421989,
-        "median_frame_ms": 16.700000000000273,
-        "worst_frame_ms": 50,
-        "held_ms": 64
+        "ms": 1876.800000011921,
+        "fps": 47.421142369690266,
+        "median_frame_ms": 16.699999999999818,
+        "worst_frame_ms": 33.40000000000009,
+        "held_ms": 52,
+        "moving_triangles": 32500,
+        "moving_calls": 158,
+        "first_frames_ms": [
+          17,
+          17,
+          17,
+          17,
+          17,
+          33
+        ]
       }
     }
   }

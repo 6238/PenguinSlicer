@@ -11,14 +11,16 @@ geometry the second tried ([The geometry, in a worker](#the-geometry-in-a-worker
 [Every request: headers, answers and retrying](#every-request-headers-answers-and-retrying);
 who the user is and the configuration, as phase 2 has them ([The current group](#the-current-group),
 [The configuration and the table of settings](#the-configuration-and-the-table-of-settings));
-[What the browser keeps](#what-the-browser-keeps), but for what the later items put in it; the
+[What the browser keeps](#what-the-browser-keeps), but for `signInTrip` (phase 3); the
 worker's reading of a part and its picture ([The geometry, in a worker](#the-geometry-in-a-worker));
-the failure reports of [What the wizard reports about itself](#what-the-wizard-reports-about-itself);
-[The Parts step](#the-parts-step); [The Layout step](#the-layout-step); [Progress streams](#progress-streams);
-and of [The Preview step](#the-preview-step), submitting a plate, the slicing card, the slice
-service stopping, no room to wait and every slice failure, up to its sections
-[The result](#the-result) and [A sliced plate that expires](#a-sliced-plate-that-expires).
-Everything else here is the design to build: every screen, state and message of the guide, in
+[What the wizard reports about itself](#what-the-wizard-reports-about-itself);
+[The Parts step](#the-parts-step); [The Settings step](#the-settings-step) with advanced mode;
+[The Layout step](#the-layout-step); [Progress streams](#progress-streams);
+[The Preview step](#the-preview-step) with [the layer preview](#the-layer-preview);
+[The Send step](#the-send-step) in its phase 2 form; [When a user comes back](#when-a-user-comes-back)
+but for the printer's row; and [Reloading for a new version](#reloading-for-a-new-version):
+every item of phase 2 in [By phase](#by-phase) but item 19, which needs a second release.
+Everything else here is the design to build in later phases: every screen, state and message of the guide, in
 the builder's terms, with the names the guide leaves out (requests, fields, error codes,
 constants, stored records, tests), the figures, the tests each part needs, and an order in
 which to build phase 2.
@@ -157,7 +159,7 @@ retrying and of a part's picture (`PANEL_MIN_PX` to `PANEL_LINE_PASSING_S`, `ROW
 `ATTEMPT_TIMEOUT_S`, `PICTURE_CSS_PX`, `PART_COLOURS`, `MAIN_THREAD_HOLD_MS`), of progress
 streams (`STREAM_REOPEN_FAIL_S`, `STREAM_SILENT_S`, `POLL_S`) and of submitting a plate
 (`MAX_PLATE_CONFIGURATION_BYTES`, `PART_MISSING_TRIES`, `SLICED_FILE_KEEP_S`,
-`RECONNECTED_LINE_S`) are in `wizard/src/page-constants.js`; `MAX_PART_BYTES`, `MAX_PART_TRIANGLES`, `MAX_PARTS` and
+`RECONNECTED_LINE_S`) and of reloading (`RELOAD_IDLE_S`) are in `wizard/src/page-constants.js`; `MAX_PART_BYTES`, `MAX_PART_TRIANGLES`, `MAX_PARTS` and
 `MAX_INSTANCES` in `wizard/src/geometry/constants.js`; `PLATE_UNUSED_H` is in `wizard/src/storage.js`, `REPORTS_PER_MIN`
 in `wizard/src/reports.js`, `HEARTBEAT_MS` in `wizard/src/hold-meter.js`; and the geometry's in
 `wizard/src/geometry/constants.js` and, for the picture, `wizard/src/geometry/picture.js`.
@@ -1499,11 +1501,17 @@ something changed; a press on the handle, a patch, an instance (or the box of it
 through a hole), or empty plate is taken in that order; a double-click on a triangle within 1
 degree of a hull patch's direction lays the instance on that patch. While the view moves (a
 drag, a turn, the camera turned) on a plate of more than 250,000 triangles, and at rest on one of
-more than 500,000, each instance is drawn as its part's coarse copy (the worker's `coarse`,
+more than 250,000 too (`MOVING_TRIANGLES`, `REST_TRIANGLES`: a press on an instance draws two frames
+at rest back to back, the selection and then its patches, and at 500,000 at rest those two frames
+held the main thread 0.39 to 0.47 s at the start of a drag on the real mix), each instance is drawn as its part's coarse copy (the worker's `coarse`,
 `geometry/coarse.js`: the corners gathered into a grid over the part's box, at most the
 instance's share of the figure, in powers of two), the selected instances whole at rest; an
 instance whose coarse copy has not come at rest waits for it rather than hold the page. Without a
-graphics card the view is drawn without antialiasing (`softwareDrawing`). A part's bytes are sent
+graphics card the view is drawn without antialiasing (`softwareDrawing`). A lost drawing context
+is reported as `drawing_context_lost` and the view draws again when the browser gives it back
+(three.js's renderer keeps the context restorable and sets itself up again). Each use of the view,
+from showing the step to leaving it, is measured for its drawing summary (`beginUse`, `endUse`;
+[What the wizard reports about itself](#what-the-wizard-reports-about-itself)). A part's bytes are sent
 as a `Blob` by the transport seam: sent as an `ArrayBuffer`, a 7.5 MB upload held the main thread
 350 to 560 ms in the browser tests.
 
@@ -1784,8 +1792,9 @@ instance where it stands, and the first of a quarter, an eighth and three eighth
 makes it fit the plate, `{fits, angle}`; `settleInstance`, `placeNear` and `turnToFit` in
 `geometry/arrange.js`) and `coarse` (`key`, `maxTriangles`; a coarse copy for drawing, its corners
 a transferred `Float32Array`). `check` also answers each instance's footprint `bounds` and
-`heights`. Each answer is `{id, ok: true, result}` or `{id, ok: false, error}`,
-the error an error report of the wizard's own:
+`heights`. Each answer is `{id, ok: true, result}` or `{id, ok: false, error, fault}`,
+the error an error report of the wizard's own and `fault` whose it is (`part`, `page` or `layout`,
+by which the worker's client reports it: [What the wizard reports about itself](#what-the-wizard-reports-about-itself)):
 
 | Code | When | `message`; `remedy` |
 |---|---|---|
@@ -2294,9 +2303,12 @@ later `show` or `destroy` came first, which also stops the worker. `layer()` giv
 z}`; `setLayer(index)` and `stepLayer(±1)` move the bar (the two small buttons); `resetView()` puts
 the camera back on the instances; `summary()` gives the fields of the drawing summary the view
 knows (`view`, `fps_typical`, `fps_worst`, `first_layer_ms`, `longest_hold_ms`, `instances`,
-`sliced_file_bytes`, `sliced_file_lines`), to which the caller adds the machine's and sends with item
-18 (`fps_typical` and `fps_worst` are `null` while the view has not moved, and the front server
-refuses a summary without them, so item 18 sends none for such a use); `destroy()` stops everything and removes the canvas and the bar. For the tests, the renders and
+`sliced_file_bytes`, `sliced_file_lines`), to which the reports module adds the machine's
+([What the wizard reports about itself](#what-the-wizard-reports-about-itself); `fps_typical` and
+`fps_worst` are `null` while the view has not moved, and the front server refuses a summary without
+them, so none is sent for such a use); `beginUse(opened)` begins a new use of a view already drawn,
+its figures measured afresh; `endUse()` ends a use once its summary is read, stopping the heartbeat
+until the next `beginUse`; `destroy()` stops everything and removes the canvas and the bar. For the tests, the renders and
 the measurements it also has `look({ghost})` (the pixels of the full look, read on the frame that
 puts it on the screen), `untilRest()`, `setView(name)` with the fixed angles of `views`,
 `showMoving()` and `stillAgain()`, `drive(kind, steps)` (the first trial's paths, `turn` and
@@ -2665,6 +2677,58 @@ Send step); the "unknown" rows split at exactly two hours on the fake clock; an 
 Preview step shows the message with Slice again and keeps parts, layout and settings; the last-print
 note goes at 12 hours and on the next send.
 
+**As built, phase 2.** `comeBack` in `wizard/src/slicing.js`, started once the page has opened on a
+stored plate (`createSlicing`'s `back`, which `main.js` resolves from the opening, `{quiet}` true for
+the page's own reload) and before the first entering of the Preview step is worked out, so that
+entering the step never submits what coming back has decided. A stored slice counts only when it is
+of the plate as it stands (its fingerprint the plate's now); otherwise the plate has no slice job
+(the second row), and a plate stored on the Send step with none opens the Preview step, which
+slices it. With one, the page asks `GET /api/slices/<slice>` once (retried like any request) and
+opens: on `queued` or `running` the Preview step, the slicing card from that report and its
+progress stream, and the notification `BACK_SLICING`; on `done` the Preview step with the result
+and `BACK_SLICED` (the mockup's words, `wizard/src/slicing-sentences.js`, kind `info`); on `failed`
+the Preview step with the failure, nothing said and nothing submitted on entering the step; on
+`cancelled` `shutdown` the plate submitted again by itself, the card saying the slicer restarted; on
+`front.sliced_file_expired` (as a `failed` report or a refusal) and on `404` `front.slice_unknown`
+from two hours after submitting, the expired message on the Preview and Send steps with Slice
+again, and on an earlier step nothing until entering the Preview step slices; `front.slice_unknown`
+before the two hours, the Preview step and the plate submitted again by itself; any other refusal,
+or an answer that is not a progress report of this slice job, the Preview step with that error
+report or the wizard's `wizard.bad_answer`. Two choices the table leaves open: a `cancelled`
+`replaced` answer, which can reach a returning page only when the acceptance of the later slice
+job was lost to the refresh, submits the plate as it stands again (the stored plate names no later
+slice job to follow), with no line about a restart; and the parts are uploaded again, when the
+slice service restarted, through `slice.part_missing` as for any submission
+([Submitting a plate](#submitting-a-plate)), never ahead of it, so that a slice service that kept
+its part store is sent nothing twice. The page's own reload (`quiet`) says nothing and stays on the
+step it was on, whatever the row of a slice job; the slice is followed, shown or found expired there
+as above. The Send step with no slice of the plate as it stands opens the Preview step, the page's
+own reload included, since the Send step has nothing to send. An answer is a progress report of
+this slice job only when it holds the contract's required `job`, `state`, `elapsed_s` and
+`sequence`, and its `job` is the stored slice's id: a report of another slice job is never shown
+as this plate's. A progress report of this slice job whose `state` is none of the contract's five
+is an answer the wizard cannot use: the Preview step with `wizard.bad_answer`. The answer is used
+only when it is still the page's latest decision and the plate still stands as it was asked about:
+a slice decided meanwhile keeps the newer slice, and a plate changed meanwhile (a retried asking
+takes seconds, during which the user may drag an instance) counts as one with no slice job, so a
+late `done` never shows a changed plate as sliced.
+
+Tests: `tests/coming-back.test.js`, a first page submitting the plate and a second opening on the
+same stored plate as a refresh does, reaches each row of phase 2: still running and waiting behind
+others, finished (from the Parts and from the Send step), failed, expired from an earlier step (and
+entering the Preview step slicing) and on the Preview and Send steps (from the Send step, moving to
+the Preview step slicing nothing by itself), unknown at 1 ms under two
+hours and at exactly two hours, asked to stop, replaced, another refusal, an answer that is not a
+progress report, a progress report of another slice job, one without `job` or `elapsed_s`, one of
+this slice job in a state the contract does not name, no slice
+job on each of the first three steps, a plate changed since its slice, the Send step without a
+slice (also on the page's own reload), the page's own reload on the Layout, Send and Preview steps,
+the asking retried quietly, a plate changed and a slice decided while the asking is answered, and an opening that throws leaving no rejected promise of coming back's
+own (the opening's failure is reported once, by `endOpening`). Mutating the first entering's check (the Preview step submitting what
+coming back left) fails six of them. `tests_browser/test_coming_back.py` refreshes a sliced tab in
+Chromium and sees the Preview step with "Back where you were". The printer's row and the last-print
+note come with phase 5.
+
 ## Reloading for a new version
 
 Every answer carries `X-PenguinSlicer-Version`, and a progress stream its `version` event. Versions
@@ -2682,9 +2746,19 @@ older version does nothing. Until it reloads, the older page goes on working aga
 front server, which the contract requires of every change; the page fetches every file of its own
 code when it loads and nothing later by name.
 
+**Never when the reload would lose work.** The page does not reload while the tab's plate holds a
+part whose bytes the browser refused to store (`saved: false`, kept only in the page's memory; the
+next load's `storage.begin` drops it), while the browser's storage is refused altogether, or while
+the plate's last write was refused. It stays on its version and asks again at the next moment (the
+next move between steps, or 120 s after the next input), and reloads at the first one at which the
+work is stored: the unsaved part removed, or New plate pressed. The check is made after every write
+asked for so far is done, so a write refused at the last moment counts. Nothing is said: the part's
+amber line already says a refresh will lose it.
+
 **What the user sees:** nothing. No message and no "Back where you were", because before reloading
-the page notes in the browser's storage that the reload is its own (*proposed* record `selfReload`),
-and the next load clears it. The page reopens on the step it was on, in advanced mode if advanced
+the page notes in the tab's own storage that the reload is its own (`penguinslicer.self_reload` in
+the tab's `sessionStorage`, through the tab seam: in the tab and not in the shared records, so that
+another tab opening at that moment never takes it as its own), and the next load clears it. The page reopens on the step it was on (but for the Send step with no slice of the plate as it stands, which opens the Preview step, as for any load), in advanced mode if advanced
 mode was open, with the parts, the layout, every change, a running slice's progress and a print's
 progress. What starts afresh is only what lived in memory: advanced mode's sections and setting
 groups all open again, the 3D views at their starting camera, the Layout step's selection cleared,
@@ -2693,8 +2767,46 @@ the layer bar at the top layer, open joined boxes and notifications closed. Keep
 Tests (fake clock; the fake front server announcing a newer version): no reload while a request is
 pending, and a reload once it is answered; with no input, a reload at exactly 120 s and not at
 119.9 s; a step change reloads at once; an open progress stream does not hold the reload; an older
-version does nothing; after the reload, the stored step and advanced mode reopen and no notification
-shows; a page loaded from the previous release's code runs against the new fake front server.
+version does nothing; no reload while a part is unsaved or the storage refused, and a reload at the
+first moment after; the mark waits for a write still being made; after the reload, the stored step
+and advanced mode reopen and no notification shows; a page loaded from the previous release's code runs against the new fake front server (from
+the second release on: item 19 of [By phase](#by-phase)).
+
+**As built.** `createReloader` in `wizard/src/reloading.js`, joined in `main.js` to every answer's
+version through the module that makes every request (`onVersion`, and `heard` for a stream's
+`version` event), to the user's pointer movements, presses, keys, wheel and scrolls on the window,
+to the store's step, and to `onSettled`, which the module that makes every request tells each time
+its last pending request ends (a request waiting between attempts or for Try again is pending; a
+progress stream is pending only until its headers arrive). `isNewer` compares the part before the
+hyphen of two versions of the contract's form, and a version of any other form, the page's own
+included, is never newer, so a page that does not know its own version never reloads.
+`RELOAD_IDLE_S` is in `wizard/src/page-constants.js`. A move between steps made while a request is
+pending reloads when the last request ends, unless the user has interacted since the move (then the
+next moment does: 120 s without input, or the next move). The reload waits until every listener of
+the move has run, so that the step moved to is among the writes `markSelfReload` (the storage
+module) waits for. Once every write asked for is done, `markSelfReload` reads `reloadKeepsWork()`
+(the storage open, the plate's last write stored, no part kept only in memory): when it holds, it
+sets the tab's mark and resolves to `true`, and the location seam (`reloadPage` in
+`wizard/src/seams/location.js`) reloads; otherwise it sets nothing and resolves to `false`, and the
+reloader makes no reload and waits for the next moment. A `markSelfReload` that rejects leaves it
+unknown whether the work is stored, and is treated as `false`: no reload, and the next moment asks
+again. The next load's
+`storage.begin` reads and clears the mark, and the opening passes it to coming back as `quiet`.
+The preview's worker is started when the page loads and kept until a sliced plate is shown, each
+worker taken starting the next (`warmPreviewWorker` in `wizard/src/seams/preview-worker.js`), so that
+its code is fetched while this release's files are served: without it, a page loaded before a
+deploy could not draw its first preview, the new front server answering `404` for the old file.
+Tests: `tests/reloading.test.js` (the moments of the tests above, a request retried past the
+120 s, a step change answered after the user moves again, a stream's `version` event, the reload made
+once, the order of the writes, a reload held while it would lose work, made at the next moment
+after, and one held while the check of the work fails, made at a later moment whose check passes), `tests/storage.test.js` (the mark told to that tab's next load alone, once; the mark waiting
+for a write held open; `reloadKeepsWork` with a part refused and removed, a part refused and New plate
+pressed, the plate's write refused and stored again, and the storage refused; no mark while the work would be lost, read after the
+writes), `tests/coming-back.test.js` (the quiet reopening on the stored step, the Send step with no
+slice included), `tests/settings.test.js` (advanced mode reopening on any load of a plate stored on
+the Settings step with it open, the page's own reload included), and `tests_browser/test_coming_back.py` in Chromium: a newer version reloads the page at
+a move between steps, on the step it moved to, with nothing said; and a page whose files the front
+server no longer serves still draws the layer preview.
 
 ## What the browser keeps
 
@@ -2716,7 +2828,7 @@ added in one tab never appears in another, and one tab never writes over another
 | `uploadUnits` | How STL files are read | The user changes it; cleared with the user's work |
 | `currentGroup` | For a user in several groups outside Onshape, the current group | The same |
 | `owner` | The `user.id` the stored work belongs to, written at the first opening | A different user signs in |
-| `signInTrip`, `selfReload` | That a trip to Onshape, or a reload, is the page's own | The next load |
+| `signInTrip` (phase 3) | That a trip to Onshape is the page's own | The next load |
 
 A part's bytes are a record of their own so that a change to the layout or the settings rewrites a
 few kilobytes and never the plate's parts, which may reach 190 MB. A plate whose `format` the page
@@ -2724,7 +2836,8 @@ does not know, which a later release's page wrote, is left alone: never taken up
 
 A refreshed tab finds its own plate through its `sessionStorage` (the tab seam, `sessionTab`), whose
 `penguinslicer.plate_id` names it; it survives a refresh and the page's own reload and dies with the
-tab. A part whose bytes were not saved (below) is gone from the plate after a refresh.
+tab. The same storage holds `penguinslicer.self_reload` from the page's own reload to the next load
+([Reloading for a new version](#reloading-for-a-new-version)). A part whose bytes were not saved (below) is gone from the plate after a refresh.
 
 ### Which plate a tab shows
 
@@ -2917,14 +3030,26 @@ Both go through one module (`createReports` in `wizard/src/reports.js`) that hol
 request's `once`), and drops a report that cannot be sent or is refused (`429`
 `front.too_many_reports`), never retrying it. Each carries `page`, a random id the page makes when it
 loads (a version 4 UUID, `randomId` in `wizard/src/environment.js`). A page that is not signed in
-drops its reports. As built: the failure reports, with `browser` and `browser_version` from the
-browser's brands or its user agent and `software_3d` from whether a WebGL context asked to fail on a
-major performance caveat is refused (`browserEnvironment`), asked once when the first report needs
-it; the storage's two failures send them, a stored plate the page cannot read and an opening that
-throws (`endOpening` in `wizard/src/opening.js`, which then marks the document `data-opened="failed"`)
-send `page_failed`, and a worker that fails as a whole sends `layout_failed`. The handler for every
-uncaught error and rejected promise and the drawing summaries come with item 18 of
-[By phase](#by-phase).
+drops its reports: the module takes a `signedIn()`, which `main.js` leaves at its default, since
+in phase 2 the development identity is always signed in and a report sent without a sign-in is
+refused `401` and dropped like any refused report; phase 3, with Sign out, joins it to the sign-in.
+As built, the failure reports carry `browser` and `browser_version` from the browser's brands or
+its user agent and `software_3d` from whether a WebGL context asked to fail on a major performance
+caveat is refused (`browserEnvironment`), asked once when the first report needs it. They are sent
+by: the storage's two failures; a stored plate the page cannot read and an opening that throws
+(`endOpening` in `wizard/src/opening.js`, which then marks the document `data-opened="failed"`), as
+`page_failed`; a worker that fails as a whole, as `layout_failed`; a worker's failed answer, by the
+worker's client (`wizard/src/geometry-client.js`), as the answer's `fault` says (the worker's
+`handle` in `wizard/src/geometry/messages.js` sets it: `part` for a part the geometry cannot read or
+lay out, which the Parts step reports as `part_not_drawable`; `page` for a question the page asked
+wrongly, sent as `page_failed`; `layout` for an error the geometry's code did not foresee, sent as
+`layout_failed`), naming the part by its hash when the question was about one; a part the page
+cannot draw, a lost drawing context and a preview that cannot be prepared, from their modules; and
+every uncaught error and rejected promise nobody handled (`watchUncaught` in
+`wizard/src/reports.js`, on the window), as `page_failed` with the error's name, message and
+where it arose (`uncaught: TypeError: … at /assets/layout.0123456789ab.js:212:9`, or `unhandled
+rejection: …` with the first lines of its stack). The limit holds a storm of uncaught errors to
+`REPORTS_PER_MIN`, and a report that fails is never itself reported.
 
 **Failures in the browser,** `POST /api/reports/failure`: `what` one of `part_not_drawable`,
 `storage_refused`, `storage_cleared`, `drawing_context_lost`, `layout_failed` (the layout code failing
@@ -2932,7 +3057,7 @@ on a part) or `page_failed` (the page's own code failing, caught by a handler fo
 rejected promises). A `wizard.layout_failed` answer from the worker is reported as `layout_failed`
 only when the geometry's code failed on a part; when the page asked for something wrong (a message
 the worker does not know, a part never read, a malformed instance), it is reported as `page_failed`,
-so the worker tells the two apart in its answer when the reports are built; `step` (`parts`, `settings`, `advanced`, `layout`, `preview`, `send` or `none`);
+and the worker tells the two apart by the `fault` its failed answer carries beside the error report; `step` (`parts`, `settings`, `advanced`, `layout`, `preview`, `send` or `none`);
 `browser`, `browser_version`; `software_3d`; `part_sha256` when a part is concerned; `detail`, the
 error's message and where it arose, at most 1,000 characters, never a part's name, bytes or geometry,
 or anything from the storage.
@@ -2947,9 +3072,51 @@ reports them; `panel_width_px`, `pixel_ratio`; `in_onshape`. No part names and n
 The figures come from the same measuring the tests use, so a test and the log speak of the same
 frame rates and the same longest hold.
 
+**As built, the drawing summaries.** `reports.drawing(summary)` takes the view's own figures and adds
+the machine's from `browserEnvironment`: `os` from the browser's platform or its user agent,
+`drawing` from `software_3d`, `graphics_card` from a WebGL context's renderer (the unmasked one
+where the browser gives it), `processors` and `memory_gb` from `navigator.hardwareConcurrency` and
+`navigator.deviceMemory` when the browser gives them, `pixel_ratio` from `devicePixelRatio`,
+`panel_width_px` from the panel's width now, and `in_onshape` from `in=onshape` on the page's
+address. It sends only the contract's fields, in its order, the frame rates to a tenth and the
+milliseconds whole, so a part's name never reaches it; the Layout view's leaves out the three that
+go with the Preview step. A use whose figures the contract requires are missing (no frame drawn
+while the view moved, so no frame rate; no first layer drawn) sends nothing, since the front server
+refuses a summary without them and the contract has no way to say "not measured". The Layout view
+(`beginUse` and `endUse` of `createLayoutView`) measures each use from showing the step to leaving
+it: the frames it draws while moving (a drag, a turn, the camera turning), by the layer preview's
+own frame measure (`createFrameStats` in `wizard/src/preview/frame-stats.js`), and the main thread's
+longest hold by the heartbeat (`createHoldMeter`); the Layout step sends the summary when the user
+leaves it. The Preview step sends the layer preview's `summary()` when the user leaves the step
+with the view drawn, and then ends the use (`endUse`), which stops the view's heartbeat as the
+Layout view's `endUse` does, so that no heartbeat beats while the view is out of sight; coming back
+to a view already drawn begins a new use of it (`beginUse`), its frame rates and longest hold
+measured afresh and its first layer timed from that opening to the next frame that draws toolpaths.
+A summary is not sent when the tab closes.
+
 Tests: each `what` produced on purpose sends one report with exactly the contract's fields; a drawing
 summary holds no part name; at `REPORTS_PER_MIN` the next report in that minute is dropped, on the
-fake clock; a refused or failed report is not sent again.
+fake clock; a refused or failed report is not sent again. As built: `tests/reports.test.js` (the
+failure reports; a drawing summary of each view with exactly the contract's fields in its order,
+the example's for the Preview step; no part name whatever the caller gives; a use without its
+figures not sent; the machine's strings cut; both kinds under the one limit; a summary that cannot
+be sent dropped; the page that is not signed in sending nothing; an uncaught error, a rejected
+promise and a storm of them), `tests/environment.test.js` (the operating system, the graphics card,
+the machine's figures), `tests/geometry-client.test.js` (a question asked wrongly as `page_failed`
+with the part's hash, the geometry's own error as `layout_failed` with the worker still answering,
+an unreadable part not reported by the client), `tests/drawing-summaries.test.js` (the Layout step
+and the Preview step on a fake document, `tests/fakes/dom.js`, with a fake view: one summary for
+each use, sent on leaving the step, the step beginning each use of the view again and passing the
+layer preview the moment the Preview step opened, and nothing sent on a move between two other
+steps), and `tests_browser/test_coming_back.py` in Chromium, on the real views
+(an uncaught error and an unhandled rejection each sent as `page_failed`; leaving the Layout step
+after a drag, and the Preview step after the layer preview drew, each sending one summary with no
+part name; the layer preview's second use, a minute after the first on the fake clock, timed from
+its own opening and measured afresh, the first use's jump of the clock in the middle of its drive
+absent from the second's worst frame rate and longest hold; the layer preview's longest hold
+unchanged by a jump of the clock after the step was left; the Layout view's second use measured
+afresh, the first use's held pause absent from the second's worst frame rate and the first use's
+one-second long task, made on purpose, from its longest hold).
 
 ## What the other components must still provide
 
@@ -2979,7 +3146,7 @@ or is not yet in a contract:
 | Tooltip delay; printer details close | 150 ms; 300 ms | The mockup | Fake clock |
 | Quiet retrying; retrying in all | 20 s; 300 s, waits doubling 1 to 30 s | The guide | Fake clock |
 | A progress stream counted as failed | 20 s failing to reopen, 45 s open and silent | The guide | Fake clock, fake front server |
-| The main thread held | Never over 250 ms, any step, any plate up to the limits, on the machine without a graphics card | Set; measured for reading a part and drawing its picture: at most 12 ms in Chromium on that machine, `hub-150k.stl` included; for a malformed file of the largest size, under 250 ms; while dragging at 150 instances (missed), 0.39 to 0.49 s for the real mix, 0.22 to 0.46 s for 150 spacers and 0.10 to 0.28 s for 150 of `hub-150k.stl` drawn coarse (`make -C wizard measure-layout`, six runs); the layer preview on `blocks-12-supports` (`make -C wizard measure-preview`, five runs on Sat 2026-11-28), the longest hold by the heartbeat over loading, turning and dragging the bar was 205, 251 (loading), 340 (turning), 235 (loading) and 155 ms (loading), so missed in two runs of five | Measured by the page in tests and real use |
+| The main thread held | Never over 250 ms, any step, any plate up to the limits, on the machine without a graphics card | Set; measured for reading a part and drawing its picture: at most 12 ms in Chromium on that machine, `hub-150k.stl` included; for a malformed file of the largest size, under 250 ms; while dragging at 150 instances (missed), 0.28 to 0.29 s for the real mix, 0.21 to 0.23 s for 150 spacers and 0.07 to 0.09 s for 150 of `hub-150k.stl` drawn coarse (`make -C wizard measure-layout`, three runs on Sat 2026-11-28 with coarse copies at rest from 250,000 triangles, the machine's load average 1.5 to 4.4; the hold is the two frames at rest a press draws back to back, before the drag moves; with coarse copies at rest from 500,000 it was 0.39 to 0.49 s); the layer preview on `blocks-12-supports` (`make -C wizard measure-preview`, five runs on Sat 2026-11-28), the longest hold by the heartbeat over loading, turning and dragging the bar was 205, 251 (loading), 340 (turning), 235 (loading) and 155 ms (loading), so missed in two runs of five | Measured by the page in tests and real use |
 | A part's row says it is slow | 4 s | The mockup | Fake clock |
 | One part; different parts; instances | 7.5 MB (150,000 triangles); 25; 150 | The slice service's | One over each |
 | Storage in the browser | 25 parts of 7.5 MB for each tab's plate | Met for one tab in headless Chromium on the machine without a graphics card: stored and read back after a refresh, none refused; several tabs' full plates, and Chrome on the Mac, unmeasured | A full plate stored and reloaded |
@@ -2988,12 +3155,12 @@ or is not yet in a contract:
 | Auto-orient | Best way within 1 s of arriving | Met: at most 236 ms for `hub-150k.stl` from the file to its best way, faces included; at most 170 ms for a real part. Not measured in Chromium for a part as large on which step 5 drops faces, which reads the whole part once for each. On Node, from the mesh to its best way, on a machine shared with other builders (Sat 2026-11-28): a twelve-pointed star prism (radii 50 and 30 mm, 100 mm long) with its sides cut into 3,000 strips along its length (144,048 triangles, 12 faces dropped) 311 to 390 ms, into 600 strips (28,848) 59 to 113 ms; the L of `first-layer.test.js` 100 mm long cut into 12,000 strips (144,008, one face dropped) 204 to 299 ms; `hub-150k.stl` 248 to 330 ms | The same; the L cut into 600 strips in `first-layer.test.js` bounds the work of step 5's even-odd search |
 | Arrange | Under 2 s for 150 instances | Met: at most 30 ms for 150 of `hex-spacer.stl` (all placed) and 44 ms for a mix of 150 real parts (104 placed, the rest beside the plate) | The same |
 | The placement check | Keeps up with a drag at 150 instances | Met: at most 4.1 ms for each check of a drag at 150 instances, against one frame of 100 ms at 10 frames a second | The same |
-| The Layout view | 30 frames a second with a graphics card, 10 without, while dragging or turning, at 150 instances of parts up to 150,000 triangles | Met without a graphics card, with the coarse copies while moving: 150 instances of the real mix dragged at 16 to 19 and turned at 17 to 20, 150 of `hub-150k.stl` dragged at 14 to 42, 150 of `hex-spacer.stl` at 34 to 47, over seven runs on a shared machine; the main thread held 0.39 to 0.49 s during a drag on the real mix, 0.22 to 0.46 s on the spacers and 0.10 to 0.28 s on `hub-150k.stl` (missed). With a graphics card, unmeasured | `make -C wizard measure-layout`, in Chromium; on the Mac, Chrome; reported in real use |
+| The Layout view | 30 frames a second with a graphics card, 10 without, while dragging or turning, at 150 instances of parts up to 150,000 triangles | Met without a graphics card, with the coarse copies while moving: 150 instances of the real mix dragged at 16 to 19 and turned at 17 to 20, 150 of `hub-150k.stl` dragged at 14 to 42, 150 of `hex-spacer.stl` at 34 to 47, over seven runs on a shared machine (19 to 20, 41 to 42 and 46 to 47 in the three runs of Sat 2026-11-28); the main thread held 0.28 to 0.29 s at the start of a drag on the real mix, 0.21 to 0.23 s on the spacers and 0.07 to 0.09 s on `hub-150k.stl` (missed on the real mix; The main thread held, above). With a graphics card, unmeasured | `make -C wizard measure-layout`, in Chromium; on the Mac, Chrome; reported in real use |
 | The layer preview | 30 with a graphics card, 10 without, while turning or dragging the layer bar, on a 14.1 MB sliced file and at 150 instances; a simpler look while moving | Without a graphics card, method C of the first trial: 10 to 20 typical on the three plates (10.0 turning at `blocks-12-supports`); the view as built, in the page (`make -C wizard measure-preview`): 15 to 20 typical turning and dragging the bar on the three plates, 8.6 to 12 worst, the main thread held at most 205 ms (heartbeat) and 197 ms (longest task) in the first run, and on `blocks-12-supports` up to 340 ms by the heartbeat over five runs (The main thread held, above); with one, unmeasured | Timed in Chrome on both machines; reported in real use; test renders |
 | The first layer drawn | Within 5 s, print time and filament at once | The first trial, method C: 1.5 to 2.7 s from fetching the sliced file to the first frame with toolpaths (the look while moving; the full look 2.4 to 8.5 s); the view as built: 0.8 to 1.7 s (the full look 1.5 to 6.5 s) | The same |
 | The page's memory | Under 1 GB at the largest plate with the preview of a 14.1 MB sliced file | The first trial, method C: 839 MiB at that plate (the page's and the graphics process's peaks, `VmHWM` in KiB divided by 1,024); the view as built, in the wizard's page: 992 to 1,016 MiB over five runs on Sat 2026-11-28, under `PAGE_MEMORY_MB`'s 1,024 MiB by 8 to 32 MiB, so met with almost no margin; counted in decimal megabytes the same runs are 1,040 to 1,065 MB, over a decimal gigabyte | Measured in Chrome at that plate |
-| Before a self-reload | 120 s since the user last interacted, or a step change | Set | Fake clock |
-| Reports about itself | A few a minute from one page | Set; the front server has its own limit | Fake clock |
+| Before a self-reload | 120 s since the user last interacted, or a step change | Met | Fake clock (`tests/reloading.test.js`) |
+| Reports about itself | A few a minute from one page | Met: 4 in any 60 s, failures and drawing summaries together; the front server holds a page to 6 | Fake clock (`tests/reports.test.js`) |
 | A sliced file | At most 50 MB; 8.8 to 14.1 MB on the plates measured | The slice service's and the front server's | A slice whose file would be larger ends with the slice service's sentence |
 
 The **machine without a graphics card** is the container the project's agents work in, an aarch64
@@ -3174,7 +3341,9 @@ renders and report. A trial's script starts the trials' server itself with
   [The layer preview](#the-layer-preview) says; whether they look right is a person's judgement of the
   test renders.
 - **The page measures itself in the tests as in real use.**
-- **The previous release's page runs against the new fake front server.**
+- **The previous release's page runs against the new fake front server,** from the second release
+  on (item 19 of [By phase](#by-phase)); until then, a page whose files the front server no longer
+  serves is shown to draw its layer preview (`tests_browser/test_coming_back.py`).
 - The suites use no real front server, no real network and no fixed ports, and pass in any order, any
   number of times.
 
@@ -3368,20 +3537,27 @@ The page opened directly in a browser, with the development identity and no sign
     ([A sliced plate that expires](README.md#a-sliced-plate-that-expires);
     [The sliced file's details](../contracts/wizard-front-server.md#the-sliced-files-details)).
     Built ([A sliced plate that expires](#a-sliced-plate-that-expires), "As built"); a page that
-    comes back to an expired slice is item 16.
+    comes back to an expired slice is item 16, built.
 15. **The Send step with Download as its one button** ([The Send step](README.md#the-send-step)).
     Built ([The Send step](#the-send-step), "As built, phase 2").
 16. **Coming back:** every row of the returning page's table that phase 2 can meet
     ([Coming back to running work](README.md#coming-back-to-running-work);
     [Asking about a slice job](../contracts/wizard-front-server.md#asking-about-a-slice-job)).
+    Built ([When a user comes back](#when-a-user-comes-back), "As built, phase 2"); the printer's row
+    and the last-print note are phase 5's.
 17. **Reloading for a new version**
     ([The page reloading itself](README.md#the-page-reloading-itself-for-a-new-version);
     [The version on every answer](../contracts/wizard-front-server.md#the-version-on-every-answer)).
+    Built ([Reloading for a new version](#reloading-for-a-new-version), "As built"), with the preview's
+    worker started when the page loads.
 18. **The reports about itself,** failures and drawing summaries
     ([What the wizard reports about itself](README.md#what-the-wizard-reports-about-itself);
     [The page's reports about itself](../contracts/wizard-front-server.md#the-pages-reports-about-itself)).
+    Built ([What the wizard reports about itself](#what-the-wizard-reports-about-itself)): every
+    failure the contract lists, the handler for uncaught errors and rejected promises, and the
+    drawing summaries of the Layout view and the layer preview.
 19. **The previous release's page against the new front server,** in the tests from the second
-    release on.
+    release on. Not built: there is no previous release yet.
 
 ### Phase 3, hosted
 
