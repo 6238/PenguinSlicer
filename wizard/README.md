@@ -1053,7 +1053,7 @@ is a fault in the part's mesh
 | A part has a gap with nothing under it (empty layers) | Which instance, and between which heights above the plate nothing would be printed; with supports off, to turn supports on, which is the single action; with supports already on, that the part itself must be repaired in CAD and added again. An example of the kind: "Gusset Plate #2 has empty layers at about 12.4 mm above the plate." Details, in both cases: where to look on the part, and Orca's own sentence with the heights | With supports off: **Turn on Supports and slice again**; Back to Layout. With supports on: Back to Parts |
 | A profile or setting is not accepted by the slice service | To choose from the lists. The page offers only what the configuration and the list of settings hold, so this is a configuration that names a profile the slice service does not have, or a disagreement between the wizard's list of settings and the slice service's | Back to Settings |
 | Two instances' paths would meet | Which two, and that supports are the likely cause when they are on; to spread them out, turn supports off or use a new plate | Back to Layout |
-| An instance touches the plate only along an edge or at a point, so it has no first layer | Which instance; to lay the part on one of its own flat faces, or to turn supports on with a raft. This page never offers such a face (see [Finding the faces a part can lie on](#finding-the-faces-a-part-can-lie-on)), so the failure comes from a plate laid out by another version of the page, or from a slicer that judges a first layer more strictly than the slice service | Back to Layout |
+| An instance touches the plate only along an edge or at a point, so it has no first layer | Which instance; to lay the part on one of its own flat faces, or to turn supports on with a raft. This page leaves out the hull faces that fail this way with the default first layer (see [Finding the faces a part can lie on](#finding-the-faces-a-part-can-lie-on)), so the failure comes from a part laid on a bounding-box patch, which is not tested this way; from a first layer set wider or lower than the default's; from a face on the very edge of the rule, where the page's measure and the slice service's differ by a few hundredths of a millimetre; or from a plate laid out by another version of the page | Back to Layout |
 | Nothing printable was found | That no layers were found, or that the print is empty, naming the part when the plate has one; to repair the part in CAD or check its size | Back to Parts |
 | Too slow: the slice passed the slice service's time limit, today 240 seconds | "The slicer took too long on this plate.", and the remedies: fewer instances or a new plate | **Slice again**, since the slice service may only have been busy; Back to Parts |
 | The sliced file would be larger than 50 MB, the most that is kept for one plate | The slice service's own sentence: that the sliced file would be too large, and the remedy, fewer instances or a new plate. The slice service ends the slice | Back to Parts. Slice again is not offered, because the same plate would give the same file |
@@ -1633,7 +1633,12 @@ rules of PenguinSlicer's own for round parts.
    to less than a hundredth of a square millimetre and no line of the first layer, 0.62 mm
    wide, fits in the part's outline 0.15 mm above the plate. These are the slice service's
    own rule and figures for saying that a part touches the plate only along an edge, so the
-   wizard never offers a face the slice service would refuse for that reason. A hull face
+   wizard offers no hull face the slice service would refuse for that reason with the
+   default first layer. The rule is not applied to the bounding-box patches of step 6, and a
+   face it drops does not count as covering a side, so a side left empty gets a
+   bounding-box patch, which can itself rest on edges: a bar shaped as a twelve-pointed star,
+   whose every long hull face spans two sharp tips, loses those twelve faces and is offered
+   four bounding-box patches across its sides that rest on tips too. A hull face
    across a hollow whose rims are rounded is kept: the part touches along lines there too,
    but is millimetres wide a little above the plate, and Orca slices it. The first layer is
    the default process's, since the faces are found once for each part whatever the
@@ -1681,10 +1686,13 @@ Each patch also carries the test of whether the part would tip over on it, which
 tool lacks, using the test auto-orient already makes. It is not used to hide patches: a
 printer's plate holds the first layer whichever way the part's weight falls, and hiding
 the faces a part would tip from removed four real flat sides of one of the robot's parts.
-Two cases are still not handled, and none of the robot's parts kept in the repository
+Three cases are still not handled, and none of the robot's parts kept in the repository
 has them: a round side cut into fewer than 18 facets, which bend more than 20 degrees
-apart, and a part modelled at an angle to its axes, whose bounding box does not meet its
-rim square.
+apart; a part modelled at an angle to its axes, whose bounding box does not meet its
+rim square; and a part whose hull faces on one side all rest on edges, such as the star
+above, which is offered bounding-box patches there that rest on edges too, and which the
+slice service then refuses with its message that the part touches the plate only along an
+edge.
 
 What the approach costs: making the hull dominates. The hull is made by a method that
 keeps, for each of its faces, the corners outside it, so the time grows little faster

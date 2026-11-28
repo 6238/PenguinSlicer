@@ -201,7 +201,7 @@ in `wizard/src/reports.js`, `HEARTBEAT_MS` in `wizard/src/hold-meter.js`; and th
 | `MIN_FACE_MM2`, `MAX_FACES`, `SLIVER_DEG` | 5, 254, 1 | Faces dropped as too small, beyond the largest 254, or with a sliver corner | The guide; the sliver angle from the note |
 | `ROUND_SIDE_DEG` | 20 | A facet among its like (a face it reaches through faces bending less than this is at least half its size) | The guide |
 | `BBOX_COVER_DEG` | 30, plus 0.5 for rounding | A bounding-box side with no kept face within this angle gets a patch | The guide; [M29](../docs/mockups/print-wizard/DECISIONS.md#please-react-to-these) |
-| `REST_AREA_MM2`, `ON_THE_PLATE_MM`, `FIRST_LAYER_MM`, `FIRST_LINE_MM` | 0.01, 0.001, 0.3, 0.62 | A face is not offered when the part laid on it has under 0.01 mm² of its own faces within 0.001 mm of the plate and no disc 0.62 mm across fits in its section 0.15 mm up | The slice service's `slice.rests_on_an_edge`, its figures and the default process's first layer |
+| `REST_AREA_MM2`, `ON_THE_PLATE_MM`, `FIRST_LAYER_MM`, `FIRST_LINE_MM` | 0.01, 0.001, 0.3, 0.62 | A hull face is not offered when the part laid on it has under 0.01 mm² of its own faces within 0.001 mm of the plate and no disc 0.62 mm across fits in its section 0.15 mm up | The slice service's `slice.rests_on_an_edge`, its figures and the default process's first layer |
 | `MIN_CONTACT_MM2` | 25 | A resting candidate counts for auto-orient; a flat face of the part this large is never dropped beside a hull face that bridges | The guide |
 | `CONTACT_GAP_MM`, `OVERHANG_DEG` | 0.1, 45 | A triangle this close to the plate touches it; a downward triangle within this of straight down hangs over air | The mockup's score, kept |
 | `HEIGHT_CHARGE_PER_MM`, `NO_CONTACT_PENALTY` | 0.01, 100 | Auto-orient's small charge for height and large penalty under `MIN_CONTACT_MM2` | The mockup's score, kept |
@@ -1329,7 +1329,12 @@ with two rules of PenguinSlicer's own for round parts
 6. A bounding-box patch for each of the six sides of the part's bounding box with no kept face
    pointing within `BBOX_COVER_DEG` (30 degrees, plus half a degree for rounding) of it; end
    patches included, even where they stand the part too tall (M29). A face dropped at step 5
-   covers no side; the patches of this step are not tested by step 5's rule.
+   covers no side; the patches of this step are not tested by step 5's rule. So a part whose
+   hull faces on a side are all dropped at step 5 is offered a bounding-box patch there that
+   may rest on edges too: a 12-pointed star prism (radii 50 and 30 mm) loses its 12 side faces
+   and is offered `+x`, `-x`, `+y` and `-y` patches on which `restsOnNoFace` holds
+   (`tests/geometry/first-layer.test.js`, which also catches a dropped face counted as
+   covering a side).
 
 `findFaces` in `geometry/faces.js` gives every joined face with the step that dropped it, and the
 patches, each `{kind: 'hull' | 'box', normal, area, outline}` in the part's own coordinates. A
@@ -1342,8 +1347,10 @@ would stand on it without tipping (`stable`) and how tall it would stand; no pat
 tipping, because the plate holds a print's first layer whichever way its weight falls, and a
 filter tried on the real parts dropped Elevator Top Inner's four flat sides. Still not handled:
 a round side of fewer than 18 facets, which bend more than 20 degrees apart, and a part modelled
-at an angle to its axes, whose bounding box does not meet its rim square; neither occurs among the
-real parts kept in the repository.
+at an angle to its axes, whose bounding box does not meet its rim square, and a part whose hull
+faces on a side all rest on edges (the star prism of step 6), whose bounding-box patches there
+rest on edges too and are answered `slice.rests_on_an_edge`; none occurs among the real parts
+kept in the repository.
 
 ### The faces offered, against the real Orca
 
@@ -1596,7 +1603,7 @@ which the page acts on by name, are fixed and never renamed
 | Empty layers, supports on (a fault in the part's mesh) | `slice.empty_layers_with_supports` | Back to Parts. Folded Details |
 | A profile or setting not accepted | `slice.unknown_printer`, `slice.profiles_not_offered`, `slice.bad_overrides`, `slice.profile_unreadable` | Back to Settings |
 | Two instances' paths would meet | `slice.orca_too_close` | Back to Layout |
-| An instance rests on no face of its own (a plate laid out by another page version, since this one never offers such a face: [Finding the faces a part can lie on](#finding-the-faces-a-part-can-lie-on), step 5) | `slice.rests_on_an_edge`, `action` `choose_orientation` | Back to Layout |
+| An instance rests on no face of its own: laid on a bounding-box patch, which step 5 of [Finding the faces a part can lie on](#finding-the-faces-a-part-can-lie-on) does not test; with `initial_layer_line_width` or `initial_layer_print_height` set away from the default process's, which the slice service reads and step 5 does not; on a face within a few hundredths of a millimetre of step 5's threshold, where the wizard's disc sampling and the slice service's polygon offset differ; or on a plate laid out by another page version | `slice.rests_on_an_edge`, `action` `choose_orientation` | Back to Layout |
 | Nothing printable | `slice.no_layers`, `slice.print_empty` | Back to Parts |
 | Too slow: past the slice service's time limit, today 240 seconds | `slice.timeout` | **Slice again**; Back to Parts |
 | The sliced file would be larger than 50 MB | `slice.output_too_large`; `front.sliced_file_too_large`, in a `failed` report, should one reach the front server | Back to Parts; no Slice again, since the same plate would give the same file |

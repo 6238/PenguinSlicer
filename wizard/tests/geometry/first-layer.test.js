@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { contactArea, firstLayerHoldsALine, restsOnNoFace } from '../../src/geometry/first-layer.js';
 import { findFaces } from '../../src/geometry/faces.js';
 import { convexHull } from '../../src/geometry/hull.js';
-import { box, cylinder, moved, prism, union } from './shapes.js';
+import { box, cylinder, meshOf, moved, prism, starPrism, union } from './shapes.js';
 
 const facesOf = (mesh) => findFaces(convexHull(mesh.positions), mesh);
 const near = (a, b) => a.every((v, i) => Math.abs(v - b[i]) < 1e-6);
@@ -74,6 +74,61 @@ test('a ridge holds a line of the first layer when it is wider than one line hal
   assert.equal(restsOnNoFace(ridges(20), DOWN_Y), false);
   assert.equal(facesOf(ridges(30)).faces.find((f) => near(f.normal, DOWN_Y)).dropped, 'no_first_layer');
   assert.equal(facesOf(ridges(20)).faces.find((f) => near(f.normal, DOWN_Y)).dropped, null);
+});
+
+// A ring standing on a sharp circular ridge: the triangle (R, 0), (R + 10, h), (R - 10, h) turned
+// about the y axis, its sides sloping `deg` from the plate, so that half a first layer up its
+// section is an annulus 0.3 / tan(deg) mm wide with no ends, where a disc must touch both rims.
+function ring(deg, R = 30, steps = 360) {
+  const h = 10 * Math.tan((deg * Math.PI) / 180);
+  const profile = [[R, 0], [R + 10, h], [R - 10, h]];
+  const at = ([r, y], k) => {
+    const t = (2 * Math.PI * k) / steps;
+    return [r * Math.cos(t), y, r * Math.sin(t)];
+  };
+  const tris = [];
+  for (let e = 0; e < 3; e++) {
+    const p = profile[e], q = profile[(e + 1) % 3];
+    for (let k = 0; k < steps; k++) {
+      tris.push([at(p, k), at(q, k), at(q, k + 1)]);
+      tris.push([at(p, k), at(q, k + 1), at(p, k + 1)]);
+    }
+  }
+  return meshOf(tris);
+}
+
+test('a ridge just narrower than one line holds none, and one just wider holds one', () => {
+  // At 0.60 and 0.64 mm, either side of the 0.62 mm line, a looser disc test gets one wrong: a
+  // slack of hundredths of a millimetre takes the 0.60 mm ridge, discs tried further in from the
+  // edge than half a line miss the 0.64 mm ring (the straight ridges' ends would still hold them).
+  const slope = (width) => (Math.atan(0.3 / width) * 180) / Math.PI;
+  assert.equal(firstLayerHoldsALine(ridges(slope(0.60)), DOWN_Y), false);
+  assert.equal(firstLayerHoldsALine(ridges(slope(0.64)), DOWN_Y), true);
+  assert.equal(contactArea(ring(slope(0.64)), DOWN_Y), 0);
+  assert.equal(firstLayerHoldsALine(ring(slope(0.60)), DOWN_Y), false);
+  assert.equal(firstLayerHoldsALine(ring(slope(0.64)), DOWN_Y), true);
+});
+
+test('a face step 5 drops covers no side, so the sides it leaves empty get bounding-box patches', () => {
+  // A 12-pointed star prism, 100 mm long: each of its 12 side hull faces spans two sharp tips,
+  // so the part laid there rests on two edges and step 5 drops all 12. The four sides of the
+  // bounding box across the star (±x, ±y), each 15 degrees from two dropped faces, are left to
+  // bounding-box patches; the ends stay hull faces.
+  const mesh = starPrism(12, 50, 30, 100);
+  const result = facesOf(mesh);
+  const sides = result.faces.filter((f) => Math.abs(f.normal[2]) < 1e-6);
+  assert.equal(sides.length, 12);
+  for (const face of sides) assert.equal(face.dropped, 'no_first_layer');
+  assert.deepEqual(result.patches.filter((p) => p.kind === 'box').map((p) => p.side).sort(),
+    ['+x', '+y', '-x', '-y']);
+  assert.deepEqual(result.patches.filter((p) => p.kind === 'hull').map((p) => Math.round(p.normal[2])).sort(),
+    [-1, 1]);
+  // Step 5's rule is not applied to bounding-box patches, and these four rest on tips too: the
+  // wizard offers them all the same (the details' step 6; a limit of the wizard, not of the
+  // slice service, which answers slice.rests_on_an_edge for them).
+  for (const patch of result.patches.filter((p) => p.kind === 'box')) {
+    assert.equal(restsOnNoFace(mesh, patch.normal), true);
+  }
 });
 
 test('faces of its own on the plate of 0.01 mm² or more are enough, as the slice service counts them', () => {

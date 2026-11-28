@@ -34,9 +34,10 @@ export const FLAT_TURN_DEG = 1;
 // out as several hull triangles, which joining into faces puts back together.
 export const HULL_EPS_MM = 1e-6;
 
-// A face is not offered when the part laid on it would rest on no face of its own: the slice
+// A hull face is not offered when the part laid on it would rest on no face of its own: the slice
 // service's rule for slice.rests_on_an_edge (slice/README-details.md, "Error codes"), with its
-// figures, so that the wizard never offers a pose the slice service would refuse for it. The
+// figures, so that the wizard offers no hull face the slice service would refuse for it with the
+// default first layer (bounding-box patches are not tested; wizard/README-details.md). The
 // part's own faces on the plate (triangles with every corner within ON_THE_PLATE_MM of it) add
 // up to less than REST_AREA_MM2, and its section half a first layer above the plate holds no
 // line of the first layer (no disc FIRST_LINE_MM across fits in it); the first layer is the

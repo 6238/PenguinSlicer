@@ -52,7 +52,7 @@ itself, by these codes, so each is never renamed once released
 | `slice.empty_layers_with_supports` | Back to Parts; Orca's sentence under Details |
 | `slice.timeout` | Slice again; Back to Parts |
 | `slice.orca_failed` | Slice again; Back to Layout |
-| `slice.rests_on_an_edge` | Back to Layout, as its action `choose_orientation` asks, and no Slice again, since the same plate would fail the same way. The wizard never offers a face on which a part rests on no face of its own, so this comes from a plate laid out by another page version |
+| `slice.rests_on_an_edge` | Back to Layout, as its action `choose_orientation` asks, and no Slice again, since the same plate would fail the same way. The wizard does not offer a hull face on which a part rests on no face of its own by the default first layer, but the code still comes for a plate it laid out: on a bounding-box patch, which that rule does not test; with a first layer set wider or lower than the default's; on a face within a few hundredths of a millimetre of the rule's threshold, where the wizard's measure and the slice service's differ; and from a plate laid out by another page version |
 | `slice.out_of_memory`, `slice.output_too_large` | Back to Parts, and no Slice again, since the same plate would fail the same way |
 | `slice.placement_off_plate`, `slice.placement_too_tall`, `slice.placement_too_close`, `slice.orca_too_close`, `slice.crosses_edge`, `slice.nothing_on_plate`, `slice.left_off_plate`, `slice.too_many_instances`, `slice.too_many_parts`, `slice.part_too_large`, `slice.bad_plate_configuration` | Back to Layout |
 | `slice.unknown_printer`, `slice.profiles_not_offered`, `slice.bad_overrides`, `slice.profile_unreadable` | Back to Settings |

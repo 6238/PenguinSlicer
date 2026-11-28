@@ -110,6 +110,43 @@ What was built, by the task's items:
     three lines; the fast test, with the fake Orca and a box on its edge, asserts code, remedy,
     action, retryable, the field order, and message and `where` with the instance renamed. To
     overrule: hold the detail whole, which ties the example to Orca's wording of its log.
+12. **The first review's finding that the documents promised too much: the documents
+    corrected, the code kept.** The contract's row, the details' and the guide's rows in "When
+    a slice fails" said the wizard never offers a face on which a part rests on no face of its
+    own, and the guide added "a slicer that judges a first layer more strictly". Both were
+    false. Decisions 5, 6 and 7 leave four ways for a plate this wizard laid out to get
+    `slice.rests_on_an_edge`: a bounding-box patch (step 5 does not test them), a first layer
+    set wider or lower than the default's (the slice service reads the job's process and
+    overrides), a face within hundredths of a millimetre of the threshold (disc sampling
+    against shapely), and another page version. A stricter slicer cannot give the code:
+    `_explain_an_edge` in `slice/src/penguin_slice/plate_configuration.py` gives it only when
+    the slice service's own rule names an instance, otherwise `slice.orca_failed`. The three
+    rows, the guide's step 5, the details' step 6 and "Still not handled", the constants'
+    comment and the guide's cases not handled now say this. I did not apply `restsOnNoFace` to
+    bounding-box patches: it removes the patches two existing tests pin `BBOX_COVER_DEG` with
+    (decision 7), and on a part like the reviewer's 20-spike urchin it would leave nothing at
+    all to offer on a side, a change of the guide's step 6 the owner has not asked for; a
+    bounding-box patch that rests on edges is answered by the slice service with its remedy
+    (lay it on its own face, or supports with a raft). To overrule: test each bounding-box
+    patch with `restsOnNoFace` in step 6 of `geometry/faces.js`, change the two tests of
+    decision 7 and the star prism's test in `tests/geometry/first-layer.test.js`, and take the
+    bounding-box case out of the three rows.
+13. **The review's minor findings declined.** Minor 2 (no test that the four dropped faces are
+    those the slice service names): `tests/geometry/real-parts.test.js` pins the four dropped
+    normals exactly, so dropping one more on a real part fails it; that those four are the
+    slice service's was measured once with its code (decision 4), and checking it in a test
+    would add the dropped faces to the shared poses file, a change of its shape for a check
+    that the slice service's fast test already makes in the other direction (no offered pose is
+    one it names). Minor 4 (`time.monotonic()` in `slice/tests_orca/test_offered_faces.py`):
+    it only measures each pose's time for the printed record, and no assertion or wait depends
+    on it, which the quality bar allows. Minor 5 (instance labels with underscores in the
+    message): there before the batch, the slice service's own labelling, outside this batch.
+    The review's other findings were fixed with tests seen to fail first: the star prism's test
+    fails under the reviewer's mutation of step 6 (a face dropped at step 5 counted as covering
+    a side), and a threshold test of ridges and a ring 0.60 and 0.64 mm across half a layer up
+    fails under each of the reviewer's looser disc tests (a slack of 0.05 mm; discs tried 1.2
+    half-lines in, caught only by the ring, since a straight ridge's ends still hold such a
+    disc).
 
 ## Targets missed
 
@@ -125,15 +162,29 @@ What was built, by the task's items:
 - Finding the faces costs more: on Node, Elevator Block Carriage from 72 ms to 89 ms; in
   Chromium the trial's worst for a real part from 84 ms to 92 ms and for the hub from 215 ms to
   241 ms (shared machine). Every target of the trial is still met.
+- Step 5 can swap bad hull faces for bad bounding-box patches (decision 12). A 12-pointed star
+  prism (radii 50 and 30 mm, 100 mm long) loses its 12 side hull faces at step 5 and is offered
+  four bounding-box patches (`+x`, `-x`, `+y`, `-y`) that rest on tips too; before step 5 its
+  sides were offered as hull faces 15 degrees from those, which rested on tips as well. So the
+  wizard still offers a pose the slice service refuses on such a part; none of the real parts
+  is one. A sharp 20-spike urchin is offered only bounding-box patches, all resting on tips.
+  `tests/geometry/first-layer.test.js` pins the star's case.
+- Step 5's cost on a part whose faces it drops, measured by the reviewer on Node: a
+  144,000-triangle star prism takes 660 ms to find its faces, against 198 ms for the blunt
+  version on which nothing is dropped (each face dropped reads the whole part for its
+  section). The auto-orient target of 1 s is met on Node; in Chromium it was not measured.
 
 ## Not done
 
 - The wizard's handling of `slice.rests_on_an_edge` (its Back to Layout and no Slice again):
   built by the batch that builds every slice failure on the Preview step; this batch only adds
   the rows to the contract, the details and the guide.
-- Bounding-box patches are not tested for a first layer (decision 7); a part modelled at an
-  angle to its axes could still be offered a bounding-box patch on which it rests on an edge, an
-  item the details already list as not handled.
+- Bounding-box patches are not tested for a first layer (decisions 7 and 12); a part modelled
+  at an angle to its axes, or one whose hull faces on a side all rest on edges (the star prism),
+  can still be offered a bounding-box patch on which it rests on an edge, items the details
+  list as not handled.
+- Step 5 in Chromium on a large part whose faces it drops (the star prism above): not
+  measured.
 - The oracle is run with the default profiles and supports off only; other profiles' first
   layers are not tried (decision 6).
 
