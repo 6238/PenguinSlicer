@@ -270,6 +270,39 @@ def test_the_running_servers_stop_ends_each_pages_progress_stream_before_its_sto
     assert events.index("stream_closed") < events.index("stop") == len(events) - 1
 
 
+def test_the_running_server_collects_at_start_and_gathers_the_slice_services_lines(
+        tmp_path, clock, standin, monkeypatch):
+    from front_fakes import BACKSTOP_S
+    from penguin_front.buckets import FolderBucket
+    from sliced_helpers import FILE, SUMMARY, done, requests_to, write_submitted
+
+    built = keep_built(monkeypatch)
+    write_submitted(FolderBucket(tmp_path / "state", clock), "jdone", "2026-11-27T22:00:00Z",
+                    group="dev-group")
+    standin.add_job("jdone", "dev-user", "p", "s", done("jdone", 9), file=FILE,
+                    summary=SUMMARY, ended_at="2026-11-27T22:13:58Z")
+    standin.log_line("slice_job", state="done", job="jdone", user_key="dev-user")
+
+    def use(_port):
+        ctx = built[0][0].extensions["penguin_front"]
+        assert ctx["collector"].collected.wait(BACKSTOP_S)
+        standin.changes.wait_for(lambda: requests_to(standin, "DELETE", "/slices/jdone/file"),
+                                 "the collected file's delete")
+        ctx["gatherer"].loop.wait_for_runs(1)
+
+    lines, result, _port = run_served(
+        tmp_path, clock, environ(tmp_path, PENGUIN_FRONT_THREADS="3",
+                                 PENGUIN_SLICE_URL=standin.url), use)
+    assert result == [0]
+    assert "slices_collected" in [line["event"] for line in lines]
+    written = [json.loads(line) for path in sorted((tmp_path / "log").rglob("*.jsonl"))
+               for line in path.read_text().splitlines()]
+    [gathered] = [line for line in written if line["component"] == "slice"]
+    assert (gathered["event"], gathered["group"], gathered["n"]) == ("slice_job", "dev-group", 1)
+    # The slice service's line is in its own output, not printed again by the front server.
+    assert all(line["component"] == "front" for line in lines)
+
+
 def test_a_start_without_a_cookie_key_makes_one_and_says_so_after_the_start_line(tmp_path,
                                                                                  clock):
     lines, result, _port = run_served(
