@@ -120,6 +120,17 @@ def sentence(report):
     return f"{report.get('code', 'no code')}): {report.get('message', 'no sentence')}"
 
 
+def decoded(name, what, status, body):
+    """The JSON object of an answer, or SliceFailed naming what answered and its status."""
+    try:
+        value = json.loads(body or b"{}")
+    except ValueError:
+        value = None
+    if not isinstance(value, dict):
+        raise SliceFailed(f"{name}: {what} answered HTTP {status} with an answer that is not JSON")
+    return value
+
+
 def slice_plate(url, name, out_dir=SLICED_DIR, plate=None, user_key=USER_KEY):
     """Has the slice service at `url` slice the plate `name`: uploads each of its parts, submits
     it with a new submission value, follows its progress stream to its final report, and saves
@@ -136,13 +147,16 @@ def slice_plate(url, name, out_dir=SLICED_DIR, plate=None, user_key=USER_KEY):
             connection.request("POST", "/slices", json.dumps(submission).encode(),
                                {"Content-Type": "application/json", **key})
             answer = connection.getresponse()
-            payload = json.loads(answer.read() or b"{}")
+            body = answer.read()
         except OSError as error:
             raise SliceFailed(f"{name}: no slice service answers at {url} ({error})") from None
+        payload = decoded(name, "/slices", answer.status, body)
         if answer.status != 202:
             raise SliceFailed(f"{name}: the slice service refused it (HTTP {answer.status}, {sentence(payload)}")
-        job = payload["job"]
-        last = follow(connection, job, key)
+        job = payload.get("job")
+        if not isinstance(job, str) or not job:
+            raise SliceFailed(f"{name}: the slice service accepted it but named no slice job (HTTP {answer.status})")
+        last = follow(connection, job, name, key)
         if last is None or last["state"] not in FINAL:
             state = last["state"] if last else "none"
             raise SliceFailed(f"{name}: the progress stream ended before the slice job did (last state: {state})")
@@ -167,7 +181,7 @@ def upload(connection, name, ref, path, part, key):
     connection.request("POST", f"/parts?units={part['units']}", path.read_bytes(),
                        {"Content-Type": "application/octet-stream", **key})
     answer = connection.getresponse()
-    record = json.loads(answer.read() or b"{}")
+    record = decoded(name, f"the upload of the part {ref}", answer.status, answer.read())
     if answer.status != 201:
         raise SliceFailed(f"{name}: the slice service refused the part {ref} (HTTP {answer.status}, {sentence(record)}")
     if record.get("sha256") != part["sha256"] or record.get("units") != part["units"]:
@@ -175,10 +189,14 @@ def upload(connection, name, ref, path, part, key):
                           f"in {record.get('units')}, not as {part['sha256']} in {part['units']}")
 
 
-def follow(connection, job, key):
+def follow(connection, job, name, key):
     """The last progress report of the slice job's event stream."""
-    connection.request("GET", f"/slices/{job}/events", headers=key)
+    path = f"/slices/{job}/events"
+    connection.request("GET", path, headers=key)
     answer = connection.getresponse()
+    if answer.status != 200:
+        body = answer.read()
+        raise SliceFailed(f"{name}: {path} answered HTTP {answer.status} ({sentence(decoded(name, path, answer.status, body))}")
     last = None
     for line in answer:
         line = line.strip()
@@ -197,7 +215,7 @@ def fetch(connection, path, name, key):
     answer = connection.getresponse()
     body = answer.read()
     if answer.status != 200:
-        raise SliceFailed(f"{name}: {path} answered HTTP {answer.status} ({sentence(json.loads(body or b'{}'))}")
+        raise SliceFailed(f"{name}: {path} answered HTTP {answer.status} ({sentence(decoded(name, path, answer.status, body))}")
     return body
 
 

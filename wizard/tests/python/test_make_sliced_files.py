@@ -114,7 +114,7 @@ class FakeSliceService:
     and keeps every request: (method, path, headers, body)."""
 
     def __init__(self, post_status=202, post_body=None, reports=None, file_bytes=b"PK fake", part_status=201,
-                 part_body=None, file_status=200, file_body=None):
+                 part_body=None, file_status=200, file_body=None, events_status=200, events_body=None):
         self.received = []
         self.post_status = post_status
         self.post_body = post_body if post_body is not None else {"job": "j1", "progress": {}, "part_warnings": []}
@@ -124,6 +124,7 @@ class FakeSliceService:
         self.file_bytes = file_bytes
         self.part_status, self.part_body = part_status, part_body
         self.file_status, self.file_body = file_status, file_body
+        self.events_status, self.events_body = events_status, events_body
         fake = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -155,7 +156,9 @@ class FakeSliceService:
 
             def do_GET(self):
                 self.keep()
-                if self.path == "/slices/j1/events":
+                if self.path == "/slices/j1/events" and fake.events_status != 200:
+                    self.answer(fake.events_status, fake.events_body)
+                elif self.path == "/slices/j1/events":
                     body = "".join(f"data: {json.dumps(r)}\n\n" for r in fake.reports).encode()
                     self.answer(200, body, "text/event-stream")
                 elif self.path == "/slices/j1/file":
@@ -289,6 +292,50 @@ def test_a_slice_service_that_cannot_be_reached_is_named(tmp_path):
     with pytest.raises(msf.SliceFailed) as failed:
         msf.slice_plate(url, "spacers-150", tmp_path)
     assert str(failed.value).startswith(f"spacers-150: no slice service answers at {url} (")
+
+
+def test_an_acceptance_without_a_slice_job_is_a_failure(tmp_path):
+    with FakeSliceService(post_body={"progress": {}, "part_warnings": []}) as service:
+        with pytest.raises(msf.SliceFailed) as failed:
+            msf.slice_plate(service.url, "spacers-150", tmp_path)
+    assert str(failed.value) == "spacers-150: the slice service accepted it but named no slice job (HTTP 202)"
+    assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize("where", ["part", "slices", "file"])
+def test_an_answer_that_is_not_json_says_its_status(tmp_path, where):
+    page = b"<html>502 Bad Gateway</html>"
+    options = {"part": {"part_status": 502, "part_body": page},
+               "slices": {"post_status": 502, "post_body": page},
+               "file": {"file_status": 502, "file_body": page}}[where]
+    with FakeSliceService(**options) as service:
+        with pytest.raises(msf.SliceFailed) as failed:
+            msf.slice_plate(service.url, "spacers-150", tmp_path)
+    assert "HTTP 502" in str(failed.value) and "an answer that is not JSON" in str(failed.value)
+    assert not list(tmp_path.iterdir())
+
+
+def test_a_progress_stream_refused_says_its_status_and_reason(tmp_path):
+    unknown = {"code": "slice.unknown_job", "message": "No such slice job.", "retryable": False, "detail": ""}
+    with FakeSliceService(events_status=404, events_body=unknown) as service:
+        with pytest.raises(msf.SliceFailed) as failed:
+            msf.slice_plate(service.url, "spacers-150", tmp_path)
+    assert str(failed.value) == ("spacers-150: /slices/j1/events answered HTTP 404 (slice.unknown_job): "
+                                 "No such slice job.")
+    assert not list(tmp_path.iterdir())
+
+
+def test_the_command_line_exits_1_when_a_slice_fails_and_slices_no_further_plate(tmp_path, capsys):
+    reports = [{"job": "j1", "state": "failed", "elapsed_s": 3, "sequence": 4,
+                "error": {"code": "slice.out_of_memory", "message": "The plate needs more memory."}}]
+    with FakeSliceService(reports=reports) as service:
+        status = msf.main(["--url", service.url, "--plate", "spacers-150", "--plate", "blocks-12-supports",
+                           "--out", str(tmp_path)])
+    assert status == 1
+    assert ("spacers-150: the slice failed (slice.out_of_memory): The plate needs more memory."
+            in capsys.readouterr().err)
+    assert [p for _, p, _, _ in service.received if p == "/slices"] == ["/slices"]
+    assert not list(tmp_path.iterdir())
 
 
 def test_the_command_line_names_an_unknown_plate_and_exits_2(capsys):

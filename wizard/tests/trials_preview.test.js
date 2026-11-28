@@ -290,6 +290,17 @@ test('a box taller than its byte can hold is refused, never clipped', () => {
   assert.throws(() => boxVertices(p, null, { decimate: 16 }), /6\.40 mm tall, over the 5\.10 mm a box can be/);
 });
 
+test('a box of exactly 5.10 mm is kept, and one of 5.12 mm, a fiftieth over, is refused', () => {
+  const plate = (layers, height) => {
+    const lines = ['M83'];
+    for (let l = 1; l <= layers; l++) lines.push('; CHANGE_LAYER', `; Z_HEIGHT: ${(l * height).toFixed(2)}`,
+      `; LAYER_HEIGHT: ${height}`, `G1 Z${(l * height).toFixed(2)}`, '; FEATURE: Outer wall', `G1 X0 Y${l}`, `G1 X5 Y${l} E1`);
+    return parseGcode(gcode(lines));
+  };
+  assert.equal(boxVertices(plate(15, 0.34), null, { decimate: 15 }).vertices[9], 255, 'fifteen layers of 0.34 mm');
+  assert.throws(() => boxVertices(plate(16, 0.32), null, { decimate: 16 }), /5\.12 mm tall, over the 5\.10 mm a box can be/);
+});
+
 test('the look while moving never drops so many layers that a box is too tall to hold', () => {
   // 16 layers of 0.4 mm, one segment each: every 16th layer would be a box 6.4 mm tall.
   const p = { layerStart: Uint32Array.from({ length: 17 }, (_, l) => l), layerZ: Float32Array.from({ length: 16 }, (_, l) => (l + 1) * 0.4) };

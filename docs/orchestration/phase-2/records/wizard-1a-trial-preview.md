@@ -165,7 +165,13 @@ times slower than the same triangles drawn plainly. That is why the mockup's met
 13. **Renders.** Chosen: every view (default, top, edge-on from the front and the side, zoomed
     in, zoomed edge-on, zoomed from above, the middle layer at the default and zoomed view, and
     the look while moving) for C; the default view, the middle layer and the look while moving
-    for A and B, which draw the full look with the same code. To overrule: `--all-views`.
+    for A and B, which draw the full look with the same shader. A's and B's renders are not C's
+    pictures, though: they draw every box in one frame where C draws pieces in another order, so
+    where two boxes meet at equal depth on a round side the other one wins. The second review
+    measured 8.3 % and 9.2 % of the pixels different between A's and C's full look on the two
+    robot plates and 0.005 % on `spacers-150`; by eye they look the same, and the difference
+    is the stipple described under "What I saw in the renders". Judge C's look only from C's
+    renders. To overrule: `--all-views`.
 14. **`run.py` exits 1 when no method passes on all three plates,** after writing every figure,
     render and the report, so `make -C wizard trials` fails as the Makefile's comment says a
     trial does. When none passes it names the fastest of the methods with the required look on
@@ -204,6 +210,15 @@ times slower than the same triangles drawn plainly. That is why the mockup's met
     that names the layer, never clipped. At 0.2 mm layers D = 16 is 3.2 mm, so nothing changes
     on these plates. To overrule: `MAX_BOX_MM` in `prepare.js` and `decimationFor` in
     `methods-prepare.js`.
+19. **The view is 640 by 480 pixels at a pixel ratio of 1.** The guide and the details file are
+    silent on the size of the view the target is measured at. Chosen: 640 by 480 at a pixel
+    ratio of 1, a small view, so that the figures are those of the drawing method rather than
+    of filling pixels. Software drawing costs grow with the pixels drawn, so a larger view thins
+    the margin: the second review measured C at 1024 by 768 and it still passed, at 15/15 and
+    15/12 frames a second (its figures as it gave them) with holds of 207 ms on
+    `blocks-12-supports` and 238 ms on `spacers-150`, against 198 and 193 ms at 640 by 480. A screen with a pixel ratio of 2 at
+    the same size draws four times the pixels and is not measured. To overrule: `VIEW_SIZE` in
+    `run.py`, and the trial run again.
 
 ## Targets missed
 
@@ -257,11 +272,20 @@ Every render of C was looked at, one by one, in
   through where Orca leaves gaps, which is the real gap.
 - **The middle layer** (`default-layer-*.png`, `zoom-layer-*.png`), looked at again on Sat
   2026-11-28 after the fix of the ghost: the cut shows orange infill, green surfaces and blue
-  walls, unshaded, under the faint grey ghost of what is still to print: the upper halves of the
-  twelve blocks, the tops of the carriages and pulleys of `four-each-b-supports`, and on
-  `spacers-150` a grey ring over each spacer, plain in `zoom-layer-6.png` and faint at the
-  default distance. `zoom-layer-172.png` of `four-each-b-supports` shows a part wholly below
-  the cut, so no ghost, and the ghost of the parts behind it at the top right. The renders
+  walls, unshaded, under the faint grey ghost of what is still to print. On
+  `blocks-12-supports` (cut at 41.34 mm, layer 172 of 344) it is the upper halves of the twelve
+  blocks, each an Elevator Block Bottom Inner 82.55 mm tall. On `four-each-b-supports` (the same
+  cut) the only parts that reach above it are its two Elevator Block Bottom Inners (82.55 mm,
+  in the second row from the front of the two right-hand columns, where the orange infill of
+  the cut shows), and their upper halves are the grey there, rising on the screen over the row
+  behind them; every other part is wholly below the cut and drawn in full, with no ghost: the
+  Elevator Block Tops and Carriages are 31.75 mm tall, the Elevator Top Inners 25.4 mm, the
+  Pulleys 17.78 mm and the flat parts under 5 mm (each measured from its STL in
+  `contracts/examples/parts/real/`, along the axis its orientation puts up).
+  `zoom-layer-172.png` of that plate shows an Elevator Block Top in front, wholly below the
+  cut, so no ghost, and the ghost of the Bottom Inners behind it at the top right. On `spacers-150` (cut at
+  1.50 mm, layer 6 of 13) it is a grey ring over each spacer, plain in `zoom-layer-6.png` and
+  faint at the default distance. The renders
   committed on Fri 2026-11-27 had no ghost: every render is made after the deliberate loss of
   the drawing context, and the ghost was never sent to the graphics side again after it (the
   first review, finding 1). This section said otherwise then; it was wrong.
@@ -312,6 +336,38 @@ builder's part, which names neither); the committed report is no longer replaced
 written elsewhere; the thin margin on `spacers-150` is in "Targets missed"; each reading of the
 G-code keeps its own list of line types; a box too tall for its height byte is refused, and D
 is held below it (decision 18).
+
+## The second review
+
+The second review found one blocking finding and seven minor ones. Each was checked against
+the code, the renders and the documents.
+
+1. **The middle layer's ghost on `four-each-b-supports` was misnamed** (blocking). Real: the
+   parts' heights, measured from their STLs along the axis each orientation puts up, put only
+   the two Elevator Block Bottom Inners above the cut at 41.34 mm, and the renders show their
+   upper halves as the ghost. Fixed in "What I saw in the renders", with every part's height;
+   the sentences for `blocks-12-supports` and `spacers-150` were checked against their
+   pictures and are right.
+
+The minor findings:
+
+1. Fixed: `make_sliced_files.py` exiting 1 for a failed slice, and slicing no further plate,
+   is tested through `main`; the reviewer's mutation (`return 1` to `return 0`) now fails it.
+2. Fixed: a box of exactly 5.10 mm is kept and one of 5.12 mm is refused; the reviewer's
+   mutation (`> 255` to `> 256`) now fails it.
+3. Fixed: the view's size is decision 19, with the reviewer's figures at 1024 by 768.
+4. Fixed: [wizard/README.md](../../../../wizard/README.md) says the trial was measured again
+   on Sat 2026-11-28.
+5. Fixed, test first: an acceptance with no slice job, an answer that is not JSON (to a part's
+   upload, to the plate configuration or to the sliced file) and a refused progress stream
+   each end as a failure that names the plate, what answered and its HTTP status.
+6. Fixed in the record (decision 13): A's and B's renders are not C's pictures. The code was
+   not changed: A and B are not to be built on, and their renders serve only to show the
+   same shader drawing every box at once.
+7. Declined: `make -C wizard install-browser` installing nothing under
+   `PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright` is this container's, not the branch's; the
+   target runs Playwright's own installer and the branch does not change it; the reviewer
+   found Chromium build 1255 only in `~/.cache/ms-playwright` on this machine.
 
 ## For the owner to look at
 

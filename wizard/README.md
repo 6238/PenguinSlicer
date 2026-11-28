@@ -2230,7 +2230,8 @@ that can be previewed is made smaller than the largest that can be sliced, and t
 says so; or a machine without a graphics card is declared unsupported for the Preview
 step; or the target is lowered, at which the step is usable but sticky.
 
-*Tried on Fri 2026-11-27, and the target is met there.* Three ways of drawing were tried on
+*Tried on Fri 2026-11-27 and measured again on Sat 2026-11-28, and the target is met
+there.* Three ways of drawing were tried on
 three real sliced plates (two of each of the robot's eight parts with supports, 8.8 MB;
 twelve of its largest block with supports, 14.1 MB; 150 spacers, 2.7 MB), on the agents'
 machine (8 processors and 12 GB, shared with other work at the time), in the Chromium the
