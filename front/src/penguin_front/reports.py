@@ -54,7 +54,11 @@ def _text(length):
 
 
 def _page(value):
-    return value[:PAGE_CHARS] if isinstance(value, str) and value.strip() else _Bad
+    """A page id: some character other than a space, and every character printable, so
+    that a page cannot hide its id in control, invisible or lone surrogate characters."""
+    if isinstance(value, str) and value.strip() and value.isprintable():
+        return value[:PAGE_CHARS]
+    return _Bad
 
 
 def _one_of(allowed):

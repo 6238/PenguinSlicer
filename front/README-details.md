@@ -1951,7 +1951,9 @@ and a fraction too large for a float such as `1e999`, but JSON's whole numbers h
 bound, so one past a float's range (`10**400`) is of the wrong kind, refused when the field
 is required and dropped when it is optional. `page` is cut at
 `PAGE_CHARS` (64, *proposed*: the contract gives no length, and the page's id is a UUID of
-36), and a `page` that is empty or only spaces is refused. `front.too_many_reports` is not
+36), and a `page` that is empty, only spaces, or holds a character that is not printable
+(a control character, an invisible one such as U+200B, a lone surrogate) is refused.
+`front.too_many_reports` is not
 retryable, since the page drops a refused report. A body over `MAX_REPORT_BYTES`
 (16,384, *proposed*; a whole report is under 2 KB) is refused `400` `front.bad_request`
 before the front server's code reads it: a `Content-Length` over the limit is refused with
@@ -1980,7 +1982,8 @@ Built: `tests/test_reports.py`.
   than one byte past the limit is taken from a body sixty-four times the limit. A body of
   exactly `MAX_REPORT_BYTES` is written and one byte more is refused, both ways.
 - A whole number too large for a float is refused in a required field and dropped in an
-  optional one; a `page` of only spaces is refused.
+  optional one; a `page` of only spaces, or with a character that is not printable, is
+  refused.
 
 ## The version, and old and new versions together
 

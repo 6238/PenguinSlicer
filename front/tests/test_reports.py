@@ -113,6 +113,8 @@ def bad_request(answer, log, field):
 @pytest.mark.parametrize("field, value", [
     ("what", "everything_failed"), ("step", "checkout"), ("what", 3), ("browser", 7),
     ("software_3d", "yes"), ("page", ""), ("page", None), ("page", "   "), ("page", "\t\n"),
+    ("page", "\u0000\u0000"), ("page", "​"), ("page", "page-\u0007id"),
+    ("page", "\ud800"),
 ])
 def test_a_failure_field_off_its_list_or_of_a_bad_form_is_refused(client, log, field, value):
     bad_request(send(client, "failure", EXAMPLE | {field: value}), log, field)

@@ -48,9 +48,9 @@ batch's. Written Fri 2026-11-27, Pacific time.
    that minute. To overrule: `penguin_front.gathering`; with no cursor, `_read_cursor`
    returns at once and every start asks from `0`.
 8. **A slice service that does not answer `GET /log`,** or answers with what is not the
-   log. The slice service's `GET /log` is still to be built (its contract says so), so
-   today every answer is `404`. Chosen: one line `slice_log_unavailable`, then silence
-   until an answer that was the log, so a slice service without the route does not write a
+   log (a `404` from a slice service of an older release without the route, a `5xx`, a
+   body that is not the log's form). Silent. Chosen: one line `slice_log_unavailable`,
+   then silence until an answer that was the log, so such a slice service does not write a
    line a minute. To overrule: `_unavailable` in `Gatherer._gather`.
 9. **A gathered line of the wrong shape** (the record of batch front-1 left this to item
    18): a line that is not an object, or whose `n` is not a whole number past the last one,
@@ -163,6 +163,18 @@ batch's. Written Fri 2026-11-27, Pacific time.
     (it is still in `listed`). Reason: one meaning for the three. To overrule: the
     `if not started` line in `Collector._collect_once`.
 29. **A `page` of only spaces** (second review, minor 6): refused as an empty one is.
+30. **A `page` holding a character that is not printable** (third review, minor 2:
+    `"\u0000\u0000"` and `"​"` were taken as page ids). Chosen: a `page` is refused
+    `400` `front.bad_request` unless every character is printable (Python's
+    `str.isprintable`: no control, format, invisible or lone surrogate character) and one
+    is not a space. Reason: the page's id is a random UUID, so an honest page never sends
+    such a character, and an id made of invisible characters cannot be told apart in the
+    log. To overrule: `_page` in `penguin_front.reports`.
+31. **A lone surrogate in a report's other strings** (third review, minor 3). Chosen: left
+    as it is, written escaped. The log's JSON is ASCII-escaped, so the line stays valid
+    JSON and readable; refusing it would refuse a report for a browser's text the page
+    passed on (a `detail` is the browser's own message). A `page` with one is refused, by
+    decision 30.
 
 ### The review's findings declined
 
@@ -223,12 +235,50 @@ From the second review, each test seen to fail first, for the finding's reason:
   server's code reads it", with waitress's whole receipt of the body stated.
 - **Minors 3, 4 and 6:** decisions 27, 28 and 29, each with a test.
 
+From the third review:
+
+- **Blocking 1:** `main` (with batch slice-5's `GET /log`) is merged into the branch, and
+  decision 8, "Not done" and the owner's step no longer say the route is unbuilt.
+- **Minor 1:** "Targets missed" gives the suite's count and times as measured after the
+  merge.
+- **Minor 2:** decision 30, with the test `test_a_failure_field_off_its_list_or_of_a_bad_form_is_refused`
+  given `"\u0000\u0000"`, `"​"`, a page id with a control character inside it and a
+  lone surrogate; the four answered `204` before the fix.
+
+### Checked against the real slice service
+
+On Fri 11-27 at 21:12 Pacific, the slice service from the merged tree (no Orca, no slice asked for) and the front server
+ran side by side on two ports above 20000 with the folder buckets in a scratch folder.
+Within the minute the slice service's `slice_service_started` line, `n` 1, was in the log
+bucket's minute file with component `slice` and no group, and the cursor read
+`{"format": 1, "process": "p6b04013b", "after": 1}`. After the slice service was stopped
+and started again, the front server wrote `slice_log_process_changed` (`previous`
+`p6b04013b`, `process` `pdd0b8fef`) and the cursor moved to the new process. The
+reviewer's own run of the same check, with a slice job, saw that job's lines carry its
+group. This is a check by hand, not a test: the front server's suite depends only on the
+contracts, never on the slice service's code, and the joined suite (item 20) is where the
+two run together.
+
+### The third review's findings declined
+
+- **Minor 3, a lone surrogate in a report's `detail`.** Declined, as decision 31 says: it
+  is written escaped and the line stays valid JSON.
+- **Minor 4, the first `load` line's `threads_in_use` of 65.** Declined for this batch: it
+  is batch front-4's `Load`, which this batch does not change. Left for whoever next
+  changes the load line.
+- **Minor 5, a wrong method answering `404` `front.no_such_request`.** Declined: the app
+  answers every wrong method this way, as the reviewer says, and a `405` would be a new
+  error report for every route, beyond this batch.
+
 ## Targets missed
 
-- The fast suite now takes 7 to 12 s on one worker and 5 to 6 s on two (1,033 tests after
-  the review's fixes, on a machine shared with three other builds), against the 3.8 s and 2.7 s measured on 776
-  tests before this batch. It still "finishes in seconds"; the search for secrets after
+- The fast suite now takes 7 to 8 s on one worker and 4.6 s on two (1,047 tests after the
+  third review's fixes and the merge of `main`, on a machine shared with three other
+  builds), against the 3.8 s and 2.7 s measured on 776 tests before this batch. It still "finishes in seconds"; the search for secrets after
   each test and the running-server tests account for the rise. Not measured apart.
+- The third review's fixes (decisions 30 and 31, the record's account of the slice
+  service's `GET /log`, the merge of `main`) were merged without a further review: that
+  was the last review round.
 
 ## Not done
 
@@ -236,12 +286,12 @@ From the second review, each test seen to fail first, for the finding's reason:
   front server** (item 19): they apply from the second release on. No release has been
   made, so there is no previous page or stand-in to keep.
 - **Item 20, the joined suite:** a later batch, once the wizard's steps exist.
-- **The real slice service's `GET /log`** is still to be built by the slice service's
-  builder; the front server is tested against the stand-in, which answers as the contract
-  says. Until it exists, a real run writes one `slice_log_unavailable` line and gathers
-  nothing.
 - **The restart table's three rows of phase 5** (a print, a silent daemon, a pairing code):
   with the relay.
+
+The gathering was checked by hand against the real slice service once batch slice-5 built
+its `GET /log` (merged into this branch from `main`; no Orca was needed, since no slice
+was asked for): see "Checked against the real slice service" below.
 
 Read against the phase 2 list from item 1 to item 19 and the records of batches front-0 to
 front-4, nothing else of phase 2 fell between batches: what those records left to items 17
@@ -256,10 +306,14 @@ to 19 is built here, and what they left to phases 3 to 5 stays there.
   [Running phase 2 on one machine](../../../../front/README-details.md#running-phase-2-on-one-machine)
   says before the slice service; its standard output shows `slices_list_retry` lines with
   waits of 1, 2, 4… seconds, then `slices_collected` once the slice service answers.
-- A gathered line: once the slice service has `GET /log`, the minute's file under
-  `/var/tmp/penguin-front/log/<year>/<month>/<day>/` holds the slice service's lines with a
-  `group`, and `/var/tmp/penguin-front/state/log-cursor/slice.json` where the gathering
-  stopped. Until then, one `slice_log_unavailable` line on standard output.
+- A gathered line: with the slice service and the front server started as
+  [Running phase 2 on one machine](../../../../front/README-details.md#running-phase-2-on-one-machine)
+  says, within a minute the minute's file under
+  `/var/tmp/penguin-front/log/<year>/<month>/<day>/` holds the slice service's lines,
+  component `slice`, those of a slice job with its `group`, and
+  `/var/tmp/penguin-front/state/log-cursor/slice.json` says where the gathering stopped
+  (`process` and `after`). Restarting the slice service writes one
+  `slice_log_process_changed` line and the cursor moves to the new process.
 - A report: `curl -c jar http://127.0.0.1:8600/signin`, then
   `curl -b jar -H 'X-PenguinSlicer-Group: dev-group' --data-binary @contracts/examples/wizard-front/report-failure-request.json http://127.0.0.1:8600/api/reports/failure`
   answers `204`, and standard output shows a `failure_report` line, component `wizard`.
