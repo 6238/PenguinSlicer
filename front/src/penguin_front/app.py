@@ -25,12 +25,13 @@ import traceback
 from flask import Flask, Response, g, request
 from werkzeug.exceptions import HTTPException, MethodNotAllowed, NotFound
 
-from . import configuration, identity, pages
+from . import configuration, identity, pages, settings_table
 from .answers import json_body, page_file, target_path as _path  # noqa: F401 - used by tests
 from .buckets import FolderBucket
 from .context import EXTENSION
 from .cookie import CookieKey
 from .errors import FrontError, PassedReport, error_report
+from .slice_client import SliceClient
 from .version import is_version, version_at
 
 VERSION_HEADER = "X-PenguinSlicer-Version"
@@ -39,10 +40,11 @@ PAGE_HEADER = "X-PenguinSlicer-Page"
 MADE_KEY_BYTES = 32
 
 
-def create_app(settings, *, clock, log, version=None, state_bucket=None):
+def create_app(settings, *, clock, log, version=None, state_bucket=None, slice_client=None):
     """The front server's application. `log` takes `write(event, **fields)`; `version` is
     the release's, or else the settings', or else the one made from this moment;
-    `state_bucket` is the state bucket, or else the folder of the settings.
+    `state_bucket` is the state bucket, or else the folder of the settings; `slice_client`
+    the client for the slice service, or else one for the settings' address.
 
     The wizard's page files are read here, once; a folder that cannot be served raises
     `pages.PagesUnusable`, which stops the start. With no cookie key given (allowed only with
@@ -60,8 +62,9 @@ def create_app(settings, *, clock, log, version=None, state_bucket=None):
         "cookie_key": cookie_key,
         "pages": pages.load_pages(settings.wizard_dist, version),
         "state_bucket": state_bucket or FolderBucket(settings.state_dir, clock),
+        "slice": slice_client or SliceClient(settings.slice_url),
     }
-    for part in (pages, identity, configuration):
+    for part in (pages, identity, configuration, settings_table):
         part.register(app)
 
     @app.before_request

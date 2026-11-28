@@ -129,6 +129,28 @@ def test_with_the_development_identity_off_signin_is_not_offered(tmp_path, clock
     assert cookie_header(answer) is None
 
 
+#: The requests that need no signed-in user (README-details.md, "Which requests need a
+#: signed-in user"), each answering in its own way without one.
+NO_SIGN_IN = {"/", "/signin", "/signin/callback", "/api/signout", "/signed-out"}
+
+
+def test_every_request_but_the_exceptions_refuses_one_without_a_cookie(tmp_path, clock):
+    from test_rules import offered
+
+    app = front(tmp_path, clock)
+    client = app.test_client()
+    found = offered(app)
+    assert {path for _method, path in found} & NO_SIGN_IN == {"/", "/signin"}
+    for method, rule in sorted(found):
+        if rule in NO_SIGN_IN:
+            continue
+        path = re.sub(r"<[^>]+>", "panel.3f9a1c2b7e04.js", rule)
+        answer = client.open(path, method=method, json={},
+                             headers={"X-PenguinSlicer-Group": "dev-group"})
+        assert answer.status_code == 401, (method, rule)
+        assert answer.get_json()["code"] == "front.not_signed_in"
+
+
 # The cookie.
 
 def test_the_cookie_on_one_machine_is_httponly_lax_and_not_secure(client):
