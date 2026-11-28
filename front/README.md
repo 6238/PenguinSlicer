@@ -1,8 +1,12 @@
 # The front server
 
-Nothing of the front server is built. Every sentence of this guide describes the design,
-and the section [What is built in which phase](#what-is-built-in-which-phase) says which
-phase of [the plan](../docs/plans/penguin-slicer-plan.md) builds each piece of it. This
+The front server is being built in phase 2. Its foundations exist: the project with its
+tests and the stand-ins they use, the folder that stands for each bucket, the rules every
+request and answer follows, and the log's writer. It offers no request of the wizard's yet.
+Every other sentence of this guide describes the design, and the section
+[What is built in which phase](#what-is-built-in-which-phase) says which phase of
+[the plan](../docs/plans/penguin-slicer-plan.md) builds each piece of it and what is built
+so far. This
 guide is for the person who decides whether the design is right;
 [README-details.md](README-details.md) holds what a builder needs: the names, the rules
 one by one and the tests each needs.
@@ -1335,7 +1339,36 @@ hosted service.
 
 ## What is built in which phase
 
-Nothing exists. The phases are the plan's.
+The phases are the plan's.
+
+**Built so far,** the first part of phase 2:
+
+- the front server as a project of its own, started by one command on one machine, with
+  every setting read and checked at start, so that a setting of the wrong form, or a
+  missing secret, stops the start with a line in the log that names the setting and never
+  shows a secret;
+- its everyday tests, with a clock the tests move, a stand-in for the slice service that
+  answers exactly as the slice service's written interface and its examples say, and a
+  stand-in for Onshape that counts every call; the tests reach nothing beyond the machine
+  itself and fail if any code waits on the real clock;
+- a folder standing for each bucket, which reads and writes files whole or in pieces, writes
+  a file only if it has not changed since it was read or only if it does not yet exist,
+  and never leaves half a file behind; every record written to the state bucket carries
+  the number of its format, and a record of a format the front server does not know is
+  refused and said in the log;
+- the rules for every request: every failure answered with an error report, a request the
+  front server does not offer or cannot read refused with its own report, an unexpected
+  failure answered so that the page tries again while the full account of it goes to the
+  log, every answer marked as not to be kept except the page files, and the version on
+  every answer, except the few the web server gives itself to a request so malformed it
+  never reaches the front server's code, which the page already treats as an answer to
+  retry quietly;
+- the log's writer: every line the front server writes, its own and those it writes for the
+  page, at once on standard output (the lines it gathers from the slice service are already
+  in the slice service's own output and are not printed twice) and, about once a minute,
+  one new file for all the lines kept, in folders by year, month and day; a log that cannot
+  be written keeps its lines for the next minute and never changes an answer, and no value
+  in a line can make writing it fail.
 
 **Phase 2: one machine, no Onshape, no printer.** The front server runs beside one
 slice service on one machine, with the development identity and a folder for each
