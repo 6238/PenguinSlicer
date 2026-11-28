@@ -1,7 +1,10 @@
 // The geometry on the real exported parts kept in the repository, and on the trials' made
 // parts: the expected answers are the second trial's recorded results
 // (wizard/trials/geometry/results/), written down here so that a change to the rules that
-// changes what a user is offered fails a test.
+// changes what a user is offered fails a test. Since the faces on which a part rests on no face
+// of its own are not offered (first-layer.js), Elevator Block Bottom Inner has two hull patches
+// fewer than the trial recorded and Elevator Block Carriage and Elevator Block Top one each: the
+// hull faces across their pockets whose first layer the slice service judges too narrow.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -13,9 +16,9 @@ import { readMadePart, readRealPart } from './helpers.js';
 
 const EXPECTED = {
   'clamp-plate-inner': { hullTriangles: 604, faces: 150, hull: 6, box: [], modelled: false, normal: [1, 0, 0], height: 4.76, contact: 2334, overhang: 0, turn: { orientation: '-x', angle: 0 } },
-  'elevator-block-bottom-inner': { hullTriangles: 2722, faces: 1100, hull: 12, box: [], modelled: false, normal: [0, 0, 1], height: 82.55, contact: 1575, overhang: 3685, turn: { orientation: '-z', angle: 0 } },
-  'elevator-block-carriage': { hullTriangles: 8796, faces: 3309, hull: 9, box: [], modelled: false, normal: [0, -1, 0], height: 31.75, contact: 1836, overhang: 2160, turn: { orientation: '+y', angle: 0 } },
-  'elevator-block-top': { hullTriangles: 7652, faces: 3005, hull: 9, box: [], modelled: false, normal: [0, -1, 0], height: 31.75, contact: 3148, overhang: 2768, turn: { orientation: '+y', angle: 0 } },
+  'elevator-block-bottom-inner': { hullTriangles: 2722, faces: 1100, hull: 10, box: [], modelled: false, normal: [0, 0, 1], height: 82.55, contact: 1575, overhang: 3685, turn: { orientation: '-z', angle: 0 } },
+  'elevator-block-carriage': { hullTriangles: 8796, faces: 3309, hull: 8, box: [], modelled: false, normal: [0, -1, 0], height: 31.75, contact: 1836, overhang: 2160, turn: { orientation: '+y', angle: 0 } },
+  'elevator-block-top': { hullTriangles: 7652, faces: 3005, hull: 8, box: [], modelled: false, normal: [0, -1, 0], height: 31.75, contact: 3148, overhang: 2768, turn: { orientation: '+y', angle: 0 } },
   'elevator-top-inner': { hullTriangles: 11350, faces: 4586, hull: 6, box: [], modelled: false, normal: [0, 0, 1], height: 57.15, contact: 1111, overhang: 550, turn: { orientation: '-z', angle: 0 } },
   'inner-spacer': { hullTriangles: 588, faces: 150, hull: 6, box: [], modelled: false, normal: [1, 0, 0], height: 1.26, contact: 2464, overhang: 0, turn: { orientation: '-x', angle: 0 } },
   'outer-clamp': { hullTriangles: 592, faces: 150, hull: 6, box: [], modelled: false, normal: [1, 0, 0], height: 4.76, contact: 2495, overhang: 0, turn: { orientation: '-x', angle: 0 } },
@@ -70,6 +73,23 @@ function flatFacesWithoutPatch(part) {
     if (material >= 0.5 * face.area) missing.push({ normal: face.normal, area: face.area, dropped: face.dropped });
   }
   return missing;
+}
+
+// The hull faces on which the part would rest on no face of its own: the slice service, measuring
+// each pose of the trial's patches with its own code (contact_area_mm2 and first_layer_section),
+// names exactly these four slanting hull faces of the three blocks (normals to two decimals), and
+// the real Orca refuses the one of normal (0, -0.87, -0.49).
+const NO_FIRST_LAYER = {
+  'elevator-block-bottom-inner': [[0, 0.71, 0.71], [0, -0.87, -0.49]],
+  'elevator-block-carriage': [[0, 0.71, 0.71]],
+  'elevator-block-top': [[0, 0.71, 0.71]],
+};
+
+for (const key of Object.keys(EXPECTED)) {
+  test(`${key}: the faces not offered for want of a first layer are those the slice service names`, () => {
+    const dropped = partOf(key).part.faces.filter((f) => f.dropped === 'no_first_layer').map((f) => f.normal.map((v) => Math.round(v * 100) / 100 || 0));
+    assert.deepEqual(dropped.map(String).sort(), (NO_FIRST_LAYER[key] || []).map(String).sort());
+  });
 }
 
 for (const key of Object.keys(EXPECTED).filter((k) => !MADE.has(k))) {

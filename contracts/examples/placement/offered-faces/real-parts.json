@@ -1,0 +1,1115 @@
+{
+  "description": "Every face the wizard offers to lay each real part on, as one pose each: the part laid on the patch from as modelled, as the plate configuration carries the turn, at the plate's middle. Written by make -C wizard offered-faces; sliced one by one by the slice service's real-Orca suite, each must slice.",
+  "parts": {
+    "clamp-plate-inner": {
+      "name": "Clamp Plate Inner",
+      "sha256": "19e59b003a77568599cbcd85e31a2ac74f6df3bbedf57f3ac5bf0c0f00b2827b",
+      "units": "mm"
+    },
+    "elevator-block-bottom-inner": {
+      "name": "Elevator Block Bottom Inner",
+      "sha256": "db902cd519da10b6385371a0527157173ff4dbc2e708a549854dd827fd76144a",
+      "units": "mm"
+    },
+    "elevator-block-carriage": {
+      "name": "Elevator Block Carriage",
+      "sha256": "d49c63d0cb761a9ce6f0658ace43428c376f1af1fc09ae397dd1fe884c10532b",
+      "units": "mm"
+    },
+    "elevator-block-top": {
+      "name": "Elevator Block Top",
+      "sha256": "6a25d7cb3bc9059207c8be4abfbf172dc877c1d5cd263dfcf289284f9980a629",
+      "units": "mm"
+    },
+    "elevator-top-inner": {
+      "name": "Elevator Top Inner",
+      "sha256": "0b5c9685e3f59a711d06ce9d0f6c60ff7ff5351d707d9f050545dddeb2f0448e",
+      "units": "mm"
+    },
+    "inner-spacer": {
+      "name": "Inner Spacer",
+      "sha256": "7f155e29cb33cb18b1dd33b40db99445e416d108b18f9bc6290a896ff4f200bb",
+      "units": "mm"
+    },
+    "outer-clamp": {
+      "name": "Outer Clamp",
+      "sha256": "8e005120bcc415a62f13f6343172af0dee2347d8f11a9e2fdac7cdb596619d7e",
+      "units": "mm"
+    },
+    "pulley-v3": {
+      "name": "Pulley v3",
+      "sha256": "24d2932b43e72e50a2186757a4bbc405df65f19e7e0270346c357478d5fa4a98",
+      "units": "mm"
+    }
+  },
+  "poses": [
+    {
+      "id": "clamp-plate-inner-0",
+      "patch": {
+        "index": 0,
+        "kind": "hull",
+        "normal": [-1, 0, 0],
+        "area_mm2": 2545.99
+      },
+      "area_rank": 2,
+      "orient_rank": 2,
+      "chosen": false,
+      "instance": {
+        "ref": "clamp-plate-inner",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "clamp-plate-inner-1",
+      "patch": {
+        "index": 1,
+        "kind": "hull",
+        "normal": [1, 0, 0],
+        "area_mm2": 2545.99
+      },
+      "area_rank": 1,
+      "orient_rank": 1,
+      "chosen": true,
+      "instance": {
+        "ref": "clamp-plate-inner",
+        "orientation": "-x",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "clamp-plate-inner-2",
+      "patch": {
+        "index": 2,
+        "kind": "hull",
+        "normal": [0, 0, 1],
+        "area_mm2": 181.45
+      },
+      "area_rank": 5,
+      "orient_rank": 6,
+      "chosen": false,
+      "instance": {
+        "ref": "clamp-plate-inner",
+        "orientation": "-z",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "clamp-plate-inner-3",
+      "patch": {
+        "index": 3,
+        "kind": "hull",
+        "normal": [0, 1, 0],
+        "area_mm2": 181.45
+      },
+      "area_rank": 3,
+      "orient_rank": 4,
+      "chosen": false,
+      "instance": {
+        "ref": "clamp-plate-inner",
+        "orientation": "-y",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "clamp-plate-inner-4",
+      "patch": {
+        "index": 4,
+        "kind": "hull",
+        "normal": [0, -1, 0],
+        "area_mm2": 181.45
+      },
+      "area_rank": 4,
+      "orient_rank": 3,
+      "chosen": false,
+      "instance": {
+        "ref": "clamp-plate-inner",
+        "orientation": "+y",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "clamp-plate-inner-5",
+      "patch": {
+        "index": 5,
+        "kind": "hull",
+        "normal": [0, 0, -1],
+        "area_mm2": 181.45
+      },
+      "area_rank": 6,
+      "orient_rank": 5,
+      "chosen": false,
+      "instance": {
+        "ref": "clamp-plate-inner",
+        "orientation": "+z",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "elevator-block-bottom-inner-0",
+      "patch": {
+        "index": 0,
+        "kind": "hull",
+        "normal": [0, -1, 0],
+        "area_mm2": 1045.68
+      },
+      "area_rank": 7,
+      "orient_rank": 2,
+      "chosen": false,
+      "instance": {
+        "ref": "elevator-block-bottom-inner",
+        "orientation": "+y",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "elevator-block-bottom-inner-1",
+      "patch": {
+        "index": 1,
+        "kind": "hull",
+        "normal": [0, 0, 1],
+        "area_mm2": 1512.09
+      },
+      "area_rank": 2,
+      "orient_rank": 1,
+      "chosen": true,
+      "instance": {
+        "ref": "elevator-block-bottom-inner",
+        "orientation": "-z",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "elevator-block-bottom-inner-2",
+      "patch": {
+        "index": 2,
+        "kind": "hull",
+        "normal": [0, 0, -1],
+        "area_mm2": 1038.62
+      },
+      "area_rank": 8,
+      "orient_rank": 3,
+      "chosen": false,
+      "instance": {
+        "ref": "elevator-block-bottom-inner",
+        "orientation": "+z",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "elevator-block-bottom-inner-3",
+      "patch": {
+        "index": 3,
+        "kind": "hull",
+        "normal": [0.842447, -0.46658, -0.269418],
+        "area_mm2": 1287.24
+      },
+      "area_rank": 6,
+      "orient_rank": 6,
+      "chosen": false,
+      "instance": {
+        "ref": "elevator-block-bottom-inner",
+        "rotation": [0.796686264, 0.292825467, 0.528719437, 0],
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "elevator-block-bottom-inner-4",
+      "patch": {
+        "index": 4,
+        "kind": "hull",
+        "normal": [-0.956383, 0, -0.292116],
+        "area_mm2": 1484.14
+      },
+      "area_rank": 3,
+      "orient_rank": 5,
+      "chosen": false,
+      "instance": {
+        "ref": "elevator-block-bottom-inner",
+        "rotation": [0.803777297, 0, -0.594930296, 0],
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "elevator-block-bottom-inner-5",
+      "patch": {
+        "index": 5,
+        "kind": "hull",
+        "normal": [-0.842451, -0.466576, -0.269413],
+        "area_mm2": 1288.23
+      },
+      "area_rank": 5,
+      "orient_rank": 7,
+      "chosen": false,
+      "instance": {
+        "ref": "elevator-block-bottom-inner",
+        "rotation": [0.796684554, 0.292823567, -0.528723066, 0],
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "elevator-block-bottom-inner-6",
+      "patch": {
+        "index": 6,
+        "kind": "hull",
+        "normal": [-0.840842, 0.464855, -0.277297],
+        "area_mm2": 248.87
+      },
+      "area_rank": 9,
+      "orient_rank": 8,
+      "chosen": false,
+      "instance": {
+        "ref": "elevator-block-bottom-inner",
+        "rotation": [0.799154993, -0.290841607, -0.526082177, 0],
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "elevator-block-bottom-inner-7",
+      "patch": {
+        "index": 7,
+        "kind": "hull",
+        "normal": [0.840842, 0.464855, -0.277297],
+        "area_mm2": 248.87
+      },
+      "area_rank": 10,
+      "orient_rank": 9,
+      "chosen": false,
+      "instance": {
+        "ref": "elevator-block-bottom-inner",
+        "rotation": [0.799154993, -0.290841607, 0.526082177, 0],
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "elevator-block-bottom-inner-8",
+      "patch": {
+        "index": 8,
+        "kind": "hull",
+        "normal": [0.956383, 0, -0.292116],
+        "area_mm2": 1484.14
+      },
+      "area_rank": 4,
+      "orient_rank": 4,
+      "chosen": false,
+      "instance": {
+        "ref": "elevator-block-bottom-inner",
+        "rotation": [0.803777297, 0, 0.594930296, 0],
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "elevator-block-bottom-inner-9",
+      "patch": {
+        "index": 9,
+        "kind": "hull",
+        "normal": [0, 0.992029, -0.126012],
+        "area_mm2": 3706.22
+      },
+      "area_rank": 1,
+      "orient_rank": 10,
+      "chosen": false,
+      "instance": {
+        "ref": "elevator-block-bottom-inner",
+        "rotation": [0.750337262, -0.661055212, 0, 0],
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "elevator-block-carriage-0",
+      "patch": {
+        "index": 0,
+        "kind": "hull",
+        "normal": [0, 0, -1],
+        "area_mm2": 1045.68
+      },
+      "area_rank": 4,
+      "orient_rank": 3,
+      "chosen": false,
+      "instance": {
+        "ref": "elevator-block-carriage",
+        "orientation": "+z",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "elevator-block-carriage-1",
+      "patch": {
+        "index": 1,
+        "kind": "hull",
+        "normal": [0.765519, 0.48928, -0.417835],
+        "area_mm2": 156.83
+      },
+      "area_rank": 8,
+      "orient_rank": 6,
+      "chosen": false,
+      "instance": {
+        "ref": "elevator-block-carriage",
+        "rotation": [0.841972293, -0.290556082, 0.454598527, 0],
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "elevator-block-carriage-2",
+      "patch": {
+        "index": 2,
+        "kind": "hull",
+        "normal": [0.894591, 0, -0.446885],
+        "area_mm2": 934.32
+      },
+      "area_rank": 5,
+      "orient_rank": 4,
+      "chosen": false,
+      "instance": {
+        "ref": "elevator-block-carriage",
+        "rotation": [0.850554292, 0, 0.525887246, 0],
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "elevator-block-carriage-3",
+      "patch": {
+        "index": 3,
+        "kind": "hull",
+        "normal": [0, -1, 0],
+        "area_mm2": 1799.11
+      },
+      "area_rank": 2,
+      "orient_rank": 1,
+      "chosen": true,
+      "instance": {
+        "ref": "elevator-block-carriage",
+        "orientation": "+y",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "elevator-block-carriage-4",
+      "patch": {
+        "index": 4,
+        "kind": "hull",
+        "normal": [0, 0, 1],
+        "area_mm2": 1512.09
+      },
+      "area_rank": 3,
+      "orient_rank": 2,
+      "chosen": false,
+      "instance": {
+        "ref": "elevator-block-carriage",
+        "orientation": "-z",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "elevator-block-carriage-5",
+      "patch": {
+        "index": 5,
+        "kind": "hull",
+        "normal": [-0.894591, 0, -0.446885],
+        "area_mm2": 934.32
+      },
+      "area_rank": 6,
+      "orient_rank": 5,
+      "chosen": false,
+      "instance": {
+        "ref": "elevator-block-carriage",
+        "rotation": [0.850554292, 0, -0.525887246, 0],
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "elevator-block-carriage-6",
+      "patch": {
+        "index": 6,
+        "kind": "hull",
+        "normal": [-0.765519, 0.48928, -0.417835],
+        "area_mm2": 156.83
+      },
+      "area_rank": 7,
+      "orient_rank": 7,
+      "chosen": false,
+      "instance": {
+        "ref": "elevator-block-carriage",
+        "rotation": [0.841972293, -0.290556082, -0.454598527, 0],
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "elevator-block-carriage-7",
+      "patch": {
+        "index": 7,
+        "kind": "hull",
+        "normal": [0, 0.978582, -0.205858],
+        "area_mm2": 2245
+      },
+      "area_rank": 1,
+      "orient_rank": 8,
+      "chosen": false,
+      "instance": {
+        "ref": "elevator-block-carriage",
+        "rotation": [0.776484928, -0.630135824, 0, 0],
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "elevator-block-top-0",
+      "patch": {
+        "index": 0,
+        "kind": "hull",
+        "normal": [0, 0, -1],
+        "area_mm2": 1038.62
+      },
+      "area_rank": 6,
+      "orient_rank": 3,
+      "chosen": false,
+      "instance": {
+        "ref": "elevator-block-top",
+        "orientation": "+z",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "elevator-block-top-1",
+      "patch": {
+        "index": 1,
+        "kind": "hull",
+        "normal": [0, -1, 0],
+        "area_mm2": 3492.02
+      },
+      "area_rank": 2,
+      "orient_rank": 1,
+      "chosen": true,
+      "instance": {
+        "ref": "elevator-block-top",
+        "orientation": "+y",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "elevator-block-top-2",
+      "patch": {
+        "index": 2,
+        "kind": "hull",
+        "normal": [-0.956383, 0, -0.292116],
+        "area_mm2": 1484.14
+      },
+      "area_rank": 4,
+      "orient_rank": 5,
+      "chosen": false,
+      "instance": {
+        "ref": "elevator-block-top",
+        "rotation": [0.803777297, 0, -0.594930296, 0],
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "elevator-block-top-3",
+      "patch": {
+        "index": 3,
+        "kind": "hull",
+        "normal": [0, 0, 1],
+        "area_mm2": 1512.09
+      },
+      "area_rank": 3,
+      "orient_rank": 2,
+      "chosen": false,
+      "instance": {
+        "ref": "elevator-block-top",
+        "orientation": "-z",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "elevator-block-top-4",
+      "patch": {
+        "index": 4,
+        "kind": "hull",
+        "normal": [-0.840842, 0.464855, -0.277297],
+        "area_mm2": 248.87
+      },
+      "area_rank": 7,
+      "orient_rank": 6,
+      "chosen": false,
+      "instance": {
+        "ref": "elevator-block-top",
+        "rotation": [0.799154993, -0.290841607, -0.526082177, 0],
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "elevator-block-top-5",
+      "patch": {
+        "index": 5,
+        "kind": "hull",
+        "normal": [0, 0.992029, -0.126012],
+        "area_mm2": 3706.22
+      },
+      "area_rank": 1,
+      "orient_rank": 8,
+      "chosen": false,
+      "instance": {
+        "ref": "elevator-block-top",
+        "rotation": [0.750337262, -0.661055212, 0, 0],
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "elevator-block-top-6",
+      "patch": {
+        "index": 6,
+        "kind": "hull",
+        "normal": [0.840842, 0.464855, -0.277297],
+        "area_mm2": 248.87
+      },
+      "area_rank": 8,
+      "orient_rank": 7,
+      "chosen": false,
+      "instance": {
+        "ref": "elevator-block-top",
+        "rotation": [0.799154993, -0.290841607, 0.526082177, 0],
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "elevator-block-top-7",
+      "patch": {
+        "index": 7,
+        "kind": "hull",
+        "normal": [0.956383, 0, -0.292116],
+        "area_mm2": 1484.14
+      },
+      "area_rank": 5,
+      "orient_rank": 4,
+      "chosen": false,
+      "instance": {
+        "ref": "elevator-block-top",
+        "rotation": [0.803777297, 0, 0.594930296, 0],
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "elevator-top-inner-0",
+      "patch": {
+        "index": 0,
+        "kind": "hull",
+        "normal": [0, 0, -1],
+        "area_mm2": 1038.62
+      },
+      "area_rank": 4,
+      "orient_rank": 2,
+      "chosen": false,
+      "instance": {
+        "ref": "elevator-top-inner",
+        "orientation": "+z",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "elevator-top-inner-1",
+      "patch": {
+        "index": 1,
+        "kind": "hull",
+        "normal": [0, 0, 1],
+        "area_mm2": 1058.47
+      },
+      "area_rank": 3,
+      "orient_rank": 1,
+      "chosen": true,
+      "instance": {
+        "ref": "elevator-top-inner",
+        "orientation": "-z",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "elevator-top-inner-2",
+      "patch": {
+        "index": 2,
+        "kind": "hull",
+        "normal": [-1, 0, 0],
+        "area_mm2": 529.23
+      },
+      "area_rank": 5,
+      "orient_rank": 4,
+      "chosen": false,
+      "instance": {
+        "ref": "elevator-top-inner",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "elevator-top-inner-3",
+      "patch": {
+        "index": 3,
+        "kind": "hull",
+        "normal": [1, 0, 0],
+        "area_mm2": 529.23
+      },
+      "area_rank": 6,
+      "orient_rank": 5,
+      "chosen": false,
+      "instance": {
+        "ref": "elevator-top-inner",
+        "orientation": "-x",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "elevator-top-inner-4",
+      "patch": {
+        "index": 4,
+        "kind": "hull",
+        "normal": [0, 1, 0],
+        "area_mm2": 1134.07
+      },
+      "area_rank": 1,
+      "orient_rank": 6,
+      "chosen": false,
+      "instance": {
+        "ref": "elevator-top-inner",
+        "orientation": "-y",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "elevator-top-inner-5",
+      "patch": {
+        "index": 5,
+        "kind": "hull",
+        "normal": [0, -1, 0],
+        "area_mm2": 1134.07
+      },
+      "area_rank": 2,
+      "orient_rank": 3,
+      "chosen": false,
+      "instance": {
+        "ref": "elevator-top-inner",
+        "orientation": "+y",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "inner-spacer-0",
+      "patch": {
+        "index": 0,
+        "kind": "hull",
+        "normal": [1, 0, 0],
+        "area_mm2": 2545.99
+      },
+      "area_rank": 1,
+      "orient_rank": 1,
+      "chosen": true,
+      "instance": {
+        "ref": "inner-spacer",
+        "orientation": "-x",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "inner-spacer-1",
+      "patch": {
+        "index": 1,
+        "kind": "hull",
+        "normal": [-1, 0, 0],
+        "area_mm2": 2545.99
+      },
+      "area_rank": 2,
+      "orient_rank": 2,
+      "chosen": false,
+      "instance": {
+        "ref": "inner-spacer",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "inner-spacer-2",
+      "patch": {
+        "index": 2,
+        "kind": "hull",
+        "normal": [0, 0, 1],
+        "area_mm2": 48.1
+      },
+      "area_rank": 5,
+      "orient_rank": 4,
+      "chosen": false,
+      "instance": {
+        "ref": "inner-spacer",
+        "orientation": "-z",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "inner-spacer-3",
+      "patch": {
+        "index": 3,
+        "kind": "hull",
+        "normal": [0, 1, 0],
+        "area_mm2": 48.1
+      },
+      "area_rank": 3,
+      "orient_rank": 6,
+      "chosen": false,
+      "instance": {
+        "ref": "inner-spacer",
+        "orientation": "-y",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "inner-spacer-4",
+      "patch": {
+        "index": 4,
+        "kind": "hull",
+        "normal": [0, -1, 0],
+        "area_mm2": 48.1
+      },
+      "area_rank": 4,
+      "orient_rank": 5,
+      "chosen": false,
+      "instance": {
+        "ref": "inner-spacer",
+        "orientation": "+y",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "inner-spacer-5",
+      "patch": {
+        "index": 5,
+        "kind": "hull",
+        "normal": [0, 0, -1],
+        "area_mm2": 48.1
+      },
+      "area_rank": 6,
+      "orient_rank": 3,
+      "chosen": false,
+      "instance": {
+        "ref": "inner-spacer",
+        "orientation": "+z",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "outer-clamp-0",
+      "patch": {
+        "index": 0,
+        "kind": "hull",
+        "normal": [1, 0, 0],
+        "area_mm2": 2545.99
+      },
+      "area_rank": 1,
+      "orient_rank": 1,
+      "chosen": true,
+      "instance": {
+        "ref": "outer-clamp",
+        "orientation": "-x",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "outer-clamp-1",
+      "patch": {
+        "index": 1,
+        "kind": "hull",
+        "normal": [0, 0, -1],
+        "area_mm2": 181.45
+      },
+      "area_rank": 5,
+      "orient_rank": 5,
+      "chosen": false,
+      "instance": {
+        "ref": "outer-clamp",
+        "orientation": "+z",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "outer-clamp-2",
+      "patch": {
+        "index": 2,
+        "kind": "hull",
+        "normal": [-1, 0, 0],
+        "area_mm2": 2545.99
+      },
+      "area_rank": 2,
+      "orient_rank": 2,
+      "chosen": false,
+      "instance": {
+        "ref": "outer-clamp",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "outer-clamp-3",
+      "patch": {
+        "index": 3,
+        "kind": "hull",
+        "normal": [0, 1, 0],
+        "area_mm2": 181.45
+      },
+      "area_rank": 3,
+      "orient_rank": 4,
+      "chosen": false,
+      "instance": {
+        "ref": "outer-clamp",
+        "orientation": "-y",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "outer-clamp-4",
+      "patch": {
+        "index": 4,
+        "kind": "hull",
+        "normal": [0, 0, 1],
+        "area_mm2": 181.45
+      },
+      "area_rank": 6,
+      "orient_rank": 6,
+      "chosen": false,
+      "instance": {
+        "ref": "outer-clamp",
+        "orientation": "-z",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "outer-clamp-5",
+      "patch": {
+        "index": 5,
+        "kind": "hull",
+        "normal": [0, -1, 0],
+        "area_mm2": 181.45
+      },
+      "area_rank": 4,
+      "orient_rank": 3,
+      "chosen": false,
+      "instance": {
+        "ref": "outer-clamp",
+        "orientation": "+y",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "pulley-v3-0",
+      "patch": {
+        "index": 0,
+        "kind": "hull",
+        "normal": [-1, 0, 0],
+        "area_mm2": 284.93
+      },
+      "area_rank": 6,
+      "orient_rank": 2,
+      "chosen": true,
+      "instance": {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "pulley-v3-1",
+      "patch": {
+        "index": 1,
+        "kind": "hull",
+        "normal": [1, 0, 0],
+        "area_mm2": 284.93
+      },
+      "area_rank": 5,
+      "orient_rank": 1,
+      "chosen": false,
+      "instance": {
+        "ref": "pulley-v3",
+        "orientation": "-x",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "pulley-v3-2",
+      "patch": {
+        "index": 2,
+        "kind": "box",
+        "side": "+y",
+        "normal": [0, 1, 0],
+        "area_mm2": 338.71
+      },
+      "area_rank": 1,
+      "orient_rank": 4,
+      "chosen": false,
+      "instance": {
+        "ref": "pulley-v3",
+        "orientation": "-y",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "pulley-v3-3",
+      "patch": {
+        "index": 3,
+        "kind": "box",
+        "side": "-y",
+        "normal": [0, -1, 0],
+        "area_mm2": 338.71
+      },
+      "area_rank": 2,
+      "orient_rank": 3,
+      "chosen": false,
+      "instance": {
+        "ref": "pulley-v3",
+        "orientation": "+y",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "pulley-v3-4",
+      "patch": {
+        "index": 4,
+        "kind": "box",
+        "side": "+z",
+        "normal": [0, 0, 1],
+        "area_mm2": 338.71
+      },
+      "area_rank": 3,
+      "orient_rank": 6,
+      "chosen": false,
+      "instance": {
+        "ref": "pulley-v3",
+        "orientation": "-z",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    },
+    {
+      "id": "pulley-v3-5",
+      "patch": {
+        "index": 5,
+        "kind": "box",
+        "side": "-z",
+        "normal": [0, 0, -1],
+        "area_mm2": 338.71
+      },
+      "area_rank": 4,
+      "orient_rank": 5,
+      "chosen": false,
+      "instance": {
+        "ref": "pulley-v3",
+        "orientation": "+z",
+        "angle": 0,
+        "x": 170,
+        "y": 160
+      }
+    }
+  ]
+}

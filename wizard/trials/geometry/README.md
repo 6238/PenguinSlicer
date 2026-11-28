@@ -22,20 +22,24 @@ near, so that they need no graphics card.
 
 ## What was found
 
-Run on Fri 2026-11-27 (Pacific time) on an aarch64 Linux machine without a graphics card, 8 processors and
-12 GiB of memory as its cgroup gives them, in Chromium 159 headless.
+Run first on Fri 2026-11-27 (Pacific time), and again on Sat 2026-11-28 once the faces on which
+a part has no first layer were no longer offered (step 5 of
+[Finding the faces a part can lie on](../../README.md#finding-the-faces-a-part-can-lie-on)); the
+results, pictures and figures here are the second run's. Both on an aarch64 Linux machine
+without a graphics card, 8 processors and 12 GiB of memory as its cgroup gives them, shared with
+other work, in Chromium 159 headless.
 
 | Time | Target | Worst of five runs |
 |---|---|---|
-| Patches of `hub-150k.stl` after selecting it | 100 ms | 4.1 ms (its faces found when it arrived) |
-| Auto-orient of `hub-150k.stl` after it arrives | 1,000 ms | 272 ms, from reading the file to its best way |
+| Patches of `hub-150k.stl` after selecting it | 100 ms | 1.1 ms (its faces found when it arrived) |
+| Auto-orient of `hub-150k.stl` after it arrives | 1,000 ms | 236 ms, from reading the file to its best way |
 | Arrange of 150 `hex-spacer.stl` | 2,000 ms | 30 ms; all 150 placed |
-| Arrange of a mix of 150 real parts | 2,000 ms | 56 ms; 104 placed, 46 beside the plate |
-| Each placement check of a drag at 150 instances | 100 ms | 2.2 ms (spacers), 4.4 ms (the mix) |
+| Arrange of a mix of 150 real parts | 2,000 ms | 44 ms; 104 placed, 46 beside the plate |
+| Each placement check of a drag at 150 instances | 100 ms | 1.8 ms (spacers), 4.1 ms (the mix) |
 
-Found from nothing, the faces take at most 215 ms for `hub-150k.stl` and at most 84 ms for a
-real part. While each step was timed the main thread never went more than 15 ms between beats
-of a 10 ms heartbeat. Chromium's long-task timing reported tasks of 0.1 to 0.9 s that
+Found from nothing, the faces take at most 241 ms for `hub-150k.stl` and at most 92 ms for a
+real part (215 ms and 84 ms in the first run, before step 5). While each step was timed the
+main thread never went more than 15 ms between beats of a 10 ms heartbeat. Chromium's long-task timing reported tasks of 0.1 to 0.9 s that
 neither the heartbeat nor any answer's time shows, and on a different part from one run to
 the next (on `hub-150k.stl` in one run, on Elevator Block Bottom Inner in another, with
 none on the hub); the heartbeat is the figure counted.
@@ -61,9 +65,9 @@ one real round side tried.
 | Part | Patches | Laid | Would a person choose it? |
 |---|---|---|---|
 | Clamp Plate Inner | 6 hull: both faces and the four edges | On its plain back, slots up, 4.8 mm tall, no overhang | Yes |
-| Elevator Block Bottom Inner | 12 hull, 9 of them on hull faces that bridge its pockets and touch it only along edges | Upside down on its top face, 82.6 mm tall, 3,685 mm² hanging over air | Not sure. The one other counted way is as modelled (more overhang); its large flat back is judged to tip over. A person might well print it as modelled or on its back. The bridging patches are Orca's too, but a person would not pick them |
-| Elevator Block Carriage | 9 hull, 4 bridging | On its flat back, 31.8 mm tall | Probably: the lowest way, on its largest flat face |
-| Elevator Block Top | 9 hull, 4 bridging | On its flat back, 31.8 mm tall | Probably, for the same reason |
+| Elevator Block Bottom Inner | 10 hull, 7 of them on hull faces that bridge its pockets and touch it only along rounded rims (the first run offered 12; the two on which it has no first layer are no longer offered, one of them refused by the real Orca) | Upside down on its top face, 82.6 mm tall, 3,685 mm² hanging over air | Not sure. The one other counted way is as modelled (more overhang); its large flat back is judged to tip over. A person might well print it as modelled or on its back. The bridging patches are Orca's too, but a person would not pick them |
+| Elevator Block Carriage | 8 hull (9 in the first run; one with no first layer dropped) | On its flat back, 31.8 mm tall | Probably: the lowest way, on its largest flat face |
+| Elevator Block Top | 8 hull (9 in the first run; one with no first layer dropped) | On its flat back, 31.8 mm tall | Probably, for the same reason |
 | Elevator Top Inner | 6 hull: top, bottom and the four flat sides of its upper block | Upside down on its wider top, 57.2 mm tall | Yes: the wider block down, no lip hanging over air |
 | Inner Spacer | 6 hull | Flat, 1.3 mm tall | Yes |
 | Outer Clamp | 6 hull | On its plain face, slots up, 4.8 mm tall | Yes |

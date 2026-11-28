@@ -349,6 +349,14 @@ answer is compared with the one the plate expects. The slanted-face plates are c
 sliced: their face bridges the open corner of the bracket, which Orca cannot give a first
 layer without supports and a raft (see [Check a plate before it is sliced](#check-a-plate-before-it-is-sliced)).
 
+Beside the plates, the wizard writes down every face it offers to lay each of the robot's
+eight real parts on, one pose for each. The slice service checks each pose two ways: without
+Orca, that none is a pose on which it would say the part touches the plate only along an
+edge; and with the real Orca, that every one slices, as a plate of that one part with
+supports off. The real Orca slices all 56 poses in a little over a minute. Before the wizard
+left out the faces on which a part has no first layer, one of the 60 faces it then offered
+was refused by Orca.
+
 The slice service keeps the points of a footprint to a thousandth of a millimetre, so its
 distances can differ from the exact ones by under a thousandth; the hundredth between each
 plate and its rule's figure leaves room for that and for a wizard that computes with less
