@@ -205,7 +205,18 @@ test('an answer that is not a progress report: the Preview step with the wizard\
   assert.equal(back.view().report.code, 'wizard.bad_answer');
 });
 
-test('a progress report of another slice job: the wizard\'s own failure, never that job\'s result shown as this plate\'s', async () => {
+test('a progress report of this slice job in a state the contract does not name: the Preview step with the wizard\'s own failure', async () => {
+  const page = await sliced();
+  const back = await comeBack(page, { answer: progressAnswer(progress({ state: 'paused', sequence: 9 })) });
+  assert.equal(back.store.get().step, 'preview');
+  assert.equal(back.view().kind, 'failed');
+  assert.equal(back.view().report.code, 'wizard.bad_answer');
+  assert.equal(back.store.get().sliced, false);
+  assert.deepEqual(back.notices, []);
+  assert.equal(submitted(page), 1, 'nothing submitted again');
+});
+
+test('a progress report of another slice job:the wizard\'s own failure, never that job\'s result shown as this plate\'s', async () => {
   const page = await sliced();
   const back = await comeBack(page, { answer: progressAnswer({ ...doneReport(), job: 'another-job-0000' }) });
   assert.equal(back.store.get().step, 'preview');

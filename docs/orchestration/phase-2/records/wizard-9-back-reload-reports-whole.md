@@ -210,6 +210,37 @@ Every finding was checked against the code before anything changed.
 
 Declined: none.
 
+### The second review's findings (pull request #47)
+
+Each was checked against the code first; each blocking test was seen to fail under the reviewer's
+mutation and pass without it.
+
+- Blocking 1, the views' own new use untested: real. Two Chromium tests in
+  `tests_browser/test_coming_back.py` drive the real views. The layer preview: drawn and driven,
+  left, a minute (60 000 ms) moved on the fake clock, the Preview step opened again, driven again
+  and left; the second summary's `first_layer_ms` is under the minute. With `since = opened;`
+  deleted it was 60 608. The Layout view: a first drag held still halfway for 120 animation frames
+  (an event counted, not a duration waited), a second use with a drag and no pause; the second
+  summary's `fps_worst` exceeds the first's. With `stats = createFrameStats();` deleted both were
+  0.5. A use with no frame drawn while moving sends no summary (`reports.js`), so the second use
+  must move too: that is why the Layout test compares worst frame rates instead of expecting none.
+  The details' Tests line no longer credits `tests/drawing-summaries.test.js` with the real view's
+  timing, and names the two new tests.
+- Blocking 2, coming back to a report of this slice job in a state the contract does not name:
+  real; a test in `tests/coming-back.test.js` answers `paused` and expects the Preview step with
+  `wizard.bad_answer`, nothing said and nothing submitted. The details now state the case.
+- Blocking 3, New plate letting the reload happen again untested: real; a test in
+  `tests/storage.test.js` refuses a part's bytes, presses New plate, and sees `reloadKeepsWork()`
+  true and `markSelfReload()` resolve to true.
+- Minor 1: the Preview step's summary test now waits on the report's answer (`expect_response`),
+  through a helper `drive_layers` shared with the new test.
+- Minor 2 and minor 3: the guide's paragraph on a held reload now names the plate's refused last
+  write, and says that a page left untouched after its work is stored again waits for the user's
+  next move (a move between steps, or 120 seconds after the next input) before it reloads.
+- Minor 4: a confirmation, nothing to do.
+
+Declined: none.
+
 ## Targets missed
 
 - **The main thread held over 250 ms at the start of a drag at 150 instances** of the real mix:

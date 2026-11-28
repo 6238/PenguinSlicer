@@ -27,6 +27,21 @@ def drawing_reports(server):
     return [(json.loads(body), body.decode("utf-8")) for (method, path, body) in server.bodies if path == "/api/reports/drawing"]
 
 
+def drawing_answered(response):
+    return response.url.endswith("/api/reports/drawing")
+
+
+def drive_layers(w):
+    """Drives the layer preview's bar down and up on the fake clock, so that frames are drawn while
+    the view moves."""
+    w.run("window.__driven = false; wizard.previewStep.view().drive('layers', 6).then(() => { window.__driven = true; });")
+    for _ in range(400):
+        if w.run("return window.__driven;"):
+            break
+        w.page.clock.run_for(50)
+    assert w.run("return window.__driven;")
+
+
 def page_failed(response):
     request = response.request
     return request.url.endswith("/api/reports/failure") and '"page_failed"' in (request.post_data or "")
@@ -161,14 +176,9 @@ def test_leaving_the_preview_step_after_the_layer_preview_drew_sends_its_drawing
     w = open_preview(page, front_server)
     w.until("return wizard.slicing.model().kind === 'done';")
     until_drawn(w)
-    # the layer bar driven down and up, so that frames are drawn while the view moves
-    w.run("window.__driven = false; wizard.previewStep.view().drive('layers', 6).then(() => { window.__driven = true; });")
-    for _ in range(400):
-        if w.run("return window.__driven;"):
-            break
-        w.page.clock.run_for(50)
-    assert w.run("return window.__driven;")
-    w.page.click("#stepbar li[data-step=layout]")
+    drive_layers(w)
+    with w.page.expect_response(drawing_answered):
+        w.page.click("#stepbar li[data-step=layout]")
     w.until("return wizard.store.get().step === 'layout';")
     [(summary, text)] = drawing_reports(front_server)
     assert summary["view"] == "preview"
@@ -176,4 +186,77 @@ def test_leaving_the_preview_step_after_the_layer_preview_drew_sends_its_drawing
     assert summary["sliced_file_bytes"] > 0 and summary["sliced_file_lines"] > 0
     assert summary["instances"] == 2
     assert "Spacer" not in text and "Bracket" not in text
+    assert w.problems == []
+
+
+AWAY_MS = 60_000
+
+
+def test_a_second_use_of_the_layer_preview_is_timed_from_its_own_opening_and_measured_afresh(page, front_server):
+    w = open_preview(page, front_server)
+    w.until("return wizard.slicing.model().kind === 'done';")
+    until_drawn(w)
+    drive_layers(w)
+    with w.page.expect_response(drawing_answered):
+        w.page.click("#stepbar li[data-step=layout]")
+    w.until("return wizard.store.get().step === 'layout';")
+    # a minute away on the Layout step, then the same sliced plate's Preview step again
+    w.page.clock.run_for(AWAY_MS)
+    w.page.click("#stepbar li[data-step=preview]")
+    w.until("return wizard.store.get().step === 'preview';")
+    for _ in range(400):
+        if w.run("return wizard.previewStep.view().summary().first_layer_ms !== null;"):
+            break
+        w.page.clock.run_for(50)
+    # a use is sent only with frames drawn while the view moved
+    drive_layers(w)
+    with w.page.expect_response(drawing_answered):
+        w.page.click("#stepbar li[data-step=layout]")
+    w.until("return wizard.store.get().step === 'layout';")
+    [(first, _), (second, _)] = drawing_reports(front_server)
+    assert first["view"] == second["view"] == "preview"
+    assert 0 <= second["first_layer_ms"] < AWAY_MS, ("timed from the second opening", second["first_layer_ms"])
+    assert w.problems == []
+
+
+PAUSE_FRAMES = 120
+
+
+def drag_across(w, dx, pause=False):
+    """Drags the first instance `dx` millimetres; with `pause`, the mouse held still halfway for
+    PAUSE_FRAMES of the browser's animation frames, so that the drag's longest interval between
+    frames drawn while moving is that pause (an event counted, never a duration waited)."""
+    w.run("wizard.layoutStep.view().topView(); await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));")
+    a = w.run("return wizard.layout.model().instances[0];")
+    start = w.run("return wizard.layoutStep.view().plateAt(arg[0], arg[1]);", [a["x"], a["y"]])
+    end = w.run("return wizard.layoutStep.view().plateAt(arg[0], arg[1]);", [a["x"] + dx, a["y"]])
+    p, steps = w.page, 12
+    p.mouse.move(start["x"], start["y"])
+    p.mouse.down()
+    for k in range(1, steps + 1):
+        p.mouse.move(start["x"] + (end["x"] - start["x"]) * k / steps, start["y"] + (end["y"] - start["y"]) * k / steps)
+        if pause and k == steps // 2:
+            w.run("for (let i = 0; i < arg; i += 1) await new Promise((r) => requestAnimationFrame(r));", PAUSE_FRAMES)
+    p.mouse.up()
+    settle(w)
+
+
+def test_a_second_use_of_the_layout_view_measures_its_figures_afresh(page, front_server):
+    w = open_layout(page, front_server, [spacer(), bracket()])
+    drag_across(w, 30, pause=True)
+    with w.page.expect_response(drawing_answered):
+        w.page.click("#stepbar li[data-step=parts]")
+    w.until("return wizard.store.get().step === 'parts';")
+    # the Layout step shown again, and one drag with no pause
+    w.page.click("#stepbar li[data-step=layout]")
+    w.until("return wizard.store.get().step === 'layout';")
+    settle(w)
+    drag_across(w, -30)
+    with w.page.expect_response(drawing_answered):
+        w.page.click("#stepbar li[data-step=parts]")
+    w.until("return wizard.store.get().step === 'parts';")
+    [(first, _), (second, _)] = drawing_reports(front_server)
+    assert first["view"] == second["view"] == "layout"
+    # a figure carried over from the first use would put the first use's pause in the second's worst
+    assert second["fps_worst"] > first["fps_worst"], (first, second)
     assert w.problems == []

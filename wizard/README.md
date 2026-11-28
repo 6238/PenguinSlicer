@@ -1489,12 +1489,15 @@ page reconnects and is told the latest progress at once. Until it reloads, the o
 page goes on working against the newer front server.
 
 The page never reloads itself when the reload would lose work. A part whose bytes the
-browser refused to store lives only in the page's memory, as its amber line says, and when
-the browser refuses its storage altogether the whole plate lives there. While either is
-so, the page stays on its version, however many moments come. It reloads at the first
-moment after the work is stored again, for example once the unsaved part is removed or a
-new plate is begun. A refresh by the user's own hand still loses that work, as the amber
-line warns.
+browser refused to store lives only in the page's memory, as its amber line says; when
+the browser refuses its storage altogether the whole plate lives there; and when the
+browser refused the last change to the plate, that change lives only there. While any of
+these is so, the page stays on its version, however many moments come. It reloads at the
+first moment after the work is stored again, for example once the unsaved part is removed
+or a new plate is begun. A moment is still a move between steps or 120 seconds after the
+user next interacts with the page, so a page that is left untouched once its work is
+stored again waits for the user's next move before it reloads. A refresh by the user's own
+hand still loses that work, as the amber line warns.
 
 The page says nothing afterwards: no message, and no "Back where you
 were", because the page notes in the tab's own storage that the reload was its own. The

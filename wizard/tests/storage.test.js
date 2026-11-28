@@ -527,6 +527,17 @@ test('the page\'s own reload is refused, and nothing marked, while a reload woul
   assert.equal(await t.storage.markSelfReload(), true);
 });
 
+test('New plate lets the page\'s own reload happen again after a part the browser refused', async () => {
+  const b = browser();
+  const a = await openTab(b, 'A');
+  b.records.refuse('part-bytes/');
+  await a.storage.addPart({ sha256: 'bb', units: 'mm', name: 'Big part' }, bytes(84, 3));
+  assert.equal(a.storage.reloadKeepsWork(), false, 'a part whose bytes were refused');
+  await a.storage.newPlate();
+  assert.equal(a.storage.reloadKeepsWork(), true, 'the new plate holds no unsaved part');
+  assert.equal(await a.storage.markSelfReload(), true);
+});
+
 test('whether a reload keeps the work is read after the writes still being made, not before', async () => {
   const b = browser();
   const a = await openTab(b, 'A');

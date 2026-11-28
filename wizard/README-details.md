@@ -2705,14 +2705,16 @@ as above. The Send step with no slice of the plate as it stands opens the Previe
 own reload included, since the Send step has nothing to send. An answer is a progress report of
 this slice job only when it holds the contract's required `job`, `state`, `elapsed_s` and
 `sequence`, and its `job` is the stored slice's id: a report of another slice job is never shown
-as this plate's.
+as this plate's. A progress report of this slice job whose `state` is none of the contract's five
+is an answer the wizard cannot use: the Preview step with `wizard.bad_answer`.
 
 Tests: `tests/coming-back.test.js`, a first page submitting the plate and a second opening on the
 same stored plate as a refresh does, reaches each row of phase 2: still running and waiting behind
 others, finished (from the Parts and from the Send step), failed, expired from an earlier step (and
 entering the Preview step slicing) and on the Preview and Send steps, unknown at 1 ms under two
 hours and at exactly two hours, asked to stop, replaced, another refusal, an answer that is not a
-progress report, a progress report of another slice job, one without `job` or `elapsed_s`, no slice
+progress report, a progress report of another slice job, one without `job` or `elapsed_s`, one of
+this slice job in a state the contract does not name, no slice
 job on each of the first three steps, a plate changed since its slice, the Send step without a
 slice (also on the page's own reload), the page's own reload on the Layout, Send and Preview steps,
 the asking retried quietly, and an opening that throws leaving no rejected promise of coming back's
@@ -2790,8 +2792,8 @@ Tests: `tests/reloading.test.js` (the moments of the tests above, a request retr
 120 s, a step change answered after the user moves again, a stream's `version` event, the reload made
 once, the order of the writes, and a reload held while it would lose work, made at the next moment
 after), `tests/storage.test.js` (the mark told to that tab's next load alone, once; the mark waiting
-for a write held open; `reloadKeepsWork` with a part refused and removed, the plate's write refused
-and stored again, and the storage refused; no mark while the work would be lost, read after the
+for a write held open; `reloadKeepsWork` with a part refused and removed, a part refused and New plate
+pressed, the plate's write refused and stored again, and the storage refused; no mark while the work would be lost, read after the
 writes), `tests/coming-back.test.js` (the quiet reopening on the stored step, the Send step with no
 slice included), `tests/settings.test.js` (advanced mode reopening on any load of a plate stored on
 the Settings step with it open, the page's own reload included), and `tests_browser/test_coming_back.py` in Chromium: a newer version reloads the page at
@@ -3094,12 +3096,14 @@ the machine's figures), `tests/geometry-client.test.js` (a question asked wrongl
 with the part's hash, the geometry's own error as `layout_failed` with the worker still answering,
 an unreadable part not reported by the client), `tests/drawing-summaries.test.js` (the Layout step
 and the Preview step on a fake document, `tests/fakes/dom.js`, with a fake view: one summary for
-each use, sent on leaving the step, a second use begun afresh, the layer preview's second use timed
-from its own opening, and nothing sent on a move between two other steps), and
-`tests_browser/test_coming_back.py` in Chromium
+each use, sent on leaving the step, the step beginning each use of the view again and passing the
+layer preview the moment the Preview step opened, and nothing sent on a move between two other
+steps), and `tests_browser/test_coming_back.py` in Chromium, on the real views
 (an uncaught error and an unhandled rejection each sent as `page_failed`; leaving the Layout step
 after a drag, and the Preview step after the layer preview drew, each sending one summary with no
-part name).
+part name; the layer preview's second use, a minute after the first on the fake clock, timed from
+its own opening; the Layout view's second use measured afresh, the first use's held pause absent
+from the second's worst frame rate).
 
 ## What the other components must still provide
 
