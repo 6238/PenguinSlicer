@@ -1,0 +1,153 @@
+{
+ "parts": {
+  "elevator-block-top": {
+   "name": "Elevator Block Top",
+   "stl": "elevator-block-top.stl"
+  },
+  "elevator-block-bottom-inner": {
+   "name": "Elevator Block Bottom Inner",
+   "stl": "elevator-block-bottom-inner.stl"
+  },
+  "elevator-block-carriage": {
+   "name": "Elevator Block Carriage",
+   "stl": "elevator-block-carriage.stl"
+  },
+  "pulley-v3": {
+   "name": "Pulley v3",
+   "stl": "pulley-v3.stl"
+  },
+  "elevator-top-inner": {
+   "name": "Elevator Top Inner",
+   "stl": "elevator-top-inner.stl"
+  },
+  "clamp-plate-inner": {
+   "name": "Clamp Plate Inner",
+   "stl": "clamp-plate-inner.stl"
+  },
+  "outer-clamp": {
+   "name": "Outer Clamp",
+   "stl": "outer-clamp.stl"
+  },
+  "inner-spacer": {
+   "name": "Inner Spacer",
+   "stl": "inner-spacer.stl"
+  }
+ },
+ "instances": [
+  {
+   "ref": "elevator-block-top",
+   "orientation": "+y",
+   "angle": 0,
+   "x": 290.0,
+   "y": 47.0
+  },
+  {
+   "ref": "elevator-block-bottom-inner",
+   "orientation": "-z",
+   "angle": 0,
+   "x": 290.0,
+   "y": 134.0
+  },
+  {
+   "ref": "elevator-block-carriage",
+   "orientation": "+y",
+   "angle": 0,
+   "x": 290.0,
+   "y": 208.0
+  },
+  {
+   "ref": "pulley-v3",
+   "orientation": "+x",
+   "angle": 0,
+   "x": 290.0,
+   "y": 275.0
+  },
+  {
+   "ref": "elevator-block-top",
+   "orientation": "+y",
+   "angle": 0,
+   "x": 188.0,
+   "y": 47.0
+  },
+  {
+   "ref": "elevator-block-bottom-inner",
+   "orientation": "-z",
+   "angle": 0,
+   "x": 188.0,
+   "y": 134.0
+  },
+  {
+   "ref": "elevator-block-carriage",
+   "orientation": "+y",
+   "angle": 0,
+   "x": 188.0,
+   "y": 208.0
+  },
+  {
+   "ref": "pulley-v3",
+   "orientation": "+x",
+   "angle": 0,
+   "x": 188.0,
+   "y": 275.0
+  },
+  {
+   "ref": "elevator-top-inner",
+   "orientation": "+y",
+   "angle": 0,
+   "x": 104.0,
+   "y": 34.0
+  },
+  {
+   "ref": "clamp-plate-inner",
+   "orientation": "-x",
+   "angle": 0,
+   "x": 104.0,
+   "y": 101.0
+  },
+  {
+   "ref": "outer-clamp",
+   "orientation": "-x",
+   "angle": 0,
+   "x": 104.0,
+   "y": 165.0
+  },
+  {
+   "ref": "inner-spacer",
+   "orientation": "+x",
+   "angle": 0,
+   "x": 104.0,
+   "y": 229.0
+  },
+  {
+   "ref": "elevator-top-inner",
+   "orientation": "+y",
+   "angle": 0,
+   "x": 40.0,
+   "y": 34.0
+  },
+  {
+   "ref": "clamp-plate-inner",
+   "orientation": "-x",
+   "angle": 0,
+   "x": 40.0,
+   "y": 101.0
+  },
+  {
+   "ref": "outer-clamp",
+   "orientation": "-x",
+   "angle": 0,
+   "x": 40.0,
+   "y": 165.0
+  },
+  {
+   "ref": "inner-spacer",
+   "orientation": "+x",
+   "angle": 0,
+   "x": 40.0,
+   "y": 229.0
+  }
+ ],
+ "overrides": {
+  "supports": "on"
+ }
+}

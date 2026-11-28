@@ -1,0 +1,97 @@
+{
+ "parts": {
+  "elevator-block-bottom-inner": {
+   "name": "Elevator Block Bottom Inner",
+   "stl": "elevator-block-bottom-inner.stl"
+  }
+ },
+ "instances": [
+  {
+   "ref": "elevator-block-bottom-inner",
+   "orientation": "-z",
+   "angle": 0,
+   "x": 68.6,
+   "y": 46.0
+  },
+  {
+   "ref": "elevator-block-bottom-inner",
+   "orientation": "-z",
+   "angle": 0,
+   "x": 170.0,
+   "y": 46.0
+  },
+  {
+   "ref": "elevator-block-bottom-inner",
+   "orientation": "-z",
+   "angle": 0,
+   "x": 271.4,
+   "y": 46.0
+  },
+  {
+   "ref": "elevator-block-bottom-inner",
+   "orientation": "-z",
+   "angle": 0,
+   "x": 68.6,
+   "y": 122.0
+  },
+  {
+   "ref": "elevator-block-bottom-inner",
+   "orientation": "-z",
+   "angle": 0,
+   "x": 170.0,
+   "y": 122.0
+  },
+  {
+   "ref": "elevator-block-bottom-inner",
+   "orientation": "-z",
+   "angle": 0,
+   "x": 271.4,
+   "y": 122.0
+  },
+  {
+   "ref": "elevator-block-bottom-inner",
+   "orientation": "-z",
+   "angle": 0,
+   "x": 68.6,
+   "y": 198.0
+  },
+  {
+   "ref": "elevator-block-bottom-inner",
+   "orientation": "-z",
+   "angle": 0,
+   "x": 170.0,
+   "y": 198.0
+  },
+  {
+   "ref": "elevator-block-bottom-inner",
+   "orientation": "-z",
+   "angle": 0,
+   "x": 271.4,
+   "y": 198.0
+  },
+  {
+   "ref": "elevator-block-bottom-inner",
+   "orientation": "-z",
+   "angle": 0,
+   "x": 68.6,
+   "y": 274.0
+  },
+  {
+   "ref": "elevator-block-bottom-inner",
+   "orientation": "-z",
+   "angle": 0,
+   "x": 170.0,
+   "y": 274.0
+  },
+  {
+   "ref": "elevator-block-bottom-inner",
+   "orientation": "-z",
+   "angle": 0,
+   "x": 271.4,
+   "y": 274.0
+  }
+ ],
+ "overrides": {
+  "supports": "on"
+ }
+}
