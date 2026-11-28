@@ -351,7 +351,7 @@ def test_a_card_and_a_line(wizard):
     w.run("""const s = document.querySelector('section.step[data-step=parts]');
              s.append(wizard.panel.tell.card('A state that lasts.'), wizard.panel.tell.line('A consequence the user cannot see.'));""")
     assert w.page.locator("section.step .card").inner_text() == "A state that lasts."
-    assert w.page.locator("section.step p.hint").last.inner_text() == "A consequence the user cannot see."
+    assert w.page.locator("section.step[data-step=parts] p.hint").last.inner_text() == "A consequence the user cannot see."
 
 
 @pytest.mark.parametrize("answer, expected", [("go", True), ("keep", False), ("escape", False), ("elsewhere", False)])

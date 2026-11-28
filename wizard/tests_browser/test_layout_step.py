@@ -50,11 +50,7 @@ def bracket():
 
 
 PIXELS = """
-    const c = wizard.layoutStep.view().canvas;
-    const gl = c.getContext('webgl2') || c.getContext('webgl');
-    const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
-    const px = new Uint8Array(w * h * 4);
-    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    const { width: w, height: h, pixels: px } = wizard.layoutStep.view().snapshot();
     let background = 0, plate = 0, coloured = 0;
     for (let i = 0; i < px.length; i += 4) {
         const r = px[i], g = px[i + 1], b = px[i + 2];

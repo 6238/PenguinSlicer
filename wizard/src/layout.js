@@ -126,12 +126,21 @@ export function createLayout({ geometry, storage, store, parts, panel }) {
   // Runs `body` after every change asked for before it, so that the worker's answers are taken in
   // the order the changes were made.
   function inTurn(body) {
-    const run = queue.then(body);
+    const run = queue.then(async () => {
+      changed();
+      try { return await body(); } finally { changed(); }
+    });
     queue = run.catch(() => {});
     return track(run);
   }
 
-  function tell() { for (const l of listeners) l(); }
+  // The model is worked out once for each change: every change moves `revision` on (a tell, a
+  // check asked for or answered, a change run in turn), and model() answers from the last one
+  // worked out until it does. During a drag at 150 instances it is asked several times a frame.
+  let revision = 0;
+  let cached = null;
+  const changed = () => { revision += 1; };
+  function tell() { changed(); for (const l of listeners) l(); }
 
   // ---- the plate configuration the worker is asked about
   function plateMessage(list = instances) {
@@ -197,6 +206,7 @@ export function createLayout({ geometry, storage, store, parts, panel }) {
 
   // ---- the placement check, after every change; during a drag, the latest positions only
   function recheck() {
+    changed();
     version += 1;
     if (!checking) checking = track(runCheck().finally(() => { checking = null; }));
     return checking;
@@ -281,6 +291,13 @@ export function createLayout({ geometry, storage, store, parts, panel }) {
 
   // Everything the step draws, from one state.
   function model() {
+    if (cached && cached.revision === revision) return cached.value;
+    const value = workOut();
+    cached = { revision, value };
+    return value;
+  }
+
+  function workOut() {
     const p = printer();
     const problems = problemMessages();
     const beside = besideCount();
@@ -349,6 +366,7 @@ export function createLayout({ geometry, storage, store, parts, panel }) {
   }
 
   function publish() {
+    changed();
     const m = model();
     store.set({ layoutProblem: on() || instances.length ? m.holds : store.get().layoutProblem });
     tell();

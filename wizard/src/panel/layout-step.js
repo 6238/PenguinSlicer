@@ -125,7 +125,12 @@ export function createLayoutStep(section, { layout, parts, geometry, frames, sto
     $('#layout-info').textContent = m.figures;
   }
 
-  layout.subscribe(() => { if (store.get().step === 'layout') draw(); });
+  // drawn at most once a frame: during a drag the layout changes on every pointer move
+  let pending = null;
+  layout.subscribe(() => {
+    if (store.get().step !== 'layout' || pending !== null) return;
+    pending = frames.next(() => { pending = null; if (store.get().step === 'layout') draw(); });
+  });
   store.subscribe((state, before) => {
     if (state.step === 'layout' && before.step !== 'layout') {
       ensureView();

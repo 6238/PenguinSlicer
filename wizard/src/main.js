@@ -6,7 +6,7 @@
 // document as opened, or as failed with a page_failed report when the opening throws (endOpening). The running wizard is this module's export, so the browser tests reach it
 // by importing this module, never through a global.
 import { createApi } from './api.js';
-import { browserEnvironment, randomId } from './environment.js';
+import { browserEnvironment, randomId, softwareDrawing } from './environment.js';
 import { createGeometryClient } from './geometry-client.js';
 import { createHoldMeter } from './hold-meter.js';
 import { createLayout } from './layout.js';
@@ -44,7 +44,8 @@ const parts = createParts({ api, storage, geometry, store, panel, report: (what,
 const partsStep = createPartsStep(document.querySelector('section.step[data-step="parts"]'), { parts, geometry, panel, window });
 const layout = createLayout({ geometry, storage, store, parts, panel });
 const layoutStep = createLayoutStep(document.querySelector('section.step[data-step="layout"]'), {
-  layout, parts, geometry, frames: realFrames, store, createView: createLayoutView,
+  layout, parts, geometry, frames: realFrames, store,
+  createView: (container, options) => createLayoutView(container, { ...options, software: softwareDrawing() }),
 });
 
 // The opening, then the stored plate's parts taken up: their rows, and an upload again for each

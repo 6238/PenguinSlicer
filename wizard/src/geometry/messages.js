@@ -17,10 +17,13 @@
 //                                       fit the plate ({fits, angle}, arrange.js turnToFit)
 //   picture  {key, px, colour}          the part's picture for its row, px by px RGBA pixels
 //                                       (a Uint8ClampedArray, transferred), drawn as modelled
+//   coarse   {key, maxTriangles}        a coarse copy for drawing while the Layout view moves
+//                                       (coarse.js), its corners a transferred Float32Array
 //   forget   {key}
 // `geometry` maps each part key of the plate configuration to the key it was read under;
 // `printer` is the printable area ({min, max, height}) and `supports` whether supports are on.
 import { arrangePlate, settleInstance, turnToFit } from './arrange.js';
+import { coarseCopy } from './coarse.js';
 import { GeometryError, LAYOUT_FAILED, errorReport } from './errors.js';
 import { autoOrient } from './orient.js';
 import { analysePart } from './part.js';
@@ -158,6 +161,14 @@ export function createGeometry() {
       }
       const picture = drawPicture(part.mesh, { px: m.px, colour: m.colour });
       return [picture, [picture.pixels.buffer]];
+    },
+    coarse(m) {
+      const part = partOf(m.key);
+      if (!Number.isInteger(m.maxTriangles) || m.maxTriangles < 1) {
+        throw new PageFault(`maxTriangles must be a whole number of at least 1, not ${JSON.stringify(m.maxTriangles)}`);
+      }
+      const copy = coarseCopy(part.mesh.positions, m.maxTriangles);
+      return [copy, [copy.positions.buffer]];
     },
     forget(m) {
       parts.delete(m.key);

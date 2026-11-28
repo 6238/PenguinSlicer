@@ -27,6 +27,15 @@ const GAP_PX = 28;           // the rotation handle's distance outside the selec
 const HANDLE_PX = 7;         // its radius
 const DRAG_PX = 4;           // a press that moves less than this is a click
 const FLAT_DEG = 1;          // a triangle this near a patch's direction lies on that face
+// While the view moves (a drag, a turn, the camera turning), a plate drawing more triangles than
+// this draws each part's coarse copy (geometry/coarse.js), each instance's share of the figure:
+// without a graphics card Chromium drew about three million triangles a second, and the target
+// is 10 frames a second. At rest every part is drawn whole.
+const MOVING_TRIANGLES = 250000;
+// At rest, a plate of more triangles than this draws coarse copies but for the selected
+// instances, so that no frame holds the main thread past its 250 ms.
+const REST_TRIANGLES = 500000;
+const MIN_COARSE_TRIANGLES = 200;
 
 const quat = ([w, x, y, z]) => new THREE.Quaternion(x, y, z, w);
 const aboutZ = (deg) => new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), (deg * Math.PI) / 180);
@@ -101,13 +110,15 @@ function lights(scene) {
 //   geometry   the worker's client: each part's corners for drawing
 //   frames     the frame seam
 //   colourOf(partKey)  the part's colour, by its place on the plate
-export function createLayoutView(container, { layout, geometry, frames, colourOf }) {
+//   software   whether the browser draws 3D in software: then without antialiasing, which costs
+//              a software renderer several times the work of each frame
+export function createLayoutView(container, { layout, geometry, frames, colourOf, software = false }) {
   const canvas = document.createElement('canvas');
   canvas.className = 'gl-canvas';
   canvas.tabIndex = 0;
   canvas.setAttribute('aria-label', 'The plate');
   container.prepend(canvas);
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: !software });
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(COL.background);
@@ -207,6 +218,58 @@ export function createLayoutView(container, { layout, geometry, frames, colourOf
     return g;
   }
 
+  // ---- the coarse copies drawn while the view moves, and at rest on a plate too heavy to draw
+  // whole within the main thread's 250 ms
+  const coarse = new Map();          // "key|budget" -> BufferGeometry, or null while asked for
+  let moving = false;
+  function budget(total) {
+    const n = Math.max(1, model.instances.length);
+    const share = Math.floor(total / n);
+    // in steps of a power of two, so that a quantity changed by one asks for no new copies
+    return Math.max(MIN_COARSE_TRIANGLES, 2 ** Math.floor(Math.log2(Math.max(1, share))));
+  }
+  function wholeTriangles() {
+    let t = 0;
+    for (const i of model.instances) { const m = geometry.mesh(i.part); if (m) t += m.positions.length / 9; }
+    return t;
+  }
+  function coarseOf(key, total) {
+    const b = budget(total);
+    const id = `${key}|${b}`;
+    if (coarse.has(id)) return coarse.get(id);
+    coarse.set(id, null);
+    geometry.coarse(key, b).then((answer) => {
+      if (!answer.ok) return;
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(answer.result.positions, 3));
+      g.computeVertexNormals();
+      g.computeBoundingSphere();
+      coarse.set(id, g);
+      showMoving(moving);
+    });
+    return null;
+  }
+  // Each mesh's drawing: whole, unless the plate is over the figure for the moment (moving or at
+  // rest), when each instance draws its part's coarse copy; at rest the selected ones stay whole.
+  function showMoving(on) {
+    moving = on;
+    const total = on ? MOVING_TRIANGLES : REST_TRIANGLES;
+    const coarseNeeded = wholeTriangles() > total;
+    for (const mesh of meshes.values()) {
+      const instance = model.instances.find((i) => i.id === mesh.userData.id);
+      if (!instance) continue;
+      const whole = !coarseNeeded || (!on && model.selected.includes(instance.id));
+      const g = whole ? null : coarseOf(instance.part, total);
+      mesh.geometry = g || geometries.get(instance.part) || mesh.geometry;
+      // at rest, an instance whose coarse copy has not arrived yet waits for it, rather than
+      // holding the page with its whole part
+      mesh.visible = whole || Boolean(g) || on;
+    }
+    invalidate();
+  }
+  controls.addEventListener('start', () => showMoving(true));
+  controls.addEventListener('end', () => showMoving(false));
+
   function offsetFor(instance) {
     const key = `${instance.part}|${instance.lay.join(',')}`;
     if (!offsets.has(key)) {
@@ -264,7 +327,10 @@ export function createLayoutView(container, { layout, geometry, frames, colourOf
       meshes.delete(id);
     }
     if (!fitted && model.instances.length && sized) { fitted = true; zoomToInstances(); }
-    invalidate();
+    // the coarse copies asked for ahead of the first drag, where the plate will need them
+    if (wholeTriangles() > MOVING_TRIANGLES) for (const key of new Set(model.instances.map((i) => i.part))) coarseOf(key, MOVING_TRIANGLES);
+    if (!drag) showMoving(moving);
+    else invalidate();
   }
 
   // ---- the camera
@@ -607,6 +673,7 @@ export function createLayoutView(container, { layout, geometry, frames, colourOf
     if (drag && drag.type !== 'empty') {
       if (Math.abs(e.clientX - drag.sx) + Math.abs(e.clientY - drag.sy) > DRAG_PX) drag.moved = true;
       if (!drag.moved) return;
+      if (!moving) showMoving(true);
       if (drag.type === 'move') {
         const p = planePoint(drag.z);
         if (!p || !drag.p0) return;
@@ -671,6 +738,7 @@ export function createLayoutView(container, { layout, geometry, frames, colourOf
     const d = drag;
     drag = null;
     controls.enabled = true;
+    if (moving) showMoving(false);
     if (!d) return;
     const still = !d.moved && Math.abs(e.clientX - d.sx) + Math.abs(e.clientY - d.sy) <= DRAG_PX;
     if (d.type === 'empty') { if (still && !d.mod) layout.clearSelection(); return; }
@@ -731,6 +799,17 @@ export function createLayoutView(container, { layout, geometry, frames, colourOf
     viewPlate,
     topView,
     frames: () => drawn,
+    // The picture drawn now, read back at once (the drawing buffer is not kept between frames):
+    // {width, height, pixels}, RGBA from the bottom row up.
+    snapshot() {
+      placeOverlays();
+      renderer.render(scene, camera);
+      const gl = renderer.getContext();
+      const width = gl.drawingBufferWidth, height = gl.drawingBufferHeight;
+      const pixels = new Uint8Array(width * height * 4);
+      gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+      return { width, height, pixels };
+    },
     // an instance's footprint centre, half way up, on the page
     screenOf(id) {
       const i = model.instances.find((n) => n.id === id);

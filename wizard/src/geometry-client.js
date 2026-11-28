@@ -62,6 +62,7 @@ export function createGeometryClient(port, { report = () => {} } = {}) {
     check: (plate) => ask('check', plate),
     arrange: (plate) => ask('arrange', plate),
     settle: (plate, index) => ask('settle', { ...plate, index }),
+    coarse: (key, maxTriangles) => ask('coarse', { key, maxTriangles }),
     fit: (plate, index) => ask('fit', { ...plate, index }),
     // How many questions are waiting for their reply.
     waiting: () => waiting.size,
