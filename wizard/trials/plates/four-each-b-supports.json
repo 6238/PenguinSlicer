@@ -158,6 +158,7 @@
   }
  ],
  "overrides": {
-  "supports": "on"
+  "enable_support": "1",
+  "support_type": "tree(auto)"
  }
 }

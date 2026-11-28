@@ -1061,6 +1061,6 @@
   }
  ],
  "overrides": {
-  "supports": "off"
+  "enable_support": "0"
  }
 }

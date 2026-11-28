@@ -15,6 +15,9 @@ from trials import make_sliced_files as msf
 
 WIZARD = Path(__file__).resolve().parents[2]
 PLATES = WIZARD / "trials" / "plates"
+# Supports on, under Orca's own names: what the override `supports` "on" stood for
+# (contracts/plate-configuration.md, "Overrides" and "Settings in phase 2").
+SUPPORTS_ON = {"enable_support": "1", "support_type": "tree(auto)"}
 
 # Each footprint, x by y (mm), in the orientation the plates use, as the slice service measured
 # them (slice/tests/frc_parts.py, FOOTPRINT_MM); the spacer is 5/8 inch across.
@@ -51,10 +54,10 @@ def test_four_each_b_is_two_of_each_real_part_mirrored_with_supports_on():
     configuration = msf.plate_configurations()["four-each-b-supports"]
     refs = [i["ref"] for i in configuration["instances"]]
     assert len(refs) == 16 and all(refs.count(ref) == 2 for ref in set(refs)) and len(set(refs)) == 8
-    assert configuration["overrides"] == {"supports": "on"}
     tops = sorted(i["x"] for i in configuration["instances"] if i["ref"] == "elevator-block-top")
     assert tops == [188.0, 290.0]                        # four-each-a's 152 and 50, mirrored about 170
     assert least_gap(configuration)[0] >= 12.0           # the spacing with supports on
+    assert configuration["overrides"] == SUPPORTS_ON
 
 
 def test_blocks_12_is_three_by_four_bottom_inners_12_5_mm_apart_with_supports_on():
@@ -64,7 +67,7 @@ def test_blocks_12_is_three_by_four_bottom_inners_12_5_mm_apart_with_supports_on
     assert len({i["x"] for i in configuration["instances"]}) == 3
     assert len({i["y"] for i in configuration["instances"]}) == 4
     assert least_gap(configuration)[0] == pytest.approx(12.5)
-    assert configuration["overrides"] == {"supports": "on"}
+    assert configuration["overrides"] == SUPPORTS_ON
 
 
 def test_spacers_150_is_13_by_12_less_6_22_mm_apart_with_supports_off():
@@ -74,7 +77,7 @@ def test_spacers_150_is_13_by_12_less_6_22_mm_apart_with_supports_off():
     xs, ys = sorted({i["x"] for i in instances}), sorted({i["y"] for i in instances})
     assert len(xs) == 13 and len(ys) == 12
     assert all(b - a == pytest.approx(22.0) for a, b in zip(xs, xs[1:]))
-    assert configuration["overrides"] == {"supports": "off"}
+    assert configuration["overrides"] == {"enable_support": "0"}
 
 
 @pytest.mark.parametrize("name", ["four-each-b-supports", "blocks-12-supports", "spacers-150"])

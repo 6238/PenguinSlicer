@@ -85,7 +85,10 @@ times slower than the same triangles drawn plainly. That is why the mockup's met
    spacers' orientation, whether "22 mm apart" is pitch or gap, and how supports are asked
    for. Chosen: the spacer flat on its base (`+z`), 22 mm centre to centre (the slice
    service's `spacer_grid`, which the measured 2.72 MB came from), 13 to a row, 150 in all;
-   supports through the built `supports` override (`"on"` or `"off"`); `four-each-b` copied
+   supports under Orca's own names, `enable_support` `"1"` with `support_type` `tree(auto)`, or
+   `enable_support` `"0"`, which is what the earlier override `supports` `"on"` and `"off"`
+   stood for (the sliced files and figures were made with that earlier form, before the slice
+   service came to refuse it on Sat 2026-11-28; the two forms slice the same); `four-each-b` copied
    from `slice/tests/frc_parts.py`, since the wizard reads no other component's folder. The
    reason: the three sliced files then match the details file's sizes (8.83, 14.13 and
    2.73 MB). To overrule: change `plate_configurations()` in `make_sliced_files.py` and write
@@ -368,6 +371,13 @@ The minor findings:
    `PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright` is this container's, not the branch's; the
    target runs Playwright's own installer and the branch does not change it; the reviewer
    found Chromium build 1255 only in `~/.cache/ms-playwright` on this machine.
+
+One more change came from merging `origin/main` after these fixes: the slice service now
+reads a plate configuration's `overrides` only under Orca's own setting names, and refuses
+`supports` ("The setting supports is not a print setting the slicer knows.", checked with its
+own validator). The committed plates were written again with `enable_support` and
+`support_type` (decision 1), test first. The sliced files were not made again: the contract's
+table of the earlier overrides gives the two forms as the same settings.
 
 ## For the owner to look at
 

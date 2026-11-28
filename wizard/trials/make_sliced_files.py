@@ -44,6 +44,11 @@ USER_KEY = "wizard-trials"             # the user key every request of the scrip
 # The plates' ids and committed submission values are fixed, so that the committed plates are
 # what the script writes; each slice sends a new submission value of its own.
 IDS = uuid.UUID("6f1c3a52-0d6e-4b0a-9f7e-2c5d8e4a1b30")
+# Supports on and off under Orca's own names, as the slice service reads overrides in phase 2:
+# what the earlier override `supports` "on" and "off" stood for (contracts/plate-configuration.md,
+# "Overrides" and "Settings in phase 2").
+SUPPORTS_ON = {"enable_support": "1", "support_type": "tree(auto)"}
+SUPPORTS_OFF = {"enable_support": "0"}
 
 # ref -> (file, the part's name, the axis that points up: its largest flat face on the plate)
 PARTS = {
@@ -78,7 +83,7 @@ def configuration(name, instances, supports):
     refs = list(dict.fromkeys(i["ref"] for i in instances))
     return {"plate_id": str(uuid.uuid5(IDS, f"{name}/plate")), "submission_id": str(uuid.uuid5(IDS, f"{name}/submission")),
             "parts": {ref: {"name": PARTS[ref][1], "sha256": sha256_of(ref), "units": "mm"} for ref in refs},
-            "instances": instances, "overrides": {"supports": "on" if supports else "off"}}
+            "instances": instances, "overrides": dict(SUPPORTS_ON if supports else SUPPORTS_OFF)}
 
 
 def grid(ref, columns, rows, pitch_x, pitch_y, count=None):
