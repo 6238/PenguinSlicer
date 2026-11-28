@@ -342,7 +342,7 @@ class TestSubmit:
         install_fake_orca(tmp_path, monkeypatch, "ok")
         client, _pool, _logs = app_with(work)
         first = submit(client, plate_configuration()).get_json()
-        second = submit(client, plate_configuration(submission_id="submission-2")).get_json()
+        second = submit(client, plate_configuration()).get_json()      # a new submission_id of its own
         assert first["progress"]["state"] == second["progress"]["state"] == "done" and first["job"] != second["job"]
 
     def test_a_slice_job_holds_its_parts_so_their_removal_does_not_touch_it(self, tmp_path, monkeypatch, work):
@@ -452,7 +452,7 @@ class TestSubmit:
         assert stream.mimetype == "text/event-stream" and stream.headers["Cache-Control"] == "no-store"
         events = [json.loads(line[6:]) for line in stream.get_data(as_text=True).splitlines()
                   if line.startswith("data: ")]
-        assert [e["state"] for e in events] == ["done"]          # a late subscriber: the latest at once
+        assert [e["state"] for e in events] == ["done"]          # a late follower: the latest at once
 
     def test_the_stream_follows_a_running_job_to_its_end(self, tmp_path, monkeypatch, work):
         install_fake_orca(tmp_path, monkeypatch, "hang")
@@ -466,7 +466,7 @@ class TestSubmit:
             text = chunk.decode() if isinstance(chunk, bytes) else chunk
             report = json.loads(text.split("data: ", 1)[1])
             reports.append(report)
-            if report.get("stage") == "slicing_mesh":
+            if report["state"] == "running" and report.get("stage") == "slicing_mesh":
                 assert client.delete(f"/slices/{job_id}", headers=HEADERS).get_json()["cancel"] == "cancelling"
             if report["state"] in FINAL:
                 break

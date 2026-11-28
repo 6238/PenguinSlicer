@@ -212,7 +212,7 @@ class JobPool:
             self._jobs[job_id]["report"]["ahead"] = ahead
             self._log_transition(job_id, "queued")
         self._after_ending_early(earlier, "replaced")
-        self._executor.submit(self._run, job_id, payload)
+        self._executor.submit(self._run_next)
         return job_id
 
     def remembered(self, user_key, submission_id):
@@ -419,8 +419,11 @@ class JobPool:
         record["result"] = result
         if state == "cancelled":       # always with its reason; a stop the pool never asked counts as requested
             record["cancel_asked"] = record["cancel_asked"] or REQUESTED
-        self._send(record, state=state, stage=None, stage_label=None, fraction=None, error=error, ahead=None,
-                   cancel_reason=record["cancel_asked"] if state == "cancelled" else None)
+        # A cancelled report keeps the stage it was ended at, as the contract's example of a
+        # replaced slice job does; a done or failed one has no stage left.
+        kept = {} if state == "cancelled" else {"stage": None, "stage_label": None}
+        self._send(record, state=state, fraction=None, error=error, ahead=None,
+                   cancel_reason=record["cancel_asked"] if state == "cancelled" else None, **kept)
         self._log_transition(job_id, state, exc=exc, discarded=discarded)
         self._refresh_ahead()
 
@@ -449,16 +452,23 @@ class JobPool:
             entry["cancel_reason"] = reason
         self._log(entry)
 
-    def _run(self, job_id, payload=None):
+    def _run_next(self):
+        """One task of the executor: run the oldest waiting job, if any. Every submit gives
+        the executor one task and every task starts at most one job, so no waiting job is
+        left without a task; a task whose own job was ended while waiting runs the next one,
+        or nothing. Taking the oldest, not the task's own, keeps the order of acceptance
+        even when two submits reach the executor in the other order (it is called outside
+        the lock), and with it every count ahead: starting the oldest changes none."""
         with self._lock:
-            record = self._jobs.get(job_id)
-            if record is None or record["state"] != "queued":      # cancelled while queued
+            job_id = next((j for j, r in self._jobs.items() if r["state"] == "queued"), None)
+            if job_id is None:
                 return
+            record = self._jobs[job_id]
+            payload = record["payload"]
             record["state"] = "running"
             record["started"] = self._clock()
             self._send(record, state="running", stage=None, stage_label=None, ahead=None)
             self._log_transition(job_id, "running")
-            self._refresh_ahead()
             stop = record["stop"]
         context = JobContext(self, job_id, stop)
         result, error, state, exc = None, None, "done", None

@@ -672,7 +672,7 @@ built in phase 2: the three things of the slice service's side listed below.*
 
 Once submitted, a slice job runs to its end whether or not anything is following it:
 through a refresh, a dropped connection or a closed laptop lid. A user who comes back
-finds the slice done, where today they would find it gone and have to slice again.
+finds the slice done.
 
 The cost is accepted: a slice whose user never returns holds the one Orca until it ends.
 The time limit bounds that.

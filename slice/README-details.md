@@ -1744,14 +1744,21 @@ messages then refine it. Checking the parts happens before a slice job exists, w
 plate configuration arrives. Every report carries `elapsed_s` and `expected_s`, the time
 model's estimate from the plate's volume, instances and supports
 (`limits.estimate_seconds`). The final states are `done`, `failed` (with the error report)
-and `cancelled` (ended early, with `cancel_reason`).
+and `cancelled` (ended early, with `cancel_reason`). A `cancelled` report keeps the `stage`
+and `stage_label` it was ended at, as
+[the contract's example](../contracts/examples/progress-report-replaced.json) does; a
+`done` or `failed` one carries no stage.
 
 **How many are ahead.** Every `queued` report carries `ahead`
 ([the contract](../contracts/progress-report.md#fields)): the slice jobs running and those
 waiting before it, over every user key, in the order they were accepted, which is the order
-the pool's executor runs them. A running slice job that is being stopped counts as running,
-since it still holds the one Orca until Orca is gone. Whenever a slice job leaves the queue,
-starts or ends, the pool works out `ahead` again for every waiting one
+they run: each `JobPool.submit` gives the executor one task, `JobPool._run_next`, which
+starts the oldest waiting slice job rather than its own, so two submits that reach the
+executor in the other order (it is called outside the pool's lock) still run in the order
+accepted, and starting a slice job changes no count ahead. A task whose own slice job was
+ended while waiting runs the next one, or nothing. A running slice job that is being
+stopped counts as running, since it still holds the one Orca until Orca is gone. Whenever a
+slice job ends, whether it ran or waited, the pool works out `ahead` again for every waiting one
 (`JobPool._refresh_ahead`) and sends a new report (`sequence` plus one) to each whose count
 changed, and to no other. No report but a `queued` one carries `ahead`. With one running and
 two waiting, the waiting ones report 1 and 2; when the running one ends the first reports

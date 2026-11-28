@@ -7,11 +7,13 @@ timeout that is expected to run out: a worker that must stay running blocks on a
 the test sets, every wait that must return early has no timeout or a fail-safe that is
 reached only when the test is failing.
 """
+import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
+from helpers import CONTRACTS
 from penguin_slice import jobs
 from penguin_slice.errors import error_report
 from penguin_slice.jobs import FINAL, STAGES, JobFailure, JobPool, QueueFull
@@ -209,7 +211,7 @@ class TestFailure:
         pool = JobPool(worker, executor=ImmediateExecutor())
         assert pool.get(pool.submit())["error"]["code"] == "slice.unexpected"
 
-    def test_failure_wakes_a_subscriber(self):
+    def test_failure_wakes_a_follower(self):
         worker = Blocking(cancellable=False)
         original = worker.__call__
 
@@ -345,8 +347,8 @@ class TestCancel:
         assert pool.cancel("nope") == "unknown"
 
 
-class TestSubscribers:
-    def test_late_subscriber_gets_the_latest_report_at_once(self):
+class TestFollowers:
+    def test_late_follower_gets_the_latest_report_at_once(self):
         pool, _ = make_pool()
         job_id = pool.submit()
         assert [r["state"] for r in pool.follow(job_id)] == ["done"]
@@ -372,7 +374,7 @@ class TestSubscribers:
         assert next(stream)["sequence"] == next(stream)["sequence"] == 1
         stream.close()
 
-    def test_many_subscribers_each_see_the_end(self):
+    def test_many_followers_each_see_the_end(self):
         worker = Blocking(cancellable=False)
         pool, _logs, executor = threaded_pool(worker)
         job_id = pool.submit()
@@ -523,6 +525,48 @@ class TestAhead:
         assert pool.get(ids[2])["sequence"] == sequence + 1
         assert "ahead" not in pool.get(ids[0])
 
+    def test_a_job_being_stopped_still_counts_ahead_when_the_counts_are_refreshed(self):
+        # User a's earlier is running; user b's waits; a replaces earlier with later (earlier
+        # is being stopped, its Orca still running); then b replaces its own waiting one.
+        # later's count is refreshed then, and earlier must still count: its Orca has not
+        # returned.
+        gates = Gates(stoppable=False)
+        pool, _logs, executor = threaded_pool(gates)
+        earlier = pool.submit(user_key="a", plate_id="p1", submission_id="s1")
+        assert gates.started[0].wait(FAILSAFE_S)
+        waiting = pool.submit(user_key="b", plate_id="p2", submission_id="s2")
+        later = pool.submit(user_key="a", plate_id="p1", submission_id="s3")
+        assert (pool.get(waiting)["ahead"], pool.get(later)["ahead"]) == (1, 2)
+        before = pool.get(later)
+        newer = pool.submit(user_key="b", plate_id="p2", submission_id="s4")
+        assert pool.get(waiting)["cancel_reason"] == "replaced"
+        assert pool.get(earlier)["state"] == "running"
+        refreshed = pool.get(later)
+        assert (refreshed["ahead"], refreshed["sequence"]) == (1, before["sequence"] + 1)
+        assert pool.get(newer)["ahead"] == 2
+        gates.release(0)
+        for n in (1, 2):
+            assert gates.started[n].wait(FAILSAFE_S)
+            gates.release(n)
+        assert [wait_final(pool, j)["state"] for j in (later, newer)] == ["done", "done"]
+        executor.shutdown(wait=True)
+
+    def test_jobs_run_in_the_order_accepted_whatever_order_the_executor_takes_them(self):
+        # Two submits may reach the executor in the other order than they were accepted
+        # (the executor is called outside the lock): the pool still runs the oldest waiting
+        # job first, so the counts ahead stay true.
+        ran = []
+        pool, _ = make_pool(lambda job_id, payload, context: ran.append(job_id) or {"file": "f"},
+                            executor=HeldExecutor())
+        ids = [pool.submit(user_key="a", plate_id=f"p{n}", submission_id=f"s{n}") for n in range(3)]
+        pool._executor.pending.reverse()
+        pool._executor.run_next()
+        assert ran == ids[:1]
+        assert [pool.get(j)["ahead"] for j in ids[1:]] == [0, 1]
+        pool._executor.run_next()
+        pool._executor.run_next()
+        assert ran == ids
+
     def test_no_new_report_when_the_count_does_not_change(self):
         pool, _ = make_pool(executor=HeldExecutor())
         first = pool.submit(user_key="a", plate_id="p1", submission_id="s1")
@@ -578,6 +622,35 @@ class TestCancelReason:
         pool, _ = make_pool(worker)
         assert pool.get(pool.submit())["cancel_reason"] == "requested"
 
+    def test_a_replaced_report_has_the_fields_of_its_contract_example(self):
+        example = json.loads((CONTRACTS / "examples" / "progress-report-replaced.json").read_text())
+
+        def worker(job_id, payload, context):
+            context.progress("generating_supports", 0.4)
+            assert gate.wait(FAILSAFE_S)
+            raise SliceCancelled("stopped")
+        gate = threading.Event()
+        pool, _logs, executor = threaded_pool(worker)
+        earlier = pool.submit(expected_s=75, user_key="a", plate_id="p1", submission_id="s1")
+        wait_for(pool, earlier, lambda r: r.get("stage") == "generating_supports")
+        pool.submit(expected_s=75, user_key="a", plate_id="p1", submission_id="s2")
+        gate.set()
+        final = wait_final(pool, earlier)
+        executor.shutdown(wait=True)
+        assert set(final) == set(example)
+        assert (final["stage"], final["stage_label"]) == (example["stage"], example["stage_label"])
+        assert final["cancel_reason"] == example["cancel_reason"]
+
+    def test_a_waiting_report_has_the_fields_of_its_contract_example(self):
+        example = json.loads((CONTRACTS / "examples" / "progress-report-waiting.json").read_text())
+        pool, _ = make_pool(executor=HeldExecutor())
+        pool.submit(user_key="a", plate_id="p1", submission_id="s1")
+        pool.submit(user_key="b", plate_id="p1", submission_id="s1")
+        report = pool.get(pool.submit(user_key="c", plate_id="p1", submission_id="s1"))
+        assert set(report) == set(example)
+        assert (report["stage"], report["stage_label"], report["ahead"]) == \
+            (example["stage"], example["stage_label"], example["ahead"])
+
     def test_no_other_report_carries_a_reason(self):
         pool, _ = make_pool()
         failing, _ = make_pool(lambda *a: (_ for _ in ()).throw(ValueError("x")))
@@ -595,8 +668,8 @@ class TestReplacement:
         later = pool.submit("later", user_key="a", plate_id="p1", submission_id="s2")
         assert pool.get(earlier)["state"] == "cancelled" and cleaned == ["earlier"]
         assert pool.get(later)["state"] == "queued" and pool.get(later)["ahead"] == 0
-        pool._executor.run_next()                     # the earlier's turn: it never runs
-        pool._executor.run_next()
+        pool._executor.run_next()                     # the earlier's task: it runs the later one
+        pool._executor.run_next()                     # the later's task: nothing is left to run
         assert pool.get(later)["state"] == "done"
 
     def test_a_running_one_is_reported_replaced_only_once_its_work_has_stopped(self):

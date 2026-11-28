@@ -42,8 +42,8 @@ in the details file, and in the guide's
 3. **A waiting slice job may report `ahead` 0 for a moment.** When the running slice job
    ends, the next one is queued with nobody ahead until the executor starts it, and the
    pool sends that truthful report (`queued`, `ahead` 0) before `running`. The documents are
-   silent on this gap. To overrule: skip the refresh for the job about to start, which needs
-   the pool to know which one the executor takes next.
+   silent on this gap. To overrule: skip the refresh for the oldest waiting job when a
+   running one ends, since that is the one the next task starts (decision 13).
 4. **The repeat is looked for twice: before the checks, and again under the pool's lock.**
    The details file says the repeat is answered "before step 1 of the checks". Two attempts
    of one submission can both pass that first look while the first is being checked, and
@@ -89,6 +89,43 @@ in the details file, and in the guide's
     student", "student-facing") since the file was being rewritten there; the error
     reports' sentences with the old words are left to their own change, as the details
     file says.
+
+Decisions of the fixes made after the review of pull request #32:
+
+13. **The executor's task runs the oldest waiting slice job, not its own.** The details
+    file said the order accepted "is the order the pool's executor runs them", but
+    `JobPool.submit` calls the executor outside the pool's lock, so two submits racing can
+    reach it in the other order, and the later one would run first. Chosen: each submit
+    gives the executor one task, `JobPool._run_next`, which starts the oldest `queued` slice
+    job. Every submit adds one task and one waiting job, every task starts at most one, so
+    no waiting job is left without a task. Starting the oldest changes no other job's count
+    ahead, so the refresh of the counts at the start (whose removal survived the review's
+    mutation) is gone. Calling the executor under the lock was not chosen: the tests'
+    immediate executor runs the job on the calling thread, and the job takes the same lock.
+    Tested with an executor that runs the tasks in the reverse order. To overrule: give
+    each task its own job id again and serialise the submits with a lock of their own.
+14. **A `cancelled` report keeps the stage it was ended at.** The contract makes `stage` and
+    `stage_label` optional, and its example of a replaced slice job keeps them; the code as
+    built dropped them. Chosen: keep them on `cancelled` (so a page can say where the slice
+    stopped), drop them on `done` and `failed` as before. Two tests now compare the
+    replaced and the waiting reports' fields with their contract examples. One web test
+    that cancelled on the first report at `slicing_mesh` now also checks it is `running`,
+    since the final report carries that stage too. To overrule: pass `stage=None,
+    stage_label=None` for every final state in `JobPool._finish` and drop the stage from
+    the contract's example.
+15. **A web test's fixed `submission_id` was made a fresh one.**
+    `TestSubmit::test_slicing_again_uploads_nothing` named its second submission
+    `submission-2`, which the helper's counter also hands out, so in some orders the second
+    was a repeat of the first and the test failed. It now takes a new one from the helper.
+
+Findings of the review declined: none. Every finding was checked against the code and the
+documents and found real: the plate configuration contract's status paragraph, the guide's
+"where today they would find it gone", the mutation of a stopping slice job in the
+refreshed count (a new test,
+`TestAhead::test_a_job_being_stopped_still_counts_ahead_when_the_counts_are_refreshed`,
+fails under it with `ahead` 0 where 1 is right), the race of two submits (decision 13), the
+reports against their examples (decision 14), and the tests named after subscribers, now
+followers.
 
 ## Targets missed
 
