@@ -1,0 +1,1335 @@
+{
+  "instances": 150,
+  "placed": 104,
+  "packer": "shelf",
+  "tried": [
+    {
+      "packer": "shelf",
+      "placed": 104,
+      "area": 102166.48029922367
+    },
+    {
+      "packer": "pile",
+      "placed": 87,
+      "area": 93797.69644425272
+    }
+  ],
+  "arrangeMs": {
+    "median": 38.5,
+    "worst": 55.59999996423721,
+    "runs": 5,
+    "each": [
+      55.6,
+      39.2,
+      38.5,
+      38,
+      37.6
+    ]
+  },
+  "problemsAfter": 0,
+  "plateConfiguration": {
+    "parts": {
+      "clamp-plate-inner": {
+        "name": "Clamp Plate Inner"
+      },
+      "elevator-block-bottom-inner": {
+        "name": "Elevator Block Bottom Inner"
+      },
+      "elevator-block-carriage": {
+        "name": "Elevator Block Carriage"
+      },
+      "elevator-block-top": {
+        "name": "Elevator Block Top"
+      },
+      "elevator-top-inner": {
+        "name": "Elevator Top Inner"
+      },
+      "inner-spacer": {
+        "name": "Inner Spacer"
+      },
+      "outer-clamp": {
+        "name": "Outer Clamp"
+      },
+      "pulley-v3": {
+        "name": "Pulley v3"
+      }
+    },
+    "instances": [
+      {
+        "ref": "clamp-plate-inner",
+        "orientation": "-x",
+        "angle": 0,
+        "x": 310.025,
+        "y": 48.875
+      },
+      {
+        "ref": "clamp-plate-inner",
+        "orientation": "-x",
+        "angle": 0,
+        "x": 196.525,
+        "y": 93.875
+      },
+      {
+        "ref": "elevator-block-bottom-inner",
+        "orientation": "-z",
+        "angle": 0,
+        "x": 143.025,
+        "y": 37.375
+      },
+      {
+        "ref": "elevator-block-carriage",
+        "orientation": "+y",
+        "angle": 0,
+        "x": 237.025,
+        "y": 34.375
+      },
+      {
+        "ref": "elevator-block-top",
+        "orientation": "+y",
+        "angle": 0,
+        "x": 49.025,
+        "y": 46.875
+      },
+      {
+        "ref": "elevator-top-inner",
+        "orientation": "-z",
+        "angle": 0,
+        "x": 162.525,
+        "y": 137.375
+      },
+      {
+        "ref": "inner-spacer",
+        "orientation": "-x",
+        "angle": 0,
+        "x": 252.525,
+        "y": 93.875
+      },
+      {
+        "ref": "inner-spacer",
+        "orientation": "-x",
+        "angle": 0,
+        "x": 108.025,
+        "y": 99.875
+      },
+      {
+        "ref": "outer-clamp",
+        "orientation": "-x",
+        "angle": 0,
+        "x": 308.525,
+        "y": 104.875
+      },
+      {
+        "ref": "outer-clamp",
+        "orientation": "-x",
+        "angle": 0,
+        "x": 30.025,
+        "y": 118.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 148.525,
+        "y": 84.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 70.525,
+        "y": 130.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 203.025,
+        "y": 134.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 228.025,
+        "y": 133.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 253.025,
+        "y": 134.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 93.025,
+        "y": 140.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 118.025,
+        "y": 140.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 276.025,
+        "y": 143.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 301.025,
+        "y": 145.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 63.525,
+        "y": 154.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 324.525,
+        "y": 153.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 14.525,
+        "y": 159.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 39.525,
+        "y": 159.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 199.525,
+        "y": 158.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 224.525,
+        "y": 158.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 249.525,
+        "y": 158.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 86.025,
+        "y": 164.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 111.025,
+        "y": 164.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 136.025,
+        "y": 165.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 161.025,
+        "y": 165.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 272.525,
+        "y": 167.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 297.525,
+        "y": 169.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 54.025,
+        "y": 179.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 182.025,
+        "y": 178.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 321.025,
+        "y": 177.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 14.525,
+        "y": 184.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 209.525,
+        "y": 181.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 234.525,
+        "y": 180.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 77.525,
+        "y": 187.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 102.525,
+        "y": 187.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 127.525,
+        "y": 188.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 152.525,
+        "y": 188.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 258.025,
+        "y": 188.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 283.025,
+        "y": 190.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 34.525,
+        "y": 198.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 306.025,
+        "y": 199.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 58.525,
+        "y": 204.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 173.525,
+        "y": 201.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 198.525,
+        "y": 203.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 223.525,
+        "y": 202.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 89.525,
+        "y": 209.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 114.525,
+        "y": 209.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 139.525,
+        "y": 210.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 14.525,
+        "y": 213.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 246.525,
+        "y": 211.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 271.525,
+        "y": 212.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 319.025,
+        "y": 220.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 37.525,
+        "y": 223.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 159.525,
+        "y": 224.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 184.525,
+        "y": 223.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 209.525,
+        "y": 225.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 293.525,
+        "y": 223.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 64.025,
+        "y": 228.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 88.025,
+        "y": 234.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 113.025,
+        "y": 234.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 233.025,
+        "y": 233.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 258.025,
+        "y": 233.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 14.525,
+        "y": 238.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 137.525,
+        "y": 237.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 304.525,
+        "y": 245.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 37.025,
+        "y": 248.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 159.025,
+        "y": 249.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 184.025,
+        "y": 248.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 209.025,
+        "y": 250.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 279.525,
+        "y": 245.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 61.525,
+        "y": 253.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 244.025,
+        "y": 255.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 85.525,
+        "y": 259.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 110.525,
+        "y": 259.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 324.525,
+        "y": 259.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 14.525,
+        "y": 263.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 134.525,
+        "y": 265.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 264.525,
+        "y": 269.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 289.525,
+        "y": 268.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 37.025,
+        "y": 273.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 157.525,
+        "y": 274.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 182.525,
+        "y": 273.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 207.525,
+        "y": 275.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 64.525,
+        "y": 277.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 232.025,
+        "y": 278.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 88.525,
+        "y": 283.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 113.525,
+        "y": 284.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 309.525,
+        "y": 282.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 14.525,
+        "y": 288.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 137.025,
+        "y": 292.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 253.025,
+        "y": 291.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 278.025,
+        "y": 290.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 37.025,
+        "y": 298.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 163.025,
+        "y": 298.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 188.025,
+        "y": 297.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 213.025,
+        "y": 299.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 61.525,
+        "y": 302.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 298.025,
+        "y": 304.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 324.025,
+        "y": 302.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 9.525
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 33.575
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 57.625
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 81.675
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 105.725
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 129.775
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 153.825
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 177.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 201.925
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 225.975
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 250.025
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 274.075
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 298.125
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 322.175
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 346.225
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 370.275
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 394.325
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 418.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 442.425
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 466.475
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 490.525
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 514.575
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 538.625
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 562.675
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 586.725
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 610.775
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 634.825
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 658.875
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 682.925
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 706.975
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 731.025
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 755.075
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 779.125
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 803.175
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 827.225
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 851.275
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 875.325
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 899.375
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 923.425
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 947.475
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 971.525
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 995.575
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 1019.625
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 1043.675
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 1067.725
+      },
+      {
+        "ref": "pulley-v3",
+        "orientation": "+x",
+        "angle": 0,
+        "x": 369.525,
+        "y": 1091.775
+      }
+    ]
+  },
+  "placedFlags": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false
+  ],
+  "drag": {
+    "instances": 150,
+    "steps": 60,
+    "checkMs": {
+      "median": 1.199999988079071,
+      "worst": 4.400000035762787,
+      "runs": 60,
+      "each": [
+        2.7,
+        1.7,
+        1.5,
+        1.2,
+        1,
+        1.5,
+        3.1,
+        1.3,
+        1.5,
+        2.4,
+        2.1,
+        1.2,
+        1.1,
+        1,
+        1.2,
+        0.9,
+        1.3,
+        1.7,
+        1,
+        0.9,
+        1.4,
+        1.3,
+        1.1,
+        1,
+        1.2,
+        1.2,
+        1.2,
+        1.1,
+        1.1,
+        1.1,
+        1,
+        1,
+        1,
+        1.1,
+        1.2,
+        3.1,
+        4.4,
+        1.2,
+        1.1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1.1,
+        0.9,
+        1,
+        0.8,
+        1.2,
+        1.3,
+        1.1,
+        1.1,
+        1.1,
+        1.1,
+        1.2,
+        1.7,
+        1.2,
+        1.2,
+        1.2,
+        1
+      ]
+    },
+    "firstCheckMs": 2.7,
+    "mostProblems": 51
+  }
+}

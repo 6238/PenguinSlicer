@@ -1,0 +1,250 @@
+{
+  "machine": {
+    "architecture": "aarch64",
+    "system": "Linux",
+    "cgroup_cpu_max": "800000 100000",
+    "cgroup_processors": 8.0,
+    "cgroup_memory_max": "12884901888",
+    "cgroup_memory_gib": 12.0,
+    "processors_the_vm_reports": 8,
+    "chromium": "159.0.8154.6",
+    "browser_hardware_concurrency": 8,
+    "graphics": "none: Chromium headless, the geometry draws nothing"
+  },
+  "times": [
+    {
+      "what": "patches of hub-150k.stl after selecting it",
+      "worst_ms": 4.1,
+      "target_ms": 100,
+      "met": true
+    },
+    {
+      "what": "auto-orient of hub-150k.stl after it arrives",
+      "worst_ms": 272.5,
+      "target_ms": 1000,
+      "met": true
+    },
+    {
+      "what": "Arrange of 150 hex-spacer.stl",
+      "worst_ms": 29.6,
+      "target_ms": 2000,
+      "met": true
+    },
+    {
+      "what": "Arrange of a mix of 150 real parts",
+      "worst_ms": 55.6,
+      "target_ms": 2000,
+      "met": true
+    },
+    {
+      "what": "placement check of a drag at 150 hex-spacer.stl",
+      "worst_ms": 2.2,
+      "target_ms": 100,
+      "met": true
+    },
+    {
+      "what": "placement check of a drag at 150 of the mix",
+      "worst_ms": 4.4,
+      "target_ms": 100,
+      "met": true
+    }
+  ],
+  "flat_faces": {
+    "clamp-plate-inner": {
+      "flat_faces": 6,
+      "without_hull_patch": []
+    },
+    "elevator-block-bottom-inner": {
+      "flat_faces": 3,
+      "without_hull_patch": []
+    },
+    "elevator-block-carriage": {
+      "flat_faces": 3,
+      "without_hull_patch": []
+    },
+    "elevator-block-top": {
+      "flat_faces": 3,
+      "without_hull_patch": []
+    },
+    "elevator-top-inner": {
+      "flat_faces": 6,
+      "without_hull_patch": []
+    },
+    "inner-spacer": {
+      "flat_faces": 6,
+      "without_hull_patch": []
+    },
+    "outer-clamp": {
+      "flat_faces": 6,
+      "without_hull_patch": []
+    },
+    "pulley-v3": {
+      "flat_faces": 2,
+      "without_hull_patch": []
+    }
+  },
+  "patches": {
+    "clamp-plate-inner": {
+      "hull": 6,
+      "box": [],
+      "laid_on": 1,
+      "height_mm": 4.76
+    },
+    "elevator-block-bottom-inner": {
+      "hull": 12,
+      "box": [],
+      "laid_on": 1,
+      "height_mm": 82.55
+    },
+    "elevator-block-carriage": {
+      "hull": 9,
+      "box": [],
+      "laid_on": 3,
+      "height_mm": 31.75
+    },
+    "elevator-block-top": {
+      "hull": 9,
+      "box": [],
+      "laid_on": 1,
+      "height_mm": 31.75
+    },
+    "elevator-top-inner": {
+      "hull": 6,
+      "box": [],
+      "laid_on": 1,
+      "height_mm": 57.15
+    },
+    "inner-spacer": {
+      "hull": 6,
+      "box": [],
+      "laid_on": 0,
+      "height_mm": 1.26
+    },
+    "outer-clamp": {
+      "hull": 6,
+      "box": [],
+      "laid_on": 0,
+      "height_mm": 4.76
+    },
+    "pulley-v3": {
+      "hull": 2,
+      "box": [
+        "+y",
+        "-y",
+        "+z",
+        "-z"
+      ],
+      "laid_on": 0,
+      "height_mm": 17.78
+    },
+    "hub-150k": {
+      "hull": 2,
+      "box": [
+        "+x",
+        "-x",
+        "+y",
+        "-y"
+      ],
+      "laid_on": 1,
+      "height_mm": 20
+    },
+    "hex-spacer": {
+      "hull": 2,
+      "box": [
+        "+x",
+        "-x",
+        "+y",
+        "-y"
+      ],
+      "laid_on": 1,
+      "height_mm": 3.17
+    }
+  },
+  "arrange": {
+    "spacers-150": {
+      "placed": 150,
+      "packer": "shelf"
+    },
+    "mix-150": {
+      "placed": 104,
+      "packer": "shelf"
+    }
+  },
+  "main_thread_held_while_timed": [
+    {
+      "step": "clamp-plate-inner: read, auto-orient, faces",
+      "longTaskMs": 139,
+      "heartbeatGapMs": 11.6
+    },
+    {
+      "step": "elevator-block-bottom-inner: read, auto-orient, faces",
+      "longTaskMs": 337,
+      "heartbeatGapMs": 12.8
+    },
+    {
+      "step": "elevator-block-carriage: read, auto-orient, faces",
+      "longTaskMs": 226,
+      "heartbeatGapMs": 12.4
+    },
+    {
+      "step": "elevator-block-top: read, auto-orient, faces",
+      "longTaskMs": 222,
+      "heartbeatGapMs": 12.5
+    },
+    {
+      "step": "elevator-top-inner: read, auto-orient, faces",
+      "longTaskMs": 0,
+      "heartbeatGapMs": 12.2
+    },
+    {
+      "step": "inner-spacer: read, auto-orient, faces",
+      "longTaskMs": 0,
+      "heartbeatGapMs": 10.5
+    },
+    {
+      "step": "outer-clamp: read, auto-orient, faces",
+      "longTaskMs": 94,
+      "heartbeatGapMs": 10.4
+    },
+    {
+      "step": "pulley-v3: read, auto-orient, faces",
+      "longTaskMs": 54,
+      "heartbeatGapMs": 12
+    },
+    {
+      "step": "hub-150k: read, auto-orient, faces",
+      "longTaskMs": 910,
+      "heartbeatGapMs": 14.8
+    },
+    {
+      "step": "hex-spacer: read, auto-orient, faces",
+      "longTaskMs": 0,
+      "heartbeatGapMs": 10.3
+    },
+    {
+      "step": "Arrange of 150 instances",
+      "longTaskMs": 0,
+      "heartbeatGapMs": 11.8
+    },
+    {
+      "step": "a drag at 150 instances",
+      "longTaskMs": 0,
+      "heartbeatGapMs": 10.3
+    },
+    {
+      "step": "Arrange of 150 instances",
+      "longTaskMs": 0,
+      "heartbeatGapMs": 13.8
+    },
+    {
+      "step": "a drag at 150 instances",
+      "longTaskMs": 0,
+      "heartbeatGapMs": 10.2
+    }
+  ],
+  "main_thread_held_by_the_trial_page_itself_ms": 910,
+  "main_thread_note": "For each timed step: the longest gap between beats of a 10 ms heartbeat on the main thread (how long the page could not answer while the worker worked) and the longest long task the browser reported in the same time. The browser reports long tasks of 0.1 to 0.9 s, on a part that changes from run to run, that no heartbeat gap and no answer's time shows, so the heartbeat is the figure that counts. The second figure includes the trial page's own drawing of its pictures and its untimed counts on the main thread, which the wizard does not do.",
+  "page_errors": [],
+  "round_parts": "The round parts exported from Onshape at its coarse and fine settings can only come from the owner; until they arrive the trial's round parts are pulley-v3.stl and inner-spacer.stl, as wizard/README-details.md says.",
+  "missed": []
+}
