@@ -34,8 +34,13 @@ parts of the Popcorn Penguins' robot, alone and on mixed plates. The other refer
 plates (a plate of several different functional parts, a full plate of small instances,
 one, two and three large organic parts, and those with supports on) were measured with
 `scripts/measure_plate.py` (see [Plate limits](#plate-limits)). Of phase 2, the shared set of
-plates for the two placement checks is built and run by the fast suite against the placement
-check as built (see [Shared plates for the placement checks](#shared-plates-for-the-placement-checks)).
+plates for the two placement checks is built (see
+[Shared plates for the placement checks](#shared-plates-for-the-placement-checks)), and so
+are items 1 to 4: the user key on every request, one part uploaded by itself into the part
+store, its units beside it, and the plate configuration in its phase 2 form, parts named by
+hash and an instance turned by a rotation (see
+[The user key, the part store, units and the plate configuration](#the-user-key-the-part-store-units-and-the-plate-configuration));
+the shared plates now go through `POST /slices` after their parts are uploaded.
 
 **Not built or not known:**
 
@@ -46,8 +51,8 @@ check as built (see [Shared plates for the placement checks](#shared-plates-for-
 - Parts that intersect themselves are not detected before slicing; the expected time is
   only within about a factor of two; the peak in the log can be under Orca's true peak for
   an Orca that fails between two of the watchdog's samples.
-- Not measured: the disk held by finished slice jobs, which keep their uploads and sliced
-  file for an hour; CPU time; how many slices a host can run at once. Every measurement is
+- Not measured: the disk held by the part store and by finished slice jobs, which keep
+  their hold on their parts and their sliced file for an hour; CPU time; how many slices a host can run at once. Every measurement is
   from aarch64 Linux machines: almost all from one with 4 CPUs, and nine plates of the
   memory model's fit from another.
 
@@ -190,180 +195,17 @@ The front server and one slice service process run on the one machine
 The items are in the order to build them; each rests on those before it, except item 17,
 the shared plates, which was written first of all, before item 1, since the wizard's builder
 runs it from the start and it needs only the placement check as built; it is built. Items 1
-to 4 replace the way parts arrive, 5 and 6 the settings, 7 to 13 the life of a slice job, and
-14 to 18 finish the phase.
+to 4, which replace the way parts arrive, are built too; 5 and 6 replace the settings, 7 to
+13 the life of a slice job, and 14 to 18 finish the phase.
 
-**1. The user key on every request** ([Security](README.md#security)). Every request about
-a part or a slice job carries the user key in the header `X-Penguin-User-Key`
-([the contract's rules](../contracts/slice-http-interface.md#rules-for-every-request)). A part is stored, and a slice job held, under the user key that sent it; a
-plate's id and a submission's value are compared only among slice jobs of the same user
-key. A request about a slice job of another user key answers exactly as for an unknown
-slice job (`slice.unknown_job`, HTTP 404, as built), so nobody learns that the slice job
-exists, and is logged as a refusal. Three routes answer for the whole slice service and
-are not scoped to a user key: the table of settings (item 5), the list of slice jobs
-(item 11) and the log (item 16); only the front server calls them. Replaces: nothing; as
-built the slice service knows no user. Error report: a request about a part or a slice
-job without the header, or with an empty one, is refused with `slice.no_user_key`
-(HTTP 400; [the contract's example](../contracts/examples/slice-http/no-user-key.json)), a new code added to `errors.CODES` and to
-[Error codes](#error-codes). Tests: each scoped route refuses a request without the user
-key; every route about a slice job (`GET`, `events`, `DELETE`, `file`, `summary`) answers
-`slice.unknown_job` for another user key's slice job and logs the refusal. [D295]
-
-**2. Upload one part, into the part store**
-([Check a part when it arrives](README.md#check-a-part-when-it-arrives),
-[Keep each part once: the part store](README.md#keep-each-part-once-the-part-store);
-the front server's [upload of one part](../contracts/wizard-front-server.md#parts), which
-passes this route's answer to the page unchanged). A route,
-[`POST /parts?units=mm` or `?units=in`](../contracts/slice-http-interface.md#post-partsunits--upload-one-part),
-takes one part, its binary STL as the body exactly as the browser read it, with
-`Content-Length`. It runs the checks of [Checks on every part](#checks-on-every-part) at
-once, on the part scaled to its units (item 3), so a part that cannot be sliced is refused
-on the wizard's Parts step as a notification and is not added
-([the wizard's guide](../wizard/README.md#a-part-that-cannot-be-used)). The fit test
-(`slice.part_too_large`) runs here against the largest printer of the profile catalog,
-and again against the plate's own printer when a plate configuration names the part
-(item 4). Answers:
-
-| Status | When | Body |
-|---|---|---|
-| 201 | The part passes and is kept in the part store | The part's record, below |
-| 413 | A `Content-Length` over `MAX_PART_BYTES` (7,500,084 bytes), refused before the body is read; or over `MAX_PART_TRIANGLES` (150,000) | `slice.part_too_detailed` |
-| 422 | A check refuses the part | `slice.part_unreadable`, `slice.part_not_binary`, `slice.part_too_small`, `slice.part_no_volume`, `slice.part_too_large` |
-| 400 | No units label, or one that is neither `mm` nor `in` | `slice.bad_units` |
-| 400 | No `Content-Length` | `slice.bad_request` |
-| 500 | The part store cannot be written (a full disk, for one) | `slice.scratch_unwritable` |
-
-The statuses and codes are those the front server answers the page with. The part's
-record is the contract's: `sha256` (64 lowercase hexadecimal characters), `units` (the
-label it was kept under), `measurements` (`triangles`; `size_mm`, the bounding box in
-millimetres after the scale; `volume_mm3`, or `null` for a surface that is not closed) and
-`warnings`, in the shape of the sliced file's `part_warnings` without `where`, since an
-upload carries no part name (`slice.part_not_watertight`, `slice.part_inside_out`,
-`slice.part_maybe_inches`). The same bytes sent again by the same user key under the same
-units answer the same record and count as a use.
-
-The part store's rules:
-
-- A part stays for two hours (7,200 s, `PART_STORE_TTL_S`, *proposed*) after it was last
-  used; its upload is a use, and so is each slice job that names it. The job pool's sweeper
-  (`SWEEP_INTERVAL_S`, 10 s, as built) removes expired parts.
-- No count of parts for one user key. `MAX_PARTS` (25) stays what it is in
-  [the contract](../contracts/plate-configuration.md#limits-in-phase-2): the different
-  parts one plate may use, not a bound on the part store.
-- A limit on the disk the part store may take in all, the setting
-  `PENGUIN_SLICE_PART_STORE_MAX_MB` (*proposed*), refused at start like the other settings
-  (see [Settings](#settings)). Past it, the least recently used parts of any user key are
-  removed, and those users' pages upload them again without their being told. Open: the
-  disk was never measured ([Disk](README.md#unmeasured)); the builder sets a starting
-  figure for the one machine, and the slice container's figure is set from that
-  measurement before phase 3.
-- A part is found only under its user key, its hash and its units together, so two users
-  who upload the same file each have their own entry, and nobody can learn whether someone
-  else uploaded a given file.
-- The part store is emptied when the slice service starts, beside
-  `service.clean_stale_scratch`, which removes only the scratch of processes no longer
-  running.
-- A slice job takes its own hold on each part's file when it is accepted (a hard link
-  into its folder, *proposed*), so removing a part never touches a slice job already
-  accepted.
-
-Open: Railway's limit on the body of a request is not known
-([Railway's limit on the body of a request](README.md#unmeasured), the front server's
-item); build the 7.5 MB limit. Replaces: the parts sent as file fields of `POST /slices`
-and saved into each slice job's own `parts/` folder (`web.UPLOADS`). Tests: a good part
-answers its record with its SHA-256, and the record of
-[examples/parts/bracket.stl](../contracts/examples/parts/bracket.stl) equals
-[the contract's example](../contracts/examples/slice-http/part-record.json); each refusal code
-produced through the route; a `Content-Length` over `MAX_PART_BYTES` refused before the body
-is read, with a report equal to
-[examples/error-report-part-over-size.json](../contracts/examples/error-report-part-over-size.json),
-which the front server's suite asserts too; a part store that
-cannot be written gives `slice.scratch_unwritable`; one user key's thirty parts all kept
-under a generous disk limit; past a small disk limit set by the test, the least recently
-used part of any user key goes; on a fake clock a part unused for 7,200 s is gone and one
-named by a slice job in between is kept; a start empties the part store; a part of user
-key A is missing for user key B; removing a part does not touch a slice job that holds it;
-a repeated upload answers the same record and renews the part's two hours. [D72, D74, D76,
-D77, D80, D81, D82, D83, D291, D294]
-
-**3. Units beside each part** ([Units](README.md#units);
-[A part in phase 2](../contracts/plate-configuration.md#a-part-in-phase-2)). The units
-label travels with the upload (`units`, item 2) and in each part of the plate
-configuration (`units`, `"mm"` or `"in"`). Only the slice service applies the scale: a
-part in inches is multiplied by 25.4 about the STL's own origin, before anything else, in
-the mesh the checks measure and in the model written for Orca; an instance's `x` and `y`
-stay millimetres on the plate whatever the part's units. The checks on arrival run on the
-scaled mesh: `MIN_PART_EXTENT_MM`, the fit on the largest printer, and
-`slice.part_maybe_inches` (`MAYBE_INCHES_MM`, 5 mm), which is not raised for a part
-labelled `in`. The slice service never guesses units: an upload without a label, or with
-another value, is `slice.bad_units` (HTTP 400), a new code added to `errors.CODES` and to
-[Error codes](#error-codes); a part of a plate configuration without `units`, or with
-another value, is `slice.bad_plate_configuration`. Replaces: an STL read as millimetres
-always. Tests: one file uploaded under `mm` and under `in` gives two entries with
-different records; an upload without a label and one with `cm` are each refused with
-`slice.bad_units`; a part in inches is measured and checked 25.4 times larger, and its
-instance's footprint in the plate written for Orca matches; a part in inches small enough
-to warn in millimetres does not warn; a plate configuration naming a hash under units it
-was not uploaded with gets `slice.part_missing`.
-
-**4. The plate configuration in its phase 2 form**
-([Check a plate before it is sliced](README.md#check-a-plate-before-it-is-sliced);
-[Fields in phase 2](../contracts/plate-configuration.md#fields-in-phase-2),
-[Checks in phase 2](../contracts/plate-configuration.md#checks-in-phase-2),
-[Parts missing from the part store](../contracts/plate-configuration.md#parts-missing-from-the-part-store),
-[Limits in phase 2](../contracts/plate-configuration.md#limits-in-phase-2)). `POST /slices`
-takes the plate configuration as a JSON body (`Content-Type: application/json`) with the
-fields `plate_id`, `submission_id`, `parts` (each `name`, `sha256`, `units`), `instances`
-(each with `orientation` or `rotation`), `printer`, `filament`, `process`, `overrides` and
-`local_time`, and no files
-([`POST /slices`](../contracts/slice-http-interface.md#post-slices--submit-a-plate-configuration)).
-Slicing again uploads nothing.
-
-- A body over `MAX_PLATE_CONFIGURATION_BYTES` (1,048,576 bytes; the guide's figure, chosen
-  without a measurement) is refused with `slice.bad_plate_configuration` (HTTP 413) before
-  it is read, with the report of
-  [examples/error-report-plate-configuration-over-size.json](../contracts/examples/error-report-plate-configuration-over-size.json).
-  A multipart body is refused with the same code (HTTP 400).
-- **An instance's rotation**
-  ([An instance in phase 2](../contracts/plate-configuration.md#an-instance-in-phase-2)).
-  An instance carries exactly one of `orientation` and `rotation`, a unit quaternion
-  `[w, x, y, z]` within 1e-6 of length 1, divided by its length before use. Step 1 refuses
-  both, neither, or a bad quaternion with `slice.bad_plate_configuration`. `plate.py` takes
-  the quaternion's matrix in place of `ORIENTATION_MATRICES[orientation]` for the footprint,
-  its centre, the lowest point and the fit; `plate_3mf.py` writes the same transform into the
-  plate it gives Orca; the log line records the rotation beside the orientation.
-- Step 1 also refuses a plate configuration without `plate_id` or `submission_id` (each 1
-  to 64 letters, digits, `-` or `_`), or a part without `sha256` (64 lowercase hexadecimal
-  characters) or `units`.
-- Step 4 finds every part in the part store under the request's user key, its `sha256` and
-  its `units`. When any is missing it answers one report, starting nothing:
-  `slice.part_missing`, HTTP 422, `where` with `stage` `checking` and `missing_parts`, one
-  object (`key`, `sha256`, `units`) for each missing part in the order of `parts`; `action`
-  `refresh_parts`; `retryable` false; `detail` the hashes and units. The page uploads them
-  again and submits again with the same `submission_id`; the user sees nothing. An
-  instance whose `ref` names no key of `parts` keeps `slice.part_missing` with no
-  `missing_parts`. Each found part is then tested against the plate's own printer
-  (`slice.part_too_large`); the other checks on a part are not repeated.
-- The answer is 202, `{job, plate_id, submission_id, progress, part_warnings}`
-  ([the contract's slice job](../contracts/slice-http-interface.md#post-slices--submit-a-plate-configuration),
-  [its example](../contracts/examples/slice-http/slice-accepted.json)); the front server
-  makes its own answer from it ([Submitting a plate configuration](../contracts/wizard-front-server.md#submitting-a-plate-configuration)).
-
-Replaces: the multipart route with `web.FORM_FIELD`, `web.UPLOAD_NAME_RE` and
-`web.MAX_UPLOAD_BYTES`, the part's `stl` field, and the meanings of `slice.part_missing`
-"the part's STL file is missing" and "lies outside the files sent". Tests: the
-contract's [phase 2 example](../contracts/examples/plate-configuration-phase-2.json),
-after its two parts are uploaded, is accepted; a plate configuration naming two missing
-parts gets one report listing both, in order; after both are uploaded the same plate
-configuration with the same `submission_id` is accepted; 1,048,576 bytes accepted and one
-byte more refused before it is read, with a report equal to the contract's example; each
-missing field refused; a multipart body refused; the example's instance with a `rotation`
-accepted, its footprint in the plate written for Orca matching the contract's transform; an
-instance with both `orientation` and `rotation`, with neither, and with a quaternion of
-length 1.001 each refused;
-a part too large for the plate's printer but not for the largest (with a catalog the test
-supplies) refused at submission; [the error report's example](../contracts/examples/error-report-parts-missing.json)
-matches what the code produces. [D78, D292]
+**1 to 4. The user key, the part store, units and the plate configuration.** Built: see
+[The user key, the part store, units and the plate configuration](#the-user-key-the-part-store-units-and-the-plate-configuration).
+What they leave to later items: a plate's id and a submission's value are carried and
+logged, and compared among the slice jobs of one user key only from item 7; the three
+routes that answer for the whole slice service and are not scoped to a user key (the table
+of settings, item 5; the list of slice jobs, item 11; the log, item 16) ignore the header
+when they are built; the `overrides` keep the four as built until item 6; the first
+progress report has no `ahead` until item 8.
 
 **5. The table of settings**
 ([How the list of accepted settings is made](README.md#how-the-list-of-accepted-settings-is-made),
@@ -460,7 +302,7 @@ handled in this order:
    with that slice job, as if just accepted, before step 1 of the checks: it starts
    nothing, replaces nothing and takes no place. A refused submission started no slice
    job, so its value is not remembered.
-2. **The checks**, as in item 4.
+2. **The checks**, as in [The plate configuration in its phase 2 form](#the-plate-configuration-in-its-phase-2-form).
 3. **The replacement.** An earlier slice job of the same user key and `plate_id` that is
    still waiting or running is ended early, its last report `cancelled` with
    `cancel_reason` `replaced`, and gives up its place before the new one is counted, so a
@@ -627,11 +469,10 @@ component, and the user key of the request it concerns; a new process answers a 
 [the contract's example](../contracts/examples/slice-http/log.json).
 
 **17. One shared set of plates for the two placement checks.** Built: see
-[Shared plates for the placement checks](#shared-plates-for-the-placement-checks). What
-remains falls to items 1 to 4: once they exist, `tests/test_placement_plates.py` runs each
-plate through `POST /slices` after uploading its parts, in place of turning it into the form
-as built, and once item 4 exists the plates with a `rotation` go through its own placement of
-a `rotation` rather than through a turned copy of the part.
+[Shared plates for the placement checks](#shared-plates-for-the-placement-checks), each
+plate now through `POST /slices` after its parts are uploaded. What remains falls to item 6:
+once the overrides take Orca's own names, `tests/test_placement_plates.py` sends each
+plate's `enable_support` as it is, in place of the `supports` override as built.
 
 **18. The slice service's half of each row of the restart table**
 ([What a restart does](README.md#what-a-restart-does),
@@ -824,20 +665,30 @@ make -C slice install        # the Python environment, and Orca Slicer into slic
 make -C slice test           # the fast suite
 ```
 
-Start the service, then submit the example plate configuration with `curl`, follow its
-progress reports, and fetch the sliced file and its summary:
+Start the service, then upload the example's two parts and submit a plate configuration
+that names them with `curl`, follow its progress reports, and fetch the sliced file and its
+summary. Every request but the three for the whole slice service carries the user key; any
+string will do by hand:
 
 ```
 uv run --project slice python -m penguin_slice serve --work /var/tmp/penguin-slice --port 8640
 
-curl -s -F 'plate_configuration=<contracts/examples/plate-configuration.json' \
-     -F bracket.stl=@contracts/examples/parts/bracket.stl \
-     -F spacer.stl=@contracts/examples/parts/spacer.stl \
+K='X-Penguin-User-Key: me'
+curl -s -H "$K" --data-binary @contracts/examples/parts/bracket.stl \
+     -H 'Content-Type: application/octet-stream' 'http://127.0.0.1:8640/parts?units=mm'    # 201: the record
+curl -s -H "$K" --data-binary @contracts/examples/parts/spacer.stl \
+     -H 'Content-Type: application/octet-stream' 'http://127.0.0.1:8640/parts?units=mm'
+curl -s -H "$K" -H 'Content-Type: application/json' --data-binary @plate.json \
      http://127.0.0.1:8640/slices                                 # 202: {"job": "j...", "progress": ...}
-curl -sN http://127.0.0.1:8640/slices/<job>/events                 # progress reports until the final one
-curl -s  http://127.0.0.1:8640/slices/<job>/summary                # the sliced file's summary, as JSON
-curl -s -OJ http://127.0.0.1:8640/slices/<job>/file                # the sliced file itself
+curl -sN -H "$K" http://127.0.0.1:8640/slices/<job>/events         # progress reports until the final one
+curl -s  -H "$K" http://127.0.0.1:8640/slices/<job>/summary        # the sliced file's summary, as JSON
+curl -s -OJ -H "$K" http://127.0.0.1:8640/slices/<job>/file        # the sliced file itself
 ```
+
+`plate.json` is [the phase 2 example](../contracts/examples/plate-configuration-phase-2.json)
+with its `overrides` in the four as built (`{"infill": 20, "walls": 3, "supports": "off",
+"brim": "auto"}`) until every setting under Orca's own name is built (item 6 of
+[Phase 2](#phase-2-one-machine)).
 
 `serve` writes one JSON log line per slice job transition on stderr; stopping it with
 Ctrl-C or SIGTERM (what a container host sends) cancels every slice job, sends each
@@ -855,35 +706,235 @@ worker gets `slice.unknown_job`. `serve` runs Flask's own threaded server in one
 
 ## The HTTP interface
 
-`penguin_slice.web.create_app(work_dir)` is a Flask app factory:
+`penguin_slice.web.create_app(work_dir)` is a Flask app factory, built to
+[the contract](../contracts/slice-http-interface.md) for the routes below; the contract's
+other routes (`GET /slices`, `DELETE /slices/<job>/file`, `GET /settings-table`, `GET /log`)
+are still [to be built](#phase-2-one-machine):
 
 | Request | Answer |
 |---|---|
-| `POST /slices` with form field `plate_configuration` (the JSON) and one file field per part, named as the part's `stl` | 202 with `job`, the first progress report and the `part_warnings` |
+| `POST /parts?units=mm` or `?units=in`, one binary STL as the body | 201 with the part's record (see [The part store](#the-part-store)) |
+| `POST /slices`, a phase 2 plate configuration as a JSON body | 202 with `job`, `plate_id`, `submission_id`, the first progress report (`progress`) and the `part_warnings`, each naming its part |
 | `GET /slices/<job>` | The latest progress report |
 | `GET /slices/<job>/events` | The progress reports as `text/event-stream`, the latest first, ending with the final one |
 | `DELETE /slices/<job>` | Cancel: `{"cancel": "cancelled" \| "cancelling" \| "finished"}` |
 | `GET /slices/<job>/file` | The sliced file of a done slice job, and nothing else |
 | `GET /slices/<job>/summary` | The sliced file's summary ([sliced-file.md](../contracts/sliced-file.md), "Summary") as a JSON body |
 
-Every other answer is an error report: 400 for a request that is not a plate configuration,
-404 for an unknown slice job (`slice.unknown_job`) or a path the interface does not offer
-(`slice.bad_request`, also 405 for a method a path does not take), 409 for a sliced file or
-summary that is not there (the slice job's own error report, `slice.cancelled` or
-`slice.not_ready`), 410 for a sliced file gone from the disk (`slice.file_gone`, for the
-summary too), 413 for an upload over `MAX_UPLOAD_BYTES`, 422 for a plate configuration a
-check refused, 500 for the server's own failure (`slice.scratch_unwritable` when the work
-folder cannot be written or an upload cannot be saved in it, a full disk for one,
-`slice.unexpected` for a bug, logged with its traceback), 503 when the queue is full. The
-file and summary routes answer alike for a slice job that is unknown, failed, cancelled or
-not finished. A plate configuration is read and checked when it arrives, before a slice
-job is queued for it, so a refusal comes back at once; its STL paths must name files sent with it.
-Instances of one part share that part's one file. Each slice job's files live in
-`<work>/slice-<pid>-<start>-<random>/`; they are removed when the slice job ends failed or
-cancelled, or when its record expires (`RECORD_TTL_S`, an hour after its final report).
+**The user key.** Every one of these requests carries the user key in the header
+`X-Penguin-User-Key` (`web.USER_KEY_HEADER`). One without it, or with an empty one, is
+refused with `slice.no_user_key` (HTTP 400; [the contract's example](../contracts/examples/slice-http/no-user-key.json)),
+whose detail names the method, the path and whether the header was missing or empty. The
+slice service compares user keys and never interprets them. A part is kept, and a slice job
+held (`JobPool.submit(user_key=...)`, `JobPool.owned_by`), under the user key that sent it.
+A request about another user key's slice job is answered exactly as one about an unknown
+slice job (`slice.unknown_job`, HTTP 404) and logged as a refusal, so nobody learns that the
+slice job exists. A path the interface does not offer, or a method a path does not take,
+answers `slice.bad_request` before the user key is looked at.
 
-`MAX_UPLOAD_BYTES` is `MAX_PARTS x MAX_PART_BYTES` plus a megabyte for the form: one STL
-per part used, whatever the number of instances.
+Every answer carries `Cache-Control: no-store`. Every other answer is an error report: 400
+for a request without the user key, an upload without its units (`slice.bad_units`) or
+without a Content-Length (`slice.bad_request`), or a body that is not a plate configuration;
+404 for an unknown slice job (`slice.unknown_job`) or a path the interface does not offer
+(`slice.bad_request`, also 405 for a method a path does not take); 409 for a sliced file or
+summary that is not there (the slice job's own error report, `slice.cancelled` or
+`slice.not_ready`); 410 for a sliced file gone from the disk (`slice.file_gone`, for the
+summary too); 413 for an upload over `MAX_PART_BYTES` or a plate configuration over
+`MAX_PLATE_CONFIGURATION_BYTES`, each refused from its Content-Length before its body is
+read, and for an upload over `MAX_PART_TRIANGLES`; 422 for a part or plate configuration a
+check refused, and for parts missing from the part store; 500 for the server's own failure
+(`slice.scratch_unwritable` when the work folder or the part store cannot be written, a full
+disk for one, `slice.unexpected` for a bug, logged with its traceback); 503 when the queue is
+full. The file and summary routes answer alike for a slice job that is unknown, failed,
+cancelled or not finished. A part is checked when it is uploaded and a plate configuration
+when it arrives, before a slice job is queued for it, so a refusal comes back at once.
+
+Flask reads no body past `web.MAX_BODY_BYTES` (`MAX_PART_BYTES`): a plate configuration
+sent without a Content-Length is read that far and refused for its size. Each slice job's
+files live in `<work>/slice-<pid>-<start>-<random>/`: its hold on each of its parts
+(`parts/<sha256>-<units>.stl`, a hard link into the part store, or a copy where hard links
+fail), its scratch and its sliced file; they are removed when the slice job ends failed or
+cancelled, or when its record expires (`RECORD_TTL_S`, an hour after its final report).
+Instances of one part share that part's one file. The part store is its own folder,
+`<work>/slice-<pid>-<start>-parts-<random>/`, new in each process, so the scratch of a
+process that is gone and its part store are removed alike at the next start.
+
+### The user key, the part store, units and the plate configuration
+
+Items 1 to 4 of [Phase 2](#phase-2-one-machine), built: what follows is the code. [D72,
+D73, D74, D76, D77, D78, D80, D81, D82, D83, D291, D292, D293, D294, D295]
+
+#### The part store
+
+([Check a part when it arrives](README.md#check-a-part-when-it-arrives),
+[Keep each part once: the part store](README.md#keep-each-part-once-the-part-store);
+the front server's [upload of one part](../contracts/wizard-front-server.md#parts), which
+passes this route's answer to the page unchanged.)
+[`POST /parts?units=mm` or `?units=in`](../contracts/slice-http-interface.md#post-partsunits--upload-one-part)
+takes one part, its binary STL as the body exactly as the browser read it, with
+`Content-Length`. It runs the checks of [Checks on every part](#checks-on-every-part) at
+once, on the part scaled to its units, so a part that cannot be sliced is refused on the
+wizard's Parts step as a notification and is not added
+([the wizard's guide](../wizard/README.md#a-part-that-cannot-be-used)). The fit test
+(`slice.part_too_large`) runs here against the largest printer of the profile catalog
+(`service.largest_plate`: the widest, deepest and tallest of the default printer and every
+printer of the catalog, 340 x 320 x 340 mm today), and again against the plate's own
+printer when a plate configuration names the part. Answers, in the order they are tested:
+
+| Status | When | Body |
+|---|---|---|
+| 400 | No user key | `slice.no_user_key` |
+| 400 | No units label, or one that is neither `mm` nor `in` | `slice.bad_units` |
+| 400 | No `Content-Length` | `slice.bad_request` |
+| 413 | A `Content-Length` over `MAX_PART_BYTES` (7,500,084 bytes), refused before the body is read, exactly [examples/error-report-part-over-size.json](../contracts/examples/error-report-part-over-size.json); or over `MAX_PART_TRIANGLES` (150,000) | `slice.part_too_detailed` |
+| 422 | A check refuses the part | `slice.part_unreadable`, `slice.part_not_binary`, `slice.part_too_small`, `slice.part_no_volume`, `slice.part_too_large` |
+| 500 | The part store cannot be written (a full disk, for one) | `slice.scratch_unwritable` |
+| 201 | The part passes and is kept in the part store | The part's record |
+
+Open: Railway's limit on the body of a request is not known
+([Railway's limit on the body of a request](README.md#unmeasured), the front server's
+item); the 7.5 MB limit is what is built.
+
+An upload carries no part name, so the sentences of its refusals and warnings say "This
+part" (`service.UPLOAD_NAME`, capitalised where it starts a sentence), and a refusal's
+`where` names no part. The part's record is the contract's: `sha256` (64 lowercase
+hexadecimal characters), `units` (the label it was kept under), `measurements`
+(`triangles`; `size_mm`, the bounding box in millimetres after the scale; `volume_mm3`, or
+`null` for a surface that is not closed) and `warnings`, in the shape of the sliced file's
+`part_warnings` without `where` (`slice.part_not_watertight`, `slice.part_inside_out`,
+`slice.part_maybe_inches`). The same bytes sent again by the same user key under the same
+units answer the same record, are not checked again, and count as a use.
+
+The part store's rules (`part_store.PartStore`):
+
+- **Where.** One folder per user key, named `part_store.user_folder(user_key)`: the SHA-256
+  hash of the user key's UTF-8 bytes, 64 lowercase hexadecimal characters. A user key is an
+  arbitrary string from outside, so it never names a path itself: a hash holds no `/` or
+  `..`, is never empty or too long, two different user keys never share a folder (that would
+  take a collision of SHA-256), and the same user key gets the same folder in every process
+  with no table to lose at a restart. Each part is `<sha256>-<units>.stl` in its user key's
+  folder, its bytes exactly as they arrived, written under a temporary name and renamed so a
+  part's file is always whole.
+- **Found only under all three.** A part is found only under its user key, its hash and its
+  units together, so two users who upload the same file each have their own entry, nobody
+  can learn whether someone else uploaded a given file, and one file under `mm` and `in` is
+  two entries with different records.
+- **Two hours.** A part stays 7,200 s (`part_store.PART_STORE_TTL_S`) after it was last
+  used; its upload is a use, and so is each slice job that names it, when it is accepted.
+  The job pool's sweeper (`SWEEP_INTERVAL_S`, 10 s) sweeps the part store too
+  (`JobPool.start_sweeper(also=...)`).
+- **No count of parts for one user key.** `MAX_PARTS` (25) stays what it is in
+  [the contract](../contracts/plate-configuration.md#limits-in-phase-2): the different
+  parts one plate may use, not a bound on the part store.
+- **A limit on disk.** The parts of every user key together take at most the setting
+  `PENGUIN_SLICE_PART_STORE_MAX_MB` (see [Settings](#settings); 1,024 MB by default, the
+  starting figure for one machine). Past it, the least recently used parts of any user key
+  are removed, never the part just added, and those users' pages upload them again without
+  their being told. Open: the disk was never measured ([Disk](README.md#unmeasured)); the
+  slice container's figure is set from that measurement before phase 3.
+- **Empty at start.** The part store's folder is new in each slice service process, and
+  `service.clean_stale_scratch` removes the folder of a process no longer running, so the
+  slice service starts with an empty part store.
+- **A slice job's own hold.** When a slice job is accepted it takes its own hold on each
+  part's file (`PartStore.hold`: a hard link into its folder, a copy where the file system
+  has none), under the part store's lock, so removing a part never touches a slice job
+  already accepted. A part removed between the checks and the hold makes it missing
+  (`slice.part_missing` with `missing_parts`), and nothing is held.
+
+#### Units
+
+([Units](README.md#units); [A part in phase 2](../contracts/plate-configuration.md#a-part-in-phase-2).)
+The units label travels with the upload (`units`) and in each part of the plate
+configuration (`units`, `"mm"` or `"in"`). Only the slice service applies the scale
+(`part_store.UNITS`): a part in inches is multiplied by 25.4 about the STL's own origin,
+before anything else (`mesh.read_binary_stl(scale=...)`), in the mesh the checks measure
+and in the model written for Orca (`plate_3mf.write_plate_3mf`, each part's `scale`); an
+instance's `x` and `y` stay millimetres on the plate whatever the part's units. The checks on
+arrival run on the scaled mesh: `MIN_PART_EXTENT_MM`, the fit on the largest printer, and
+`slice.part_maybe_inches` (`MAYBE_INCHES_MM`, 5 mm), which is not raised for a part labelled
+`in`. The slice service never guesses units: an upload without a label, or with another
+value, is `slice.bad_units` (HTTP 400); a part of a plate configuration without `units`, or
+with another value, is `slice.bad_plate_configuration`. A plate configuration that names a
+hash under units it was not uploaded with gets `slice.part_missing`.
+
+#### The plate configuration in its phase 2 form
+
+([Check a plate before it is sliced](README.md#check-a-plate-before-it-is-sliced);
+[Fields in phase 2](../contracts/plate-configuration.md#fields-in-phase-2),
+[Checks in phase 2](../contracts/plate-configuration.md#checks-in-phase-2),
+[Parts missing from the part store](../contracts/plate-configuration.md#parts-missing-from-the-part-store),
+[Limits in phase 2](../contracts/plate-configuration.md#limits-in-phase-2).)
+[`POST /slices`](../contracts/slice-http-interface.md#post-slices--submit-a-plate-configuration)
+takes the plate configuration as a JSON body with the fields `plate_id`, `submission_id`,
+`parts` (each `name`, `sha256`, `units`), `instances` (each with `orientation` or
+`rotation`), `printer`, `filament`, `process`, `overrides` and `local_time`, and no files
+(`service.PLATE_CONFIGURATION_FIELDS`, `PART_FIELDS`, `INSTANCE_FIELDS`). Slicing again
+uploads nothing.
+
+- A body whose Content-Length is over `MAX_PLATE_CONFIGURATION_BYTES` (1,048,576 bytes; the
+  guide's figure, chosen without a measurement) is refused with
+  `slice.bad_plate_configuration` (HTTP 413) before it is read, with the report of
+  [examples/error-report-plate-configuration-over-size.json](../contracts/examples/error-report-plate-configuration-over-size.json);
+  one sent without a Content-Length is refused the same way once it is read past the
+  limit. A multipart body is refused with the same code (HTTP 400), and so is a body that
+  is not JSON.
+- **An instance's rotation**
+  ([An instance in phase 2](../contracts/plate-configuration.md#an-instance-in-phase-2)).
+  An instance carries exactly one of `orientation` and `rotation`, a unit quaternion
+  `[w, x, y, z]` of 4 finite numbers within 1e-6 (`service.ROTATION_TOLERANCE`) of length 1,
+  divided by its length before use. Step 1 refuses both, neither, or a bad quaternion with
+  `slice.bad_plate_configuration`. `plate.quaternion_matrix` is the contract's matrix;
+  `plate.turn_of(instance)` is an instance's turn (its orientation's name, or its rotation as
+  a tuple), under which its part's footprint is kept (`mesh.turned_footprint` for a
+  rotation, the part's file read once in its units), so the footprint, its centre, the
+  lowest point and the placement check use the rotation's matrix in place of
+  `ORIENTATION_MATRICES[orientation]`; `plate_3mf.py` writes the same transform into the
+  plate it gives Orca; the log line records the rotation beside the orientation.
+- Step 1 also refuses a plate configuration without `plate_id` or `submission_id` (each 1
+  to 64 letters, digits, `-` or `_`), or a part without `sha256` (64 lowercase hexadecimal
+  characters) or `units`.
+- Step 4 finds every part an instance names in the part store under the request's user
+  key, its `sha256` and its `units`. When any is missing it answers one report, starting
+  nothing (`service.parts_missing`): `slice.part_missing`, HTTP 422, `where` with `stage`
+  `checking` and `missing_parts`, one object (`key`, `sha256`, `units`) for each missing
+  part in the order of `parts`; the message "The slicer no longer has 2 of this plate's
+  parts." ("one of this plate's parts" for one); `action` `refresh_parts`; `retryable`
+  false; `detail` the hashes and units
+  ([the contract's example](../contracts/examples/error-report-parts-missing.json)). The
+  page uploads them again and submits again with the same `submission_id`; the user sees
+  nothing. An instance whose `ref` names no key of `parts` keeps `slice.part_missing` with
+  no `missing_parts`, tested first. Each found part is then tested against the plate's own
+  printer (`slice.part_too_large`, naming the part); the other checks on a part are not
+  repeated, since what they found is kept with the part in the part store.
+- The answer is 202, `{job, plate_id, submission_id, progress, part_warnings}`
+  ([the contract's slice job](../contracts/slice-http-interface.md#post-slices--submit-a-plate-configuration),
+  [its example](../contracts/examples/slice-http/slice-accepted.json)), the warnings now
+  naming their part; the front server makes its own answer from it
+  ([Submitting a plate configuration](../contracts/wizard-front-server.md#submitting-a-plate-configuration)).
+  The progress report has no `ahead` until item 8.
+
+The `overrides` keep the four as built (`print_config.OVERRIDE_CHOICES`) until item 6 of
+[Phase 2](#phase-2-one-machine) gives them Orca's own names, so the contract's phase 2
+example is accepted only with its `overrides` written in those four.
+
+**Found with the real Orca.** The contract example's `rotation` lays the bracket on the face
+of its convex hull across the L's open corner, which is no face of the part: the bracket then
+touches the plate along two edges, and the pinned Orca fails the slice (-100, "It seems
+object Bracket #3 has floating regions", with supports off; the general reason alone with
+supports on). The placement check accepts such a plate, since its footprint is sound. The
+upstream check slices a bracket laid by a `rotation` on a face of the part itself
+(`test_a_rotation_and_a_part_in_inches_slice_where_the_checks_place_them`): Orca's first
+layer of it is within 0.6 mm of the slice service's footprint, and that of a 1 x 1 x 0.5 inch
+block within 0.4 mm.
+
+**Tests.** `tests/test_part_store.py` (the user keys' folders, finding, the two hours, the
+limit on disk, the hold, writing), `tests/test_web.py` (`TestUserKey`, `TestUpload`,
+`TestSubmit`, `TestRefusals`: every route, answer and code through the HTTP interface, with
+the contract's examples), `tests/test_service.py` (`TestRead`, `TestCheckPart`: the phase 2
+fields, rotations, missing parts, units), `tests/test_mesh.py`, `tests/test_plate.py` and
+`tests/test_plate_3mf.py` (the scale, the rotation's matrix and its transform in the plate
+written for Orca), `tests/test_errors.py` (`slice.no_user_key` and `slice.bad_units`
+produced on purpose), and in the upstream check the test above.
 
 Underneath, the interface calls `service.slice_plate_configuration`, and that calls
 `slicer.slice_plate`; they are code the HTTP interface and the tests call, not ways in.
@@ -893,6 +944,7 @@ Underneath, the interface calls `service.slice_plate_configuration`, and that ca
 | Setting | Default | Meaning |
 |---|---|---|
 | `PENGUIN_SLICE_MAX_PEAK_MB` | 2000 | The memory ceiling (see "Plate limits"). Unset or empty: the default. Otherwise 1 to 6 plain digits `0` to `9`, not 0; anything else (`²`, `٣`, `1e3`, a space, 30 digits) is refused at start with a message that names the setting. |
+| `PENGUIN_SLICE_PART_STORE_MAX_MB` | 1024 | The limit on the disk the part store may take in all, in MB (see [The part store](#the-part-store)): the starting figure for one machine, since the disk was never measured. Unset or empty: the default. Otherwise 1 to 7 plain digits `0` to `9`, at least 8 (room for the largest part); anything else is refused at start with a message that names the setting. |
 | `PENGUIN_SLICE_ORCA` | `slice/tools/orca/orca-slicer` | The Orca wrapper the service runs. |
 | `PENGUIN_SLICE_ORCA_DEST`, `PENGUIN_SLICE_ORCA_CACHE` | | For `scripts/install-orca.sh` only (see below). |
 
@@ -1115,14 +1167,14 @@ plates and the posts), each plate's `expected` to the contract's table, each fil
 contract's form (the phase 2 fields only, with the types the contract fixes: each part's
 `sha256` naming a file of `contracts/examples/parts/`, a `rotation` of 4 numbers and length 1
 or one of the six orientations, `angle` an integer from 0 to 359, `x` and `y` finite numbers),
-and runs every plate through
-`service.read_plate_configuration`, comparing the error report's `code`, `instance` and
-`other_instance` with `expected`. Until items 1 to 4 of [Phase 2](#phase-2-one-machine)
-exist, it turns each phase 2 plate configuration into the form as built: a part named by
-hash becomes the path of that file, `enable_support` becomes the `supports` override, and an
-instance with a `rotation` becomes an instance standing `+z` of a copy of its part turned by
-the rotation's matrix, which the one transform of the contract places exactly where the
-rotation would. It also measures, from the footprints the code makes, that each plate's
+and runs every plate through the slice service's front door: it uploads every part of
+`contracts/examples/parts/` with `POST /parts` and submits the plate with `POST /slices`,
+comparing the error report's `code`, `instance` and `other_instance` with `expected`; an
+instance with a `rotation` goes through the code's own placement of a rotation, and the
+code's `plate.quaternion_matrix` is held to the test's own copy of the contract's matrix.
+One thing is turned on the way in: until item 6 of [Phase 2](#phase-2-one-machine) gives
+the overrides Orca's own names, `enable_support` becomes the `supports` override. It also
+measures, from the footprints the code makes, that each plate's
 deciding distance is its figure plus or minus 0.01 mm. The footprints keep their points to
 0.001 mm (`mesh._footprint`), so the slice service's own distances are within about
 0.0007 mm of the script's; the 0.01 mm step covers that. It runs the two rotation plates
@@ -1134,11 +1186,14 @@ their test; made -0.02 mm, the six passing ones do.
 
 ## Checks on every part
 
-Every part an instance uses is read and examined when the plate configuration arrives,
-before any slice starts (`mesh.read_binary_stl` and `mesh.analyse`). A finding that makes a
-slice impossible or pointless refuses the plate configuration with an error report naming
-the part; a finding Orca copes with only warns, and the warning travels in the sliced
-file's summary (`part_warnings`) and in the HTTP interface's answer to the submission.
+Every part is read and examined when it is uploaded, by itself, in its units
+(`service.check_part`: `mesh.read_binary_stl` and `mesh.analyse`), and what the checks
+found is kept with it in the part store. A finding that makes a slice impossible or
+pointless refuses the upload with an error report about "this part"; a finding Orca copes
+with only warns, and the warning travels in the part's record, then, naming the part, in the
+HTTP interface's answer to a submission that names it and in the sliced file's summary
+(`part_warnings`). When a plate configuration names the part, only the fit is tested again,
+against the plate's own printer.
 
 | Finding | Refuse or warn | Code |
 |---|---|---|
@@ -1147,7 +1202,7 @@ file's summary (`part_warnings`) and in the HTTP interface's answer to the submi
 | Over `MAX_PART_TRIANGLES` or `MAX_PART_BYTES` | Refuse | `slice.part_too_detailed` |
 | 0.1 mm or less in every direction, or in one (flat) | Refuse | `slice.part_too_small` |
 | Every triangle a line or a point; or no triangle shares an edge with another; or a closed surface in one plane or enclosing no volume (faces laid on top of each other) | Refuse | `slice.part_no_volume` |
-| Fits the printer in no orientation at any angle | Refuse | `slice.part_too_large` |
+| Fits the largest printer of the profile catalog in no orientation at any angle (on arrival), or the plate's own printer (when a plate configuration names it) | Refuse | `slice.part_too_large` |
 | Open edges (holes, slivers, a thin open lattice): "has holes in its surface"; or, with no open edge, edges shared by more than two faces (faces doubled, a part laid over its mirror image): "has faces laid on top of each other" | Warn | `slice.part_not_watertight` |
 | Closed, with its faces wound inwards | Warn | `slice.part_inside_out` |
 | Every side under 5 mm (an inch file read as millimetres?) | Warn | `slice.part_maybe_inches` |
@@ -1628,9 +1683,10 @@ slice job and waits for every worker.
 
 **The log.** One JSON line per slice job transition (`queued`, `running`, `cancelling`,
 `done`, `failed`, `cancelled`, `expired`), `{"event": "slice_job", ...}`, carrying the job
-id, the printer, filament, process, overrides and whether supports are on, the memory and
-time estimates, every part with its triangles, size, volume, watertightness, shells, open
-edges and warnings, every instance with its name, orientation, angle and position, and on
+id, the user key (cut to 200 characters), the `plate_id` and `submission_id`, the printer,
+filament, process, overrides and whether supports are on, the memory and time estimates,
+every part with its hash, units, triangles, size, volume, watertightness, shells, open
+edges and warnings, every instance with its name, orientation or rotation, angle and position, and on
 a final state the error code, the error report's detail, Orca's reason, Orca's peak memory
 (and `memory_note` when a delivered slice's peak passed the ceiling, `stop_note` when a
 stop reached Orca after its sliced file was complete, `cancel_reason`, and
@@ -1640,20 +1696,26 @@ failing sink (a closed or broken stderr under `serve`) is caught: the failure is
 (`JobPool.log_failures()`; the HTTP interface has no health answer to show it in) and
 never changes what a slice job or an answer does. A plate configuration refused before
 any slice job exists for it leaves one line too, with `"state": "refused"`: every answer of `POST /slices` that
-is not 202 (a part a check refused, a plate configuration that is not JSON or has no
-`plate_configuration` field, an upload too large, a full queue, a full disk while an upload
-is saved, a work folder that cannot be written, a bug) carries `http_status`,
-`error_code`, `error_detail`, `parts` (each part's key, name and `stl`, as the plate
-configuration named them, when it could be read) and `uploads` (each uploaded file's field
-name and size in bytes, when the body could be read). No payload, path of the caller or
-environment variable is logged.
+is not 202 (no user key, a check that refused it, parts missing from the part store, a body
+that is not JSON, is multipart or is too large, a full queue, a full disk while its parts
+are held, a work folder that cannot be written, a bug) carries `user_key`, `http_status`,
+`error_code`, `error_detail`, `parts` (each part's key, name, `sha256` and `units`, as the
+plate configuration named them, when it could be read) and `bytes` (its Content-Length).
+Every upload of a part leaves one line, `{"event": "part_upload", ...}`, with `state`
+`stored`, `stored_again` (the same bytes again) or `refused`, the `user_key`, `units`,
+`bytes`, `http_status`, and the `sha256`, triangles, size and warning codes of a part kept
+or the `error_code` and `error_detail` of a refusal. A request without the user key, and a
+request about another user key's slice job, leave a line `{"event": "slice_http_refused",
+...}` with the path, the job, the user key, the status and the code. No payload, path of the
+caller or environment variable is logged.
 
 ## Modules
 
 | Module | What it holds |
 |---|---|
-| `web.py` | The HTTP interface, the one way in |
-| `service.py` | Reading and checking a plate configuration, slicing it, the sliced file, scratch folders |
+| `web.py` | The HTTP interface, the one way in, and the user key on every request |
+| `service.py` | Checking a part on arrival; reading and checking a plate configuration, slicing it, the sliced file, scratch folders |
+| `part_store.py` | The part store: the user keys' folders, the two hours, the limit on disk, a slice job's hold on a part, the units' scales |
 | `errors.py` | The adapter from every exception to an error report, and every code |
 | `plate.py` | Orientations, instance placement and the rules a placement must pass |
 | `mesh.py` | Reading a binary STL, the checks on its surface, the warnings, and a part's footprints |
@@ -1672,25 +1734,27 @@ sentence, remedy, action, retryable flag and evidence its report must carry.
 
 | Code | Stage | When |
 |---|---|---|
-| `slice.bad_plate_configuration` | checking | The plate configuration is not JSON (or nested too deeply to read), has a field that is not listed, or a part or instance lacks a field or has a bad value (an `stl` with a NUL character, over 1,024 characters, or a piece over 255 bytes; a part `name` over 200 characters; a `printer`, `filament` or `process` name over 200 characters); or the upload is over `MAX_UPLOAD_BYTES` (HTTP 413). No sentence, detail or log line grows with what a caller sends: a value it shows is cut to 120 characters, and a bug's own words to 2,000. |
+| `slice.no_user_key` | checking | A request about a part or a slice job without `X-Penguin-User-Key`, or with an empty one (HTTP 400): a fault of the front server's. |
+| `slice.bad_plate_configuration` | checking | The plate configuration is not JSON (or nested too deeply to read), is a multipart body, has a field that is not listed, or a part or instance lacks a field or has a bad value (no `plate_id` or `submission_id` of 1 to 64 letters, digits, `-` or `_`; a part without a `sha256` of 64 lowercase hexadecimal characters or without `units` `"mm"` or `"in"`; an instance with both or neither of `orientation` and `rotation`, or a `rotation` that is not 4 finite numbers of length 1 within 1e-6; a part `name` over 200 characters; a `printer`, `filament` or `process` name over 200 characters) (HTTP 400); or the body is over `MAX_PLATE_CONFIGURATION_BYTES` (HTTP 413, refused before it is read). No sentence, detail or log line grows with what a caller sends: a value it shows is cut to 120 characters, and a bug's own words to 2,000. |
 | `slice.too_many_instances` | checking | More than `MAX_INSTANCES` instances. |
 | `slice.too_many_parts` | checking | The instances use more than `MAX_PARTS` different parts. |
 | `slice.unknown_printer` | checking | The printer is not in the catalog. |
 | `slice.profiles_not_offered` | checking | The filament or process is not in the catalog, does not fit the printer, or is not the default set's. |
 | `slice.bad_overrides` | checking | An override is not one of the four, or its value is not listed. |
 | `slice.profile_unreadable` | checking | A profile file of the server's own (the catalog, a printer or process profile) is missing or not a profile. |
-| `slice.part_missing` | checking | An instance names a part the plate configuration does not list, or the part's STL file is missing (also when it goes away after the checks), or lies outside the files sent with the plate configuration. |
-| `slice.part_unreadable` | checking | A part's file cannot be opened, is empty, is not an STL (an image, a zip or 3MF, a gzip, text such as an HTML or JSON error page), is cut off or padded, has no triangles, or has coordinates that are not finite. |
-| `slice.part_not_binary` | checking | A part's file is an ASCII STL. |
-| `slice.part_too_detailed` | checking | A part's STL is over `MAX_PART_BYTES` or `MAX_PART_TRIANGLES`. |
-| `slice.part_too_small` | checking | A part is 0.1 mm or less in every direction, or flat in one. |
-| `slice.part_no_volume` | checking | A part's triangles have no area, or none shares an edge with another, or its closed surface lies in one plane or encloses no volume (faces laid on top of each other). |
-| `slice.part_too_large` | checking | A part fits the printer in no orientation. |
+| `slice.part_missing` | checking | Parts the plate configuration names are not in the part store under the request's user key, their `sha256` and their `units` (HTTP 422): one report lists every one in `where.missing_parts` (`key`, `sha256`, `units`, in the order of `parts`), with `action` `refresh_parts`, the remedy "Add the parts again and slice again." and the hashes and units in the detail. Also, without `missing_parts`: an instance names a part the plate configuration does not list; or a part's file goes away after the checks, before the plate is written. |
+| `slice.bad_units` | checking | An upload whose `units` is missing or is neither `mm` nor `in` (HTTP 400). |
+| `slice.part_unreadable` | checking | An uploaded part is empty, is not an STL (an image, a zip or 3MF, a gzip, text such as an HTML or JSON error page), is cut off or padded, has no triangles, or has coordinates that are not finite (HTTP 422). |
+| `slice.part_not_binary` | checking | An uploaded part is an ASCII STL. |
+| `slice.part_too_detailed` | checking | An upload whose Content-Length is over `MAX_PART_BYTES`, refused before its body is read, or whose STL is over `MAX_PART_TRIANGLES` (HTTP 413). |
+| `slice.part_too_small` | checking | An uploaded part, in its units, is 0.1 mm or less in every direction, or flat in one. |
+| `slice.part_no_volume` | checking | An uploaded part's triangles have no area, or none shares an edge with another, or its closed surface lies in one plane or encloses no volume (faces laid on top of each other). |
+| `slice.part_too_large` | checking | An uploaded part, in its units, fits the largest printer of the profile catalog in no orientation; or, when a plate configuration names it, it fits that plate's printer in no orientation (`where.part` names it). |
 | `slice.placement_off_plate` | checking | A footprint leaves the printable area less the margin. |
 | `slice.placement_too_tall` | checking | An instance is taller than the printable height. |
 | `slice.placement_too_close` | checking | Two footprints are closer than `SPACING_MM` (5 mm), or `SPACING_SUPPORTS_MM` (12 mm) with supports on (see "Spacing"). The report names both instances (`where`: `instance`, `other_instance`); with supports on the sentence says supports need the room, and the remedy also offers turning supports off. The detail lists at most 20 such problems. |
 | `slice.busy` | queued | The job queue is full. |
-| `slice.scratch_unwritable` | building | The plate 3MF, the process file or Orca's folders cannot be written (a full disk, a folder where an earlier run's sliced file was), or the HTTP interface cannot make a slice job's folder in its work folder (HTTP 500). |
+| `slice.scratch_unwritable` | building | The plate 3MF, the process file or Orca's folders cannot be written (a full disk, a folder where an earlier run's sliced file was), or the HTTP interface cannot make a slice job's folder in its work folder or hold its parts there, or the part store cannot keep an uploaded part (HTTP 500). |
 | `slice.orca_missing` | slicing | No Orca at `PENGUIN_SLICE_ORCA` or `tools/orca`. |
 | `slice.orca_unstartable` | slicing | Orca is there but will not start (not executable, another architecture), or exits 126 or 127 with no `result.json` (the loader could not load a library it needs). |
 | `slice.timeout` | slicing | Orca took longer than `PLATE_SLICE_TIMEOUT_S`; the service stopped it, and the stop is what ended Orca, before its sliced file was complete. On a plate of one instance the remedy is to simplify or split the part, with no action. |
@@ -1711,10 +1775,10 @@ sentence, remedy, action, retryable flag and evidence its report must carry.
 | `slice.no_gcode` | slicing | The sliced file has no `Metadata/plate_1.gcode`. |
 | `slice.left_off_plate` | slicing | Orca left an instance out of the sliced file. |
 | `slice.output_unwritable` | saving | The slice job's folder for its sliced file (`out/` in its folder under the work folder) cannot be made or written, or a folder there already has the sliced file's name. |
-| `slice.unknown_job` | fetching | The HTTP interface does not know the slice job (never, or expired, or accepted by another slice service process). |
+| `slice.unknown_job` | fetching | The HTTP interface does not know the slice job (never, or expired, or accepted by another slice service process), or it is another user key's (answered exactly alike, and logged as a refusal). |
 | `slice.not_ready` | fetching | The sliced file or summary of a slice job that has not finished. |
 | `slice.file_gone` | fetching | The sliced file of a done slice job is no longer on the disk (HTTP 410), for the file and the summary alike. |
-| `slice.bad_request` | fetching | The HTTP interface does not offer that path (404) or that method on it (405). |
+| `slice.bad_request` | fetching | The HTTP interface does not offer that path (404) or that method on it (405), or an upload has no Content-Length (400). |
 | `slice.unexpected` | slicing | Anything else: a bug in the slice service; the detail keeps the traceback. |
 
 For a failure Orca reports, the detail holds Orca's code, the exit status, Orca's own

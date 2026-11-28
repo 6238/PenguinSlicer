@@ -76,9 +76,10 @@ no sign-in secret and no stored file of anyone's.
 Only one thing sends it requests, the **front server**, the component that the browser
 talks to and that signs users in. The **wizard**, the code in the browser, never reaches
 the slice service directly; "the page" in this guide is the wizard, open in one browser
-tab. From phase 2 the front server passes a **user key** with every request: the
-signed-in user's Onshape id, which says whose part or slice job this is. The slice service
-compares user keys and never interprets them. Today no request carries one.
+tab. The front server passes a **user key** with every request about a part or a slice
+job: the signed-in user's Onshape id, which says whose part or slice job this is. The slice
+service compares user keys and never interprets them, and refuses a request that carries
+none.
 
 ```mermaid
 flowchart TB
@@ -112,14 +113,14 @@ fit together is in [the architecture](../docs/architecture.md#the-shape).
 
 ### Check a part when it arrives
 
-*Built today: every check below, run when a plate configuration arrives with its files. To
-be built in phase 2: each part sent once, by itself, and checked at that moment.*
+*Built today, as the first part of phase 2.*
 
-From phase 2 the wizard sends each part by itself at the moment the user adds it, and the
-slice service checks it then. This puts the refusal where the user can act on it: a part
-that cannot be sliced is refused on the wizard's Parts step, as a notification, and is not
-added, before the user has laid anything out. Today the same checks run later, when the
-whole plate arrives with its files.
+The wizard sends each part by itself at the moment the user adds it, and the slice service
+checks it then. This puts the refusal where the user can act on it: a part that cannot be
+sliced is refused on the wizard's Parts step, as a notification, and is not added, before
+the user has laid anything out. The part arrives without a name, so the sentence of a
+refusal or a warning on arrival says "This part"; once a plate names it, its warnings name
+it.
 
 A check either refuses the part or only warns. The rule that divides them: a finding that
 makes a slice impossible or pointless refuses, and a finding that Orca copes with warns. A
@@ -140,13 +141,12 @@ warning travels with the part and into the summary of any sliced file made from 
 The test of whether a part fits the printer is deliberately lenient: it compares the
 part's least width with the plate's short side, its longest extent with the plate's
 diagonal, and its height, so a part it refuses truly fits nowhere. A long part that fits
-only along the diagonal passes, and the placement check decides later. Today the test uses
-the printer the plate names. From phase 2 a part arrives before any plate names a printer,
-so on arrival the test uses the largest printer in the profile catalog (the slice
-service's own list of Orca's profiles, described below), and it runs again against the
-plate's own printer when a plate names the part. A part too large for every printer is
-thus refused on the Parts step, and one too large only for the plate's own printer when
-the plate is submitted.
+only along the diagonal passes, and the placement check decides later. A part arrives
+before any plate names a printer, so on arrival the test uses the largest printer in the
+profile catalog (the slice service's own list of Orca's profiles, described below; 340 by
+320 by 340 mm today), and it runs again against the plate's own printer when a plate names
+the part. A part too large for every printer is thus refused on the Parts step, and one too
+large only for the plate's own printer when the plate is submitted.
 
 Why the last three only warn: the pinned Orca slices an open box, an inside-out box, two
 shells, two boxes that pass through each other and a 2 by 1 by 0.5 mm block, and the
@@ -163,7 +163,7 @@ reason nowhere the slice service can read.
 
 ### Units
 
-*To be built in phase 2. Today every part is taken to be in millimetres.*
+*Built today, as part of phase 2.*
 
 An STL file carries no units: the same numbers can mean inches or millimetres. So the
 units of a part travel beside it as a label, inches or millimetres. For a part uploaded
@@ -176,8 +176,10 @@ browser reads a part to draw it and to lay it out, and never changes its bytes; 
 server passes the part and its label on untouched. The slice service uses the units in
 its checks when the part arrives, so "too small", "too large" and "every side under 5 mm"
 are judged on the part's true size, and it applies the scale when it prepares the plate
-for Orca. The plate configuration's contract gains the units of each part. The slice
-service never guesses units. It refuses a part that arrives without a units label, or
+for Orca: a part in inches is made 25.4 times larger about the file's own origin, before
+anything else is measured, while the positions of its instances on the plate stay in
+millimetres. The plate configuration carries the units of each part. The slice service
+never guesses units. It refuses a part that arrives without a units label, or
 with one that is neither inches nor millimetres, and it refuses a plate configuration
 that names a part without one. Taking a missing label as millimetres would slice a part
 in inches 25.4 times too small without a word.
@@ -200,8 +202,7 @@ inches cannot be that.
 
 ### Keep each part once: the part store
 
-*To be built in phase 2. Today every plate configuration arrives with all its files, and
-slicing the same plate again sends them all again.*
+*Built today, as part of phase 2.*
 
 The **part store** is the slice service's folder of uploaded parts. A part is uploaded
 once, in a request of at most 7.5 MB, and from then on is named by the SHA-256 hash of its
@@ -216,22 +217,35 @@ Everything about the part store follows from that:
 - **A part stays for two hours after it was last used.** Its upload counts as a use, and
   so does each slice that names it.
 - **A limit on the disk the part store may take in all.** Past it, the least recently used
-  parts of any user are removed. The figure is not set, because the disk was never
-  measured (see [Unmeasured](#unmeasured)).
+  parts of any user are removed, never the part that has just arrived. The limit is a
+  setting of the slice service, 1,024 MB unless it is set otherwise: a starting figure for
+  one machine, room for about 140 parts of the largest size and thousands of ordinary
+  ones. The disk was never measured (see [Unmeasured](#unmeasured)), so the slice
+  container's figure is set from that measurement before phase 3.
 - **No count of parts for one user.** A user may have several plates at once, one in each
   browser tab, and a count for each user would make one plate's uploads push the other
   plate's parts out. The limit on disk is what bounds the part store. One user with many
   plates can therefore push other users' parts out of it, and those users' pages upload
   them again without their being told; the front server limits how fast one user may
   upload parts, which bounds how much one user can push out.
-- **It is emptied when the slice service starts.**
+- **It is emptied when the slice service starts.** Each slice service process keeps its
+  parts in a folder of its own, and a starting process removes the folder of one that is no
+  longer running.
 - **A missing part is not an error the user sees.** When a plate configuration names parts
   the part store no longer holds, the slice service answers once, listing every missing
   hash. The page uploads those parts again from the browser's storage and submits again.
 - **A part is found only under its own user key.** Two users who upload the same file each
   have their own entry, so nobody can learn whether someone else uploaded a given file.
+- **A user key never names a place on the disk.** Each user key's parts are kept in a
+  folder named by a fingerprint of the user key (its SHA-256 hash), never by the user key
+  itself, since a user key is a string from outside that could otherwise be made to name a
+  folder elsewhere. Two different user keys never share a folder, and the same user key
+  gets the same folder in every process, so nothing needs to be remembered across a
+  restart.
 - **Removing a part never touches a slice job already accepted.** A slice job takes its
   own hold on each part's file when it is accepted.
+- **The same part sent again is answered as the first time,** without being checked again,
+  and counts as a use.
 
 A part too large to be accepted is refused before its body is read.
 
@@ -245,17 +259,26 @@ in a fixed order and stop at the first failure:
 
 1. **Its form.** Every field is one the contract lists and has a sound value. A field that
    is not listed refuses the plate, so a misspelled setting is never silently ignored.
-2. **Its size.** At most 150 instances, using at most 25 different parts. From phase 2,
-   when a plate configuration carries no files, the description itself is at most 1 MB,
-   which bounds what one submission can make the slice service read, with all of a
-   plate's settings in it.
+2. **Its size.** At most 150 instances, using at most 25 different parts. A plate
+   configuration carries no files, and the description itself is at most 1 MB, which
+   bounds what one submission can make the slice service read, with all of a plate's
+   settings in it; a larger one is refused before it is read.
 3. **Its profiles and settings,** described in the next two sections.
-4. **Its parts.** Each part an instance names must exist and pass the checks on a part.
-   Today that is where the checks on a part run; from phase 2 they have already run when
-   the part arrived, and this step only finds the parts in the part store and tests each
-   against the printer the plate names.
+4. **Its parts.** The checks on a part have already run when the part arrived, so this
+   step only finds the parts in the part store and tests each against the printer the
+   plate names. Parts it does not find are all listed in one answer, as above.
 5. **Its placement.** Every instance must lie inside the plate, stand no taller than the
-   printer can print, and keep its distance from every other instance.
+   printer can print, and keep its distance from every other instance. An instance lies
+   either with one of its part's six axes up or turned by a general rotation the page gives
+   it, so that a part can be laid on any face of its outline; the check, and the plate
+   given to Orca, turn it the same way.
+
+A turn that lays a part on a face of its outline that is not a face of the part itself (the
+face across the open corner of an L-shaped bracket, for one) leaves the part touching the
+plate along two edges. The check accepts such a plate, since its outline is sound, and the
+pinned Orca then fails the slice with its general reason ("floating regions" in its log,
+with supports off). The slice service's own tests slice a part laid by a general rotation on
+a face of the part itself, and Orca prints it within 0.6 mm of where the check put it.
 
 The placement rules, with what each protects:
 
@@ -307,10 +330,11 @@ an independent answer as well as to the wizard's. The slanted-face plates lay th
 turn whose reverse would lay it differently, and turn it about the vertical afterwards, so
 that a check which turns the part the wrong way round, or turns it about the vertical before
 laying it down, gets a different answer on one of them: those are the usual mistakes in such
-geometry, and a plate that cannot tell them apart would let them through. Until the new way of naming parts arrives
-later in phase 2, the slice service's tests put each plate into the form it reads today, and
-an instance laid on a slanted face is tested by turning a copy of its part beforehand; from
-then on each plate goes through the slice service's front door like any other plate.
+geometry, and a plate that cannot tell them apart would let them through. Each plate goes
+through the slice service's front door like any other plate: its parts are uploaded, the
+plate is submitted, and the answer is compared with the one the plate expects. One thing is
+still turned on the way in: until the settings take Orca's own names later in phase 2, the
+plate's setting for supports is given in the form the slice service reads today.
 
 The slice service keeps the points of a footprint to a thousandth of a millimetre, so its
 distances can differ from the exact ones by under a thousandth; the hundredth between each
@@ -649,7 +673,7 @@ The slice service's side of that bargain is three small things:
 *Built today.*
 
 For each slice job the slice service makes a scratch folder inside the slice job's own
-folder (which also holds the plate file and, today, the uploaded parts), writes the whole plate into
+folder (which also holds the plate file and the slice job's own hold on its parts), writes the whole plate into
 one file for Orca (every part's surface once, and every instance with its exact position
 and turn), writes the process profile with the user's settings folded in, and starts Orca
 on them. Orca is told not to arrange and not to orient: every instance stays exactly where
@@ -906,7 +930,7 @@ to read all eight real parts and up to 5.8 seconds to accept the largest plate.
 | The text of one text setting | The length of the longest text value in the profile catalog, from phase 2 | What one setting can add to the profile written for Orca and to a line of the log. The figure is read from the catalog when the check is built | Tests at the limit and one over |
 | A sliced file | 50 MB, from phase 2 | What each preview, download and print moves, and each fetch against the 100 MB Cloudflare allows one request. The largest measured is 14.1 MB | A test with a stand-in Orca that writes a larger file |
 | Margin, spacing, least size | 3 mm; 5 mm and 12 mm; 0.1 mm | See [Check a plate before it is sliced](#check-a-plate-before-it-is-sliced). The spacings are measured, with room to spare | The upstream check slices the tightest pairs exactly the spacing apart |
-| A part in the part store | Two hours after last use; no count for one user | Disk, and how long a stranger's model rests on the server. The part store's overall limit on disk is what bounds the number of parts, and its figure is not set ([Unmeasured](#unmeasured)) | Tests that move a clock |
+| A part in the part store | Two hours after last use; no count for one user | Disk, and how long a stranger's model rests on the server. The part store's overall limit on disk is what bounds the number of parts: 1,024 MB on one machine, a starting figure chosen without a measurement; the slice container's is not set ([Unmeasured](#unmeasured)) | Tests that move a clock; tests that fill a small limit and see the least recently used part go |
 | A slice job remembered | Two hours after it ends, from phase 2 (one hour today) | Memory of the slice service process | Tests that move a clock |
 | A quiet progress stream | Something sent at least every 15 seconds | Railway's 5 minutes and Cloudflare's 125 seconds without data, both theirs | A test |
 | Grace when stopping Orca | 5 seconds, then killed | How long a stop can take to be reported | Tests with a stand-in Orca that ignores the request |
@@ -939,12 +963,16 @@ comes from the front server: the private network, or the loopback address, is th
 guard. The slice service does not sign anyone
 in and cannot tell a true user key from a false one: it trusts the front server to set the
 user key from the user's sign-in, where the browser cannot name one. Its own part is to
-keep user keys apart. From phase 2 every request must carry a user key; a part or a slice
-job is found only under the user key that sent it; and a request about another user's
-slice job is answered exactly as if the slice job did not exist, so nobody learns that it
-does, and the refusal is logged. The id of a plate and the value of a submission, both
-made by the page, are compared only among slice jobs of the same user key, so no page
-can end or be handed another user's slice job by naming its id or value.
+keep user keys apart. Every request about a part or a slice job must carry a user key,
+and one without it is refused; a part or a slice job is found only under the user key that
+sent it; and a request about another user's slice job is answered exactly as if the slice
+job did not exist, so nobody learns that it does, and the refusal is logged. A user key
+never names a folder itself (see [the part store](#keep-each-part-once-the-part-store)), so
+no user key, however it is written, reaches a file outside its own folder. The id of a
+plate and the value of a submission, both made by the page, are compared only among slice
+jobs of the same user key, so no page can end or be handed another user's slice job by
+naming its id or value; that comparison arrives with a plate's later slice replacing its
+earlier one, later in phase 2.
 
 **What it holds.** No credentials: no sign-in secret, no key to the state bucket or the log bucket, no
 token of Onshape's or of a printer's. That is why the front server fetches each sliced
@@ -1026,7 +1054,8 @@ one exception described under
 
 | What happened | What the user is told | What they can do |
 |---|---|---|
-| A part cannot be used | Which part, and what is wrong with it: not an STL, a text STL, too detailed, too small, flat, nothing to print, larger than the printer | Export the part again, or simplify it. From phase 2 this arrives on the Parts step and the part is not added |
+| A part cannot be used | What is wrong with "this part" (it arrives without a name): not an STL, a text STL, too detailed, too small, flat, nothing to print, larger than any printer; or, when a plate names it, which part is larger than the plate's printer | Export the part again, or simplify it. This arrives on the Parts step and the part is not added |
+| A part arrives without its units, or the request without its user key | That the slicer was not told the units, or whose request it is: faults of the page or of the front server, never of the user | Choose the units and add the part again; or try again |
 | The plate is not acceptable | Which instance is off the plate or too tall, or which two instances are closer than the spacing | Move them, press Arrange, turn supports off, or use a new plate |
 | A profile or setting is not accepted | To choose from the lists. From phase 2 a refused setting is named | Choose again |
 | The slicer is busy: all three places are taken | "The slicer is busy, try again in a minute." | Slice again; the same plate may succeed unchanged. The page does not try again by itself |
@@ -1295,7 +1324,16 @@ hostile inputs are tried.
 
 **Built and tested today, for one slice service process on one machine:**
 
-- the HTTP interface, taking a plate configuration with all its files in one request;
+- the HTTP interface, with the user key on every request about a part or a slice job, and
+  each user's parts and slice jobs kept apart;
+- the part store, with each part uploaded once, checked on arrival in its units, kept for
+  two hours after its last use and bounded by a limit on disk of 1,024 MB on one machine
+  and by no count for one user;
+- the units of each part, applied only here, and the refusal of a part without a units
+  label;
+- plate configurations that name parts by hash and carry no files, of at most 1 MB, each
+  instance turned by one of the six axes or by a general rotation, with every part the part
+  store lacks listed in one answer;
 - the checks on every part and on every plate;
 - the profile catalog and the default set, for Orca 2.4.2;
 - four settings with listed values;
@@ -1309,25 +1347,18 @@ hostile inputs are tried.
 - one log line for every change of a slice job's state;
 - the upgrade command and the upstream check;
 - the shared set of plates for the two placement checks, the first piece of phase 2, run
-  against the checks as they are today.
+  through the slice service's own interface.
 
-**Built today and replaced in phase 2:** the request that carries a whole plate's files;
-the ending early of a slice job nobody has followed for 120 seconds; the keeping of a
-finished slice job, with its uploads and its sliced file, for one hour; the stop that
+**Built today and replaced in phase 2:** the four settings with listed values; the ending early of a slice job nobody has followed for 120 seconds; the keeping of a
+finished slice job, with its hold on its parts and its sliced file, for one hour; the stop that
 ends every slice job early; "a second plate" in the sentences whose remedy is another
 plate.
 
 **Built today and left as it is, unused:** the request that cancels a slice job. The
 front server never sends it.
 
-**Phase 2, on one machine, adds:**
+**Phase 2, on one machine, adds besides:**
 
-- the user key on every request, and each user's parts and slice jobs kept apart;
-- the part store, with each part uploaded once and checked on arrival, bounded by its
-  overall limit on disk and by no count for one user;
-- the units of each part, applied only here, and the refusal of a part without a units
-  label;
-- plate configurations that name parts by hash and carry no files, of at most 1 MB;
 - "a new plate" in every sentence whose remedy is another plate;
 - every setting that is a parameter with a value, for the process profile only, each
   value checked before Orca runs;
@@ -1348,10 +1379,6 @@ front server never sends it.
   with an answer of its own;
 - the log lines collected by the front server, each carrying the component's name, the
   time and the user key;
-- an instance that lies on any face of its part's convex hull, not only on a side of its
-  bounding box, by a general turn in the plate configuration;
-- the shared set of plates run through the slice service's own interface, once parts are
-  named by their hash;
 - a test for each row of the architecture's table of what a restart of the slice container
   does.
 
@@ -1409,8 +1436,9 @@ what finished slice jobs hold. The known figures are 187.5 MB of parts for one f
 plate, and 269 to 448 MB for one slice job's folder on the largest plate. *Why it
 matters:* a full disk fails every slice, and the overall limit is the only bound on the
 number of parts the part store holds. *What depends on it:* the part store's overall
-limit. On one machine in phase 2 its builder sets a starting figure; the figure for the
-slice container is set from this measurement before phase 3.
+limit. On one machine in phase 2 the starting figure is 1,024 MB, about five full plates
+of the largest parts; the figure for the slice container is set from this measurement
+before phase 3.
 
 **How long Railway allows a stopping container, and whether it starts the new one
 first.** *To be learned:* both. *Why it matters:* finishing the running slice at a deploy

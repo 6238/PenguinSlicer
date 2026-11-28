@@ -5,6 +5,7 @@ after it fails. `make test-upstream` (also `make test-orca`), one Orca at a time
 """
 import filecmp
 import json
+import math
 import os
 import re
 import subprocess
@@ -82,7 +83,8 @@ def phase_2_example():
 
 
 def through_the_http_interface(work, configuration, parts):
-    """Upload each part of `parts` (bytes) and submit the phase 2 plate configuration through
+    """Upload each part of `parts` (bytes, in millimetres, or a tuple of bytes and units) and
+    submit the phase 2 plate configuration through
     the HTTP interface (a test client of the real app, the real Orca), follow the event stream
     to the final report, fetch the sliced file and its summary: (stages, final report, file
     bytes, summary). Nothing of the slice job is left after."""
@@ -91,8 +93,9 @@ def through_the_http_interface(work, configuration, parts):
     app = create_app(work, start_sweeper=False)
     client = app.test_client()
     headers = {"X-Penguin-User-Key": USER_KEY}
-    for data in parts:
-        assert upload(client, data).status_code == 201
+    for part in parts:
+        data, units = part if isinstance(part, tuple) else (part, "mm")       # (bytes, units) for a part in inches
+        assert upload(client, data, units=units).status_code == 201
     answer = submit(client, configuration)
     assert answer.status_code == 202, answer.get_json()
     job_id = answer.get_json()["job"]
@@ -142,25 +145,31 @@ def test_the_http_interface_slices_the_contract_example(example_slice):
 
 def test_a_rotation_and_a_part_in_inches_slice_where_the_checks_place_them(tmp_path):
     """Protects: the phase 2 plate configuration's two new ways to place a part reach Orca as
-    the placement check sees them. The contract's phase 2 example (its fourth bracket laid on
-    its hull face by a `rotation`) with a fifth instance, a 1 x 1 x 0.5 inch block: every
-    instance is sliced, and the first layer Orca prints for the laid bracket and for the block
-    is where the slice service's own footprint puts them (within the real parts' 1 mm)."""
+    the placement check sees them. The contract's phase 2 example with its fourth bracket laid
+    by a `rotation` that is no one of the six orientations (its -x face down, then turned 30
+    degrees about the vertical, at `angle` 15) and a fifth instance, a 1 x 1 x 0.5 inch block:
+    every instance is sliced, and the first layer Orca prints for the laid bracket and for the
+    block is where the slice service's own footprint puts them (within the real parts' 1 mm).
+
+    The example's own rotation lays the bracket on the face of its convex hull across the L's
+    open corner, which is no face of the part: the bracket then touches the plate along two
+    edges only, and the pinned Orca fails the slice (-100, "floating regions"), with supports
+    off and on, so this test uses a face of the part itself."""
     from test_frc_parts import PLACEMENT_TOLERANCE_MM, first_layer_box, first_layer_extrusions
     from penguin_slice.mesh import turned_footprint, orientation_footprints
     from penguin_slice.plate import quaternion_matrix
     example = json.loads((CONTRACTS / "examples" / "plate-configuration-phase-2.json").read_text())
     example["overrides"] = {"infill": 20, "walls": 3, "supports": "off", "brim": "auto"}    # until item 6
+    half, c15, s15 = 0.5 ** 0.5, math.cos(math.radians(15)), math.sin(math.radians(15))
+    # qz(30 degrees) times the quaternion of '+x' (half, 0, -half, 0): the '+x' turn, then 30 degrees about z.
+    example["instances"][3]["rotation"] = [c15 * half, s15 * half, -c15 * half, s15 * half]
+    example["instances"][3]["angle"] = 15
     block = box_stl(1, 1, 0.5)
     example["parts"]["block"] = {"name": "Block", "sha256": sha256(block), "units": "in"}
     example["instances"].append({"ref": "block", "orientation": "+z", "angle": 0, "x": 80.0, "y": 240.0})
     parts = [(EXAMPLE_PARTS / name).read_bytes() for name in ("bracket.stl", "spacer.stl")]
-    from penguin_slice.web import create_app
-    client = create_app(tmp_path / "work", start_sweeper=False).test_client()
-    assert upload(client, block, units="in").get_json()["measurements"]["size_mm"] == [25.4, 25.4, 12.7]
-    client.application.extensions["penguin_slice_pool"].shutdown()
-    _stages, report, data, summary = through_the_http_interface(tmp_path / "work2", example, parts + [block])
-    assert report["state"] == "done", report
+    _stages, report, data, summary = through_the_http_interface(tmp_path / "work", example, parts + [(block, "in")])
+    assert report["state"] == "done", report.get("error")
     sliced = tmp_path / summary["file"]
     sliced.write_bytes(data)
     assert sorted(plate_object_names(sliced)) == ["Block #1", "Bracket #1", "Bracket #2", "Bracket #3", "Spacer #1"]
