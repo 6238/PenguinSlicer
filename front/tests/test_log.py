@@ -111,6 +111,39 @@ def test_a_value_whose_text_cannot_be_made_is_written_as_a_note(log, stdout):
     assert line["kept"] == "yes"
 
 
+def test_a_container_that_cannot_be_read_is_written_as_a_note(log, stdout):
+    class BrokenList(list):
+        def __iter__(self):
+            raise RuntimeError("no items")
+
+    class BrokenDict(dict):
+        def items(self):
+            raise RuntimeError("no items")
+
+    class BrokenTuple(tuple):
+        def __iter__(self):
+            raise RuntimeError("no items")
+
+    line = log.write("e", items=BrokenList([1]), table=BrokenDict(a=1),
+                     pair=BrokenTuple((1, 2)), inside=[BrokenList()], kept="yes")
+    assert json.loads(stdout.getvalue()) == line
+    assert line["items"] == "<BrokenList that cannot be read>"
+    assert line["table"] == "<BrokenDict that cannot be read>"
+    assert line["pair"] == "<BrokenTuple that cannot be read>"
+    assert line["inside"] == ["<BrokenList that cannot be read>"]
+    assert line["kept"] == "yes"
+
+
+def test_gathered_lines_that_cannot_be_read_are_kept_as_notes(log, bucket):
+    class BrokenDict(dict):
+        def items(self):
+            raise RuntimeError("no items")
+
+    log.gather([{"component": "slice", "event": "e", "x": BrokenDict(a=1)}])
+    [kept] = lines_of(bucket, log.flush())
+    assert kept["x"] == "<BrokenDict that cannot be read>"
+
+
 def test_keys_that_are_not_text_are_written_as_text(log):
     line = log.write("e", counts={1: "one", (2, 3): "pair", None: "none"})
     assert line["counts"] == {"1": "one", "(2, 3)": "pair", "None": "none"}
@@ -253,6 +286,27 @@ def test_lines_kept_past_their_bound_are_dropped_oldest_first_and_counted(tmp_pa
     written = lines_of(FolderBucket(blocker, clock), name)
     assert [line.get("n") for line in written] == [None, 2, 3, 4]
     assert written[0]["event"] == "log_lines_dropped" and written[0]["dropped"] == 2
+
+
+def test_the_lines_kept_after_a_failed_file_are_counted_without_the_note_of_drops(
+        tmp_path, clock, stdout):
+    blocker = tmp_path / "log"
+    blocker.write_bytes(b"")
+    writer = Log(clock, stdout, FolderBucket(blocker, clock), max_pending=3)
+    for n in range(5):
+        writer.write("line", n=n)
+    writer.flush()
+    failures = [json.loads(text) for text in stdout.getvalue().splitlines()
+                if json.loads(text)["event"] == "log_bucket_unwritable"]
+    assert [failure["lines_kept"] for failure in failures] == [3]
+
+
+def test_a_count_of_dropped_lines_alone_is_still_written(tmp_path, clock, stdout):
+    bucket = FolderBucket(tmp_path / "log", clock)
+    writer = Log(clock, stdout, bucket, max_pending=0)
+    writer.write("dropped at once")
+    [note] = lines_of(bucket, writer.flush())
+    assert (note["event"], note["dropped"]) == ("log_lines_dropped", 1)
 
 
 def test_lines_written_while_a_file_fails_are_kept_after_the_lines_it_held(tmp_path, clock,

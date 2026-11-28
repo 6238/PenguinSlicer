@@ -192,8 +192,9 @@ below: [The cookie](#the-cookie), [Groups and the current group](#groups-and-the
   `front.unexpected`.
 - **Not offered** includes an `OPTIONS` request to any path, a request target whose path
   does not start with a slash (`GET x`, or `GET http://host` with no path at all), a path
-  with a doubled slash anywhere in it, its start included, written as `//` or as `%2F`, and
-  a path that differs from an offered one only by a trailing slash, all `404`
+  with a doubled slash anywhere in it, its start included, a path holding an encoded slash
+  `%2F` (in either case) anywhere, which the server would decode into a slash and serve
+  `/t%2Fx` as `/t/x`, and a path that differs from an offered one only by a trailing slash, all `404`
   `front.no_such_request`, never a redirect, with no `Allow` header. The check reads the
   path of the request's target as sent (`REQUEST_URI`, without its query and, in the
   absolute form `http://host/path`, without its scheme and host), since waitress drops a
@@ -1290,9 +1291,10 @@ settings `PENGUIN_STATE_DIR` and `PENGUIN_LOG_DIR`; the R2 form's under
 A file not there is `NotFound`; a conditional write whose condition does not hold is
 `ConditionFailed` and writes nothing; a store that cannot be read or written is
 `BucketUnavailable`, which a request answers `front.state_bucket_unreachable`; a name no file
-may have is `BadName`, a fault of the code. A name is 1 to 1,024 bytes of parts separated by
-`/`, none empty, `.` or `..`, none starting with `.`, with no `\` and no NUL, so no name
-leaves its bucket and both forms take the same names. A name that is a folder of other
+may have is `BadName`, a fault of the code. A name is 1 to 1,024 bytes (`MAX_NAME_BYTES`) of
+parts separated by `/`, each at most 255 bytes (`MAX_PART_BYTES`, a file system's limit on
+one file's name), none empty, `.` or `..`, none starting with `.`, with no `\` and no NUL,
+so no name leaves its bucket and both forms take the same names. A name that is a folder of other
 files' names in the folder form is not found and its delete is harmless, and a listing under
 a file is empty, as R2 answers. One difference remains and the layout never meets it: R2
 can hold a file `a` beside a file `a/b`, the folder form cannot, and a write that would make
@@ -1410,8 +1412,11 @@ A line's `time` is UTC, RFC 3339, to the millisecond, as the slice service's are
 `component` and `event` come first and no field can replace them; a value JSON cannot hold
 (an object, `NaN`, an infinity) is written as its text, a key that is not text as its text,
 and as a short note a value or key with no text (an integer past Python's limit of 4,300
-digits, an object whose text fails), a value met again inside itself and anything nested
-past `MAX_DEPTH` (64) levels (`line_text`), so no field can make writing a line fail. `start()` runs the minute's loop on the front server's clock;
+digits, an object whose text fails), a list, tuple or mapping whose items cannot be read
+(`<Type that cannot be read>`), a value met again inside itself and anything nested past
+`MAX_DEPTH` (64) levels (`line_text`), so no field can make writing a line fail. When a
+file fails, `log_bucket_unwritable` gives in `lines_kept` the lines kept for the next
+minute, not counting the `log_lines_dropped` line, which is made again for the next file. `start()` runs the minute's loop on the front server's clock;
 `stop()` ends it and writes what is gathered. The running front server writes `start`
 (with `version`, `host`, `port`, `threads`, `dev_identity`) and, when stopped, `stop`.
 

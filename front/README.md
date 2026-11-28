@@ -1360,7 +1360,9 @@ The phases are the plan's.
   front server does not offer or cannot read refused with its own report, an unexpected
   failure answered so that the page tries again while the full account of it goes to the
   log, every answer marked as not to be kept except the page files, and the version on
-  every answer;
+  every answer, except the few the web server gives itself to a request so malformed it
+  never reaches the front server's code, which the page already treats as an answer to
+  retry quietly;
 - the log's writer: every line the front server writes, its own and those it writes for the
   page, at once on standard output (the lines it gathers from the slice service are already
   in the slice service's own output and are not printed twice) and, about once a minute,

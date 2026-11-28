@@ -254,10 +254,22 @@ def test_a_stream_that_fails_halfway_leaves_nothing_written(bucket):
 
 
 @pytest.mark.parametrize("name", ["", "/abs", "a//b", "a/../b", "..", "a/./b", ".hidden",
-                                  "a/.tmp-x", "a\\b", "a\0b", "a/", "x" * 1025])
+                                  "a/.tmp-x", "a\\b", "a\0b", "a/", "x" * 1025, "x" * 256,
+                                  "a/" + "y" * 256, "é" * 128 + "/b"])
 def test_a_name_of_the_wrong_form_is_refused_before_any_file_is_touched(bucket, name):
     with pytest.raises(BadName):
         bucket.put(name, b"x")
+    with pytest.raises(BadName):
+        bucket.get(name)
+
+
+def test_a_name_of_parts_of_255_bytes_and_1024_bytes_in_all_is_written_and_read(bucket):
+    longest_part = "x" * 255
+    longest = "/".join(["a" * 255, "b" * 255, "c" * 255, "d" * 254, "e"])
+    assert len(longest.encode()) == 1024
+    for name in (longest_part, "a/" + "é" * 127, longest):
+        bucket.put(name, b"kept")
+        assert bucket.get(name)[0] == b"kept"
 
 
 def test_a_bucket_that_cannot_be_written_is_unavailable(tmp_path, clock):

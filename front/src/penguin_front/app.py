@@ -46,10 +46,12 @@ def create_app(settings, *, clock, log, version=None):
         # the request's target as sent: waitress drops a path's leading slashes before the
         # application sees it (so `//x` would be served as `/x`), a target without a leading
         # slash would be served as if it had one, and the web framework answers a doubled
-        # slash elsewhere with a redirect. The decoded path is checked too, for `%2F`.
+        # slash elsewhere with a redirect. An encoded slash (`%2F`) is refused anywhere: the
+        # server decodes it into a slash, so `/t%2Fx` would be served as `/t/x`, and no path
+        # of the contract's table holds one.
         sent = _path()
         if request.method == "OPTIONS" or not sent.startswith("/") or "//" in sent \
-                or "//" in request.environ.get("PATH_INFO", ""):
+                or "%2f" in sent.lower() or "//" in request.environ.get("PATH_INFO", ""):
             raise FrontError("front.no_such_request",
                              f"{request.method} {_path()} is not offered")
 

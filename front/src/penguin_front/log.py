@@ -43,8 +43,8 @@ def line_text(line):
     """A line as one JSON object, whatever its fields hold: a value JSON cannot hold (an
     object, `NaN` or an infinity) is written as its text, a key that is not text as its
     text, and as a note a value or key with no text (an integer too long for its digits, an
-    object whose text fails), a value met again inside itself, and one nested past
-    `MAX_DEPTH`, so writing a line never fails."""
+    object whose text fails), a container whose items cannot be read, a value met again
+    inside itself, and one nested past `MAX_DEPTH`, so writing a line never fails."""
     return json.dumps(_jsonable(line, 0, set()), allow_nan=False)
 
 
@@ -92,6 +92,8 @@ def _jsonable(value, depth, holding):
             return {k if isinstance(k, str) else _text(k): _jsonable(v, depth + 1, holding)
                     for k, v in value.items()}
         return [_jsonable(v, depth + 1, holding) for v in value]
+    except Exception:  # noqa: BLE001 - a container whose items cannot be read; never fails
+        return f"<{type(value).__name__} that cannot be read>"
     finally:
         holding.discard(id(value))
 
@@ -170,7 +172,7 @@ class Log:
             note = [json.dumps({
                 "time": utc_milliseconds(self.clock.now()), "component": "front",
                 "event": "log_lines_dropped", "dropped": dropped})] if dropped else []
-            name = self._write_file(note + texts)
+            name = self._write_file(note + texts, kept=len(texts))
             if name is None:
                 with self._lock:
                     self._pending[:0] = texts
@@ -178,7 +180,9 @@ class Log:
                     self._trim()
             return name
 
-    def _write_file(self, texts):
+    def _write_file(self, texts, *, kept):
+        """Write `texts` as one new file; on failure say so, with `kept`, the lines kept for
+        the next minute (the note of dropped lines is not one of them: it is made again)."""
         stamp = datetime.fromtimestamp(self.clock.now(), timezone.utc)
         body = ("\n".join(texts) + "\n").encode()
         failure = None
@@ -194,7 +198,7 @@ class Log:
                 break
         self._print(json.dumps({"time": utc_milliseconds(self.clock.now()),
                                 "component": "front", "event": "log_bucket_unwritable",
-                                "lines_kept": len(texts), "detail": str(failure)}))
+                                "lines_kept": kept, "detail": str(failure)}))
         return None
 
     # The minute's loop.

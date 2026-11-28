@@ -145,6 +145,7 @@ def test_a_path_offered_is_served_through_waitress(served, target):
     ("//t/x", "//t/x"), ("///t/x", "///t/x"), ("http://h//t/x", "//t/x"),
     ("https://h//t/x?a=1", "//t/x"), ("t/x", "t/x"), ("/t//x", "/t//x"),
     ("/t/%2Fx", "/t/%2Fx"), ("http://h", ""), ("//t/x?a=b//c", "//t/x"),
+    ("/t%2Fx", "/t%2Fx"), ("/t%2fx", "/t%2fx"), ("http://h/t%2Fx?a=1", "/t%2Fx"),
 ])
 def test_a_path_not_offered_is_404_through_waitress_as_sent(served, target, path):
     # Waitress drops a path's leading slashes before the application sees it, so the rule

@@ -48,6 +48,8 @@ in [its guide](../../../../front/README.md#what-is-built-in-which-phase).
    a target with no leading slash (`GET x`) was served too. Both are now `404`, as is an
    absolute form with no path (`GET http://h`): the contract's table names paths, and a
    target with none is not one of them. A doubled slash in the query alone is served.
+   After the third review, an encoded slash `%2F` (either case) anywhere in the path is
+   refused too, since waitress decodes it and would serve `/t%2Fx` as `/t/x`.
    The tests send these request lines through waitress itself (`tests/test_server.py`).
    The router's own `merge_slashes` setting is not used, the check covering what it did.
    To overrule: the check in `create_app` and `_path` in `app.py`.
@@ -85,7 +87,7 @@ in [its guide](../../../../front/README.md#what-is-built-in-which-phase).
     `get`, `put(if_marker=, if_absent=)`, `delete`, `copy_onto_itself`, `list`; `NotFound`,
     `ConditionFailed`, `BucketUnavailable`, `BadName`; a delete of a file already gone is not
     an error (as R2's is not); a listing is sorted by name; a name is 1 to 1,024 bytes of
-    `/`-separated parts, none empty, `.`, `..` or starting with `.`, with no `\` or NUL; the
+    `/`-separated parts, each at most 255 bytes (added after the third review), none empty, `.`, `..` or starting with `.`, with no `\` or NUL; the
     folder form's marker is the SHA-256 of the contents, computed at each open; its store
     time is the file's modification time set from the front server's clock; its temporary
     files are named `.tmp-<random>` and no listing shows them; pieces are at most 1 MiB.
@@ -158,7 +160,10 @@ in [its guide](../../../../front/README.md#what-is-built-in-which-phase).
     file and a folder (`a` beside `a/b`) stays `BucketUnavailable`, since a folder cannot
     hold both. Reason: the layout of names (state and log) never puts a file where another
     name's folder is, so the remaining difference is never met, and the cheap cases now
-    match R2. To overrule: escape names in the folder form, at the cost of files no longer
+    match R2. A second difference, found by the third review, is closed rather than named:
+    a part over 255 bytes (a file system's limit on one name) was `BucketUnavailable` in
+    the folder form and taken by R2; every form now refuses it as `BadName`, so the one
+    difference above is the only one. No name of the layout comes near 255 bytes in a part. To overrule: escape names in the folder form, at the cost of files no longer
     sitting at their names' paths.
 25. **Writing any value in a log line** (after review). The details file says a value JSON
     cannot hold is written as its text. Chosen: `NaN` and the infinities are written as
@@ -169,7 +174,9 @@ in [its guide](../../../../front/README.md#what-is-built-in-which-phase).
     write>`, as a value or a key, and an object whose `__str__` raises is the note `<Type
     that cannot be written as text>`. No request reaches either today (bodies and gathered
     lines are refused at parsing), but the documents say no value can make writing a line
-    fail, and now none can. Reason: a line must never fail inside the request that writes
+    fail. Added after the third review, which showed that claim still false: a list, tuple
+    or mapping whose iteration or `items()` raises is the note `<Type that cannot be
+    read>`. Reason: a line must never fail inside the request that writes
     it, and every line must be JSON for the reading command. To overrule: `line_text` in
     `log.py`.
 26. **Settings checked for range as well as form** (after review). Chosen: an address with
@@ -200,6 +207,24 @@ in [its guide](../../../../front/README.md#what-is-built-in-which-phase).
     given up by a replaced slice job
     (`test_every_place_taken_a_changed_plate_of_the_same_user_key_is_accepted`, which fails
     with the reviewer's mutation), and `1e999` (decision 29).
+31. **Fixes of the third review.** Both blocking findings were real and fixed, each with a
+    test that failed for its reason first: a name part over 255 bytes is `BadName`
+    (decision 24, `test_a_name_of_the_wrong_form_is_refused_before_any_file_is_touched`,
+    and a 1,024-byte name of 255-byte parts is still written and read), and a container
+    that cannot be read is a note (decision 25,
+    `test_a_container_that_cannot_be_read_is_written_as_a_note`). Of the minor findings:
+    an encoded slash `%2F` anywhere in a path is now `404` `front.no_such_request`
+    (decision 5; waitress decodes it, so `/t%2Fx` was served as `/t/x`, and no path of the
+    contract holds one); `lines_kept` of `log_bucket_unwritable` no longer counts the
+    `log_lines_dropped` line; the mutation of `Log.flush`'s `if not texts and not dropped`
+    is now killed by `test_a_count_of_dropped_lines_alone_is_still_written` at
+    `max_pending=0`, the code kept as it is since a count of drops with no line must still
+    be written; the guide's "the version on every answer" now names waitress's own
+    answers to requests it cannot parse. Declined: that `gather` keeps a line that is not
+    a JSON object (a string, a number) as a file line. The reviewer names it item 18's to
+    settle, and it is: item 18 builds the fetching of the slice service's lines and the
+    page's reports, and is where a line of the wrong shape is refused or wrapped, by
+    the rules of the slice service's contract for its lines.
 
 ## Targets missed
 
@@ -216,6 +241,9 @@ in [its guide](../../../../front/README.md#what-is-built-in-which-phase).
   tests were never seen to fail. To make up for it, one check was broken by hand (the
   stream's fifteen-second repeat dropped), and the example test failed as it should; the
   reviewer's mutations are the real check.
+- **The fixes of the third review were merged without a further review.** That round was
+  the last; the fixes of decision 31 were checked only by their builder's tests and the
+  fast suite, not by a reviewer who did not write them.
 
 ## Not done
 

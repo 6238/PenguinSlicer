@@ -31,6 +31,9 @@ from pathlib import Path
 CHUNK_BYTES = 1 << 20
 #: The longest name a file may have, as R2's limit on a key.
 MAX_NAME_BYTES = 1024
+#: The longest part between two `/` a name may have, as a file system's limit on one file's
+#: or folder's name (255 bytes), so the folder form takes every name the R2 form takes.
+MAX_PART_BYTES = 255
 #: The start of a temporary file's name in the folder form; no name may start so.
 TEMPORARY = ".tmp-"
 
@@ -63,7 +66,8 @@ def check_name(name):
     """Refuse a name that could leave the bucket, hide a file, or differ between forms."""
     parts = name.split("/")
     if not name or len(name.encode()) > MAX_NAME_BYTES or "\\" in name or "\0" in name \
-            or any(part in ("", ".", "..") or part.startswith(".") for part in parts):
+            or any(part in ("", ".", "..") or part.startswith(".")
+                   or len(part.encode()) > MAX_PART_BYTES for part in parts):
         raise BadName(f"no file may be named {name!r}")
     return parts
 
