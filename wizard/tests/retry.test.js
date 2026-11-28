@@ -550,6 +550,71 @@ test('the line shows the countdown of the request that failed earliest', async (
   assert.deepEqual(api.board.state(), { kind: 'unreachable' });
 });
 
+// A request its caller no longer wants (a part removed, or New plate, while its upload is
+// retried): stopped by its `signal`, at once, wherever it stands, and the panel line forgets it.
+test('a request stopped while it waits between attempts ends at once as stopped, and the line goes', async () => {
+  const { clock, server, api } = setUp();
+  dropAll(server, 'POST', '/api/parts', 100);
+  const controller = new AbortController();
+  const result = api.post('/api/parts', { bytes: new Uint8Array(4), upload: true, signal: controller.signal });
+  await clock.advanceTo(25 * S);
+  assert.equal(api.board.state().kind, 'slow');
+  const made = server.made('POST', '/api/parts').length;
+  controller.abort();
+  assert.deepEqual(await result, { ok: false, stopped: true });
+  assert.deepEqual(api.board.state(), { kind: 'none' });
+  assert.equal(api.pending(), 0);
+  assert.equal(api.waiting(), 0);
+  await clock.advanceTo(400 * S);
+  assert.equal(server.made('POST', '/api/parts').length, made);
+});
+
+test('a request stopped while its attempt is being made aborts the attempt and is not sent again', async () => {
+  const { clock, server, api } = setUp();
+  server.script('POST', '/api/parts', steps.hold());
+  const controller = new AbortController();
+  const result = api.post('/api/parts', { bytes: new Uint8Array(4), upload: true, signal: controller.signal });
+  await server.arrived(1);
+  controller.abort();
+  assert.deepEqual(await result, { ok: false, stopped: true });
+  await clock.advanceTo(100 * S);
+  assert.equal(server.made('POST', '/api/parts').length, 1);
+  assert.deepEqual(api.board.state(), { kind: 'none' });
+});
+
+test('a request stopped after 300 s, while it waits for Try again, ends as stopped and the red line goes', async () => {
+  const { clock, server, api } = setUp();
+  dropAll(server, 'POST', '/api/parts', 100);
+  const controller = new AbortController();
+  const result = api.post('/api/parts', { bytes: new Uint8Array(4), upload: true, signal: controller.signal });
+  await clock.advanceTo(310 * S);
+  assert.deepEqual(api.board.state(), { kind: 'unreachable' });
+  controller.abort();
+  assert.deepEqual(await result, { ok: false, stopped: true });
+  assert.deepEqual(api.board.state(), { kind: 'none' });
+});
+
+test('a request whose signal is already stopped is never sent', async () => {
+  const { server, api } = setUp();
+  const controller = new AbortController();
+  controller.abort();
+  assert.deepEqual(await api.post('/api/parts', { bytes: new Uint8Array(4), upload: true, signal: controller.signal }), { ok: false, stopped: true });
+  assert.equal(server.made('POST', '/api/parts').length, 0);
+});
+
+test('stopping one request leaves the line to another that still fails', async () => {
+  const { clock, server, api } = setUp();
+  dropAll(server, 'POST', '/api/parts', 100);
+  dropAll(server, 'GET', '/api/configuration', 100);
+  const controller = new AbortController();
+  api.post('/api/parts', { bytes: new Uint8Array(4), upload: true, signal: controller.signal });
+  api.get('/api/configuration');
+  await clock.advanceTo(25 * S);
+  controller.abort();
+  await clock.advance(0);
+  assert.equal(api.board.state().kind, 'slow');
+});
+
 test('which answers are quiet retries', () => {
   assert.equal(isQuietRetry({ code: 'front.unexpected' }, '/api/me'), true);
   assert.equal(isQuietRetry({ code: 'front.onshape_unreachable' }, '/api/me'), true);

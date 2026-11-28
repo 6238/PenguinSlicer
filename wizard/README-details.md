@@ -13,7 +13,8 @@ who the user is and the configuration, as phase 2 has them ([The current group](
 [The configuration and the table of settings](#the-configuration-and-the-table-of-settings));
 [What the browser keeps](#what-the-browser-keeps), but for what the later items put in it; the
 worker's reading of a part and its picture ([The geometry, in a worker](#the-geometry-in-a-worker));
-and the failure reports of [What the wizard reports about itself](#what-the-wizard-reports-about-itself).
+the failure reports of [What the wizard reports about itself](#what-the-wizard-reports-about-itself);
+and [The Parts step](#the-parts-step), but for a part's instances joining the Layout step.
 Everything else here is the design to build: every screen, state and message of the guide, in
 the builder's terms, with the names the guide leaves out (requests, fields, error codes,
 constants, stored records, tests), the figures, the tests each part needs, and an order in
@@ -151,7 +152,8 @@ time. The names are the builder's (*proposed*) except those the plate configurat
 contract fixes (`MAX_*`, `MARGIN_MM`, `SPACING_*`). As built, the figures of the panel, of
 retrying and of a part's picture (`PANEL_MIN_PX` to `PANEL_LINE_PASSING_S`, `ROW_SLOW_S` to
 `ATTEMPT_TIMEOUT_S`, `PICTURE_CSS_PX`, `PART_COLOURS`, `MAIN_THREAD_HOLD_MS`) are in
-`wizard/src/page-constants.js`; `PLATE_UNUSED_H` is in `wizard/src/storage.js`, `REPORTS_PER_MIN`
+`wizard/src/page-constants.js`; `MAX_PART_BYTES`, `MAX_PART_TRIANGLES`, `MAX_PARTS` and
+`MAX_INSTANCES` in `wizard/src/geometry/constants.js`; `PLATE_UNUSED_H` is in `wizard/src/storage.js`, `REPORTS_PER_MIN`
 in `wizard/src/reports.js`, `HEARTBEAT_MS` in `wizard/src/hold-meter.js`; and the geometry's in
 `wizard/src/geometry/constants.js` and, for the picture, `wizard/src/geometry/picture.js`.
 
@@ -373,7 +375,8 @@ As built: the configuration line is hidden until the store has the configuration
 the name is plain text in the line's own colour, filled when the page opens and wired to the
 reload glyph through `panel.onReloadConfiguration` ([The current group](#the-current-group)). The reasons a step gives for a
 held click are, until each step brings its own rules, the mockup's: the Parts step "add a
-part." with no part and "a plate holds up to 150 instances." over the limit; the Layout step
+part." with no part, arrived or arriving, and "a plate holds up to 150 instances." over the
+limit, the parts still arriving counted; the Layout step
 "there are no instances." and its first problem; the Preview step "the plate is not sliced
 yet."; Next follows the same rules. Tests reach each reason, a plate of exactly 150
 instances going on and one of 151 held. The user's next move is the next pointer press or key in
@@ -397,7 +400,8 @@ uses. The panel keeps the notifications of the step it is on (`panel.notify`,
 `panel.dropNotice`), and drops them all when the user leaves the step. A message's four
 colours are the mockup's classes `error`, `warn`, `info` and `ok`; "grey when it only
 informs" is the mockup's `info`, a grey box with the accent's edge. A confirmation is placed
-under its control, inside the panel by 6 px, with the button that keeps things first and
+under its control, or above it where the panel ends below (New plate under a long list),
+inside the panel by 6 px, with the button that keeps things first and
 focused, so Enter never drops work by accident; its look is that of the panel's other boxes
 (`.confirm-pop` in `css/wizard.css`).
 
@@ -462,8 +466,9 @@ wizard never guesses units from a part's size
 | Slicing settings, and Orca's own sentence under Details | Millimetres | [decision 56](../docs/mockups/print-wizard/DECISIONS.md#units-version-6) |
 
 A size is rounded once, from the exact millimetres, in the unit shown, by one function
-(*proposed* `formatSize`) used on every step, so a part has one size everywhere; a size wraps
-and is never cut short.
+(`formatSize` in `wizard/src/units.js`) used on every step, so a part has one size everywhere; a
+size wraps and is never cut short. Millimetres drop a trailing zero, as the mockup's do ("50.8 ×
+50 × 4.8 mm"). As built it serves the Parts step's rows, from the part's record's `size_mm`.
 
 Tests: the 6.35 mm Gusset Plate reads 0.250 in on every step; a part in millimetres shows
 millimetres; a too-tall instance of an inch part shows both units; the layer readout is in
@@ -487,7 +492,7 @@ Settings). The page acts on a report's `code` and `retryable`, never on the stat
 | Printer delivery's, from phase 5: a send refused, a print that failed or waits for a person, a wrong pairing code, a limit passed | `delivery.*` | Printer delivery | Shows them as they are |
 | The front server's own: a sign-in that could not be made, a group the user is not in, a sliced file that has expired or would be too large | `front.*` ([its list](../contracts/wizard-front-server.md#the-front-servers-error-reports)) | The front server | Shows them as they are |
 | The Onshape integration's, from phase 4: a part Onshape cannot export | Named in phase 4 | The Onshape integration | Shows them as they are |
-| In the browser: no answer from the front server, an answer of the front server the page cannot read, the page's own checks before sending (a file over the size limit, a twenty-sixth part, a plate over 150 instances), every placement problem on the Layout step, a file the page itself cannot read, a 3D view that is lost, storage that fails | `wizard.*` (`wizard.bad_answer`, `wizard.layout_failed`, …): the wizard's own, gathered in `wizard/src/sentences.js` and, for the geometry, `wizard/src/geometry/errors.js` (not `messages.js`, a name the worker's module has) | The wizard | Writes them |
+| In the browser: no answer from the front server, an answer of the front server the page cannot read, the page's own checks before sending (a file over the size limit, a twenty-sixth part, a plate over 150 instances), every placement problem on the Layout step, a file the page itself cannot read, a 3D view that is lost, storage that fails | `wizard.*` (`wizard.bad_answer`, `wizard.layout_failed`, `wizard.part_not_drawable`, `wizard.part_over_size`, `wizard.file_unreadable`, `wizard.too_many_parts`, `wizard.too_many_instances`, …): the wizard's own, gathered in `wizard/src/sentences.js` and, for the geometry, `wizard/src/geometry/errors.js` (not `messages.js`, a name the worker's module has) | The wizard | Writes them |
 
 States that are not failures are the wizard's to put into words, from the figures it is
 sent: a slice waiting behind others or waiting while the slicer restarts, a busy printer, a
@@ -627,9 +632,13 @@ version, and `api.waiting()` those waiting between attempts.
 
 Tests (fake clock; the fake front server dropping, holding or refusing answers), in
 `tests/retry.test.js` and `tests/api.test.js`, and the line's look in
-`tests_browser/test_panel.py`; all built except the three that need the Parts step, the
-storage and slice jobs (the row's text, the stored work after 300 s, a repeated request's one
-row and one slice job):
+`tests_browser/test_panel.py`; the row's text at 4 s, the part kept after 300 s and Try again
+adding it, and a repeated upload's one row in `tests/parts.test.js` and
+`tests_browser/test_parts_step.py`; all built except what needs the Layout step and slice jobs
+(the layout and settings unchanged after 300 s, the Layout step working throughout, a repeated
+submission's one slice job). A request its caller stops (`signal`) ends at once as
+`{ok: false, stopped: true}` wherever it stands, between attempts, during one or waiting for Try
+again, and leaves the panel line (`board.stop`); tested in `tests/retry.test.js`:
 
 - A request that fails once and succeeds on the attempt at 1 s shows nothing.
 - At 19.9 s of failures the panel line is empty; at 20 s the amber line shows, counting down
@@ -891,14 +900,14 @@ mockup, under "Parts" in `css/panel.css`.
 
 | Screen or state | What the user sees and does | Mockup |
 |---|---|---|
-| Outside Onshape (phase 2) | An upload area for STL files, dropped or chosen, binary STL only. Beside it the switch "Read STL files in: inches / millimetres", which says how the next files are read; it starts at the configuration's `upload_units`, and the user's choice is kept in the browser's storage (*proposed* record `uploadUnits`). A row has no switch of its own: a part read in the wrong units is removed and added again | [decision 51](../docs/mockups/print-wizard/DECISIONS.md#units-version-6), departed from |
+| Outside Onshape (phase 2) | An upload area for STL files, dropped or chosen, binary STL only ("Drop STL files here, or click to choose"). Beside it the switch "Read STL files in: inches / millimetres", which says how the next files are read; it starts at the configuration's `upload_units`, and the user's choice is kept in the browser's storage (record `uploadUnits`). A row has no switch of its own: a part read in the wrong units is removed and added again | [decision 51](../docs/mockups/print-wizard/DECISIONS.md#units-version-6), departed from |
 | Inside Onshape (phase 4) | A prompt above the list, "Click a part in the Part Studio" or "Click a part in the assembly", that never changes. A click on a part adds it with quantity 1; a click on one already listed raises its quantity by one and flashes its row. In an Assembly a click on an instance, in Onshape's list or graphics area, adds its part. No button adds every part | [decision 14](../docs/mockups/print-wizard/DECISIONS.md#parts-step-step-1), [decision 21](../docs/mockups/print-wizard/DECISIONS.md#parts-step-step-1) |
-| **New plate** | A button on this step that empties the plate: the parts, the layout and the slice go, with a new `plate_id`; the filament, the profile and the changes stay. When the plate holds parts it asks first, in a confirmation: "Start a new plate? The parts and layout of this one are cleared." A plate that is printing goes on printing and is then shown as a print, in the printer-status icon and the printer details, and no longer as this tab's plate. No count of plates is kept or shown | None: designed in the guide |
+| **New plate** | A button on this step, under the line that counts the plate, shown while the plate holds parts, that empties the plate: the parts, the layout and the slice go, with a new `plate_id`; the filament, the profile and the changes stay. It asks first, in a confirmation: "Start a new plate? The parts and layout of this one are cleared.", with Keep this plate and New plate. A plate that is printing goes on printing and is then shown as a print, in the printer-status icon and the printer details, and no longer as this tab's plate. No count of plates is kept or shown | None: designed in the guide |
 | A row | The part's picture, name, size in its own units, quantity and a remove button; no refresh button (a part changed in Onshape is removed and added again). The quantity cannot be typed or clicked past 150 | [decision 18](../docs/mockups/print-wizard/DECISIONS.md#parts-step-step-1) |
-| A part arriving | Its row with a thin progress bar and "Arriving from Onshape…" or "Uploading…". The bar promises no duration | [decision 15](../docs/mockups/print-wizard/DECISIONS.md#parts-step-step-1) |
-| A part still arriving when the user moves on | Never holds Next. It joins the plate on the Layout step, at once if the user is there and otherwise the next time that step is shown, and a notification on the current step says "Gusset Plate arrived after you left the Parts step. It joins the plate when you go back to the Layout step." | [decision 5](../docs/mockups/print-wizard/DECISIONS.md#whole-panel), [decision 23](../docs/mockups/print-wizard/DECISIONS.md#parts-step-step-1) |
-| A part whose upload gets no answer | Its row stays, since the part is already in the browser's storage; "Taking longer than usual; still trying…" after 4 seconds; after 300 seconds the row keeps the part and shares the panel line's Try again | [decision 17](../docs/mockups/print-wizard/DECISIONS.md#parts-step-step-1), departed from |
-| Under the list | One line counting what the plate holds, and how many parts are still arriving | |
+| A part arriving | Its row with a thin progress bar and "Arriving from Onshape…" or "Uploading…", its picture faded and its quantity not yet changeable. The bar promises no duration: it moves to and fro | [decision 15](../docs/mockups/print-wizard/DECISIONS.md#parts-step-step-1) |
+| A part still arriving when the user moves on | Never holds Next, even when it is the plate's only part. It joins the plate on the Layout step, at once if the user is there and otherwise the next time that step is shown, and a notification on the current step (Settings, Preview or Send) says "Gusset Plate arrived after you left the Parts step. It joins the plate when you go back to the Layout step." | [decision 5](../docs/mockups/print-wizard/DECISIONS.md#whole-panel), [decision 23](../docs/mockups/print-wizard/DECISIONS.md#parts-step-step-1) |
+| A part whose upload gets no answer | Its row stays, since the part is already in the browser's storage; "Taking longer than usual; still trying…", in amber, after 4 seconds; after 300 seconds the row keeps the part and shares the panel line's Try again | [decision 17](../docs/mockups/print-wizard/DECISIONS.md#parts-step-step-1), departed from |
+| Under the list | One line counting what the plate holds, and how many parts are still arriving: "No parts yet.", "2 parts, 5 instances on one plate.", "1 part, 1 instance on one plate; 1 more arriving." | |
 
 ### Adding a part
 
@@ -908,20 +917,38 @@ page makes one, `source` `"file"`, one part for each file, `name` the file's nam
 the switch's setting at that moment, `stl_bytes` the file's bytes unchanged; from phase 4 the
 Onshape integration hands one over. For each part of a part set, in order:
 
-1. **One part, one row.** The page hashes the bytes (SHA-256, by the browser's own digest,
+1. **The size,** checked first, before the bytes are hashed or anything is sent: a part over
+   `MAX_PART_BYTES` is not added (notification below). For a file this is the file's own size
+   (`File.size`), before its bytes are read; each file is then read in its turn, on its own, so
+   that a file the browser cannot read (moved, deleted or locked after it was chosen: its
+   `arrayBuffer()` rejects, in Chromium with `NotReadableError`) is refused alone with the
+   notification `wizard.file_unreadable` of `wizard/src/sentences.js`, "gone.stl could not be
+   read, so it was not added." and "Check that the file is still there, then add it again."
+   ("Your other parts are fine." before it while the list holds parts), the browser's reason in
+   its `detail`, no report sent, and the other files of the drop go on.
+2. **One part, one row.** The page hashes the bytes (SHA-256, by the browser's own digest,
    off the main thread). A part whose hash and units are those of a part already on the
-   plate raises that part's quantity by the part set's `quantity` (to at most 150) and adds
-   no row; the same bytes under the other units are another part.
-2. **The page's own checks,** before anything is sent: a part over `MAX_PART_BYTES` is not
-   added (notification below); a part that would be the plate's twenty-sixth is not added.
-3. **Kept first:** the part is written to the stored plate (bytes, name, units, hash) and its
-   row appears, arriving.
-4. **Read for drawing** in the worker ([The geometry, in a worker](#the-geometry-in-a-worker)),
-   at the same time as the upload.
-5. **Uploaded,** as below. On `201` the row is complete; on a refusal the part and its row are
-   removed and the notification shows.
-6. **Laid down:** its instances are laid their best way by auto-orient and join the plate on
-   the Layout step ([Parts arrive lying their best way](#parts-arrive-lying-their-best-way)).
+   plate, arrived or still arriving, raises that part's quantity by the part set's `quantity`
+   (to at most 150) and adds no row; the same bytes under the other units are another part.
+3. **The number of parts:** a part that would be the plate's twenty-sixth is not added.
+4. **Kept first:** the part is written to the stored plate (bytes, name, units, hash, its
+   `quantity`, its `record` null until the upload answers) and its row appears, arriving.
+5. **Read for drawing** in the worker ([The geometry, in a worker](#the-geometry-in-a-worker)),
+   at the same time as the upload; its picture is on its row as soon as the worker has read it.
+6. **Uploaded,** as below. When both the upload and the reading are done, the row is complete
+   and the part's record is kept in the stored plate; on a refusal by either, the part, its
+   bytes and its row are removed and the notification shows. When both refuse, the slice
+   service's notification is the one shown.
+7. **Laid down:** its instances are laid their best way by auto-orient and join the plate on
+   the Layout step ([Parts arrive lying their best way](#parts-arrive-lying-their-best-way)),
+   which is to be built (item 10 of [By phase](#by-phase)).
+
+The parts of a part set are taken in order, one after another, so that a file dropped twice
+in one drop is one row. A part removed, or a plate emptied by New plate, while its upload is
+retried has its upload stopped (`api.request`'s `signal`), so no upload goes on for a part the
+plate no longer holds. A page opening again takes up its stored plate's parts: a part with its
+record has arrived and is read for drawing; one without is uploaded again, its bytes being
+kept; one whose bytes are gone is dropped from the plate.
 
 ### Uploading a part
 
@@ -932,10 +959,11 @@ its own drawing and measuring.
 
 | Answer | The page |
 |---|---|
-| `201` with the part's record: `sha256`, `units`, `measurements` (`triangles`, `size_mm`, `volume_mm3`), `warnings` | Compares `sha256` with its own hash and uploads once more if they differ (a second difference is a `page_failed` report and the part is not added). Keeps the record beside the part. Shows each warning's `message` on the row in amber, without holding Next |
-| `413` `slice.part_too_detailed` | The notification for a part over the size limit, with the slice service's sentence |
+| `201` with the part's record: `sha256`, `units`, `measurements` (`triangles`, `size_mm`, `volume_mm3`), `warnings` | Compares `sha256` and `units` with its own and uploads once more if they differ (a second difference is a `page_failed` report, and the part is not added, with the notification of `wizard.bad_answer`). Keeps the record beside the part; the row's size is the record's `size_mm` in the part's own units (`formatSize`). Shows each warning's `message` on the row in amber, as a message whose first line is the sentence's first sentence and whose second is the rest, the words unchanged, without holding Next; a sentence ends at a full stop, question or exclamation mark followed by a space and a capital letter, so that "e.g. on" or "i.e. 0.2 in" does not end one (`firstSentence` in `wizard/src/panel/parts-step.js`). A record the page cannot use (not an object; `sha256` not 64 lowercase hexadecimal characters; `units` neither `in` nor `mm`; `size_mm` not three numbers; `warnings` not a list of objects each with a `message`) is `wizard.bad_answer`, and the part is not added |
+| `413` `slice.part_too_detailed` | The notification of [A part that cannot be used](#a-part-that-cannot-be-used), with the slice service's sentences |
 | `422` `slice.part_unreadable`, `slice.part_not_binary`, `slice.part_too_small`, `slice.part_no_volume`, `slice.part_too_large` | The notification of [A part that cannot be used](#a-part-that-cannot-be-used); the part is not added |
-| `400` `slice.bad_units` or `front.bad_request` | A fault of the page: shown as a notification, reported as `page_failed` |
+| `400` `slice.bad_units` or `front.bad_request` | A fault of the page: shown as a notification, reported as `page_failed` with the part's hash; the part is not added |
+| Any other error report that is not a quiet retry (`front.group_not_allowed`, …) | Shown as a notification as it is; the part is not added |
 | `429` `front.too_many_requests`, `503` `front.slice_unreachable`, no answer | A quiet retry; the row stays |
 
 A repeat with the same bytes and units answers the same record, so a retry after a lost
@@ -945,9 +973,11 @@ answer needs nothing more.
 
 A part that cannot be used is a notification that names it, and it is not added: the list
 never holds a broken row. The notification's sentences are those of the component that
-refused the part; the wizard adds "Your other parts are fine." only while the list holds
-other parts. A second failure of the same part replaces its notification. Next stays as it
-was, and there is no Try again
+refused the part. Since an upload carries no name, those sentences cannot name the part, so
+the wizard puts the part's name before the first ("Shooter Hood Rib: This part …"); its
+second line starts with "Your other parts are fine." only while the list holds other parts,
+then the refusal's `remedy`. A second failure of the same part (its hash and units) replaces
+its notification. Next stays as it was, and there is no Try again
 ([decision 16](../docs/mockups/print-wizard/DECISIONS.md#parts-step-step-1),
 [decision 19](../docs/mockups/print-wizard/DECISIONS.md#parts-step-step-1)).
 
@@ -958,29 +988,35 @@ was, and there is no Try again
 | A text STL | `slice.part_not_binary` | The slice service's: that a binary STL is needed; to export it again as a binary STL |
 | Too small or flat, nothing to print, too large for the printer | `slice.part_too_small`, `slice.part_no_volume`, `slice.part_too_large` | The slice service's. For an uploaded file refused as too large, followed by the wizard's own reminder of how the file was read ("STL files are being read in inches." or "…in millimetres."), since a file in millimetres read as inches is the likeliest cause |
 | Over the size limit | The page's own check; `slice.part_too_detailed` should the slice service refuse all the same | See [The limits on a plate](#the-limits-on-a-plate) |
+| The browser cannot read the chosen file at all | `wizard.file_unreadable`, the page's own: nothing was sent | The wizard's: that the file, named as the user chose it, could not be read, so it was not added; to check that the file is still there and add it again ([Adding a part](#adding-a-part), step 1) |
 
 The part's record carries no `where`, so a warning's sentence from an upload does not name
 the part; the row it stands on does. The warnings expected are `slice.part_not_watertight`,
 `slice.part_inside_out` and `slice.part_maybe_inches` (every side under 5 mm).
 
 **A part the slice service accepts and the page cannot draw** is a defect in the wizard. The
-part is not added; the wizard's own notification says that PenguinSlicer could not show the
-part and that it cannot be imported; the page sends a `POST /api/reports/failure` with `what`
-`part_not_drawable` and the part's hash. A malformed file must end in a notification, never in
+part is not added; the wizard's own notification, `wizard.part_not_drawable` of
+`wizard/src/geometry/errors.js`, says "PenguinSlicer could not show this part, so it cannot be
+imported." and "Export the part again as a binary STL and add it again."; the page sends a
+`POST /api/reports/failure` with `what` `part_not_drawable`, the part's hash and the worker's
+reason in `detail`. A worker that has failed as a whole answers `wizard.layout_failed`, shown
+the same way with its own sentences and reported once as `layout_failed` by the worker's
+client, not as `part_not_drawable`. A malformed file must end in a notification, never in
 a frozen panel: the worker's reader is bounded by `MAX_PART_BYTES` and checks the triangle
 count against the file's length before reading.
 
 ### The limits on a plate
 
 All three are the slice service's limits. The page checks each itself before sending, so
-these sentences are the wizard's; should the slice service refuse all the same, its own
-sentence is shown.
+these sentences are the wizard's, each an error report of its own made in
+`wizard/src/sentences.js`; should the slice service refuse all the same, its own sentence is
+shown.
 
-| Limit | What the user sees | The slice service's code |
-|---|---|---|
-| A part is at most 7.5 MB (`MAX_PART_BYTES`, 7,500,084 bytes, 150,000 triangles) | A notification, nothing sent: "bracket.stl is 9.1 MB. PenguinSlicer takes parts up to 7.5 MB (150,000 triangles), so it was not added. Export it again from your CAD program at a coarser resolution." For a part picked in Onshape, the notification names the part and says it is too detailed to slice here | `slice.part_too_detailed` |
-| At most 25 different parts on a plate (`MAX_PARTS`) | The twenty-sixth is not added: "A plate takes up to 25 different parts, so Gusset Plate was not added. Remove a part, or print it on a new plate." Raising a listed part's quantity still works | `slice.too_many_parts` |
-| At most 150 instances on a plate (`MAX_INSTANCES`) | One part's quantity cannot be typed or clicked past 150. When the parts together pass it, a red message under the list, "This plate would hold 163 instances. Up to 150 instances per plate; print the rest on a new plate.", and Next off | `slice.too_many_instances` |
+| Limit | What the user sees | The wizard's code | The slice service's code |
+|---|---|---|---|
+| A part is at most 7.5 MB (`MAX_PART_BYTES`, 7,500,084 bytes, 150,000 triangles) | A notification, nothing sent: "bracket.stl is 9.1 MB. PenguinSlicer takes parts up to 7.5 MB (150,000 triangles), so it was not added. Export it again from your CAD program at a coarser resolution.", the file named as the user chose it and its size in megabytes of a million bytes rounded up to 0.1 (`megabytes` in `wizard/src/units.js`), so that 7,500,085 bytes reads 7.6 MB and never the limit itself; "Your other parts are fine." before the remedy while the list holds parts. For a part picked in Onshape, the notification names the part and says it is too detailed to slice here | `wizard.part_over_size` | `slice.part_too_detailed` |
+| At most 25 different parts on a plate (`MAX_PARTS`, in `wizard/src/geometry/constants.js`) | The twenty-sixth is not added: "A plate takes up to 25 different parts, so Gusset Plate was not added. Remove a part, or print it on a new plate." Raising a listed part's quantity still works | `wizard.too_many_parts` | `slice.too_many_parts` |
+| At most 150 instances on a plate (`MAX_INSTANCES`) | One part's quantity cannot be typed or clicked past 150: the figure is held at 150 as it is typed, and a figure under 1 or not a number becomes 1. When the parts together pass it, the parts still arriving counted, a red message under the list, "This plate would hold 163 instances. Up to 150 instances per plate; print the rest on a new plate.", and Next off | `wizard.too_many_instances` | `slice.too_many_instances` |
 
 Open: whether the Onshape integration exports an over-size part again more coarsely by
 itself is for phase 4's design ([The limits on a plate](README.md#the-limits-on-a-plate)).
@@ -992,12 +1028,52 @@ same file added twice is one row with quantity 2, and the same file under the ot
 two rows; each failure row of the table, from the fake front server's error report, shows
 its sentences and adds no row; "Your other parts are fine." shows only with other parts
 listed; a second failure of one part replaces its notification; an upload refused as too
-large is followed by the reminder in the switch's current units; a warning stays on its row
+large is followed by the reminder of the units the file was read in, even when the switch was
+turned during its upload; a file over the size limit is refused by its size before it is read;
+a file the browser cannot read is refused alone with its notification and the other files of
+the drop are added; a part still arriving that takes the plate past 150 instances shows the
+red message while it arrives; a record with the right hash and the other units is uploaded
+once more and, a second time, is a `page_failed` report and `wizard.bad_answer`; a part still
+being written to the browser's storage when New plate is confirmed is never uploaded; a stored
+part whose record the page cannot use is uploaded again when the page opens; a warning stays on its row
 and Next stays on; a part the worker cannot read, accepted by the fake front server, is not
 added and sends one `part_not_drawable` report; a part arriving after the user left joins
 the Layout step and shows the notification; New plate with parts asks first and, confirmed,
 keeps the filament, profile and changes and makes a new `plate_id`; the upload's body is
 byte for byte the file.
+
+**As built.** The step's behaviour is `createParts` in `wizard/src/parts.js` (`addFiles`,
+`addPartSet`, `setQuantity`, `remove`, `newPlate`, `units` and `setUnits`, `instanceProblem`,
+`resume`, `rows` and `subscribe`), which tells the store the plate's figures: `plate.parts` and
+`plate.instances` count the parts that have arrived, `plate.arriving` and
+`plate.arrivingInstances` those still arriving, so that the plate summary counts what is on the
+plate and Next is held by "add a part." only when the list is empty. The step's drawing is
+`createPartsStep` in `wizard/src/panel/parts-step.js`, into the mockup's `#parts-upload` (with
+`#dropzone`, `#f-upload`, `#upload-units`), `#parts-messages`, `#parts-list` and `#parts-total`,
+and a `.new-plate` button after them; the switch is two radio buttons in the mockup's line
+under the upload area, and a row is updated in place, so that a quantity being typed keeps its
+focus. The page's entry point takes up the stored parts (`parts.resume`) once the opening has
+read who the user is, before it marks the page opened. The running wizard exports both
+(`wizard.parts`, `wizard.partsStep`). The stored plate's part entries carry `quantity` beside
+the fields of [What the browser keeps](#what-the-browser-keeps).
+
+Every test above is built but a late part joining the Layout step, which comes with that step
+(its notification is built): `tests/parts.test.js` without a browser window, on the fake clock,
+the fake front server (which answers an upload with the record of the bytes sent, `sha256` and
+`units` included), the fakes of the storage and the real worker's code in the test's thread,
+each refusal and each way a record can be unusable on purpose, its files handed over as the
+browser hands them (a name, a size and a read that can fail); `tests/parts-step.test.js` for
+how a warning is split into its two lines; `tests/units.test.js` for the
+sizes; and `tests_browser/test_parts_step.py` in Chromium for the upload area by a chosen
+file, a drop and the keyboard, a file Chromium cannot read (its read made to fail as
+Chromium's does) beside one it can, an over-size file never read, the switch kept through a refresh, a row with its picture, the
+quantity held at 150 as it is typed, the red message and Next, each kind of notification, a
+warning on its row, the amber line of a part the browser could not save (its write refused on
+purpose), a row slow at 4 s and not at 3.9 s, a part the page cannot draw with its one report,
+New plate's confirmation, a hostile file name, and no sideways scroll at the seven widths with
+the two columns from 680 px. `make -C wizard look-parts-step` writes pictures of the mockup's
+Parts step beside the built one at 320, 480, 520 and 680 px in each state the mockup shows,
+and of the screens it never drew, into `docs/orchestration/phase-2/look/wizard-4/`.
 
 ## The Settings step
 
@@ -2017,7 +2093,7 @@ added in one tab never appears in another, and one tab never writes over another
 
 | Record | What it holds | Kept until |
 |---|---|---|
-| `plates/<plate_id>` | `format` (1); the user's `user.id` and the `group` id the plate was made in; the parts (each part's `sha256`, `units`, `name`, part `record` and whether its bytes are `saved`); the layout (`instances`: each instance's part, rotation and position); the `settings` (`filament` and `profile` by name, every change in `changes`); the `slice` (the slice job's id, `submission_id`, fingerprint and the time submitted); the `step`, and whether `advanced` mode is open; `last_used_ms` | The plate is dropped |
+| `plates/<plate_id>` | `format` (1); the user's `user.id` and the `group` id the plate was made in; the parts (each part's `sha256`, `units`, `name`, `quantity`, part `record`, null until its upload is answered, and whether its bytes are `saved`); the layout (`instances`: each instance's part, rotation and position); the `settings` (`filament` and `profile` by name, every change in `changes`); the `slice` (the slice job's id, `submission_id`, fingerprint and the time submitted); the `step`, and whether `advanced` mode is open; `last_used_ms` | The plate is dropped |
 | `part-bytes/<plate_id>/<sha256>.<units>` | One part's bytes, exactly as they arrived | The part is removed, or its plate dropped |
 | `uploadUnits` | How STL files are read | The user changes it; cleared with the user's work |
 | `currentGroup` | For a user in several groups outside Onshape, the current group | The same |
@@ -2097,8 +2173,8 @@ the first plate untouched, which proves the lock is asked for without waiting.
 As built, `tests/storage.test.js` runs several pages on one fake storage (`FakeRecords`), each tab
 with its own fake `sessionStorage` (`FakeTab`) and all with one fake of the browser's locks
 (`FakeLocks`, whose `closeTab` is a tab closing or crashing), in `tests/fakes/storage.js`; it reaches
-each of the tests above but the amber line, which is drawn with the part's row (item 8 of
-[By phase](#by-phase)); the module gives the row its `saved` flag and the sentence. It also reaches
+each of the tests above; the amber line on the part's row is reached in Chromium by
+`tests_browser/test_parts_step.py`, with the browser's write of a part's bytes refused on purpose. It also reaches
 a duplicated tab, a refused write of the plate, a storage that will not open (and one that opens on
 the next load, not reported as cleared), a page without locks, each way a plate can be unreadable on
 its own and all of them at once, a different user's sign-in clearing a plate an open tab holds,
@@ -2108,7 +2184,10 @@ same in Chromium with the real IndexedDB, `sessionStorage` and Web Locks: severa
 browser, a refresh, a closed tab's plate taken up, `owner` stored from the start, a storage cleared
 by the browser reported once, and the full plate of 25 parts of 7,500,084 bytes stored and read back
 after a refresh (1.35 s for the test in headless Chromium on the machine without a graphics card,
-none refused). The 12 hours are the fast suite's alone, on its fake clock. That the locks seam never
+none refused; since the Parts step, each a binary STL of 150,000 triangles stored with its record,
+which the page opening again takes up as 25 rows with their pictures and uploads nothing, 1.76 s and
+1.86 s for the test in two runs on an aarch64 Linux machine of 8 processors shared with other
+work, and 3.4 s once while that machine was busier). The 12 hours are the fast suite's alone, on its fake clock. That the locks seam never
 waits for a held lock is proved on an event by `tests/locks.test.js`, over a fake of
 `navigator.locks` that queues a request without `ifAvailable` as the standard does and says so; the
 duplicated tab in Chromium shows the same with the real locks. The page's entry point (`main.js`)
@@ -2433,6 +2512,7 @@ rewritten nor refused, and the content security policy is what stops it loading.
 | `build` | `wizard/dist/` from `wizard/src/` and `wizard/vendor/` |
 | `look` | After `build`: pictures of the panel as a whole beside the mockup's, at 320, 480, 520 and 680 px, into `docs/orchestration/phase-2/look/wizard-2/` with an `index.html` showing the pairs |
 | `look-parts` | After `build`: the picture of each kept part as its row will show it, at 88 pixels, drawn by the page's own worker in Chromium, into `docs/orchestration/phase-2/look/wizard-3/` (`wizard/tests_browser/look_parts.py`), printing the main thread's longest hold for each part |
+| `look-parts-step` | After `build`: the mockup's Parts step beside the built one, the whole panel, at 320, 480, 520 and 680 px, in each state the mockup shows and in the screens it never drew, into `docs/orchestration/phase-2/look/wizard-4/` with an `index.html` of the pairs (`wizard/tests_browser/look_parts_step.py`) |
 | `trials` | Both opening trials' measurements, as [How the trials and measurements are run](#how-the-trials-and-measurements-are-run) says: runs `trials-preview` and `trials-geometry`, the second even when the first fails, and fails when either does |
 | `trials-preview` | The first trial: `wizard/trials/preview/run.py` (needs the three sliced files in `wizard/trials/sliced/`, made by `wizard/trials/make_sliced_files.py`) |
 | `trials-geometry` | The second trial: `wizard/trials/geometry/run.py` |
@@ -2610,21 +2690,22 @@ The page opened directly in a browser, with the development identity and no sign
    ([The project and its tools](#the-project-and-its-tools)), the page, the fake clock and the
    fake front server, and the module that makes every request
    ([Every request](#every-request-headers-answers-and-retrying)).
-3. **Retrying and the panel line.** Built ([Retrying](#retrying)); a part's row says it is slow
-   with the Parts step.
+3. **Retrying and the panel line.** Built ([Retrying](#retrying)), with a part's row saying it
+   is slow.
 4. **The panel as a whole.** Built ([The panel as a whole](#the-panel-as-a-whole)), but for
    advanced mode's sections across 480 px, which come with advanced mode.
 5. **Who the user is and the configuration.** Built ([The current group](#the-current-group),
    [The configuration and the table of settings](#the-configuration-and-the-table-of-settings)).
-6. **The browser's storage.** Built ([What the browser keeps](#what-the-browser-keeps)); a refused
-   part's amber line comes with its row, in item 8.
+6. **The browser's storage.** Built ([What the browser keeps](#what-the-browser-keeps)), with a
+   refused part's amber line on its row.
 7. **The worker,** reading a binary STL and drawing a part's picture. Built
-   ([The geometry, in a worker](#the-geometry-in-a-worker)); the notification of a part the page
-   cannot draw comes with item 8.
+   ([The geometry, in a worker](#the-geometry-in-a-worker)), with the notification of a part the
+   page cannot draw.
 8. **The Parts step:** the upload area and its switch, part sets, one part one row, the page's own
-   limits, `POST /api/parts` and each refusal and warning, a part the page cannot draw, New plate
-   ([The Parts step](README.md#the-parts-step); [Parts](../contracts/wizard-front-server.md#parts),
-   [the part set](../contracts/part-set.md)).
+   limits, `POST /api/parts` and each refusal and warning, a part the page cannot draw, New plate.
+   Built ([The Parts step](#the-parts-step); [Parts](../contracts/wizard-front-server.md#parts),
+   [the part set](../contracts/part-set.md)), but for a part's instances laid down and joining the
+   plate, which come with the Layout step, item 10.
 9. **The Settings step and advanced mode,** drawn from the table of settings, with the quick
    changes' values of [The Settings step](#the-settings-step)
    ([The Settings step](README.md#the-settings-step); [the table of settings](../contracts/settings-table.md)).

@@ -36,8 +36,10 @@ export function retryAfterS(value, nowMs) {
 // The attempt's time runs from sending until the headers arrive; then, while the body is read,
 // the attempt fails only when no bytes arrive for that same time. So a body that stalls fails
 // quietly, and a large one (a sliced file of up to 50 MB) arriving slowly is read to its end.
-async function attemptOnce({ transport, clock, method, path, headers, body, timeoutS, expect, tellVersion }) {
+async function attemptOnce({ transport, clock, method, path, headers, body, timeoutS, expect, tellVersion, stop }) {
   const controller = new AbortController();
+  const stopIt = () => controller.abort();
+  if (stop) stop.addEventListener('abort', stopIt, { once: true });
   let timer = null;
   const arm = () => {
     if (timer !== null) clock.cancel(timer);
@@ -86,6 +88,7 @@ async function attemptOnce({ transport, clock, method, path, headers, body, time
     return { answer: { ok: false, status: answer.status, report: content } };
   } finally {
     if (timer !== null) clock.cancel(timer);
+    if (stop) stop.removeEventListener('abort', stopIt);
   }
 }
 
@@ -96,7 +99,10 @@ async function attemptOnce({ transport, clock, method, path, headers, body, time
 //     again (or for another request's answer). Options: json (a body sent as JSON), bytes (a
 //     body sent as it is), upload (the longer attempt time), expect ('json' or 'bytes'),
 //     onSlow (called once, ROW_SLOW_S after the first failure), once (the page's reports about
-//     itself: one attempt, and {ok: false, dropped: true} on any failure).
+//     itself: one attempt, and {ok: false, dropped: true} on any failure), signal (an
+//     AbortSignal: its caller no longer wants the request, as when a part is removed while its
+//     upload is retried; the attempt being made is aborted, no other is made, the request leaves
+//     the panel line and resolves to {ok: false, stopped: true}).
 //   get, post, put: request with that method.
 //   link(path): a plain link's address, naming the current group in its query.
 //   pending(): the requests sent and not yet answered.
@@ -120,7 +126,7 @@ export function createApi({ transport, clock, version, currentGroup = () => null
   }
 
   async function request(method, path, options = {}) {
-    const { json, bytes, upload = false, expect = 'json', onSlow = null, once = false } = options;
+    const { json, bytes, upload = false, expect = 'json', onSlow = null, once = false, signal = null } = options;
     const attempt = () => attemptOnce({
       transport, clock, method, path,
       headers: headersFor(method, path, options),
@@ -128,22 +134,30 @@ export function createApi({ transport, clock, version, currentGroup = () => null
       timeoutS: upload ? UPLOAD_ATTEMPT_TIMEOUT_S : ATTEMPT_TIMEOUT_S,
       expect,
       tellVersion: (v) => { for (const listener of versionListeners) listener(v); },
+      stop: signal,
     });
+    const STOPPED = { ok: false, stopped: true };
+    if (signal && signal.aborted) return STOPPED;
 
     pending += 1;
+    let entry = null;
+    // A stop wakes the request wherever it waits; the loop then sees the signal and ends.
+    const stopped = () => board.stop(entry);
+    if (signal) signal.addEventListener('abort', stopped, { once: true });
     try {
       if (once) {
         const outcome = await attempt();
         if (outcome.answer) board.answered();
         return outcome.answer && outcome.answer.ok ? outcome.answer : { ok: false, dropped: true };
       }
-      let entry = null;
       let index = 0;
       let slowTimer = null;
       try {
         for (;;) {
+          if (signal && signal.aborted) { board.stop(entry); return STOPPED; }
           if (entry) board.attempting(entry);
           const outcome = await attempt();
+          if (signal && signal.aborted) { board.stop(entry); return STOPPED; }
           if (outcome.answer) {
             board.done(entry);
             board.answered();
@@ -176,6 +190,7 @@ export function createApi({ transport, clock, version, currentGroup = () => null
       }
     } finally {
       pending -= 1;
+      if (signal) signal.removeEventListener('abort', stopped);
     }
   }
 
