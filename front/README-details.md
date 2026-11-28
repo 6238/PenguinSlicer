@@ -820,7 +820,11 @@ connection cut, or nothing for `SLICE_TIMEOUT_S` (30 s, *proposed*) is `SliceUnr
 own `slice.*` report passed byte for byte with its status, or, for `slice.no_user_key` and
 for an answer that is not the slice service's report, a failure answered `500`
 `front.unexpected`. A test passes an httpx `transport` in place of the network, which raises
-what a silent slice service makes the network raise, so that no test waits out the 30 s.
+what a silent slice service makes the network raise, so that no test waits out the 30 s;
+another wraps the network of the client the application builds for itself and sees each
+request it sends carry 30 s for connecting, reading, writing and waiting for a pooled
+connection
+(`test_the_front_servers_own_requests_to_the_slice_service_carry_slice_timeout_s`).
 
 ### Tests
 
